@@ -1,0 +1,30 @@
+{
+  "name": "@aigc-video/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:api": "SERVER_RUNTIME=api tsx watch src/main.ts",
+    "dev:worker": "SERVER_RUNTIME=worker tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@aigc-video/ai": "workspace:*",
+    "@aigc-video/shared": "workspace:*",
+    "@fastify/cors": "^10.0.2",
+    "bullmq": "^5.34.2",
+    "fastify": "^5.2.1",
+    "ioredis": "^5.4.2",
+    "nanoid": "^5.0.9",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

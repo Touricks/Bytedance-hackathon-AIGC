@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+.turbo/
+.env
+.env.local
+.env.*.local
+*.log
+apps/web/.vite/
+apps/server/tmp/
+
+# Keep the PRD locally only; it includes private challenge resource credentials.
+docs/prd.pdf
