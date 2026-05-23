@@ -12,11 +12,11 @@ interface MaterialFormProps {
 }
 
 const defaultValues: CreateCreativeBlueprintRequest = {
-  title: "Portable Mini Blender",
-  sellingPoints: "USB-C charging, easy cleaning, powerful smoothie blending",
-  audience: "busy office workers and fitness beginners",
-  stylePreference: "clean premium ecommerce",
-  imageUrl: "/mocks/products/demo-product.svg"
+  title: "",
+  sellingPoints: "",
+  audience: "",
+  stylePreference: "",
+  imageUrl: ""
 };
 
 export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
