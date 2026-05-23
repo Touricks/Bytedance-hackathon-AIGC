@@ -20,6 +20,7 @@ Asset
 GenerationJob
   id
   productId
+  scriptId
   status
   stage
   progress
@@ -27,17 +28,16 @@ GenerationJob
   trace
   errorMessage
   finalAssetId
-  scriptId
   createdAt
   updatedAt
 
 Script
   id
-  jobId
+  productId
   version
   narrative
   visualStyle
-  rawJson
+  rawJson                  # includes CreativeBlueprint and improvementHints in V0
   createdAt
 
 StoryboardShot
@@ -58,7 +58,8 @@ Relationships:
 ```text
 Product 1 -> n GenerationJob
 Product 1 -> n Asset
-GenerationJob 1 -> 1 Script
+Product 1 -> n Script
 Script 1 -> n StoryboardShot
+Script 1 -> n GenerationJob
 GenerationJob 1 -> 1 Asset(type=final_video)
 ```

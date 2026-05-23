@@ -1,44 +1,77 @@
 # 电商场景 AIGC 带货视频生成系统
 
-本仓库按 `arc_codex_r3.md` 的最终推荐架构落地：
+这是 ByteDance Hackathon AIGC 电商带货视频项目。当前仓库已经进入 **V0 架构基线已确认** 的状态，后续 PRD 提炼和实现拆分应基于本文档入口继续，不要重新从零做架构判断。
+
+## 新会话先读
+
+1. [CONTEXT.md](./CONTEXT.md)  
+   领域词汇表。先确认“创作蓝图”“草稿蓝图”“冻结蓝图”“一键成片”“成片任务”等词的含义。
+
+2. [docs/plan_0523/proposed_architecture.md](./docs/plan_0523/proposed_architecture.md)  
+   当前架构主文档，也是 V0 取舍的主要来源。
+
+3. [docs/plan_0523/grill-with-docs-note/](./docs/plan_0523/grill-with-docs-note/)  
+   架构追问和已确认决策记录。重点看：
+   - `20260523-07-creative-blueprint-prompt.md`
+   - `20260523-08-two-command-api.md`
+   - `20260523-09-persist-creative-blueprint.md`
+   - `20260523-10-blueprint-draft-freeze-version.md`
+
+4. [docs/plan_0523/supporting_docs/implementation-slices.md](./docs/plan_0523/supporting_docs/implementation-slices.md)  
+   V0 实现切片。
+
+5. [docs/plan_0523/supporting_docs/worktree-modules.md](./docs/plan_0523/supporting_docs/worktree-modules.md)  
+   后续 worktree 开发边界。
+
+6. [docs/prd_safe.pdf](./docs/prd_safe.pdf)  
+   原始安全版 PRD。
+
+## V0 范围
+
+V0 只交付六项：
+
+- 商品素材上传。
+- 剧本生成。
+- 基础分镜。
+- 一键成片。
+- 任务进度。
+- 预览导出。
+
+以下不进入 V0 主路径：检索、TTS、字幕合成、BGM 合成、数据看板、A/B 对比、复杂分镜编辑、移动端专项优化。
+
+## 已确认主流程
 
 ```text
-apps/web       React + TypeScript 商家工作台
-apps/server    Node.js + TypeScript 模块化单体，内嵌 job processors
-packages/shared  共享类型、DTO、zod schema、job payload
-packages/ai      server-only 模型 provider、prompt、workflow
-packages/config  共享工程配置
+上传商品素材与结构化创作参数
+  -> 同步生成并持久化创作蓝图
+  -> 用户只读确认剧本/基础分镜
+  -> 点击一键成片
+  -> 创建异步成片任务 GenerationJob
+  -> Seedance 图生视频生成 <=12s 成片
+  -> 轮询任务进度
+  -> 预览导出
 ```
 
-P0/P1 的关键取舍：
+关键边界：
 
-- 分镜保留为“剧本脚本结构”，不是视频渲染切片。
-- 使用一次 Seedance 12s 调用生成整片，不做 FFmpeg 拼接。
-- worker 逻辑在 `apps/server/src/jobs`，物理上先内嵌 server。
-- 当前模型调用走 mock fallback，真实火山调用集中替换 `packages/ai/src/providers/*`。
+- 用户只修改结构化字段：商品标题、核心卖点、目标人群、风格偏好、商品主图。
+- 用户不直接编辑图生视频 prompt。
+- 创作蓝图生成同步返回，UI 使用普通 loading。
+- 成片任务异步执行，任务进度只服务视频生成长任务。
+- `POST /api/creative-blueprints` 返回稳定 `scriptId`。
+- `POST /api/creation/jobs` 接收 `scriptId` 并创建成片任务。
+- 视频生成前的草稿蓝图可覆盖；一旦创建成片任务即冻结，后续修改创建新版本。
+- 同一冻结 `scriptId` 可创建多个成片任务，用于失败重试或多次生成择优。
 
-## 设计材料保存位置
+## 模型与存储口径
 
-根目录仍保留 6 份架构讨论稿和 `prd.pdf`。同时已归档到：
+- P0 必须真实调用 Ark 文本模型和 Seedance。
+- Seedance 主路径固定为图生视频：上传商品图或 demo 商品图 + 内部 whole-video prompt。
+- V0 Seedance prompt 使用保守三段式模板：商品 hero -> 卖点/使用场景 -> CTA。
+- mock provider 和预生成视频只作为本地开发与现场兜底，不替代 P0 验收。
+- P0 上传素材先保存到 server 本地文件目录；MinIO/S3 推迟到对象存储升级。
 
-```text
-docs/archive/arc_claude_r1.md
-docs/archive/arc_claude_r2.md
-docs/archive/arc_claude_r3.md
-docs/archive/arc_codex_r1.md
-docs/archive/arc_codex_r2.md
-docs/archive/arc_codex_r3.md
-docs/archive/prd.pdf
-```
-
-## 环境准备
-
-本机如果没有 `pnpm`，先启用 Corepack：
-
-```bash
-corepack enable
-corepack prepare pnpm@9.15.4 --activate
-```
+## 本地开发
 
 安装依赖：
 
@@ -52,49 +85,19 @@ pnpm install
 cp .env.example .env
 ```
 
-## 本地启动
-
 启动基础设施：
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-启动 web 和 server：
+启动应用：
 
 ```bash
 pnpm dev
 ```
 
-默认地址：
-
-```text
-web     http://localhost:5173
-server  http://localhost:3000/api/health
-```
-
-## P0 主路径
-
-1. 打开 web 工作台。
-2. 使用预置商品信息和商品图 URL。
-3. 点击“一键生成带货视频”。
-4. server 创建 `GenerationJob`。
-5. 内嵌 processor 生成结构化剧本和 2-4 个 `StoryboardShot`。
-6. workflow 将分镜压缩为一个 12s 视频 prompt。
-7. mock Seedance provider 返回兜底视频 URL。
-8. 前端轮询任务状态并展示视频预览。
-
-## 真实模型接入位置
-
-```text
-packages/ai/src/providers/seed-text.provider.ts
-packages/ai/src/providers/seedance-video.provider.ts
-packages/ai/src/providers/tts.provider.ts
-```
-
-环境变量只放在 `.env`，不要提交真实 API Key。
-
-## 验证命令
+常用验证：
 
 ```bash
 pnpm typecheck
@@ -102,4 +105,8 @@ pnpm lint
 pnpm build
 ```
 
-当前目录还不是 git 仓库；如果需要提交，请先 `git init`。
+## 后续 PRD 工作
+
+后续 PRD 提炼请在 git worktree 中进行。建议先基于已提交的 `main` 创建工作树，再在工作树内产出 PRD 或任务拆分文档。
+
+不要为了延续讨论而继续追问明显实现细节。只有会改变 V0 范围、数据模型边界、用户可见流程、模型调用主路径或 Demo 交付风险的问题，才需要继续拉用户确认。
