@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm --filter @aigc-video/shared build",
-    "test": "MODEL_MODE=mock OPENAI_API_KEY= OPENAI_MODEL= ARK_TEXT_ENDPOINT_ID= SEEDANCE_API_URL= SEEDANCE_API_KEY= node --import tsx --test \"src/**/*.test.ts\"",
+    "test": "AIGC_VIDEO_SKIP_ENV_FILE=true MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= OPENAI_API_KEY= OPENAI_MODEL= node --import tsx --test \"src/**/*.test.ts\"",
     "smoke:real-providers": "MODEL_MODE=real tsx src/smoke/real-providers.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0"

@@ -7,7 +7,7 @@
 > Postgres 是唯一业务事实源；不再保留 Memory DB fallback。
 > P0/P1 不做分镜级渲染，不做 FFmpeg 拼接。
 > StoryboardShot 是剧本结构单元，不是视频渲染切片。
-> Seedance 通过单次图生视频调用生成 <=12s 成片。
+> Ark-backed Seedance 通过单次图生视频调用生成 <=12s 成片。
 > apps/server 物理上仍是模块化单体，HTTP API 与 processors 同进程；需要时可启用 Redis/BullMQ。
 > ```
 
@@ -57,8 +57,9 @@ r3 主要回答“应该怎么建”；r4 记录“当前代码已经如何落�
                └───────────────┬─────┘   └──────────────────────┘
                                │
                ┌───────────────▼─────────────────────┐
-               │ Ark/OpenAI-compatible text provider  │
-               │ Seedance image-to-video provider     │
+               │ Ark text provider                    │
+               │ Ark-backed Seedance video provider   │
+               │ OpenAI-compatible fallback LLM       │
                │ mock providers only in explicit local │
                │ or demo fallback modes               │
                └──────────────────────────────────────┘
@@ -240,10 +241,11 @@ This keeps API polling, in-process generation, and Redis/BullMQ generation align
 
 It owns:
 
-- Ark/OpenAI-compatible text provider usage.
+- Ark text provider usage.
+- OpenAI-compatible fallback LLM usage only for Ark text auth/config failure.
 - Creative blueprint prompt and repair prompt.
 - Zod validation of generated creative blueprint output.
-- Seedance image-to-video provider.
+- Ark-backed Seedance image-to-video provider.
 - Conservative 12-second whole-video prompt construction.
 - Real-provider smoke check.
 
@@ -263,16 +265,23 @@ pnpm --filter @aigc-video/ai smoke:real-providers
 The smoke command requires:
 
 ```text
-OPENAI_BASE_URL
-OPENAI_API_KEY
-OPENAI_MODEL or ARK_TEXT_ENDPOINT_ID
-SEEDANCE_API_URL
-SEEDANCE_API_KEY
-SEEDANCE_MODEL or ARK_VIDEO_ENDPOINT_ID
+ARK_API_KEY
+ARK_TEXT_ENDPOINT_ID
+ARK_VIDEO_ENDPOINT_ID
 SMOKE_PRODUCT_IMAGE_URL
 ```
 
 The command fails unless creative blueprint generation returns provider `ark` and video generation returns provider `seedance`.
+
+Optional fallback LLM variables are:
+
+```text
+OPENAI_BASE_URL
+OPENAI_API_KEY
+OPENAI_MODEL
+```
+
+They are used only when the Ark text entry point is unavailable. They are not used for video generation.
 
 ---
 
@@ -368,5 +377,5 @@ Still out of V0 scope:
 These are still valid P1/P2 directions, but they should not change the V0 claim:
 
 ```text
-V0 = durable creative blueprint + one-click Seedance whole-video generation.
+V0 = durable creative blueprint + one-click Ark-backed Seedance whole-video generation.
 ```

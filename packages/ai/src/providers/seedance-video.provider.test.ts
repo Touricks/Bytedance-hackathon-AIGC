@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { generateVideoWithSeedance } from "./seedance-video.provider.js";
 
 describe("generateVideoWithSeedance", () => {
-  it("falls back to the mock final video when Seedance is not configured", async () => {
+  it("falls back to the mock final video when Ark video is not configured", async () => {
     const originalMockUrl = process.env.MOCK_FINAL_VIDEO_URL;
     delete process.env.MOCK_FINAL_VIDEO_URL;
 
@@ -13,7 +13,7 @@ describe("generateVideoWithSeedance", () => {
           imageUrl: "/mocks/products/demo-product.svg",
           prompt: "test prompt"
         },
-        { apiUrl: "", apiKey: "" }
+        { env: {} }
       );
 
       assert.equal(result.provider, "mock");
@@ -27,7 +27,7 @@ describe("generateVideoWithSeedance", () => {
     }
   });
 
-  it("calls the configured Seedance image-to-video endpoint", async () => {
+  it("calls the configured Ark video endpoint for Seedance image-to-video", async () => {
     const calls: Array<{ url: string; body: unknown; authorization?: string }> = [];
 
     const result = await generateVideoWithSeedance(
@@ -36,9 +36,11 @@ describe("generateVideoWithSeedance", () => {
         prompt: "Create a vertical ecommerce product showcase video"
       },
       {
-        apiUrl: "https://seedance.example/generate",
-        apiKey: "test-key",
-        model: "seedance-test-model",
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
         fetch: async (url, init) => {
           calls.push({
             url: String(url),
@@ -56,18 +58,72 @@ describe("generateVideoWithSeedance", () => {
     assert.equal(result.provider, "seedance");
     assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
     assert.equal(calls.length, 1);
-    assert.equal(calls[0]!.url, "https://seedance.example/generate");
+    assert.equal(
+      calls[0]!.url,
+      "https://ark.example/api/v3/contents/generations/tasks"
+    );
     assert.equal(calls[0]!.authorization, "Bearer test-key");
     assert.deepEqual(calls[0]!.body, {
-      model: "seedance-test-model",
-      image_url: "/uploads/product-images/demo.png",
-      prompt: "Create a vertical ecommerce product showcase video",
+      model: "ark-video-endpoint",
+      content: [
+        {
+          type: "text",
+          text: "Create a vertical ecommerce product showcase video"
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: "/uploads/product-images/demo.png"
+          },
+          role: "first_frame"
+        }
+      ],
       duration: 12,
-      aspect_ratio: "9:16"
+      ratio: "9:16"
     });
   });
 
-  it("fails loudly in real-provider mode when Seedance credentials are missing", async () => {
+  it("polls Ark video tasks when the create response returns a task id", async () => {
+    const calls: string[] = [];
+    const result = await generateVideoWithSeedance(
+      {
+        imageUrl: "https://cdn.example/product.png",
+        prompt: "Create a vertical ecommerce product showcase video"
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
+        pollIntervalMs: 0,
+        fetch: async (url) => {
+          calls.push(String(url));
+          if (calls.length === 1) {
+            return new Response(JSON.stringify({ id: "task-123" }), {
+              status: 200
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              status: "succeeded",
+              content: { video_url: "https://cdn.example/video.mp4" }
+            }),
+            { status: 200 }
+          );
+        }
+      }
+    );
+
+    assert.equal(result.provider, "seedance");
+    assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
+    assert.deepEqual(calls, [
+      "https://ark.example/api/v3/contents/generations/tasks",
+      "https://ark.example/api/v3/contents/generations/tasks/task-123"
+    ]);
+  });
+
+  it("fails loudly in real-provider mode when Ark video config is missing", async () => {
     const originalMode = process.env.MODEL_MODE;
     process.env.MODEL_MODE = "real";
 
@@ -79,9 +135,9 @@ describe("generateVideoWithSeedance", () => {
               imageUrl: "/mocks/products/demo-product.svg",
               prompt: "test prompt"
             },
-            { apiUrl: "", apiKey: "" }
+            { env: { MODEL_MODE: "real" } }
           ),
-        /real-provider mode requires Seedance config/
+        /real-provider mode requires Ark video config/
       );
     } finally {
       if (originalMode === undefined) {

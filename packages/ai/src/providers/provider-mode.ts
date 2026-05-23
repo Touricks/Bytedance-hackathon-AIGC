@@ -1,7 +1,5 @@
-import { loadWorkspaceEnv } from "../env.js";
-
-loadWorkspaceEnv();
+import { isRealProviderMode as resolveRealProviderMode } from "./provider-config.js";
 
 export function isRealProviderMode() {
-  return process.env.MODEL_MODE === "real";
+  return resolveRealProviderMode();
 }

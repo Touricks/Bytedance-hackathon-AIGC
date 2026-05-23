@@ -17,9 +17,12 @@
    V0 演示与验收交接：上传素材、创作蓝图、一键成片、任务进度、预览导出、mock 兜底。
 
 5. [docs/plan_0523/current-support/model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)
-   真实 Ark/Seedance provider smoke check 步骤。
+   真实 Ark text / Ark-backed Seedance video provider smoke check 步骤。
 
-6. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
+6. [docs/plan_0523/current-support/provider-contract-correction.md](./docs/plan_0523/current-support/provider-contract-correction.md)
+   Provider contract 修正历史：解释旧 `SEEDANCE_*` 口径为什么被替换。
+
+7. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
    原始安全版 PRD。
 
 ## V0 范围
@@ -43,7 +46,7 @@ V0 只交付六项：
   -> 用户只读确认剧本/基础分镜
   -> 点击一键成片
   -> 创建异步成片任务 GenerationJob
-  -> Seedance 图生视频生成 <=12s 成片
+  -> Ark-backed Seedance 图生视频生成 <=12s 成片
   -> 轮询任务进度
   -> 预览导出
 ```
@@ -61,9 +64,11 @@ V0 只交付六项：
 
 ## 模型与存储口径
 
-- P0 必须真实调用 Ark 文本模型和 Seedance。
-- Seedance 主路径固定为图生视频：上传商品图或 demo 商品图 + 内部 whole-video prompt。
+- P0 必须真实调用 Ark 文本 endpoint 和 Ark 视频 endpoint。
+- Seedance 是视频能力/模型名；鉴权与 endpoint 配置统一走 Ark provider contract。
+- 视频主路径固定为图生视频：上传商品图或 demo 商品图 + 内部 whole-video prompt。
 - V0 Seedance prompt 使用保守三段式模板：商品 hero -> 卖点/使用场景 -> CTA。
+- `OPENAI_BASE_URL` 下的 OpenAI-compatible 配置只作为 fallback LLM，用于 Ark 文本 auth/config 失效时的创作蓝图恢复，不参与视频生成。
 - mock provider 和预生成视频只作为本地开发与现场兜底，不替代 P0 验收。
 - P0 上传素材先保存到 server 本地文件目录；MinIO/S3 推迟到对象存储升级。
 
@@ -111,7 +116,7 @@ V0 演示资产：
 - 商品图：`apps/web/public/mocks/products/demo-product.svg`
 - 现场兜底成片：`apps/web/public/mocks/videos/fallback-flower.mp4`
 
-默认 mock fallback 可离线运行；真实 Ark/Seedance 凭证和 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。
+默认 mock fallback 可离线运行；真实 Ark text / Ark-backed Seedance video 凭证和 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。
 
 ## Worktree 环境准备
 

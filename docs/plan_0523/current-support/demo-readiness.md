@@ -54,9 +54,10 @@ Default local ports are `SERVER_PORT=3000` and `WEB_PORT=5173`. If another workt
 
 ### Mock fallback mode
 
-Mock mode requires no Ark or Seedance credentials. Leave the real-provider credential variables blank and keep:
+Mock mode requires no Ark credentials. Leave the real-provider credential variables blank and keep:
 
 ```text
+MODEL_MODE=mock
 MOCK_FINAL_VIDEO_URL=/mocks/videos/fallback-flower.mp4
 ```
 
@@ -67,31 +68,34 @@ The repo ships both public demo assets:
 
 The fallback video is for local development and 现场兜底 only. It does not replace P0 validation of the real model path.
 
-### Ark creative-blueprint mode
+### Ark primary provider mode
 
 Set these variables before starting the server:
+
+```text
+MODEL_MODE=real
+ARK_API_KEY=
+ARK_TEXT_ENDPOINT_ID=
+ARK_VIDEO_ENDPOINT_ID=
+OPENAI_TOP_P=0.9
+OPENAI_TEMPERATURE=0.7
+```
+
+The Ark text path must return a structured 创作蓝图. If parsing fails, the provider makes one repair attempt with the same selected text provider; if repair fails, the system returns a deterministic fallback blueprint and marks `trace.fallbackUsed`.
+
+The Ark video endpoint drives the Seedance image-to-video capability. It makes one whole-video image-to-video call for a vertical <=12s 成片. The user-visible 分镜 remains planning structure; it is not rendered as separate clips in V0.
+
+### Fallback LLM mode
+
+These variables are optional and are only used when Ark text auth/config is unavailable:
 
 ```text
 OPENAI_BASE_URL=
 OPENAI_API_KEY=
 OPENAI_MODEL=
-OPENAI_TOP_P=0.9
-OPENAI_TEMPERATURE=0.7
 ```
 
-The Ark text path must return a structured 创作蓝图. If parsing fails, the provider makes one repair attempt; if repair fails or credentials are missing, the system returns a deterministic fallback blueprint and marks `trace.fallbackUsed`.
-
-### Seedance image-to-video mode
-
-Set these variables before starting the server:
-
-```text
-SEEDANCE_API_URL=
-SEEDANCE_API_KEY=
-SEEDANCE_MODEL=
-```
-
-The Seedance path is one whole-video image-to-video call for a vertical <=12s 成片. The user-visible 分镜 remains planning structure; it is not rendered as separate clips in V0.
+The fallback LLM can recover 创作蓝图 generation only. It is never used for 成片 video generation.
 
 ## Verification checklist
 
@@ -118,8 +122,8 @@ Run the mocked end-to-end flow:
 
 Run real-provider smoke checks when credentials are available:
 
-1. Use `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` for Ark creative-blueprint generation.
-2. Use `SEEDANCE_API_URL`, `SEEDANCE_API_KEY`, and `SEEDANCE_MODEL` for Seedance image-to-video generation.
+1. Use `ARK_API_KEY` and `ARK_TEXT_ENDPOINT_ID` for Ark creative-blueprint generation.
+2. Use `ARK_API_KEY` and `ARK_VIDEO_ENDPOINT_ID` for Ark-backed Seedance image-to-video generation.
 3. Follow `docs/plan_0523/current-support/model-smoke.md` for curl examples and expected trace/result fields.
 
 ## V0 out of scope

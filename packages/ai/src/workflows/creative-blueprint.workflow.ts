@@ -9,13 +9,22 @@ import {
   buildCreativeBlueprintRepairPrompt,
   CREATIVE_BLUEPRINT_PROMPT_VERSION
 } from "../prompts/creative-blueprint.prompt.js";
-import { isRealProviderMode } from "../providers/provider-mode.js";
+import {
+  isProviderAuthOrConfigError,
+  isRealProviderMode,
+  resolveArkTextProviderConfig,
+  resolveFallbackTextProviderConfig,
+  type ProviderEnv,
+  type TextProviderConfig
+} from "../providers/provider-config.js";
 
 export type TextModelCall = (prompt: string) => Promise<string>;
+export type CreateTextModelCall = (config: TextProviderConfig) => TextModelCall;
 
 export interface CreativeBlueprintTrace {
   promptVersion: string;
   model: string;
+  textProvider: "ark" | "fallback-llm" | "deterministic";
   rawOutputSummary?: string;
   parsedOutputStatus: "valid" | "repaired" | "fallback";
   repairAttempts: number;
@@ -31,6 +40,8 @@ export interface GenerateCreativeBlueprintResult {
 
 export interface GenerateCreativeBlueprintOptions {
   callTextModel?: TextModelCall;
+  createTextModelCall?: CreateTextModelCall;
+  env?: ProviderEnv;
   model?: string;
   apiKey?: string;
   baseURL?: string;
@@ -103,25 +114,15 @@ function buildFallbackCreativeBlueprint(
   });
 }
 
-function createOpenAITextModelCall(
-  options: GenerateCreativeBlueprintOptions
-): TextModelCall | null {
-  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
-  const model =
-    options.model ?? process.env.OPENAI_MODEL ?? process.env.ARK_TEXT_ENDPOINT_ID;
-
-  if (!apiKey || !model) {
-    return null;
-  }
-
+function createOpenAITextModelCall(config: TextProviderConfig): TextModelCall {
   const client = new OpenAI({
-    apiKey,
-    baseURL: options.baseURL ?? process.env.OPENAI_BASE_URL
+    apiKey: config.apiKey,
+    baseURL: config.baseURL
   });
 
   return async (prompt) => {
     const response = await client.chat.completions.create({
-      model,
+      model: config.model,
       messages: [{ role: "user", content: prompt }],
       temperature: Number(process.env.OPENAI_TEMPERATURE ?? 0.7),
       top_p: Number(process.env.OPENAI_TOP_P ?? 0.9)
@@ -131,87 +132,174 @@ function createOpenAITextModelCall(
   };
 }
 
-export async function generateCreativeBlueprintWithArk(
+function deterministicFallbackResult(
   input: CreateCreativeBlueprintRequest,
-  options: GenerateCreativeBlueprintOptions = {}
-): Promise<GenerateCreativeBlueprintResult> {
-  const model =
-    options.model ?? process.env.OPENAI_MODEL ?? process.env.ARK_TEXT_ENDPOINT_ID ?? "unconfigured";
-  const callTextModel =
-    options.callTextModel ?? createOpenAITextModelCall({ ...options, model });
-
-  if (!callTextModel) {
-    if (isRealProviderMode()) {
-      throw new Error(
-        "real-provider mode requires OpenAI-compatible text model config: OPENAI_API_KEY and OPENAI_MODEL or ARK_TEXT_ENDPOINT_ID"
-      );
+  model: string,
+  repairAttempts: number,
+  failureReason: string,
+  rawOutput?: string
+): GenerateCreativeBlueprintResult {
+  return {
+    provider: "fallback",
+    creativeBlueprint: buildFallbackCreativeBlueprint(input),
+    trace: {
+      promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
+      model,
+      textProvider: "deterministic",
+      rawOutputSummary: rawOutput ? summarizeRawOutput(rawOutput) : undefined,
+      parsedOutputStatus: "fallback",
+      repairAttempts,
+      fallbackUsed: true,
+      failureReason
     }
+  };
+}
 
-    return {
-      provider: "fallback",
-      creativeBlueprint: buildFallbackCreativeBlueprint(input),
-      trace: {
-        promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
-        model,
-        parsedOutputStatus: "fallback",
-        repairAttempts: 0,
-        fallbackUsed: true,
-        failureReason: "OpenAI-compatible text model is not configured"
-      }
-    };
-  }
-
-  const prompt = buildCreativeBlueprintPrompt(input);
+async function runTextProvider(
+  input: CreateCreativeBlueprintRequest,
+  provider: TextProviderConfig,
+  callTextModel: TextModelCall,
+  prompt: string
+): Promise<GenerateCreativeBlueprintResult> {
   let rawOutput = "";
 
   try {
     rawOutput = await callTextModel(prompt);
     return {
-      provider: "ark",
+      provider: provider.provider === "ark" ? "ark" : "fallback",
       creativeBlueprint: parseCreativeBlueprint(rawOutput),
       trace: {
         promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
-        model,
+        model: provider.model,
+        textProvider: provider.provider,
         rawOutputSummary: summarizeRawOutput(rawOutput),
         parsedOutputStatus: "valid",
         repairAttempts: 0,
-        fallbackUsed: false
+        fallbackUsed: provider.provider === "fallback-llm"
       }
     };
   } catch (firstError) {
+    if (!rawOutput) {
+      throw firstError;
+    }
+
     try {
       const repairedOutput = await callTextModel(
         buildCreativeBlueprintRepairPrompt(rawOutput)
       );
       return {
-        provider: "ark",
+        provider: provider.provider === "ark" ? "ark" : "fallback",
         creativeBlueprint: parseCreativeBlueprint(repairedOutput),
         trace: {
           promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
-          model,
+          model: provider.model,
+          textProvider: provider.provider,
           rawOutputSummary: summarizeRawOutput(repairedOutput),
           parsedOutputStatus: "repaired",
           repairAttempts: 1,
-          fallbackUsed: false
+          fallbackUsed: provider.provider === "fallback-llm"
         }
       };
     } catch (repairError) {
       const error = repairError instanceof Error ? repairError : firstError;
-      return {
-        provider: "fallback",
-        creativeBlueprint: buildFallbackCreativeBlueprint(input),
-        trace: {
-          promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
-          model,
-          rawOutputSummary: rawOutput
-            ? summarizeRawOutput(rawOutput)
-            : undefined,
-          parsedOutputStatus: "fallback",
-          repairAttempts: 1,
-          fallbackUsed: true,
-          failureReason: error instanceof Error ? error.message : "Unknown model failure"
-        }
-      };
+      return deterministicFallbackResult(
+        input,
+        provider.model,
+        1,
+        error instanceof Error ? error.message : "Unknown model failure",
+        rawOutput
+      );
     }
+  }
+}
+
+export async function generateCreativeBlueprintWithArk(
+  input: CreateCreativeBlueprintRequest,
+  options: GenerateCreativeBlueprintOptions = {}
+): Promise<GenerateCreativeBlueprintResult> {
+  const prompt = buildCreativeBlueprintPrompt(input);
+  const createModelCall = options.createTextModelCall ?? createOpenAITextModelCall;
+
+  if (options.callTextModel) {
+    const provider: TextProviderConfig = {
+      provider: "ark",
+      apiKey: options.apiKey ?? "test-api-key",
+      model: options.model ?? "test-model",
+      baseURL: options.baseURL ?? "https://example.test/v1"
+    };
+    return runTextProvider(input, provider, options.callTextModel, prompt);
+  }
+
+  const env = options.env ?? process.env;
+  const arkProvider = resolveArkTextProviderConfig(env, {
+    apiKey: options.apiKey,
+    model: options.model,
+    baseURL: options.baseURL
+  });
+  const fallbackProvider = resolveFallbackTextProviderConfig(env);
+
+  if (!arkProvider) {
+    if (fallbackProvider) {
+      return runTextProvider(
+        input,
+        fallbackProvider,
+        createModelCall(fallbackProvider),
+        prompt
+      );
+    }
+
+    if (isRealProviderMode(env)) {
+      throw new Error(
+        "real-provider mode requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID"
+      );
+    }
+
+    return deterministicFallbackResult(
+      input,
+      "unconfigured",
+      0,
+      "Ark text provider and fallback LLM are not configured"
+    );
+  }
+
+  try {
+    return await runTextProvider(
+      input,
+      arkProvider,
+      createModelCall(arkProvider),
+      prompt
+    );
+  } catch (arkError) {
+    if (fallbackProvider && isProviderAuthOrConfigError(arkError)) {
+      try {
+        return await runTextProvider(
+          input,
+          fallbackProvider,
+          createModelCall(fallbackProvider),
+          prompt
+        );
+      } catch (fallbackError) {
+        const error =
+          fallbackError instanceof Error ? fallbackError : arkError;
+        return deterministicFallbackResult(
+          input,
+          fallbackProvider.model,
+          0,
+          error instanceof Error ? error.message : "Unknown fallback LLM failure"
+        );
+      }
+    }
+
+    if (isRealProviderMode(env) && isProviderAuthOrConfigError(arkError)) {
+      throw arkError;
+    }
+
+    const error = arkError instanceof Error ? arkError : undefined;
+    return deterministicFallbackResult(
+      input,
+      arkProvider.model,
+      0,
+      error?.message ?? "Ark text provider failed before returning output"
+    );
   }
 }

@@ -20,8 +20,9 @@ describe("demo readiness handoff", () => {
   it("documents the V0 route, setup modes, validation, and out-of-scope boundary", () => {
     const docs = [
       readRepoFile("README.md"),
-      readRepoFile("docs/plan_0523/supporting_docs/model-smoke.md"),
-      readRepoFile("docs/plan_0523/supporting_docs/demo-readiness.md")
+      readRepoFile("docs/plan_0523/current-support/model-smoke.md"),
+      readRepoFile("docs/plan_0523/current-support/demo-readiness.md"),
+      readRepoFile("docs/plan_0523/current-support/provider-contract-correction.md")
     ].join("\n");
 
     assertMentions(docs, [
@@ -31,12 +32,10 @@ describe("demo readiness handoff", () => {
       "任务进度",
       "预览导出",
       "docker compose -f infra/docker-compose.yml up -d",
-      "OPENAI_BASE_URL",
-      "OPENAI_API_KEY",
-      "OPENAI_MODEL",
-      "SEEDANCE_API_URL",
-      "SEEDANCE_API_KEY",
-      "SEEDANCE_MODEL",
+      "ARK_API_KEY",
+      "ARK_TEXT_ENDPOINT_ID",
+      "ARK_VIDEO_ENDPOINT_ID",
+      "fallback LLM",
       "MOCK_FINAL_VIDEO_URL",
       "pnpm --filter @aigc-video/web test",
       "pnpm --filter @aigc-video/server test",

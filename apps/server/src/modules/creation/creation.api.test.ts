@@ -21,7 +21,7 @@ async function createBlueprint(app: FastifyInstance) {
   return response.json();
 }
 
-async function startHoldingSeedanceServer() {
+async function startHoldingArkVideoServer() {
   let releaseResponse: () => void = () => {};
   const responseReleased = new Promise<void>((resolve) => {
     releaseResponse = resolve;
@@ -117,11 +117,13 @@ describe("creation API", () => {
   });
 
   it("reports a running status while media generation is in progress", async () => {
-    const seedance = await startHoldingSeedanceServer();
-    const previousSeedanceUrl = process.env.SEEDANCE_API_URL;
-    const previousSeedanceKey = process.env.SEEDANCE_API_KEY;
-    process.env.SEEDANCE_API_URL = seedance.url;
-    process.env.SEEDANCE_API_KEY = "test-key";
+    const arkVideo = await startHoldingArkVideoServer();
+    const previousArkBaseUrl = process.env.ARK_BASE_URL;
+    const previousArkKey = process.env.ARK_API_KEY;
+    const previousArkVideoEndpoint = process.env.ARK_VIDEO_ENDPOINT_ID;
+    process.env.ARK_BASE_URL = arkVideo.url;
+    process.env.ARK_API_KEY = "test-key";
+    process.env.ARK_VIDEO_ENDPOINT_ID = "ark-video-endpoint";
 
     try {
       const blueprint = await createBlueprint(app);
@@ -132,7 +134,7 @@ describe("creation API", () => {
       });
       const created = createResponse.json();
 
-      await seedance.requestStarted;
+      await arkVideo.requestStarted;
 
       let detail = created;
       for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -150,17 +152,22 @@ describe("creation API", () => {
       assert.equal(detail.job.stage, "media_generating");
       assert.equal(detail.job.status, "running");
     } finally {
-      seedance.releaseResponse();
-      await seedance.close();
-      if (previousSeedanceUrl === undefined) {
-        delete process.env.SEEDANCE_API_URL;
+      arkVideo.releaseResponse();
+      await arkVideo.close();
+      if (previousArkBaseUrl === undefined) {
+        delete process.env.ARK_BASE_URL;
       } else {
-        process.env.SEEDANCE_API_URL = previousSeedanceUrl;
+        process.env.ARK_BASE_URL = previousArkBaseUrl;
       }
-      if (previousSeedanceKey === undefined) {
-        delete process.env.SEEDANCE_API_KEY;
+      if (previousArkKey === undefined) {
+        delete process.env.ARK_API_KEY;
       } else {
-        process.env.SEEDANCE_API_KEY = previousSeedanceKey;
+        process.env.ARK_API_KEY = previousArkKey;
+      }
+      if (previousArkVideoEndpoint === undefined) {
+        delete process.env.ARK_VIDEO_ENDPOINT_ID;
+      } else {
+        process.env.ARK_VIDEO_ENDPOINT_ID = previousArkVideoEndpoint;
       }
     }
   });

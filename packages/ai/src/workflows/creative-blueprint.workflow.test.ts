@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   generateCreativeBlueprintWithArk,
+  type CreateTextModelCall,
   type TextModelCall
 } from "./creative-blueprint.workflow.js";
 
@@ -76,6 +77,7 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.creativeBlueprint.coreSellingPoint, "USB-C charging");
     assert.equal(result.creativeBlueprint.shots.length, 3);
     assert.equal(result.trace.model, "ark-test-model");
+    assert.equal(result.trace.textProvider, "ark");
     assert.equal(result.trace.promptVersion, "creative-blueprint.v1");
     assert.equal(result.trace.repairAttempts, 0);
     assert.equal(result.trace.fallbackUsed, false);
@@ -102,6 +104,7 @@ describe("generateCreativeBlueprintWithArk", () => {
     );
 
     assert.equal(result.provider, "ark");
+    assert.equal(result.trace.textProvider, "ark");
     assert.equal(result.trace.parsedOutputStatus, "repaired");
     assert.equal(result.trace.repairAttempts, 1);
     assert.equal(result.trace.fallbackUsed, false);
@@ -124,6 +127,7 @@ describe("generateCreativeBlueprintWithArk", () => {
     );
 
     assert.equal(result.provider, "fallback");
+    assert.equal(result.trace.textProvider, "deterministic");
     assert.equal(result.creativeBlueprint.coreSellingPoint, "USB-C charging");
     assert.equal(result.trace.parsedOutputStatus, "fallback");
     assert.equal(result.trace.repairAttempts, 1);
@@ -131,12 +135,55 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.ok(result.trace.failureReason);
   });
 
+  it("uses fallback LLM only when Ark text auth or config fails", async () => {
+    const providerCalls: string[] = [];
+    const createTextModelCall: CreateTextModelCall = (config) => {
+      providerCalls.push(config.provider);
+      return async () => {
+        if (config.provider === "ark") {
+          throw Object.assign(new Error("Unauthorized Ark key"), {
+            status: 401
+          });
+        }
+        return JSON.stringify(validBlueprint);
+      };
+    };
+
+    const result = await generateCreativeBlueprintWithArk(
+      {
+        title: "Portable Mini Blender",
+        sellingPoints: "USB-C charging",
+        audience: "busy office workers",
+        stylePreference: "clean premium ecommerce",
+        imageUrl: "/mocks/products/demo-product.svg"
+      },
+      {
+        createTextModelCall,
+        env: {
+          ARK_API_KEY: "bad-ark-key",
+          ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint",
+          OPENAI_BASE_URL: "https://fallback.example/v1",
+          OPENAI_API_KEY: "fallback-key",
+          OPENAI_MODEL: "fallback-model"
+        }
+      }
+    );
+
+    assert.equal(result.provider, "fallback");
+    assert.equal(result.trace.textProvider, "fallback-llm");
+    assert.equal(result.trace.model, "fallback-model");
+    assert.equal(result.trace.fallbackUsed, true);
+    assert.deepEqual(providerCalls, ["ark", "fallback-llm"]);
+  });
+
   it("fails loudly in real-provider mode when text model credentials are missing", async () => {
     const originalMode = process.env.MODEL_MODE;
+    const originalArkApiKey = process.env.ARK_API_KEY;
     const originalApiKey = process.env.OPENAI_API_KEY;
     const originalModel = process.env.OPENAI_MODEL;
     const originalArkModel = process.env.ARK_TEXT_ENDPOINT_ID;
     process.env.MODEL_MODE = "real";
+    delete process.env.ARK_API_KEY;
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_MODEL;
     delete process.env.ARK_TEXT_ENDPOINT_ID;
@@ -151,13 +198,18 @@ describe("generateCreativeBlueprintWithArk", () => {
             stylePreference: "clean premium ecommerce",
             imageUrl: "/mocks/products/demo-product.svg"
           }),
-        /real-provider mode requires OpenAI-compatible text model config/
+        /real-provider mode requires Ark text config/
       );
     } finally {
       if (originalMode === undefined) {
         delete process.env.MODEL_MODE;
       } else {
         process.env.MODEL_MODE = originalMode;
+      }
+      if (originalArkApiKey === undefined) {
+        delete process.env.ARK_API_KEY;
+      } else {
+        process.env.ARK_API_KEY = originalArkApiKey;
       }
       if (originalApiKey === undefined) {
         delete process.env.OPENAI_API_KEY;
