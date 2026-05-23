@@ -23,10 +23,17 @@ async function runGeneration(payload: GenerateVideoJobPayload) {
     throw new Error("Product image asset not found for script");
   }
 
+  const creativeBlueprint =
+    script.rawJson &&
+    typeof script.rawJson === "object" &&
+    "creativeBlueprint" in script.rawJson
+      ? (script.rawJson as { creativeBlueprint: unknown }).creativeBlueprint
+      : script.rawJson;
+
   await processMediaGeneration(
     payload.jobId,
     { imageUrl: imageAsset.url },
-    script.rawJson as Parameters<typeof processMediaGeneration>[2]
+    creativeBlueprint as Parameters<typeof processMediaGeneration>[2]
   );
 }
 

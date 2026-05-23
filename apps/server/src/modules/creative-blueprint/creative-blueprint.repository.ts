@@ -26,13 +26,19 @@ export const creativeBlueprintRepository = {
     const imageAsset = product.mainImageAssetId
       ? db.getAsset(product.mainImageAssetId)
       : null;
+    const creativeBlueprint =
+      script.rawJson &&
+      typeof script.rawJson === "object" &&
+      "creativeBlueprint" in script.rawJson
+        ? (script.rawJson as { creativeBlueprint: unknown }).creativeBlueprint
+        : script.rawJson;
 
     return {
       scriptId: script.id,
       product,
       imageAsset,
       script,
-      creativeBlueprint: script.rawJson,
+      creativeBlueprint,
       shots
     };
   }

@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 import { creativeBlueprintService } from "./creative-blueprint.service.js";
 
 describe("creative blueprint lifecycle", () => {
-  it("creates a new draft version when regenerating from a frozen blueprint", () => {
-    const frozen = creativeBlueprintService.createCreativeBlueprint({
+  it("creates a new draft version when regenerating from a frozen blueprint", async () => {
+    const frozen = await creativeBlueprintService.createCreativeBlueprint({
       title: "Portable Mini Blender",
       sellingPoints: "USB-C charging",
       audience: "busy office workers",
@@ -15,7 +15,7 @@ describe("creative blueprint lifecycle", () => {
     creativeBlueprintService.freezeCreativeBlueprint(frozen.scriptId);
     creativeBlueprintService.freezeCreativeBlueprint(frozen.scriptId);
 
-    const nextDraft = creativeBlueprintService.createCreativeBlueprint({
+    const nextDraft = await creativeBlueprintService.createCreativeBlueprint({
       draftScriptId: frozen.scriptId,
       title: "Portable Mini Blender Pro",
       sellingPoints: "quiet motor and dishwasher-safe cup",
@@ -35,8 +35,8 @@ describe("creative blueprint lifecycle", () => {
     assert.equal(frozenAgain.script.frozen, true);
   });
 
-  it("allows multiple generation attempts from one frozen scriptId", () => {
-    const blueprint = creativeBlueprintService.createCreativeBlueprint({
+  it("allows multiple generation attempts from one frozen scriptId", async () => {
+    const blueprint = await creativeBlueprintService.createCreativeBlueprint({
       title: "Portable Mini Blender",
       sellingPoints: "USB-C charging",
       audience: "busy office workers",

@@ -1,74 +1,39 @@
-import {
-  creativeBlueprintSchema,
-  type CreateCreativeBlueprintRequest,
-  type CreativeBlueprint
+import { generateCreativeBlueprintWithArk } from "@aigc-video/ai";
+import type {
+  CreateCreativeBlueprintRequest,
+  CreativeBlueprint
 } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { creativeBlueprintRepository } from "./creative-blueprint.repository.js";
 
-function buildMockCreativeBlueprint(
-  input: CreateCreativeBlueprintRequest
-): CreativeBlueprint {
-  const blueprint: CreativeBlueprint = {
-    narrative: `${input.title} 的 12 秒带货短视频：先用干净商品 hero 镜头建立信任，再突出 ${input.sellingPoints}，最后回到购买暗示。`,
-    visualStyle: input.stylePreference,
-    targetAudience: input.audience,
-    coreSellingPoint: input.sellingPoints,
-    shots: [
-      {
-        index: 1,
-        durationSec: 3,
-        purpose: "hook",
-        visualPrompt: `Clean hero shot of ${input.title}, centered and well lit`,
-        cameraMotion: "slow push in",
-        voiceover: `${input.title}，第一眼就能抓住注意力。`,
-        subtitle: "第一眼就被吸引"
-      },
-      {
-        index: 2,
-        durationSec: 5,
-        purpose: "benefit",
-        visualPrompt: `Simple product detail or use-context shot showing ${input.sellingPoints}`,
-        cameraMotion: "smooth stable pan",
-        voiceover: `核心卖点是：${input.sellingPoints}`,
-        subtitle: input.sellingPoints
-      },
-      {
-        index: 3,
-        durationSec: 4,
-        purpose: "cta",
-        visualPrompt: `Polished closing hero shot for ${input.audience}`,
-        cameraMotion: "gentle pull back",
-        voiceover: `适合${input.audience}，现在就试试。`,
-        subtitle: "现在就试试"
-      }
-    ],
-    renderBrief: {
-      productConsistencyRules: [
-        "Use the uploaded product image as the visual source of truth",
-        "Keep product shape, color, material, logo, and packaging consistent"
-      ],
-      avoid: [
-        "Do not invent new product parts",
-        "Do not add extra brands or readable text"
-      ],
-      videoPromptSummary: `12-second ${input.stylePreference} ecommerce product showcase for ${input.title}`
-    },
-    improvementHints: [
-      {
-        ifVideoLooksBad: "商品不像原图",
-        suggestedUserAction:
-          "上传更清晰的正面商品图，或减少风格偏好中的复杂场景词。",
-        fieldsToChange: ["productImage", "stylePreference"]
-      }
-    ]
+async function generateBlueprint(input: CreateCreativeBlueprintRequest): Promise<{
+  creativeBlueprint: CreativeBlueprint;
+  trace: unknown;
+  provider: "ark" | "fallback";
+}> {
+  const result = await generateCreativeBlueprintWithArk(input);
+  return {
+    creativeBlueprint: result.creativeBlueprint,
+    trace: result.trace,
+    provider: result.provider
   };
+}
 
-  return creativeBlueprintSchema.parse(blueprint);
+function createReadyShots(creativeBlueprint: CreativeBlueprint) {
+  return creativeBlueprint.shots.map((shot) => ({
+    index: shot.index,
+    durationSec: shot.durationSec,
+    purpose: shot.purpose,
+    visualPrompt: shot.visualPrompt,
+    cameraMotion: shot.cameraMotion,
+    voiceover: shot.voiceover,
+    subtitle: shot.subtitle,
+    status: "ready" as const
+  }));
 }
 
 export const creativeBlueprintService = {
-  createCreativeBlueprint(input: CreateCreativeBlueprintRequest) {
+  async createCreativeBlueprint(input: CreateCreativeBlueprintRequest) {
     if (input.draftScriptId) {
       const draft = db.getScript(input.draftScriptId);
       if (!draft.frozen) {
@@ -83,25 +48,13 @@ export const creativeBlueprintService = {
           audience: input.audience,
           mainImageAssetId: imageAsset.id
         });
-        const creativeBlueprint = buildMockCreativeBlueprint(input);
+        const { creativeBlueprint, trace, provider } = await generateBlueprint(input);
         const script = db.updateScript(draft.id, {
           narrative: creativeBlueprint.narrative,
           visualStyle: creativeBlueprint.visualStyle,
-          rawJson: creativeBlueprint
+          rawJson: { creativeBlueprint, trace }
         });
-        const shots = db.replaceShots(
-          script.id,
-          creativeBlueprint.shots.map((shot) => ({
-            index: shot.index,
-            durationSec: shot.durationSec,
-            purpose: shot.purpose,
-            visualPrompt: shot.visualPrompt,
-            cameraMotion: shot.cameraMotion,
-            voiceover: shot.voiceover,
-            subtitle: shot.subtitle,
-            status: "ready"
-          }))
-        );
+        const shots = db.replaceShots(script.id, createReadyShots(creativeBlueprint));
 
         return {
           scriptId: script.id,
@@ -109,13 +62,15 @@ export const creativeBlueprintService = {
           imageAsset,
           script,
           creativeBlueprint,
+          trace,
+          provider,
           shots
         };
       }
     }
 
     const { product, imageAsset } = creativeBlueprintRepository.createDraft(input);
-    const creativeBlueprint = buildMockCreativeBlueprint(input);
+    const { creativeBlueprint, trace, provider } = await generateBlueprint(input);
     const parentScript = input.draftScriptId
       ? db.getScript(input.draftScriptId)
       : null;
@@ -127,22 +82,10 @@ export const creativeBlueprintService = {
       narrative: creativeBlueprint.narrative,
       visualStyle: creativeBlueprint.visualStyle,
       frozen: false,
-      rawJson: creativeBlueprint
+      rawJson: { creativeBlueprint, trace }
     });
 
-    const shots = db.createShots(
-      script.id,
-      creativeBlueprint.shots.map((shot) => ({
-        index: shot.index,
-        durationSec: shot.durationSec,
-        purpose: shot.purpose,
-        visualPrompt: shot.visualPrompt,
-        cameraMotion: shot.cameraMotion,
-        voiceover: shot.voiceover,
-        subtitle: shot.subtitle,
-        status: "ready"
-      }))
-    );
+    const shots = db.createShots(script.id, createReadyShots(creativeBlueprint));
 
     return {
       scriptId: script.id,
@@ -150,6 +93,8 @@ export const creativeBlueprintService = {
       imageAsset,
       script,
       creativeBlueprint,
+      trace,
+      provider,
       shots
     };
   },
