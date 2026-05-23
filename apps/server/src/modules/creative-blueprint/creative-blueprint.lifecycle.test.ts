@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
+import { db } from "../../db/client.js";
 import { creativeBlueprintService } from "./creative-blueprint.service.js";
 
 describe("creative blueprint lifecycle", () => {
+  before(async () => {
+    await db.initialize();
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
   it("creates a new draft version when regenerating from a frozen blueprint", async () => {
     const frozen = await creativeBlueprintService.createCreativeBlueprint({
       title: "Portable Mini Blender",
@@ -12,8 +21,8 @@ describe("creative blueprint lifecycle", () => {
       imageUrl: "/mocks/products/demo-product.svg"
     });
 
-    creativeBlueprintService.freezeCreativeBlueprint(frozen.scriptId);
-    creativeBlueprintService.freezeCreativeBlueprint(frozen.scriptId);
+    await creativeBlueprintService.freezeCreativeBlueprint(frozen.scriptId);
+    await creativeBlueprintService.freezeCreativeBlueprint(frozen.scriptId);
 
     const nextDraft = await creativeBlueprintService.createCreativeBlueprint({
       draftScriptId: frozen.scriptId,
@@ -24,7 +33,9 @@ describe("creative blueprint lifecycle", () => {
       imageUrl: "/mocks/products/demo-product.svg"
     });
 
-    const frozenAgain = creativeBlueprintService.getCreativeBlueprint(frozen.scriptId);
+    const frozenAgain = await creativeBlueprintService.getCreativeBlueprint(
+      frozen.scriptId
+    );
 
     assert.notEqual(nextDraft.scriptId, frozen.scriptId);
     assert.equal(nextDraft.script.version, 2);
@@ -44,13 +55,15 @@ describe("creative blueprint lifecycle", () => {
       imageUrl: "/mocks/products/demo-product.svg"
     });
 
-    const firstAttempt = creativeBlueprintService.createGenerationAttempt(
+    const firstAttempt = await creativeBlueprintService.createGenerationAttempt(
       blueprint.scriptId
     );
-    const secondAttempt = creativeBlueprintService.createGenerationAttempt(
+    const secondAttempt = await creativeBlueprintService.createGenerationAttempt(
       blueprint.scriptId
     );
-    const frozen = creativeBlueprintService.getCreativeBlueprint(blueprint.scriptId);
+    const frozen = await creativeBlueprintService.getCreativeBlueprint(
+      blueprint.scriptId
+    );
 
     assert.notEqual(firstAttempt.id, secondAttempt.id);
     assert.equal(firstAttempt.scriptId, blueprint.scriptId);

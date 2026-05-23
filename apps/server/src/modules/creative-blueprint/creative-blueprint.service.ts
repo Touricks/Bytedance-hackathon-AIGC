@@ -35,26 +35,29 @@ function createReadyShots(creativeBlueprint: CreativeBlueprint) {
 export const creativeBlueprintService = {
   async createCreativeBlueprint(input: CreateCreativeBlueprintRequest) {
     if (input.draftScriptId) {
-      const draft = db.getScript(input.draftScriptId);
+      const draft = await db.getScript(input.draftScriptId);
       if (!draft.frozen) {
-        const imageAsset = db.createAsset({
+        const imageAsset = await db.createAsset({
           type: "product_image",
           url: input.imageUrl,
           source: input.imageUrl.startsWith("/mocks/") ? "mock" : "upload"
         });
-        const product = db.updateProduct(draft.productId, {
+        const product = await db.updateProduct(draft.productId, {
           title: input.title,
           sellingPoints: input.sellingPoints,
           audience: input.audience,
           mainImageAssetId: imageAsset.id
         });
         const { creativeBlueprint, trace, provider } = await generateBlueprint(input);
-        const script = db.updateScript(draft.id, {
+        const script = await db.updateScript(draft.id, {
           narrative: creativeBlueprint.narrative,
           visualStyle: creativeBlueprint.visualStyle,
           rawJson: { creativeBlueprint, trace }
         });
-        const shots = db.replaceShots(script.id, createReadyShots(creativeBlueprint));
+        const shots = await db.replaceShots(
+          script.id,
+          createReadyShots(creativeBlueprint)
+        );
 
         return {
           scriptId: script.id,
@@ -69,13 +72,13 @@ export const creativeBlueprintService = {
       }
     }
 
-    const { product, imageAsset } = creativeBlueprintRepository.createDraft(input);
+    const { product, imageAsset } = await creativeBlueprintRepository.createDraft(input);
     const { creativeBlueprint, trace, provider } = await generateBlueprint(input);
     const parentScript = input.draftScriptId
-      ? db.getScript(input.draftScriptId)
+      ? await db.getScript(input.draftScriptId)
       : null;
 
-    const script = db.createScript({
+    const script = await db.createScript({
       productId: product.id,
       parentScriptId: parentScript?.id,
       version: parentScript ? parentScript.version + 1 : 1,
@@ -85,7 +88,10 @@ export const creativeBlueprintService = {
       rawJson: { creativeBlueprint, trace }
     });
 
-    const shots = db.createShots(script.id, createReadyShots(creativeBlueprint));
+    const shots = await db.createShots(
+      script.id,
+      createReadyShots(creativeBlueprint)
+    );
 
     return {
       scriptId: script.id,
@@ -107,8 +113,8 @@ export const creativeBlueprintService = {
     return db.freezeScript(scriptId);
   },
 
-  createGenerationAttempt(scriptId: string) {
-    const script = db.getScript(scriptId);
+  async createGenerationAttempt(scriptId: string) {
+    const script = await db.getScript(scriptId);
     return db.createJob({
       productId: script.productId,
       scriptId,

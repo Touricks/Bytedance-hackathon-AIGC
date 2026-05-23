@@ -4,14 +4,20 @@ import path from "node:path";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { config } from "./common/config.js";
+import { db } from "./db/client.js";
 import { registerCreationController } from "./modules/creation/creation.controller.js";
 import { registerCreativeBlueprintController } from "./modules/creative-blueprint/creative-blueprint.controller.js";
 import { registerMaterialController } from "./modules/material/material.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
 
 export async function buildServer() {
+  await db.initialize();
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
+
+  app.addHook("onClose", async () => {
+    await db.close();
+  });
 
   app.get("/api/health", async () => ({
     ok: true,

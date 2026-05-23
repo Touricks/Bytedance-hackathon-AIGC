@@ -1,7 +1,7 @@
 import { buildTwelveSecondVideoPrompt, generateVideoWithSeedance } from "@aigc-video/ai";
 import type { GeneratedScript } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
-import { appendTrace } from "../../common/trace.js";
+import { markJobCompleted, markJobMediaGenerating } from "../job-state.js";
 
 interface MediaGenerationInput {
   imageUrl: string;
@@ -12,12 +12,7 @@ export async function processMediaGeneration(
   input: MediaGenerationInput,
   script: GeneratedScript
 ) {
-  const current = db.getJob(jobId);
-  db.updateJob(jobId, {
-    ...appendTrace(current, "media_generating", "Started 12 second video generation"),
-    stage: "media_generating",
-    progress: 70
-  });
+  await markJobMediaGenerating(jobId);
 
   const prompt = buildTwelveSecondVideoPrompt(script);
   const video = await generateVideoWithSeedance({
@@ -25,7 +20,7 @@ export async function processMediaGeneration(
     prompt
   });
 
-  const asset = db.createAsset({
+  const asset = await db.createAsset({
     type: "final_video",
     url: video.videoUrl,
     source: video.provider,
@@ -35,16 +30,7 @@ export async function processMediaGeneration(
     }
   });
 
-  const afterVideo = db.getJob(jobId);
-  db.updateJob(jobId, {
-    ...appendTrace(afterVideo, "completed", "Final video generated", {
-      assetId: asset.id
-    }),
-    status: "completed",
-    stage: "completed",
-    progress: 100,
-    finalAssetId: asset.id
-  });
+  await markJobCompleted(jobId, asset.id);
 
   return asset;
 }

@@ -1,9 +1,9 @@
 import { db } from "../../db/client.js";
 
 export const creationRepository = {
-  createGenerationFromScript(scriptId: string) {
-    const script = db.getScript(scriptId);
-    const job = db.createJob({
+  async createGenerationFromScript(scriptId: string) {
+    const script = await db.getScript(scriptId);
+    const job = await db.createJob({
       productId: script.productId,
       scriptId: script.id,
       payload: { scriptId }
@@ -11,20 +11,20 @@ export const creationRepository = {
 
     return {
       job,
-      script: db.getScript(script.id),
-      shots: db.listShots(script.id)
+      script: await db.getScript(script.id),
+      shots: await db.listShots(script.id)
     };
   },
 
-  getJobDetail(jobId: string) {
-    const job = db.getJob(jobId);
+  async getJobDetail(jobId: string) {
+    const job = await db.getJob(jobId);
     const scriptBundle = job.scriptId
       ? {
-          script: db.getScript(job.scriptId),
-          shots: db.listShots(job.scriptId)
+          script: await db.getScript(job.scriptId),
+          shots: await db.listShots(job.scriptId)
         }
       : null;
-    const finalAsset = job.finalAssetId ? db.getAsset(job.finalAssetId) : null;
+    const finalAsset = job.finalAssetId ? await db.getAsset(job.finalAssetId) : null;
 
     return { job, ...scriptBundle, finalAsset };
   }

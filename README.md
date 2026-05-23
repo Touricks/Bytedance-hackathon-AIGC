@@ -88,6 +88,8 @@ pnpm install
 cp .env.example .env
 ```
 
+`DATABASE_URL` 是必填项。服务端启动时会从仓库根目录 `.env` 读取它；如果缺失，应用会直接失败，而不会退回进程内存存储。
+
 启动基础设施：
 
 ```bash

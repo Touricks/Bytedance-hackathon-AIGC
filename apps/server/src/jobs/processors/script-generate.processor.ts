@@ -7,8 +7,8 @@ export async function processScriptGeneration(
   jobId: string,
   input: CreateCreativeBlueprintRequest
 ) {
-  const current = db.getJob(jobId);
-  db.updateJob(jobId, {
+  const current = await db.getJob(jobId);
+  await db.updateJob(jobId, {
     ...appendTrace(current, "script_generating", "Started script generation"),
     status: "running",
     stage: "script_generating",
@@ -16,7 +16,7 @@ export async function processScriptGeneration(
   });
 
   const generated = await generateScriptWithSeed(input);
-  const script = db.createScript({
+  const script = await db.createScript({
     jobId,
     productId: current.productId,
     version: 1,
@@ -26,7 +26,7 @@ export async function processScriptGeneration(
     rawJson: generated
   });
 
-  const shots = db.createShots(
+  const shots = await db.createShots(
     script.id,
     generated.shots.map((shot) => ({
       index: shot.index,
@@ -39,8 +39,8 @@ export async function processScriptGeneration(
     }))
   );
 
-  const afterScript = db.getJob(jobId);
-  db.updateJob(jobId, {
+  const afterScript = await db.getJob(jobId);
+  await db.updateJob(jobId, {
     ...appendTrace(afterScript, "script_generating", "Script generated", {
       shotCount: shots.length
     }),

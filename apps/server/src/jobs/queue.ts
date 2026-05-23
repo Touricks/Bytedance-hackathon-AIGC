@@ -7,16 +7,17 @@ import {
 import { config } from "../common/config.js";
 import { logger } from "../common/logger.js";
 import { db } from "../db/client.js";
+import { markJobFailed } from "./job-state.js";
 import { processMediaGeneration } from "./processors/media-generate.processor.js";
 
 let queue: Queue<GenerateVideoJobPayload> | undefined;
 let worker: Worker<GenerateVideoJobPayload> | undefined;
 
 async function runGeneration(payload: GenerateVideoJobPayload) {
-  const script = db.getScript(payload.scriptId);
-  const product = db.getProduct(script.productId);
+  const script = await db.getScript(payload.scriptId);
+  const product = await db.getProduct(script.productId);
   const imageAsset = product.mainImageAssetId
-    ? db.getAsset(product.mainImageAssetId)
+    ? await db.getAsset(product.mainImageAssetId)
     : null;
 
   if (!imageAsset) {
@@ -49,12 +50,7 @@ export async function enqueueGenerationJob(payload: GenerateVideoJobPayload) {
   setTimeout(() => {
     runGeneration(payload).catch((error: unknown) => {
       logger.error("Generation job failed", { error });
-      db.updateJob(payload.jobId, {
-        status: "failed",
-        stage: "failed",
-        progress: 100,
-        errorMessage: error instanceof Error ? error.message : "Unknown error"
-      });
+      void markJobFailed(payload.jobId, error);
     });
   }, 0);
 }
@@ -81,5 +77,8 @@ export function startGenerationWorker() {
       jobId: job?.data.jobId,
       error: error.message
     });
+    if (job) {
+      void markJobFailed(job.data.jobId, error);
+    }
   });
 }

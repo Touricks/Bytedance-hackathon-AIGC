@@ -130,4 +130,50 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.fallbackUsed, true);
     assert.ok(result.trace.failureReason);
   });
+
+  it("fails loudly in real-provider mode when text model credentials are missing", async () => {
+    const originalMode = process.env.MODEL_MODE;
+    const originalApiKey = process.env.OPENAI_API_KEY;
+    const originalModel = process.env.OPENAI_MODEL;
+    const originalArkModel = process.env.ARK_TEXT_ENDPOINT_ID;
+    process.env.MODEL_MODE = "real";
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_MODEL;
+    delete process.env.ARK_TEXT_ENDPOINT_ID;
+
+    try {
+      await assert.rejects(
+        () =>
+          generateCreativeBlueprintWithArk({
+            title: "Portable Mini Blender",
+            sellingPoints: "USB-C charging",
+            audience: "busy office workers",
+            stylePreference: "clean premium ecommerce",
+            imageUrl: "/mocks/products/demo-product.svg"
+          }),
+        /real-provider mode requires OpenAI-compatible text model config/
+      );
+    } finally {
+      if (originalMode === undefined) {
+        delete process.env.MODEL_MODE;
+      } else {
+        process.env.MODEL_MODE = originalMode;
+      }
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+      if (originalModel === undefined) {
+        delete process.env.OPENAI_MODEL;
+      } else {
+        process.env.OPENAI_MODEL = originalModel;
+      }
+      if (originalArkModel === undefined) {
+        delete process.env.ARK_TEXT_ENDPOINT_ID;
+      } else {
+        process.env.ARK_TEXT_ENDPOINT_ID = originalArkModel;
+      }
+    }
+  });
 });

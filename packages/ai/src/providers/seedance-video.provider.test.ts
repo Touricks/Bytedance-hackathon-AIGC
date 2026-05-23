@@ -66,4 +66,29 @@ describe("generateVideoWithSeedance", () => {
       aspect_ratio: "9:16"
     });
   });
+
+  it("fails loudly in real-provider mode when Seedance credentials are missing", async () => {
+    const originalMode = process.env.MODEL_MODE;
+    process.env.MODEL_MODE = "real";
+
+    try {
+      await assert.rejects(
+        () =>
+          generateVideoWithSeedance(
+            {
+              imageUrl: "/mocks/products/demo-product.svg",
+              prompt: "test prompt"
+            },
+            { apiUrl: "", apiKey: "" }
+          ),
+        /real-provider mode requires Seedance config/
+      );
+    } finally {
+      if (originalMode === undefined) {
+        delete process.env.MODEL_MODE;
+      } else {
+        process.env.MODEL_MODE = originalMode;
+      }
+    }
+  });
 });

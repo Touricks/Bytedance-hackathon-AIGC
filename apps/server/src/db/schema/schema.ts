@@ -1,3 +1,4 @@
+export const schemaSql = `
 create table if not exists product (
   id text primary key,
   title text not null,
@@ -60,3 +61,4 @@ create table if not exists storyboard_shot (
 );
 
 alter table storyboard_shot add column if not exists purpose text;
+`;

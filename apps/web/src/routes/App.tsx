@@ -1,11 +1,19 @@
-import { useState } from "react";
-import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
+import { useEffect, useState } from "react";
+import type {
+  CreateCreativeBlueprintRequest,
+  CreativeBlueprint
+} from "@aigc-video/shared";
 import {
   createCreativeBlueprint,
   createGenerationJob,
+  getCreativeBlueprint,
   type CreativeBlueprintDetail
 } from "../lib/api/client.js";
 import { useGenerationJob } from "../lib/job/useGenerationJob.js";
+import {
+  readReviewStateFromSearch,
+  writeReviewStateToCurrentUrl
+} from "../lib/reviewState.js";
 import { MaterialForm } from "../features/material/MaterialForm.js";
 import { JobProgress } from "../features/creation/JobProgress.js";
 import { ScriptPanel } from "../features/script/ScriptPanel.js";
@@ -19,6 +27,35 @@ export function App() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const jobQuery = useGenerationJob(jobId);
 
+  useEffect(() => {
+    const state = readReviewStateFromSearch(window.location.search);
+    let cancelled = false;
+
+    if (state.jobId) {
+      setJobId(state.jobId);
+    }
+
+    if (state.scriptId) {
+      getCreativeBlueprint(state.scriptId)
+        .then((result) => {
+          if (!cancelled) {
+            setBlueprint(result);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setVideoError(
+              error instanceof Error ? error.message : "恢复创作蓝图失败"
+            );
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function handleSubmit(input: CreateCreativeBlueprintRequest) {
     setIsSubmitting(true);
     try {
@@ -26,6 +63,7 @@ export function App() {
       setBlueprint(result);
       setJobId(null);
       setVideoError(null);
+      writeReviewStateToCurrentUrl({ scriptId: result.scriptId });
     } finally {
       setIsSubmitting(false);
     }
@@ -41,6 +79,10 @@ export function App() {
     try {
       const result = await createGenerationJob({ scriptId: blueprint.scriptId });
       setJobId(result.job.id);
+      writeReviewStateToCurrentUrl({
+        scriptId: blueprint.scriptId,
+        jobId: result.job.id
+      });
     } catch (error) {
       setVideoError(error instanceof Error ? error.message : "创建成片任务失败");
     } finally {
@@ -49,6 +91,12 @@ export function App() {
   }
 
   const detail = jobQuery.data;
+  const detailCreativeBlueprint = getCreativeBlueprintFromScript(
+    detail?.script?.rawJson
+  );
+  const visibleScript = blueprint?.script ?? detail?.script;
+  const visibleBlueprint = blueprint?.creativeBlueprint ?? detailCreativeBlueprint;
+  const visibleShots = blueprint?.shots ?? detail?.shots;
 
   return (
     <main className="app-shell">
@@ -83,12 +131,20 @@ export function App() {
         </section>
         <JobProgress job={detail?.job} />
         <ScriptPanel
-          script={blueprint?.script}
-          creativeBlueprint={blueprint?.creativeBlueprint}
-          shots={blueprint?.shots}
+          script={visibleScript}
+          creativeBlueprint={visibleBlueprint}
+          shots={visibleShots}
         />
         <VideoPreview finalAsset={detail?.finalAsset} />
       </div>
     </main>
   );
+}
+
+function getCreativeBlueprintFromScript(rawJson: unknown): CreativeBlueprint | undefined {
+  if (!rawJson || typeof rawJson !== "object" || !("creativeBlueprint" in rawJson)) {
+    return undefined;
+  }
+
+  return (rawJson as { creativeBlueprint: CreativeBlueprint }).creativeBlueprint;
 }

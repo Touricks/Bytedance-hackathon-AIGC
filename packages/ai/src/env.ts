@@ -45,7 +45,7 @@ function findWorkspaceEnvFile(startDir: string): string | null {
   }
 }
 
-function loadWorkspaceEnv() {
+export function loadWorkspaceEnv() {
   if (process.env.AIGC_VIDEO_SKIP_ENV_FILE === "true") {
     return;
   }
@@ -64,34 +64,4 @@ function loadWorkspaceEnv() {
     const [key, value] = parsed;
     process.env[key] ??= value;
   }
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `${name} is required. Postgres is the only supported V0 fact source.`
-    );
-  }
-  return value;
-}
-
-loadWorkspaceEnv();
-
-export const config = {
-  nodeEnv: process.env.NODE_ENV ?? "development",
-  port: Number(process.env.SERVER_PORT ?? 3000),
-  databaseUrl: requireEnv("DATABASE_URL"),
-  redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
-  useRedisQueue: process.env.USE_REDIS_QUEUE === "true",
-  runtime: process.env.SERVER_RUNTIME ?? "all",
-  uploadDir: process.env.UPLOAD_DIR ?? "tmp/uploads"
-};
-
-export function shouldStartApi(): boolean {
-  return config.runtime === "all" || config.runtime === "api";
-}
-
-export function shouldStartWorker(): boolean {
-  return config.runtime === "all" || config.runtime === "worker";
 }

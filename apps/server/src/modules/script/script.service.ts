@@ -2,8 +2,8 @@ import { db } from "../../db/client.js";
 import { scriptRepository } from "./script.repository.js";
 
 export const scriptService = {
-  getScriptByJob(jobId: string) {
-    const job = db.getJob(jobId);
+  async getScriptByJob(jobId: string) {
+    const job = await db.getJob(jobId);
     if (!job.scriptId) {
       return null;
     }

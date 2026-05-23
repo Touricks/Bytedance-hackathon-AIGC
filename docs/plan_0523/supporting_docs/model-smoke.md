@@ -70,3 +70,30 @@ Expected result:
 - The final Asset has `type=final_video`.
 - Asset metadata includes the internal conservative 12-second whole-video prompt and provider name.
 - If Seedance credentials are not configured, the provider remains `mock` and returns `MOCK_FINAL_VIDEO_URL`.
+## Real-provider acceptance mode
+
+Local development may use fallback creative blueprints and the mock final video.
+For acceptance, set:
+
+```bash
+MODEL_MODE=real
+OPENAI_BASE_URL=<Ark OpenAI-compatible base URL>
+OPENAI_API_KEY=<Ark API key>
+OPENAI_MODEL=<Ark text endpoint ID>
+SEEDANCE_API_URL=<Seedance image-to-video endpoint>
+SEEDANCE_API_KEY=<Seedance API key>
+SEEDANCE_MODEL=<Seedance model or endpoint ID>
+SMOKE_PRODUCT_IMAGE_URL=<publicly reachable product image URL>
+```
+
+Then run:
+
+```bash
+pnpm --filter @aigc-video/ai smoke:real-providers
+```
+
+The smoke command loads the repository root `.env` and preserves any variables
+already exported in the shell.
+
+The command fails if creative blueprint generation does not return provider
+`ark` or video generation does not return provider `seedance`.

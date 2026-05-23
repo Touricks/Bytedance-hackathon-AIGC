@@ -1,3 +1,5 @@
+import { isRealProviderMode } from "./provider-mode.js";
+
 export interface SeedanceVideoRequest {
   imageUrl: string;
   prompt: string;
@@ -45,6 +47,12 @@ export async function generateVideoWithSeedance(
     options.model ?? process.env.SEEDANCE_MODEL ?? process.env.ARK_VIDEO_ENDPOINT_ID;
 
   if (!apiUrl || !apiKey) {
+    if (isRealProviderMode()) {
+      throw new Error(
+        "real-provider mode requires Seedance config: SEEDANCE_API_URL and SEEDANCE_API_KEY"
+      );
+    }
+
     const videoUrl =
       process.env.MOCK_FINAL_VIDEO_URL ?? "/mocks/videos/fallback-flower.mp4";
 

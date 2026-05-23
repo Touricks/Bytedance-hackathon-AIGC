@@ -9,6 +9,7 @@ import {
   buildCreativeBlueprintRepairPrompt,
   CREATIVE_BLUEPRINT_PROMPT_VERSION
 } from "../prompts/creative-blueprint.prompt.js";
+import { isRealProviderMode } from "../providers/provider-mode.js";
 
 export type TextModelCall = (prompt: string) => Promise<string>;
 
@@ -140,6 +141,12 @@ export async function generateCreativeBlueprintWithArk(
     options.callTextModel ?? createOpenAITextModelCall({ ...options, model });
 
   if (!callTextModel) {
+    if (isRealProviderMode()) {
+      throw new Error(
+        "real-provider mode requires OpenAI-compatible text model config: OPENAI_API_KEY and OPENAI_MODEL or ARK_TEXT_ENDPOINT_ID"
+      );
+    }
+
     return {
       provider: "fallback",
       creativeBlueprint: buildFallbackCreativeBlueprint(input),

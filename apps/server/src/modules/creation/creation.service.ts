@@ -4,7 +4,7 @@ import { creationRepository } from "./creation.repository.js";
 
 export const creationService = {
   async createGenerationJob(input: CreateGenerationJobRequest) {
-    const result = creationRepository.createGenerationFromScript(input.scriptId);
+    const result = await creationRepository.createGenerationFromScript(input.scriptId);
     await enqueueGenerationJob({
       jobId: result.job.id,
       scriptId: input.scriptId
