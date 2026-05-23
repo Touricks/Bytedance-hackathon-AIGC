@@ -33,6 +33,8 @@ MODEL_MODE=mock   local fallback allowed
 MODEL_MODE=real   real-provider acceptance should fail unless Ark text and Ark video paths are proven
 ```
 
+`.env.example` should mirror the real local `.env` section and variable-name shape, with paid API/key values removed and safe mock defaults filled in. It should not define a separate provider contract.
+
 `Seedance` remains the video model capability name for product language, traces, and 成片 metadata. It is not a separate active credential namespace.
 
 ## Fallback Boundary
