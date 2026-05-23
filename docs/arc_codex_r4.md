@@ -268,10 +268,18 @@ The smoke command requires:
 ARK_API_KEY
 ARK_TEXT_ENDPOINT_ID
 ARK_VIDEO_ENDPOINT_ID
-SMOKE_PRODUCT_IMAGE_URL
 ```
 
-The command fails unless creative blueprint generation returns provider `ark` and video generation returns provider `seedance`.
+Before S3/public product-image URLs are available, the Seedance part of the command is a reachability probe. A `400` response is accepted in default reachability mode because localhost or private image URLs cannot be fetched by Seedance.
+
+Full video validation additionally requires:
+
+```text
+SMOKE_FULL_VIDEO_GENERATION=true
+SMOKE_PRODUCT_IMAGE_URL=<publicly reachable product image URL>
+```
+
+In full mode, the command fails unless creative blueprint generation returns provider `ark` and video generation returns provider `seedance`.
 
 Optional fallback LLM variables are:
 

@@ -92,17 +92,21 @@ Expected result:
 - Asset metadata includes the internal conservative 12-second whole-video prompt and provider name.
 - In local mock mode without Ark video config, the provider remains `mock` and returns `MOCK_FINAL_VIDEO_URL`.
 
-## Real-Provider Acceptance Mode
+## Real-Provider Smoke Mode
 
 Local development may use fallback creative blueprints and the mock final video.
-For acceptance, set:
+Before S3-backed public product images are available, the smoke command validates:
+
+- Ark text provider returns provider `ark`.
+- Ark-backed Seedance endpoint is reachable. A `400` response is accepted in default reachability mode because localhost or private image URLs cannot be fetched by Seedance.
+
+Set:
 
 ```bash
 MODEL_MODE=real
 ARK_API_KEY=<Ark API key>
 ARK_TEXT_ENDPOINT_ID=<Ark text endpoint ID>
 ARK_VIDEO_ENDPOINT_ID=<Ark video endpoint ID>
-SMOKE_PRODUCT_IMAGE_URL=<publicly reachable product image URL>
 ```
 
 Then run:
@@ -113,4 +117,14 @@ pnpm --filter @aigc-video/ai smoke:real-providers
 
 The smoke command loads the repository root `.env` and preserves any variables already exported in the shell.
 
-The command fails if creative blueprint generation does not return provider `ark` or video generation does not return provider `seedance`.
+The command fails if creative blueprint generation does not return provider `ark`, or if the Seedance endpoint cannot be reached because of config/auth/network failure.
+
+After S3/public asset URLs are available, enable full video generation:
+
+```bash
+SMOKE_FULL_VIDEO_GENERATION=true
+SMOKE_PRODUCT_IMAGE_URL=<publicly reachable product image URL>
+pnpm --filter @aigc-video/ai smoke:real-providers
+```
+
+In full mode, the command fails unless video generation returns provider `seedance` and a video URL.

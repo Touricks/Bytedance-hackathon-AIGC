@@ -69,3 +69,13 @@ Use these current docs for setup and reporting:
 - `docs/plan_0523/current-support/demo-readiness.md`
 - `docs/plan_0523/current-support/model-smoke.md`
 - this document
+
+## Temporary Smoke Boundary Before S3
+
+Until uploaded product images are available through a public S3 URL, `smoke:real-providers` should not be treated as full Seedance 成片 validation. Localhost and private URLs are not reliable inputs for the external video provider.
+
+Current temporary rule:
+
+- Ark text must pass as a real provider.
+- Ark-backed Seedance must be reachable; a `400` response is acceptable in reachability mode.
+- Full video validation is opt-in with `SMOKE_FULL_VIDEO_GENERATION=true` and a public `SMOKE_PRODUCT_IMAGE_URL`.

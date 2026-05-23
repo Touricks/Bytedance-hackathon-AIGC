@@ -124,7 +124,9 @@ Run real-provider smoke checks when credentials are available:
 
 1. Use `ARK_API_KEY` and `ARK_TEXT_ENDPOINT_ID` for Ark creative-blueprint generation.
 2. Use `ARK_API_KEY` and `ARK_VIDEO_ENDPOINT_ID` for Ark-backed Seedance image-to-video generation.
-3. Follow `docs/plan_0523/current-support/model-smoke.md` for curl examples and expected trace/result fields.
+3. Before S3/public product-image URLs are available, treat the Seedance part of `smoke:real-providers` as an endpoint reachability probe.
+4. After S3/public product-image URLs are available, set `SMOKE_FULL_VIDEO_GENERATION=true` and `SMOKE_PRODUCT_IMAGE_URL=<public URL>` for full video validation.
+5. Follow `docs/plan_0523/current-support/model-smoke.md` for curl examples and expected trace/result fields.
 
 ## V0 out of scope
 
