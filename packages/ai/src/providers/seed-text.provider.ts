@@ -1,12 +1,12 @@
 import {
-  type CreateGenerationJobRequest,
+  type CreateCreativeBlueprintRequest,
   type GeneratedScript,
   generatedScriptSchema
 } from "@aigc-video/shared";
 import { buildScriptPrompt } from "../prompts/script.prompt.js";
 
 export async function generateScriptWithSeed(
-  input: CreateGenerationJobRequest
+  input: CreateCreativeBlueprintRequest
 ): Promise<GeneratedScript> {
   const _prompt = buildScriptPrompt(input);
 

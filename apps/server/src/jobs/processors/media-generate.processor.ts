@@ -1,11 +1,15 @@
 import { buildTwelveSecondVideoPrompt, generateVideoWithSeedance } from "@aigc-video/ai";
-import type { CreateGenerationJobRequest, GeneratedScript } from "@aigc-video/shared";
+import type { GeneratedScript } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { appendTrace } from "../../common/trace.js";
 
+interface MediaGenerationInput {
+  imageUrl: string;
+}
+
 export async function processMediaGeneration(
   jobId: string,
-  input: CreateGenerationJobRequest,
+  input: MediaGenerationInput,
   script: GeneratedScript
 ) {
   const current = db.getJob(jobId);

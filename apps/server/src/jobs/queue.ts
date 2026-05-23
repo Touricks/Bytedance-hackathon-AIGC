@@ -7,16 +7,27 @@ import {
 import { config } from "../common/config.js";
 import { logger } from "../common/logger.js";
 import { db } from "../db/client.js";
-import { processScriptGeneration } from "./processors/script-generate.processor.js";
 import { processMediaGeneration } from "./processors/media-generate.processor.js";
 
 let queue: Queue<GenerateVideoJobPayload> | undefined;
 let worker: Worker<GenerateVideoJobPayload> | undefined;
 
 async function runGeneration(payload: GenerateVideoJobPayload) {
-  const { script } = await processScriptGeneration(payload.jobId, payload.product);
-  const generated = script.rawJson as Parameters<typeof processMediaGeneration>[2];
-  await processMediaGeneration(payload.jobId, payload.product, generated);
+  const script = db.getScript(payload.scriptId);
+  const product = db.getProduct(script.productId);
+  const imageAsset = product.mainImageAssetId
+    ? db.getAsset(product.mainImageAssetId)
+    : null;
+
+  if (!imageAsset) {
+    throw new Error("Product image asset not found for script");
+  }
+
+  await processMediaGeneration(
+    payload.jobId,
+    { imageUrl: imageAsset.url },
+    script.rawJson as Parameters<typeof processMediaGeneration>[2]
+  );
 }
 
 export async function enqueueGenerationJob(payload: GenerateVideoJobPayload) {

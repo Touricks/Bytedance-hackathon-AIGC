@@ -1,11 +1,11 @@
 import { generateScriptWithSeed } from "@aigc-video/ai";
-import type { CreateGenerationJobRequest } from "@aigc-video/shared";
+import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { appendTrace } from "../../common/trace.js";
 
 export async function processScriptGeneration(
   jobId: string,
-  input: CreateGenerationJobRequest
+  input: CreateCreativeBlueprintRequest
 ) {
   const current = db.getJob(jobId);
   db.updateJob(jobId, {

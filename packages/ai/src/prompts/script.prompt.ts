@@ -1,6 +1,6 @@
-import type { CreateGenerationJobRequest } from "@aigc-video/shared";
+import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
 
-export function buildScriptPrompt(input: CreateGenerationJobRequest): string {
+export function buildScriptPrompt(input: CreateCreativeBlueprintRequest): string {
   return [
     "Create a structured ecommerce short-video script.",
     "The video must fit within 12 seconds and use 2-4 narrative beats.",

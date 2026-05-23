@@ -4,10 +4,10 @@ import { creationRepository } from "./creation.repository.js";
 
 export const creationService = {
   async createGenerationJob(input: CreateGenerationJobRequest) {
-    const result = creationRepository.createGeneration(input);
+    const result = creationRepository.createGenerationFromScript(input.scriptId);
     await enqueueGenerationJob({
       jobId: result.job.id,
-      product: input
+      scriptId: input.scriptId
     });
     return result;
   },
