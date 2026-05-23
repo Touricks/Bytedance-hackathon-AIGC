@@ -4,16 +4,27 @@ import { generateVideoWithSeedance } from "./seedance-video.provider.js";
 
 describe("generateVideoWithSeedance", () => {
   it("falls back to the mock final video when Seedance is not configured", async () => {
-    const result = await generateVideoWithSeedance(
-      {
-        imageUrl: "/mocks/products/demo-product.svg",
-        prompt: "test prompt"
-      },
-      { apiUrl: "", apiKey: "" }
-    );
+    const originalMockUrl = process.env.MOCK_FINAL_VIDEO_URL;
+    delete process.env.MOCK_FINAL_VIDEO_URL;
 
-    assert.equal(result.provider, "mock");
-    assert.match(result.videoUrl, /\.mp4/);
+    try {
+      const result = await generateVideoWithSeedance(
+        {
+          imageUrl: "/mocks/products/demo-product.svg",
+          prompt: "test prompt"
+        },
+        { apiUrl: "", apiKey: "" }
+      );
+
+      assert.equal(result.provider, "mock");
+      assert.equal(result.videoUrl, "/mocks/videos/fallback-flower.mp4");
+    } finally {
+      if (originalMockUrl === undefined) {
+        delete process.env.MOCK_FINAL_VIDEO_URL;
+      } else {
+        process.env.MOCK_FINAL_VIDEO_URL = originalMockUrl;
+      }
+    }
   });
 
   it("calls the configured Seedance image-to-video endpoint", async () => {

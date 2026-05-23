@@ -23,7 +23,10 @@
 5. [docs/plan_0523/supporting_docs/worktree-modules.md](./docs/plan_0523/supporting_docs/worktree-modules.md)  
    后续 worktree 开发边界。
 
-6. [docs/prd_safe.pdf](./docs/prd_safe.pdf)  
+6. [docs/plan_0523/supporting_docs/demo-readiness.md](./docs/plan_0523/supporting_docs/demo-readiness.md)
+   V0 演示与验收交接：上传素材、创作蓝图、一键成片、任务进度、预览导出、mock 兜底和真实模型 smoke checks。
+
+7. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
    原始安全版 PRD。
 
 ## V0 范围
@@ -100,10 +103,20 @@ pnpm dev
 常用验证：
 
 ```bash
+pnpm --filter @aigc-video/web test
+pnpm --filter @aigc-video/server test
+pnpm --filter @aigc-video/ai test
 pnpm typecheck
 pnpm lint
 pnpm build
 ```
+
+V0 演示资产：
+
+- 商品图：`apps/web/public/mocks/products/demo-product.svg`
+- 现场兜底成片：`apps/web/public/mocks/videos/fallback-flower.mp4`
+
+默认 mock fallback 可离线运行；真实 Ark/Seedance 凭证和 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/supporting_docs/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/supporting_docs/model-smoke.md)。
 
 ## Worktree 环境准备
 
