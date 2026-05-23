@@ -91,6 +91,19 @@ textarea {
   background: #ffffff;
 }
 
+input[type="file"] {
+  padding: 8px;
+}
+
+.product-image-preview {
+  width: 100%;
+  max-height: 220px;
+  border: 1px solid #dfe4ec;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #f8fafc;
+}
+
 button {
   min-height: 44px;
   border: 0;

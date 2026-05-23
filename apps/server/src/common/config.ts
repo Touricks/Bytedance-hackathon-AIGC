@@ -3,7 +3,8 @@ export const config = {
   port: Number(process.env.SERVER_PORT ?? 3000),
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   useRedisQueue: process.env.USE_REDIS_QUEUE === "true",
-  runtime: process.env.SERVER_RUNTIME ?? "all"
+  runtime: process.env.SERVER_RUNTIME ?? "all",
+  uploadDir: process.env.UPLOAD_DIR ?? "tmp/uploads"
 };
 
 export function shouldStartApi(): boolean {
