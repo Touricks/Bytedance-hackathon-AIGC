@@ -12,7 +12,12 @@ export function VideoPreview({ finalAsset }: VideoPreviewProps) {
         <span>{finalAsset ? "ready" : "waiting"}</span>
       </div>
       {finalAsset ? (
-        <video controls src={finalAsset.url} />
+        <div className="video-output">
+          <video controls src={finalAsset.url} />
+          <a className="export-link" href={finalAsset.url} target="_blank" rel="noreferrer">
+            打开/导出成片
+          </a>
+        </div>
       ) : (
         <div className="empty-preview">等待 12 秒成片生成</div>
       )}

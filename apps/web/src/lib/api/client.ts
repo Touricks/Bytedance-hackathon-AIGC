@@ -9,10 +9,14 @@ import type {
   StoryboardShot
 } from "@aigc-video/shared";
 
+const env = (
+  import.meta as ImportMeta & {
+    env?: Partial<Record<"VITE_API_BASE_URL" | "PUBLIC_API_BASE_URL", string>>;
+  }
+).env;
+
 const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL ??
-  import.meta.env.PUBLIC_API_BASE_URL ??
-  "http://localhost:3000";
+  env?.VITE_API_BASE_URL ?? env?.PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 
 export interface JobDetail {
   job: GenerationJob;
@@ -60,7 +64,9 @@ export async function getCreativeBlueprint(
   return (await response.json()) as CreativeBlueprintDetail;
 }
 
-export async function createGenerationJob(input: CreateGenerationJobRequest) {
+export async function createGenerationJob(
+  input: CreateGenerationJobRequest
+): Promise<JobDetail> {
   const response = await fetch(`${apiBaseUrl}/api/creation/jobs`, {
     method: "POST",
     headers: {
@@ -73,7 +79,7 @@ export async function createGenerationJob(input: CreateGenerationJobRequest) {
     throw new Error(await response.text());
   }
 
-  return (await response.json()) as { job: GenerationJob };
+  return (await response.json()) as JobDetail;
 }
 
 export async function getJobDetail(jobId: string): Promise<JobDetail> {
