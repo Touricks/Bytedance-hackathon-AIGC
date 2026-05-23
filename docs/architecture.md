@@ -6,9 +6,6 @@ Read:
 
 - [`docs/arc_codex_r4.md`](./arc_codex_r4.md) for the current implemented architecture.
 - [`docs/erd.md`](./erd.md) for the current Postgres-backed V0 data model.
-- [`docs/plan_0523/current-support/demo-readiness.md`](./plan_0523/current-support/demo-readiness.md) for demo setup and evaluator handoff.
-- [`docs/plan_0523/current-support/model-smoke.md`](./plan_0523/current-support/model-smoke.md) for real Ark text and OpenAI fallback dependency smoke checks.
-- [`docs/plan_0523/current-support/provider-contract-correction.md`](./plan_0523/current-support/provider-contract-correction.md) for the provider-contract correction history.
 
 Current V0 summary:
 
