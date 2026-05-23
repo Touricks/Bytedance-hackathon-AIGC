@@ -1,20 +1,21 @@
 import { useForm } from "react-hook-form";
-import type { CreateGenerationJobRequest } from "@aigc-video/shared";
+import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
 
 interface MaterialFormProps {
-  onSubmit: (input: CreateGenerationJobRequest) => Promise<void>;
+  onSubmit: (input: CreateCreativeBlueprintRequest) => Promise<void>;
   isSubmitting: boolean;
 }
 
-const defaultValues: CreateGenerationJobRequest = {
+const defaultValues: CreateCreativeBlueprintRequest = {
   title: "Portable Mini Blender",
   sellingPoints: "USB-C charging, easy cleaning, powerful smoothie blending",
   audience: "busy office workers and fitness beginners",
+  stylePreference: "clean premium ecommerce",
   imageUrl: "/mocks/products/demo-product.svg"
 };
 
 export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
-  const { register, handleSubmit } = useForm<CreateGenerationJobRequest>({
+  const { register, handleSubmit } = useForm<CreateCreativeBlueprintRequest>({
     defaultValues
   });
 
@@ -33,11 +34,15 @@ export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
         <input {...register("audience", { required: true })} />
       </label>
       <label>
+        <span>风格偏好</span>
+        <input {...register("stylePreference", { required: true })} />
+      </label>
+      <label>
         <span>商品主图 URL</span>
         <input {...register("imageUrl", { required: true })} />
       </label>
       <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "创建中..." : "一键生成带货视频"}
+        {isSubmitting ? "生成中..." : "生成创作蓝图"}
       </button>
     </form>
   );

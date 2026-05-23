@@ -39,6 +39,7 @@ export interface StoryboardShot {
   scriptId: string;
   index: number;
   durationSec: number;
+  purpose?: "hook" | "benefit" | "cta";
   visualPrompt: string;
   cameraMotion: string;
   voiceover: string;
@@ -49,7 +50,8 @@ export interface StoryboardShot {
 
 export interface Script {
   id: string;
-  jobId: string;
+  productId: string;
+  jobId?: string;
   version: number;
   narrative: string;
   visualStyle: string;

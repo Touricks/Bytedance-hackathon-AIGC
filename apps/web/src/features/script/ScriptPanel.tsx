@@ -1,11 +1,16 @@
-import type { Script, StoryboardShot } from "@aigc-video/shared";
+import type { CreativeBlueprint, Script, StoryboardShot } from "@aigc-video/shared";
 
 interface ScriptPanelProps {
   script?: Script;
+  creativeBlueprint?: CreativeBlueprint;
   shots?: StoryboardShot[];
 }
 
-export function ScriptPanel({ script, shots = [] }: ScriptPanelProps) {
+export function ScriptPanel({
+  script,
+  creativeBlueprint,
+  shots = []
+}: ScriptPanelProps) {
   if (!script) {
     return (
       <section className="panel muted-panel">
@@ -19,9 +24,15 @@ export function ScriptPanel({ script, shots = [] }: ScriptPanelProps) {
     <section className="panel">
       <div className="section-heading">
         <h2>剧本与基础分镜</h2>
-        <span>{shots.length} shots</span>
+        <span>只读确认 · {shots.length} shots</span>
       </div>
       <p className="narrative">{script.narrative}</p>
+      {creativeBlueprint ? (
+        <div className="blueprint-meta">
+          <span>{creativeBlueprint.visualStyle}</span>
+          <span>{creativeBlueprint.coreSellingPoint}</span>
+        </div>
+      ) : null}
       <div className="shot-list">
         {shots.map((shot) => (
           <article className="shot-card" key={shot.id}>
@@ -34,6 +45,17 @@ export function ScriptPanel({ script, shots = [] }: ScriptPanelProps) {
           </article>
         ))}
       </div>
+      {creativeBlueprint?.improvementHints.length ? (
+        <div className="hint-list">
+          <h3>改进提示</h3>
+          {creativeBlueprint.improvementHints.map((hint) => (
+            <article className="hint-card" key={hint.ifVideoLooksBad}>
+              <strong>{hint.ifVideoLooksBad}</strong>
+              <p>{hint.suggestedUserAction}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

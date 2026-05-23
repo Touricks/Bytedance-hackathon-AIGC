@@ -1,7 +1,10 @@
 import type {
   Asset,
+  CreateCreativeBlueprintRequest,
+  CreativeBlueprint,
   CreateGenerationJobRequest,
   GenerationJob,
+  Product,
   Script,
   StoryboardShot
 } from "@aigc-video/shared";
@@ -16,6 +19,45 @@ export interface JobDetail {
   script?: Script;
   shots?: StoryboardShot[];
   finalAsset?: Asset | null;
+}
+
+export interface CreativeBlueprintDetail {
+  scriptId: string;
+  product: Product;
+  imageAsset: Asset | null;
+  script: Script;
+  creativeBlueprint: CreativeBlueprint;
+  shots: StoryboardShot[];
+}
+
+export async function createCreativeBlueprint(
+  input: CreateCreativeBlueprintRequest
+): Promise<CreativeBlueprintDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/creative-blueprints`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(input)
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as CreativeBlueprintDetail;
+}
+
+export async function getCreativeBlueprint(
+  scriptId: string
+): Promise<CreativeBlueprintDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/creative-blueprints/${scriptId}`);
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as CreativeBlueprintDetail;
 }
 
 export async function createGenerationJob(input: CreateGenerationJobRequest) {

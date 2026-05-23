@@ -22,6 +22,14 @@ export const db = {
     return product;
   },
 
+  getProduct(productId: string): Product {
+    const product = products.get(productId);
+    if (!product) {
+      throw new NotFoundError("Product");
+    }
+    return product;
+  },
+
   createAsset(input: Omit<Asset, "id" | "createdAt">): Asset {
     const asset = {
       ...input,

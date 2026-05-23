@@ -3,6 +3,7 @@ import { z } from "zod";
 export const storyboardShotSchema = z.object({
   index: z.number().int().min(1),
   durationSec: z.number().positive().max(12),
+  purpose: z.enum(["hook", "benefit", "cta"]).optional(),
   visualPrompt: z.string().min(8),
   cameraMotion: z.string().min(2),
   voiceover: z.string().min(1),

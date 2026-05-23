@@ -18,6 +18,7 @@ export async function processScriptGeneration(
   const generated = await generateScriptWithSeed(input);
   const script = db.createScript({
     jobId,
+    productId: current.productId,
     version: 1,
     narrative: generated.narrative,
     visualStyle: generated.visualStyle,

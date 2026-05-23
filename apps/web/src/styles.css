@@ -135,6 +135,22 @@ button:disabled {
   color: #344054;
 }
 
+.blueprint-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.blueprint-meta span {
+  border: 1px solid #d5dce8;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #344054;
+  font-size: 13px;
+  background: #f8fafc;
+}
+
 .shot-list {
   display: grid;
   gap: 10px;
@@ -160,6 +176,29 @@ button:disabled {
   border-left: 3px solid #111827;
   color: #344054;
   padding-left: 10px;
+}
+
+.hint-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.hint-list h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.hint-card {
+  border: 1px solid #f0d7a0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffaf0;
+}
+
+.hint-card p {
+  margin: 6px 0 0;
+  color: #594a2d;
 }
 
 .preview-panel video,

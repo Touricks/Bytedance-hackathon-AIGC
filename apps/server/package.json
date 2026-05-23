@@ -9,6 +9,8 @@
     "dev:worker": "SERVER_RUNTIME=worker tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
+    "pretest": "pnpm --filter @aigc-video/shared build && pnpm --filter @aigc-video/ai build",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0"
   },
