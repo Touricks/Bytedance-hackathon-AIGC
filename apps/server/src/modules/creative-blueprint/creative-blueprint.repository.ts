@@ -1,13 +1,24 @@
 import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 
+async function findOrCreateProductImageAsset(imageUrl: string) {
+  const existingAsset = await db.findProductImageAssetByUrl(imageUrl);
+  if (existingAsset) {
+    return existingAsset;
+  }
+
+  return db.createAsset({
+    type: "product_image",
+    url: imageUrl,
+    source: imageUrl.startsWith("/mocks/") ? "mock" : "upload"
+  });
+}
+
 export const creativeBlueprintRepository = {
+  findOrCreateProductImageAsset,
+
   async createDraft(input: CreateCreativeBlueprintRequest) {
-    const imageAsset = await db.createAsset({
-      type: "product_image",
-      url: input.imageUrl,
-      source: input.imageUrl.startsWith("/mocks/") ? "mock" : "upload"
-    });
+    const imageAsset = await findOrCreateProductImageAsset(input.imageUrl);
 
     const product = await db.createProduct({
       title: input.title,

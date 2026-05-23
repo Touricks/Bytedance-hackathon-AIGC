@@ -123,6 +123,116 @@ describe("generateVideoWithSeedance", () => {
     ]);
   });
 
+  it("passes an already-normalized data URL through to Ark video", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+
+    await generateVideoWithSeedance(
+      {
+        imageUrl: "data:image/png;base64,cHJvZHVjdA==",
+        prompt: "Create a vertical ecommerce product showcase video"
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
+        fetch: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return new Response(
+            JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
+            { status: 200 }
+          );
+        }
+      }
+    );
+
+    const content = requestBody?.content as Array<{
+      image_url?: { url: string };
+    }>;
+    assert.equal(
+      content[1]?.image_url?.url,
+      "data:image/png;base64,cHJvZHVjdA=="
+    );
+  });
+
+  it("includes sanitized Ark failure diagnostics without leaking base64 payloads", async () => {
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "data:image/png;base64,c2Vuc2l0aXZlLWltYWdl",
+            prompt: "Create a vertical ecommerce product showcase video"
+          },
+          {
+            baseURL: "https://ark.example/api/v3",
+            env: {
+              ARK_API_KEY: "test-key",
+              ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+            },
+            fetch: async () =>
+              new Response(
+                JSON.stringify({
+                  error: {
+                    code: "InvalidImageURL",
+                    message:
+                      "invalid image data:image/png;base64,c2Vuc2l0aXZlLWltYWdl"
+                  },
+                  request_id: "req-123"
+                }),
+                { status: 400 }
+              )
+          }
+        ),
+      (error: unknown) => {
+        assert(error instanceof Error);
+        assert.match(error.message, /status 400/);
+        assert.match(error.message, /InvalidImageURL/);
+        assert.match(error.message, /request_id=req-123/);
+        assert.doesNotMatch(error.message, /c2Vuc2l0aXZlLWltYWdl/);
+        assert.match(error.message, /data:image\/<redacted>;base64,<redacted>/);
+        return true;
+      }
+    );
+  });
+
+  it("waits up to about 200 seconds by default before timing out a task", async () => {
+    let queryCount = 0;
+
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "https://cdn.example/product.png",
+            prompt: "Create a vertical ecommerce product showcase video"
+          },
+          {
+            baseURL: "https://ark.example/api/v3",
+            env: {
+              ARK_API_KEY: "test-key",
+              ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+            },
+            pollIntervalMs: 0,
+            fetch: async (url) => {
+              if (String(url).endsWith("/contents/generations/tasks")) {
+                return new Response(JSON.stringify({ id: "task-123" }), {
+                  status: 200
+                });
+              }
+
+              queryCount += 1;
+              return new Response(JSON.stringify({ status: "running" }), {
+                status: 200
+              });
+            }
+          }
+        ),
+      /did not complete in time/
+    );
+
+    assert.equal(queryCount, 100);
+  });
+
   it("fails loudly in real-provider mode when Ark video config is missing", async () => {
     const originalMode = process.env.MODEL_MODE;
     process.env.MODEL_MODE = "real";

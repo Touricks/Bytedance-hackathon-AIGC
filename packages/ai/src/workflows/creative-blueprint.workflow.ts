@@ -18,13 +18,55 @@ import {
   type TextProviderConfig
 } from "../providers/provider-config.js";
 
-export type TextModelCall = (prompt: string) => Promise<string>;
+export type CreativeBlueprintImageReferenceMode =
+  | "none"
+  | "url"
+  | "data_url"
+  | "provider_asset"
+  | "text_only_fallback";
+
+export interface CreativeBlueprintImageInput {
+  url: string;
+  mode: Exclude<
+    CreativeBlueprintImageReferenceMode,
+    "none" | "text_only_fallback"
+  >;
+  detail?: "low" | "high";
+}
+
+export interface CreativeBlueprintTextContentPart {
+  type: "text";
+  text: string;
+}
+
+export interface CreativeBlueprintImageContentPart {
+  type: "image_url";
+  image_url: {
+    url: string;
+    detail?: "low" | "high";
+  };
+}
+
+export type CreativeBlueprintUserContent =
+  | string
+  | Array<CreativeBlueprintTextContentPart | CreativeBlueprintImageContentPart>;
+
+export interface CreativeBlueprintModelRequest {
+  prompt: string;
+  content: CreativeBlueprintUserContent;
+  imageReferenceMode: CreativeBlueprintImageReferenceMode;
+}
+
+export type TextModelCall = (
+  request: CreativeBlueprintModelRequest
+) => Promise<string>;
 export type CreateTextModelCall = (config: TextProviderConfig) => TextModelCall;
 
 export interface CreativeBlueprintTrace {
   promptVersion: string;
   model: string;
   textProvider: "ark" | "fallback-llm" | "deterministic";
+  imageReferenceMode: CreativeBlueprintImageReferenceMode;
   rawOutputSummary?: string;
   parsedOutputStatus: "valid" | "repaired" | "fallback";
   repairAttempts: number;
@@ -45,6 +87,7 @@ export interface GenerateCreativeBlueprintOptions {
   model?: string;
   apiKey?: string;
   baseURL?: string;
+  imageInput?: CreativeBlueprintImageInput;
 }
 
 function summarizeRawOutput(rawOutput: string) {
@@ -53,6 +96,43 @@ function summarizeRawOutput(rawOutput: string) {
 
 function parseCreativeBlueprint(rawOutput: string): CreativeBlueprint {
   return creativeBlueprintSchema.parse(JSON.parse(rawOutput));
+}
+
+function buildCreativeBlueprintModelRequest(
+  prompt: string,
+  imageInput?: CreativeBlueprintImageInput
+): CreativeBlueprintModelRequest {
+  if (!imageInput) {
+    return {
+      prompt,
+      content: prompt,
+      imageReferenceMode: "none"
+    };
+  }
+
+  return {
+    prompt,
+    content: [
+      {
+        type: "text",
+        text: prompt
+      },
+      {
+        type: "image_url",
+        image_url: {
+          url: imageInput.url,
+          detail: imageInput.detail ?? "high"
+        }
+      }
+    ],
+    imageReferenceMode: imageInput.mode
+  };
+}
+
+function getTextOnlyFallbackImageMode(
+  imageInput?: CreativeBlueprintImageInput
+): CreativeBlueprintImageReferenceMode {
+  return imageInput ? "text_only_fallback" : "none";
 }
 
 function buildFallbackCreativeBlueprint(
@@ -120,10 +200,10 @@ function createOpenAITextModelCall(config: TextProviderConfig): TextModelCall {
     baseURL: config.baseURL
   });
 
-  return async (prompt) => {
+  return async (request) => {
     const response = await client.chat.completions.create({
       model: config.model,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: request.content }],
       temperature: Number(process.env.OPENAI_TEMPERATURE ?? 0.7),
       top_p: Number(process.env.OPENAI_TOP_P ?? 0.9)
     });
@@ -137,6 +217,7 @@ function deterministicFallbackResult(
   model: string,
   repairAttempts: number,
   failureReason: string,
+  imageReferenceMode: CreativeBlueprintImageReferenceMode,
   rawOutput?: string
 ): GenerateCreativeBlueprintResult {
   return {
@@ -146,6 +227,7 @@ function deterministicFallbackResult(
       promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
       model,
       textProvider: "deterministic",
+      imageReferenceMode,
       rawOutputSummary: rawOutput ? summarizeRawOutput(rawOutput) : undefined,
       parsedOutputStatus: "fallback",
       repairAttempts,
@@ -159,12 +241,20 @@ async function runTextProvider(
   input: CreateCreativeBlueprintRequest,
   provider: TextProviderConfig,
   callTextModel: TextModelCall,
-  prompt: string
+  prompt: string,
+  imageInput?: CreativeBlueprintImageInput
 ): Promise<GenerateCreativeBlueprintResult> {
   let rawOutput = "";
+  const providerImageInput =
+    provider.provider === "ark" ? imageInput : undefined;
+  const traceImageReferenceMode = providerImageInput
+    ? providerImageInput.mode
+    : getTextOnlyFallbackImageMode(imageInput);
 
   try {
-    rawOutput = await callTextModel(prompt);
+    rawOutput = await callTextModel(
+      buildCreativeBlueprintModelRequest(prompt, providerImageInput)
+    );
     return {
       provider: provider.provider === "ark" ? "ark" : "fallback",
       creativeBlueprint: parseCreativeBlueprint(rawOutput),
@@ -172,6 +262,7 @@ async function runTextProvider(
         promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
         model: provider.model,
         textProvider: provider.provider,
+        imageReferenceMode: traceImageReferenceMode,
         rawOutputSummary: summarizeRawOutput(rawOutput),
         parsedOutputStatus: "valid",
         repairAttempts: 0,
@@ -185,7 +276,9 @@ async function runTextProvider(
 
     try {
       const repairedOutput = await callTextModel(
-        buildCreativeBlueprintRepairPrompt(rawOutput)
+        buildCreativeBlueprintModelRequest(
+          buildCreativeBlueprintRepairPrompt(rawOutput)
+        )
       );
       return {
         provider: provider.provider === "ark" ? "ark" : "fallback",
@@ -194,6 +287,7 @@ async function runTextProvider(
           promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
           model: provider.model,
           textProvider: provider.provider,
+          imageReferenceMode: traceImageReferenceMode,
           rawOutputSummary: summarizeRawOutput(repairedOutput),
           parsedOutputStatus: "repaired",
           repairAttempts: 1,
@@ -207,6 +301,7 @@ async function runTextProvider(
         provider.model,
         1,
         error instanceof Error ? error.message : "Unknown model failure",
+        getTextOnlyFallbackImageMode(imageInput),
         rawOutput
       );
     }
@@ -227,7 +322,13 @@ export async function generateCreativeBlueprintWithArk(
       model: options.model ?? "test-model",
       baseURL: options.baseURL ?? "https://example.test/v1"
     };
-    return runTextProvider(input, provider, options.callTextModel, prompt);
+    return runTextProvider(
+      input,
+      provider,
+      options.callTextModel,
+      prompt,
+      options.imageInput
+    );
   }
 
   const env = options.env ?? process.env;
@@ -244,7 +345,8 @@ export async function generateCreativeBlueprintWithArk(
         input,
         fallbackProvider,
         createModelCall(fallbackProvider),
-        prompt
+        prompt,
+        options.imageInput
       );
     }
 
@@ -258,7 +360,8 @@ export async function generateCreativeBlueprintWithArk(
       input,
       "unconfigured",
       0,
-      "Ark text provider and fallback LLM are not configured"
+      "Ark text provider and fallback LLM are not configured",
+      getTextOnlyFallbackImageMode(options.imageInput)
     );
   }
 
@@ -267,7 +370,8 @@ export async function generateCreativeBlueprintWithArk(
       input,
       arkProvider,
       createModelCall(arkProvider),
-      prompt
+      prompt,
+      options.imageInput
     );
   } catch (arkError) {
     if (fallbackProvider && isProviderAuthOrConfigError(arkError)) {
@@ -276,7 +380,8 @@ export async function generateCreativeBlueprintWithArk(
           input,
           fallbackProvider,
           createModelCall(fallbackProvider),
-          prompt
+          prompt,
+          options.imageInput
         );
       } catch (fallbackError) {
         const error =
@@ -285,7 +390,8 @@ export async function generateCreativeBlueprintWithArk(
           input,
           fallbackProvider.model,
           0,
-          error instanceof Error ? error.message : "Unknown fallback LLM failure"
+          error instanceof Error ? error.message : "Unknown fallback LLM failure",
+          getTextOnlyFallbackImageMode(options.imageInput)
         );
       }
     }
@@ -299,7 +405,8 @@ export async function generateCreativeBlueprintWithArk(
       input,
       arkProvider.model,
       0,
-      error?.message ?? "Ark text provider failed before returning output"
+      error?.message ?? "Ark text provider failed before returning output",
+      getTextOnlyFallbackImageMode(options.imageInput)
     );
   }
 }

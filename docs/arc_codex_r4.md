@@ -241,7 +241,7 @@ This keeps API polling, in-process generation, and Redis/BullMQ generation align
 
 It owns:
 
-- Ark text provider usage.
+- Ark text provider usage for Doubao-Seed-2.0-pro multimodal creative blueprint generation.
 - OpenAI-compatible fallback LLM usage only for Ark text auth/config failure.
 - Creative blueprint prompt and repair prompt.
 - Zod validation of generated creative blueprint output.
@@ -267,29 +267,23 @@ The smoke command requires:
 ```text
 ARK_API_KEY
 ARK_TEXT_ENDPOINT_ID
-ARK_VIDEO_ENDPOINT_ID
+OPENAI_API_KEY
+OPENAI_MODEL
 ```
 
-Before S3/public product-image URLs are available, the Seedance part of the command is a reachability probe. A `400` response is accepted in default reachability mode because localhost or private image URLs cannot be fetched by Seedance.
+The smoke command is a dependency-interface health check. It sends minimal chat-completion probes to Ark text and the OpenAI-compatible fallback provider. It does not create or read a product image, and it does not call Seedance video.
 
-Full video validation additionally requires:
+Full creative-blueprint validation uses the app/API flow with a supported product image. When Ark text config is present, server-side creative blueprint generation sends Doubao-Seed-2.0-pro a multimodal Chat request with text plus `image_url`. App-created local raster uploads are converted to `data:image/<format>;base64,...` before the Ark Chat request, and blueprint trace metadata records `imageReferenceMode`.
 
-```text
-SMOKE_FULL_VIDEO_GENERATION=true
-SMOKE_PRODUCT_IMAGE_URL=<publicly reachable product image URL>
-```
-
-In full mode, the command fails unless creative blueprint generation returns provider `ark` and video generation returns provider `seedance`.
+Full Seedance validation is separate and requires `ARK_VIDEO_ENDPOINT_ID` plus either a locally uploaded supported raster product image or a public product image URL. Server-side media generation converts app-created local uploads to `data:image/<format>;base64,...` before calling Seedance. Repository-local mock images and fabricated image fixtures are not valid real-provider video inputs.
 
 Optional fallback LLM variables are:
 
 ```text
 OPENAI_BASE_URL
-OPENAI_API_KEY
-OPENAI_MODEL
 ```
 
-They are used only when the Ark text entry point is unavailable. They are not used for video generation.
+It is used only to route the fallback text probe and creative-blueprint fallback. The fallback provider is not used for video generation.
 
 ---
 

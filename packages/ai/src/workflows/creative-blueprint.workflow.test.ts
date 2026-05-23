@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   generateCreativeBlueprintWithArk,
   type CreateTextModelCall,
+  type CreativeBlueprintModelRequest,
   type TextModelCall
 } from "./creative-blueprint.workflow.js";
 
@@ -56,9 +57,9 @@ const validBlueprint = {
 
 describe("generateCreativeBlueprintWithArk", () => {
   it("returns a validated creative blueprint from a strict JSON model response", async () => {
-    const calls: string[] = [];
-    const callTextModel: TextModelCall = async (prompt) => {
-      calls.push(prompt);
+    const calls: CreativeBlueprintModelRequest[] = [];
+    const callTextModel: TextModelCall = async (request) => {
+      calls.push(request);
       return JSON.stringify(validBlueprint);
     };
 
@@ -78,17 +79,58 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.creativeBlueprint.shots.length, 3);
     assert.equal(result.trace.model, "ark-test-model");
     assert.equal(result.trace.textProvider, "ark");
+    assert.equal(result.trace.imageReferenceMode, "none");
     assert.equal(result.trace.promptVersion, "creative-blueprint.v1");
     assert.equal(result.trace.repairAttempts, 0);
     assert.equal(result.trace.fallbackUsed, false);
     assert.equal(calls.length, 1);
-    assert.match(calls[0]!, /merchant-readable creative blueprint/);
+    assert.match(calls[0]!.prompt, /merchant-readable creative blueprint/);
+    assert.equal(calls[0]!.content, calls[0]!.prompt);
+  });
+
+  it("sends uploaded product images as structured image content to Ark", async () => {
+    const calls: CreativeBlueprintModelRequest[] = [];
+    const callTextModel: TextModelCall = async (request) => {
+      calls.push(request);
+      return JSON.stringify(validBlueprint);
+    };
+
+    const result = await generateCreativeBlueprintWithArk(
+      {
+        title: "Portable Mini Blender",
+        sellingPoints: "USB-C charging",
+        audience: "busy office workers",
+        stylePreference: "clean premium ecommerce",
+        imageUrl: "/uploads/product-images/demo.png"
+      },
+      {
+        callTextModel,
+        model: "ark-test-model",
+        imageInput: {
+          url: "data:image/png;base64,cHJvZHVjdA==",
+          mode: "data_url",
+          detail: "high"
+        }
+      }
+    );
+
+    assert.equal(result.provider, "ark");
+    assert.equal(result.trace.imageReferenceMode, "data_url");
+    assert.equal(calls.length, 1);
+    assert.ok(Array.isArray(calls[0]!.content));
+    assert.deepEqual(calls[0]!.content[1], {
+      type: "image_url",
+      image_url: {
+        url: "data:image/png;base64,cHJvZHVjdA==",
+        detail: "high"
+      }
+    });
   });
 
   it("repairs invalid model output once before returning a blueprint", async () => {
-    const calls: string[] = [];
-    const callTextModel: TextModelCall = async (prompt) => {
-      calls.push(prompt);
+    const calls: CreativeBlueprintModelRequest[] = [];
+    const callTextModel: TextModelCall = async (request) => {
+      calls.push(request);
       return calls.length === 1 ? "not json" : JSON.stringify(validBlueprint);
     };
 
@@ -109,7 +151,7 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.repairAttempts, 1);
     assert.equal(result.trace.fallbackUsed, false);
     assert.equal(calls.length, 2);
-    assert.match(calls[1]!, /Repair the following model output/);
+    assert.match(calls[1]!.prompt, /Repair the following model output/);
   });
 
   it("falls back to a deterministic creative blueprint when repair fails", async () => {
@@ -128,6 +170,7 @@ describe("generateCreativeBlueprintWithArk", () => {
 
     assert.equal(result.provider, "fallback");
     assert.equal(result.trace.textProvider, "deterministic");
+    assert.equal(result.trace.imageReferenceMode, "none");
     assert.equal(result.creativeBlueprint.coreSellingPoint, "USB-C charging");
     assert.equal(result.trace.parsedOutputStatus, "fallback");
     assert.equal(result.trace.repairAttempts, 1);
@@ -137,14 +180,16 @@ describe("generateCreativeBlueprintWithArk", () => {
 
   it("uses fallback LLM only when Ark text auth or config fails", async () => {
     const providerCalls: string[] = [];
+    const fallbackRequests: CreativeBlueprintModelRequest[] = [];
     const createTextModelCall: CreateTextModelCall = (config) => {
       providerCalls.push(config.provider);
-      return async () => {
+      return async (request) => {
         if (config.provider === "ark") {
           throw Object.assign(new Error("Unauthorized Ark key"), {
             status: 401
           });
         }
+        fallbackRequests.push(request);
         return JSON.stringify(validBlueprint);
       };
     };
@@ -159,6 +204,10 @@ describe("generateCreativeBlueprintWithArk", () => {
       },
       {
         createTextModelCall,
+        imageInput: {
+          url: "data:image/png;base64,cHJvZHVjdA==",
+          mode: "data_url"
+        },
         env: {
           ARK_API_KEY: "bad-ark-key",
           ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint",
@@ -171,9 +220,12 @@ describe("generateCreativeBlueprintWithArk", () => {
 
     assert.equal(result.provider, "fallback");
     assert.equal(result.trace.textProvider, "fallback-llm");
+    assert.equal(result.trace.imageReferenceMode, "text_only_fallback");
     assert.equal(result.trace.model, "fallback-model");
     assert.equal(result.trace.fallbackUsed, true);
     assert.deepEqual(providerCalls, ["ark", "fallback-llm"]);
+    assert.equal(fallbackRequests.length, 1);
+    assert.equal(fallbackRequests[0]!.content, fallbackRequests[0]!.prompt);
   });
 
   it("fails loudly in real-provider mode when text model credentials are missing", async () => {

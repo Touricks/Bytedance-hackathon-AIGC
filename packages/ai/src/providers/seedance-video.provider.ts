@@ -134,6 +134,73 @@ async function readJsonResponse(response: Response) {
   return text ? JSON.parse(text) : {};
 }
 
+function tryParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeProviderMessage(text: string) {
+  return text
+    .replace(
+      /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi,
+      "data:image/<redacted>;base64,<redacted>"
+    )
+    .replace(/Bearer\s+[a-z0-9._~+/=-]+/gi, "Bearer <redacted>");
+}
+
+function findStringValue(payload: unknown, keys: string[]): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    const nested = findStringValue(value, keys);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+}
+
+async function buildFailureMessage(prefix: string, response: Response) {
+  const text = await response.text();
+  const payload = text ? tryParseJson(text) : null;
+  const code = findStringValue(payload, ["code", "Code"]);
+  const message = findStringValue(payload, ["message", "Message", "msg", "Msg"]);
+  const requestId = findStringValue(payload, [
+    "request_id",
+    "requestId",
+    "RequestId",
+    "x_request_id"
+  ]);
+  const details = [
+    code,
+    message ? sanitizeProviderMessage(message) : null,
+    requestId ? `request_id=${requestId}` : null
+  ].filter(Boolean);
+
+  if (details.length > 0) {
+    return `${prefix} with status ${response.status}: ${details.join(" | ")}`;
+  }
+
+  const preview = sanitizeProviderMessage(text).slice(0, 240);
+  return preview
+    ? `${prefix} with status ${response.status}: ${preview}`
+    : `${prefix} with status ${response.status}`;
+}
+
 async function pollVideoTask(
   taskId: string,
   options: Required<Pick<SeedanceProviderOptions, "fetch">> &
@@ -143,7 +210,7 @@ async function pollVideoTask(
     }
 ) {
   const pollIntervalMs = options.pollIntervalMs ?? 2000;
-  const maxPollAttempts = options.maxPollAttempts ?? 60;
+  const maxPollAttempts = options.maxPollAttempts ?? 100;
   const taskUrl = joinArkPath(
     options.baseURL,
     `contents/generations/tasks/${taskId}`
@@ -158,9 +225,7 @@ async function pollVideoTask(
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Seedance task query failed with status ${response.status}`
-      );
+      throw new Error(await buildFailureMessage("Seedance task query failed", response));
     }
 
     const payload = await readJsonResponse(response);
@@ -244,7 +309,7 @@ export async function generateVideoWithSeedance(
   );
 
   if (!response.ok) {
-    throw new Error(`Seedance request failed with status ${response.status}`);
+    throw new Error(await buildFailureMessage("Seedance request failed", response));
   }
 
   const payload = await readJsonResponse(response);

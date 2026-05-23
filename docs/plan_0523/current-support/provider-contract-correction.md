@@ -70,12 +70,12 @@ Use these current docs for setup and reporting:
 - `docs/plan_0523/current-support/model-smoke.md`
 - this document
 
-## Temporary Smoke Boundary Before S3
+## Smoke Boundary And Local Video Validation
 
-Until uploaded product images are available through a public S3 URL, `smoke:real-providers` should not be treated as full Seedance 成片 validation. Localhost and private URLs are not reliable inputs for the external video provider.
+`smoke:real-providers` should not call Seedance 成片 validation. It is a text-provider dependency check only. Localhost, private URLs, and fabricated repository images are not reliable external video inputs, but app-created local raster uploads are converted to `data:image/<format>;base64,...` by the server before Seedance calls.
 
-Current temporary rule:
+Current rule:
 
-- Ark text must pass as a real provider.
-- Ark-backed Seedance must be reachable; a `400` response is acceptable in reachability mode.
-- Full video validation is opt-in with `SMOKE_FULL_VIDEO_GENERATION=true` and a public `SMOKE_PRODUCT_IMAGE_URL`.
+- Ark text must pass a minimal chat-completion dependency probe.
+- OpenAI-compatible fallback must pass a minimal chat-completion dependency probe.
+- Full Ark-backed Seedance validation is separate and uses the app flow with a locally uploaded supported raster image, or a public product image URL.

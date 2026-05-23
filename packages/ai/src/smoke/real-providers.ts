@@ -1,85 +1,96 @@
-import {
-  generateCreativeBlueprintWithArk,
-  generateVideoWithSeedance
-} from "../index.js";
+import OpenAI from "openai";
 import { loadWorkspaceEnv } from "../env.js";
+import {
+  resolveArkTextProviderConfig,
+  resolveFallbackTextProviderConfig,
+  type TextProviderConfig
+} from "../providers/provider-config.js";
 
 loadWorkspaceEnv();
 
-const fullVideoGeneration = process.env.SMOKE_FULL_VIDEO_GENERATION === "true";
-
-function getSmokeValue(name: string, fallback: string) {
-  const value = process.env[name];
-  return value && value.trim() ? value : fallback;
+interface ProviderProbeResult {
+  provider: TextProviderConfig["provider"];
+  status: "ok";
+  model: string;
+  baseURL: string;
+  latencyMs: number;
+  outputPreview: string;
 }
 
-const imageUrl = getSmokeValue(
-  "SMOKE_PRODUCT_IMAGE_URL",
-  "http://localhost:3000/mocks/products/demo-product.svg"
-);
+function requireTextProviderConfig(
+  config: TextProviderConfig | null,
+  label: string,
+  requiredVariables: string[]
+): TextProviderConfig {
+  if (config) {
+    return config;
+  }
 
-const blueprintResult = await generateCreativeBlueprintWithArk({
-  title: getSmokeValue("SMOKE_PRODUCT_TITLE", "Portable Mini Blender"),
-  sellingPoints: getSmokeValue(
-    "SMOKE_SELLING_POINTS",
-    "USB-C charging, easy cleaning, powerful smoothie blending"
-  ),
-  audience: getSmokeValue("SMOKE_AUDIENCE", "busy office workers"),
-  stylePreference: getSmokeValue(
-    "SMOKE_STYLE_PREFERENCE",
-    "clean premium ecommerce"
-  ),
-  imageUrl
-});
-
-if (blueprintResult.provider !== "ark") {
-  throw new Error(
-    `Expected creative blueprint provider ark, got ${blueprintResult.provider}`
-  );
+  throw new Error(`${label} smoke requires ${requiredVariables.join(", ")}`);
 }
 
-let seedanceProbe:
-  | { mode: "full"; status: "completed"; videoUrl: string }
-  | { mode: "reachability"; status: "reachable-with-400"; note: string }
-  | { mode: "reachability"; status: "completed"; videoUrl: string };
-
-try {
-  const videoResult = await generateVideoWithSeedance({
-    imageUrl,
-    prompt: "Create a vertical 12-second ecommerce product showcase video."
+async function probeTextProvider(
+  config: TextProviderConfig
+): Promise<ProviderProbeResult> {
+  const startedAt = Date.now();
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
+    timeout: Number(process.env.SMOKE_PROVIDER_TIMEOUT_MS ?? 30000)
   });
 
-  if (videoResult.provider !== "seedance") {
-    throw new Error(
-      `Expected video provider seedance, got ${videoResult.provider}`
-    );
+  const response = await client.chat.completions.create({
+    model: config.model,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a dependency health check. Reply with a tiny confirmation."
+      },
+      {
+        role: "user",
+        content: "Reply with the single word OK."
+      }
+    ],
+    max_tokens: 8
+  });
+
+  const output = response.choices[0]?.message.content?.trim();
+  if (!output) {
+    throw new Error(`${config.provider} smoke returned empty output`);
   }
 
-  seedanceProbe = {
-    mode: fullVideoGeneration ? "full" : "reachability",
-    status: "completed",
-    videoUrl: videoResult.videoUrl
+  return {
+    provider: config.provider,
+    status: "ok",
+    model: config.model,
+    baseURL: config.baseURL,
+    latencyMs: Date.now() - startedAt,
+    outputPreview: output.slice(0, 80)
   };
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  if (!fullVideoGeneration && /status 400/.test(message)) {
-    seedanceProbe = {
-      mode: "reachability",
-      status: "reachable-with-400",
-      note:
-        "Seedance endpoint was reached, but full generation was not validated. Use SMOKE_FULL_VIDEO_GENERATION=true with a public SMOKE_PRODUCT_IMAGE_URL after S3 is available."
-    };
-  } else {
-    throw error;
-  }
 }
+
+const arkTextConfig = requireTextProviderConfig(
+  resolveArkTextProviderConfig(),
+  "Ark text provider",
+  ["ARK_API_KEY", "ARK_TEXT_ENDPOINT_ID"]
+);
+const fallbackTextConfig = requireTextProviderConfig(
+  resolveFallbackTextProviderConfig(),
+  "OpenAI fallback provider",
+  ["OPENAI_API_KEY", "OPENAI_MODEL"]
+);
+
+const [arkTextProbe, openaiFallbackProbe] = await Promise.all([
+  probeTextProvider(arkTextConfig),
+  probeTextProvider(fallbackTextConfig)
+]);
 
 console.log(
   JSON.stringify(
     {
-      creativeBlueprintProvider: blueprintResult.provider,
-      creativeBlueprintTextProvider: blueprintResult.trace.textProvider,
-      seedanceProbe
+      arkTextProbe,
+      openaiFallbackProbe
     },
     null,
     2

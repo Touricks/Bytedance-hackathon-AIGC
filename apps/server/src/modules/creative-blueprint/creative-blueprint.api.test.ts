@@ -1,7 +1,122 @@
 import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+
+const validBlueprint = {
+  narrative: "A focused 12-second product story for a mini blender.",
+  visualStyle: "clean premium ecommerce",
+  targetAudience: "busy office workers",
+  coreSellingPoint: "USB-C charging",
+  shots: [
+    {
+      index: 1,
+      durationSec: 3,
+      purpose: "hook",
+      visualPrompt: "Clean hero shot of the blender on a bright counter",
+      cameraMotion: "slow push in",
+      voiceover: "Meet the portable blender.",
+      subtitle: "Blend anywhere"
+    },
+    {
+      index: 2,
+      durationSec: 5,
+      purpose: "benefit",
+      visualPrompt: "Close detail showing USB-C charging and easy cleaning",
+      cameraMotion: "smooth pan",
+      voiceover: "Charge fast and clean in seconds.",
+      subtitle: "USB-C, easy cleaning"
+    },
+    {
+      index: 3,
+      durationSec: 4,
+      purpose: "cta",
+      visualPrompt: "Return to a polished hero shot with fresh smoothie",
+      cameraMotion: "gentle pull back",
+      voiceover: "Make healthy habits simple.",
+      subtitle: "Start today"
+    }
+  ],
+  renderBrief: {
+    productConsistencyRules: ["Keep product shape and color consistent"],
+    avoid: ["Do not invent readable brand text"],
+    videoPromptSummary: "Clean 12-second blender product showcase"
+  },
+  improvementHints: [
+    {
+      ifVideoLooksBad: "商品不像原图",
+      suggestedUserAction: "上传更清晰的正面商品图。",
+      fieldsToChange: ["productImage"]
+    }
+  ]
+};
+
+async function startArkTextServer() {
+  const bodies: unknown[] = [];
+  const server: Server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) {
+      body += String(chunk);
+    }
+    bodies.push(body ? JSON.parse(body) : {});
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(validBlueprint)
+            }
+          }
+        ]
+      })
+    );
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    bodies,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      })
+  };
+}
+
+function setArkTextEnv(url: string) {
+  const previousArkBaseUrl = process.env.ARK_BASE_URL;
+  const previousArkKey = process.env.ARK_API_KEY;
+  const previousArkTextEndpoint = process.env.ARK_TEXT_ENDPOINT_ID;
+  process.env.ARK_BASE_URL = url;
+  process.env.ARK_API_KEY = "test-key";
+  process.env.ARK_TEXT_ENDPOINT_ID = "doubao-seed-2-0-pro-test";
+
+  return () => {
+    if (previousArkBaseUrl === undefined) {
+      delete process.env.ARK_BASE_URL;
+    } else {
+      process.env.ARK_BASE_URL = previousArkBaseUrl;
+    }
+    if (previousArkKey === undefined) {
+      delete process.env.ARK_API_KEY;
+    } else {
+      process.env.ARK_API_KEY = previousArkKey;
+    }
+    if (previousArkTextEndpoint === undefined) {
+      delete process.env.ARK_TEXT_ENDPOINT_ID;
+    } else {
+      process.env.ARK_TEXT_ENDPOINT_ID = previousArkTextEndpoint;
+    }
+  };
+}
 
 describe("creative blueprint API", () => {
   let app: FastifyInstance;
@@ -104,5 +219,57 @@ describe("creative blueprint API", () => {
     assert.equal(second.product.title, "Portable Mini Blender Pro");
     assert.ok(second.creativeBlueprint.narrative.includes("Portable Mini Blender Pro"));
     assert.equal(second.shots[1].subtitle, "quiet motor and dishwasher-safe cup");
+  });
+
+  it("sends uploaded raster product images to Doubao as multimodal content", async () => {
+    const arkText = await startArkTextServer();
+    const restoreEnv = setArkTextEnv(arkText.url);
+
+    try {
+      const uploadResponse = await app.inject({
+        method: "POST",
+        url: "/api/materials/product-image",
+        payload: {
+          filename: "mini-blender.png",
+          contentType: "image/png",
+          dataBase64: Buffer.from("png product image").toString("base64")
+        }
+      });
+      assert.equal(uploadResponse.statusCode, 200);
+      const imageAsset = uploadResponse.json();
+
+      const blueprintResponse = await app.inject({
+        method: "POST",
+        url: "/api/creative-blueprints",
+        payload: {
+          title: "Portable Mini Blender",
+          sellingPoints: "USB-C charging",
+          audience: "busy office workers",
+          stylePreference: "clean premium ecommerce",
+          imageUrl: imageAsset.url
+        }
+      });
+
+      assert.equal(blueprintResponse.statusCode, 200);
+      const blueprint = blueprintResponse.json();
+      assert.equal(blueprint.provider, "ark");
+      assert.equal(blueprint.trace.imageReferenceMode, "data_url");
+
+      const requestBody = arkText.bodies[0] as {
+        messages: Array<{
+          content: Array<{ type: string; image_url?: { url: string } }>;
+        }>;
+      };
+      const content = requestBody.messages[0]!.content;
+      const imagePart = content.find((part) => part.type === "image_url");
+      assert.match(imagePart?.image_url?.url ?? "", /^data:image\/png;base64,/);
+      assert.doesNotMatch(
+        imagePart?.image_url?.url ?? "",
+        /\/uploads\/product-images\//
+      );
+    } finally {
+      restoreEnv();
+      await arkText.close();
+    }
   });
 });

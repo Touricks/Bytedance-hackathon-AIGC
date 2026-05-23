@@ -1,17 +1,57 @@
-import { generateCreativeBlueprintWithArk } from "@aigc-video/ai";
+import {
+  generateCreativeBlueprintWithArk,
+  type CreativeBlueprintImageInput
+} from "@aigc-video/ai";
 import type {
+  Asset,
   CreateCreativeBlueprintRequest,
   CreativeBlueprint
 } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
+import { resolveSeedanceImageInput } from "../../jobs/seedance-image-input.js";
 import { creativeBlueprintRepository } from "./creative-blueprint.repository.js";
 
-async function generateBlueprint(input: CreateCreativeBlueprintRequest): Promise<{
+function hasArkTextProviderConfig() {
+  return Boolean(process.env.ARK_API_KEY && process.env.ARK_TEXT_ENDPOINT_ID);
+}
+
+function getImageReferenceMode(
+  resolvedImageUrl: string
+): CreativeBlueprintImageInput["mode"] {
+  if (resolvedImageUrl.startsWith("data:image/")) {
+    return "data_url";
+  }
+  if (resolvedImageUrl.startsWith("asset://")) {
+    return "provider_asset";
+  }
+  return "url";
+}
+
+async function resolveCreativeBlueprintImageInput(
+  imageAsset: Asset
+): Promise<CreativeBlueprintImageInput | undefined> {
+  if (!hasArkTextProviderConfig()) {
+    return undefined;
+  }
+
+  const resolvedImageUrl = await resolveSeedanceImageInput(imageAsset);
+  return {
+    url: resolvedImageUrl,
+    mode: getImageReferenceMode(resolvedImageUrl),
+    detail: "high"
+  };
+}
+
+async function generateBlueprint(
+  input: CreateCreativeBlueprintRequest,
+  imageAsset: Asset
+): Promise<{
   creativeBlueprint: CreativeBlueprint;
   trace: unknown;
   provider: "ark" | "fallback";
 }> {
-  const result = await generateCreativeBlueprintWithArk(input);
+  const imageInput = await resolveCreativeBlueprintImageInput(imageAsset);
+  const result = await generateCreativeBlueprintWithArk(input, { imageInput });
   return {
     creativeBlueprint: result.creativeBlueprint,
     trace: result.trace,
@@ -37,18 +77,20 @@ export const creativeBlueprintService = {
     if (input.draftScriptId) {
       const draft = await db.getScript(input.draftScriptId);
       if (!draft.frozen) {
-        const imageAsset = await db.createAsset({
-          type: "product_image",
-          url: input.imageUrl,
-          source: input.imageUrl.startsWith("/mocks/") ? "mock" : "upload"
-        });
+        const imageAsset =
+          await creativeBlueprintRepository.findOrCreateProductImageAsset(
+            input.imageUrl
+          );
         const product = await db.updateProduct(draft.productId, {
           title: input.title,
           sellingPoints: input.sellingPoints,
           audience: input.audience,
           mainImageAssetId: imageAsset.id
         });
-        const { creativeBlueprint, trace, provider } = await generateBlueprint(input);
+        const { creativeBlueprint, trace, provider } = await generateBlueprint(
+          input,
+          imageAsset
+        );
         const script = await db.updateScript(draft.id, {
           narrative: creativeBlueprint.narrative,
           visualStyle: creativeBlueprint.visualStyle,
@@ -73,7 +115,10 @@ export const creativeBlueprintService = {
     }
 
     const { product, imageAsset } = await creativeBlueprintRepository.createDraft(input);
-    const { creativeBlueprint, trace, provider } = await generateBlueprint(input);
+    const { creativeBlueprint, trace, provider } = await generateBlueprint(
+      input,
+      imageAsset
+    );
     const parentScript = input.draftScriptId
       ? await db.getScript(input.draftScriptId)
       : null;

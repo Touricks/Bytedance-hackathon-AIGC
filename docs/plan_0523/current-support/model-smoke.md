@@ -16,6 +16,12 @@ The fallback LLM under `OPENAI_BASE_URL` is only for 创作蓝图 recovery when 
 
 ## Ark Creative Blueprint
 
+The current Ark creative-blueprint model is multimodal Doubao-Seed-2.0-pro.
+When Ark text config is present, uploaded product images are sent as structured
+`image_url` content alongside the blueprint prompt. App-created local raster
+uploads are converted server-side to `data:image/<format>;base64,...` before the
+Ark Chat request.
+
 Set primary Ark text variables before starting the server:
 
 ```bash
@@ -42,7 +48,7 @@ curl -s -X POST http://localhost:3000/api/creative-blueprints \
     "sellingPoints": "USB-C charging, easy cleaning, powerful smoothie blending",
     "audience": "busy office workers and fitness beginners",
     "stylePreference": "clean premium ecommerce",
-    "imageUrl": "/mocks/products/demo-product.svg"
+    "imageUrl": "<public product image URL, data URL, or uploaded asset URL>"
   }'
 ```
 
@@ -50,10 +56,11 @@ Expected result:
 
 - Response includes a stable `scriptId`.
 - Response includes `creativeBlueprint` with `narrative`, `visualStyle`, `coreSellingPoint`, 2-4 `shots`, `renderBrief`, and `improvementHints`.
-- Response includes sanitized `trace` metadata with `promptVersion`, `model`, `textProvider`, parse status, repair attempts, and fallback status.
+- Response includes sanitized `trace` metadata with `promptVersion`, `model`, `textProvider`, `imageReferenceMode`, parse status, repair attempts, and fallback status.
 - For acceptance, `provider` should be `ark` and `trace.textProvider` should be `ark`.
+- For uploaded raster images, `trace.imageReferenceMode` should be `data_url`. Public image URLs use `url`, and provider asset references use `provider_asset`.
 
-If Ark text auth/config fails and fallback LLM variables are configured, the provider may return `provider=fallback` with `trace.textProvider=fallback-llm`. That is useful for recovery, but it does not satisfy real-provider acceptance.
+If Ark text auth/config fails and fallback LLM variables are configured, the provider may return `provider=fallback` with `trace.textProvider=fallback-llm` and `trace.imageReferenceMode=text_only_fallback`. That is useful for recovery, but it does not satisfy real-provider acceptance.
 
 ## Ark-Backed Seedance Image-To-Video
 
@@ -67,6 +74,12 @@ ARK_API_KEY=<ark-api-key>
 ARK_VIDEO_ENDPOINT_ID=<ark-video-endpoint-id>
 ```
 
+For app-flow validation, upload a supported raster product image through the V0
+UI/API. The server converts app-created local uploads to
+`data:image/<format>;base64,...` before calling Seedance, so S3/TOS is not
+required for local demo validation. For direct curl calls that bypass upload,
+use a public product image URL or an explicit data URL.
+
 Then create a 创作蓝图 and start a 成片任务:
 
 ```bash
@@ -77,7 +90,7 @@ SCRIPT_ID=$(curl -s -X POST http://localhost:3000/api/creative-blueprints \
     "sellingPoints": "USB-C charging, easy cleaning, powerful smoothie blending",
     "audience": "busy office workers and fitness beginners",
     "stylePreference": "clean premium ecommerce",
-    "imageUrl": "/mocks/products/demo-product.svg"
+    "imageUrl": "<public product image URL or uploaded asset URL>"
   }' | node -e 'let s=""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => console.log(JSON.parse(s).scriptId));')
 
 curl -s -X POST http://localhost:3000/api/creation/jobs \
@@ -95,10 +108,12 @@ Expected result:
 ## Real-Provider Smoke Mode
 
 Local development may use fallback creative blueprints and the mock final video.
-Before S3-backed public product images are available, the smoke command validates:
+The smoke command is a dependency-interface health check, not a full video
+generation acceptance test. It validates:
 
-- Ark text provider returns provider `ark`.
-- Ark-backed Seedance endpoint is reachable. A `400` response is accepted in default reachability mode because localhost or private image URLs cannot be fetched by Seedance.
+- Ark text chat completion works with `ARK_API_KEY` and `ARK_TEXT_ENDPOINT_ID`.
+- OpenAI-compatible fallback chat completion works with `OPENAI_API_KEY` and `OPENAI_MODEL`.
+- The command does not create or read a product image, and it does not call the Seedance video endpoint.
 
 Set:
 
@@ -106,8 +121,11 @@ Set:
 MODEL_MODE=real
 ARK_API_KEY=<Ark API key>
 ARK_TEXT_ENDPOINT_ID=<Ark text endpoint ID>
-ARK_VIDEO_ENDPOINT_ID=<Ark video endpoint ID>
+OPENAI_API_KEY=<OpenAI or OpenAI-compatible API key>
+OPENAI_MODEL=<fallback model>
 ```
+
+`OPENAI_BASE_URL` is optional and defaults to `https://api.openai.com/v1`.
 
 Then run:
 
@@ -117,14 +135,6 @@ pnpm --filter @aigc-video/ai smoke:real-providers
 
 The smoke command loads the repository root `.env` and preserves any variables already exported in the shell.
 
-The command fails if creative blueprint generation does not return provider `ark`, or if the Seedance endpoint cannot be reached because of config/auth/network failure.
+The command fails if either text provider cannot return a non-empty chat completion response because of config, auth, quota, or network failure. Output is sanitized and includes provider names, models, base URLs, latency, and a short response preview.
 
-After S3/public asset URLs are available, enable full video generation:
-
-```bash
-SMOKE_FULL_VIDEO_GENERATION=true
-SMOKE_PRODUCT_IMAGE_URL=<publicly reachable product image URL>
-pnpm --filter @aigc-video/ai smoke:real-providers
-```
-
-In full mode, the command fails unless video generation returns provider `seedance` and a video URL.
+Full Seedance video validation remains a separate manual/demo readiness check. It can use local uploaded raster images through the app flow, while public product-image storage remains the production-oriented path.

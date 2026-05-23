@@ -122,11 +122,11 @@ Run the mocked end-to-end flow:
 
 Run real-provider smoke checks when credentials are available:
 
-1. Use `ARK_API_KEY` and `ARK_TEXT_ENDPOINT_ID` for Ark creative-blueprint generation.
-2. Use `ARK_API_KEY` and `ARK_VIDEO_ENDPOINT_ID` for Ark-backed Seedance image-to-video generation.
-3. Before S3/public product-image URLs are available, treat the Seedance part of `smoke:real-providers` as an endpoint reachability probe.
-4. After S3/public product-image URLs are available, set `SMOKE_FULL_VIDEO_GENERATION=true` and `SMOKE_PRODUCT_IMAGE_URL=<public URL>` for full video validation.
-5. Follow `docs/plan_0523/current-support/model-smoke.md` for curl examples and expected trace/result fields.
+1. Use `ARK_API_KEY` and `ARK_TEXT_ENDPOINT_ID` for the Ark text dependency probe.
+2. Use `OPENAI_API_KEY` and `OPENAI_MODEL` for the OpenAI-compatible fallback dependency probe.
+3. Do not use repository-local images for the real-provider smoke command; it does not call Seedance video.
+4. Run full Ark-backed Seedance validation through the app flow with a locally uploaded supported raster image, or with a public product image URL.
+5. Follow `docs/plan_0523/current-support/model-smoke.md` for command examples and expected result fields.
 
 ## V0 out of scope
 

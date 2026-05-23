@@ -33,7 +33,7 @@ async function runGeneration(payload: GenerateVideoJobPayload) {
 
   await processMediaGeneration(
     payload.jobId,
-    { imageUrl: imageAsset.url },
+    { imageAsset },
     creativeBlueprint as Parameters<typeof processMediaGeneration>[2]
   );
 }

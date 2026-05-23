@@ -17,7 +17,7 @@
    V0 演示与验收交接：上传素材、创作蓝图、一键成片、任务进度、预览导出、mock 兜底。
 
 5. [docs/plan_0523/current-support/model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)
-   真实 Ark text / Ark-backed Seedance video provider smoke check 步骤。
+   真实 Ark text / OpenAI fallback dependency smoke check 步骤。
 
 6. [docs/plan_0523/current-support/provider-contract-correction.md](./docs/plan_0523/current-support/provider-contract-correction.md)
    Provider contract 修正历史：解释旧 `SEEDANCE_*` 口径为什么被替换。
@@ -116,7 +116,7 @@ V0 演示资产：
 - 商品图：`apps/web/public/mocks/products/demo-product.svg`
 - 现场兜底成片：`apps/web/public/mocks/videos/fallback-flower.mp4`
 
-默认 mock fallback 可离线运行；真实 Ark text / Ark-backed Seedance video 凭证和 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。
+默认 mock fallback 可离线运行；真实 Ark text / OpenAI fallback 依赖接口 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。完整 Seedance 成片验收可通过本地上传 raster 商品图由 server 转 base64，也可使用公网商品图。
 
 ## Worktree 环境准备
 

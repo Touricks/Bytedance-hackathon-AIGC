@@ -26,6 +26,7 @@ interface DbAdapter {
   updateProduct(productId: string, patch: Partial<Product>): Promise<Product>;
   createAsset(input: CreateAssetInput): Promise<Asset>;
   getAsset(assetId: string): Promise<Asset>;
+  findProductImageAssetByUrl(url: string): Promise<Asset | null>;
   createJob(input: CreateJobInput): Promise<GenerationJob>;
   getJob(jobId: string): Promise<GenerationJob>;
   updateJob(jobId: string, patch: Partial<GenerationJob>): Promise<GenerationJob>;
@@ -227,6 +228,19 @@ class PostgresDbAdapter implements DbAdapter {
       assetId
     ]);
     return firstRow(result.rows, "Asset", toAsset);
+  }
+
+  async findProductImageAssetByUrl(url: string): Promise<Asset | null> {
+    const result = await this.getPool().query(
+      `select *
+       from asset
+       where type = 'product_image' and url = $1
+       order by created_at desc
+       limit 1`,
+      [url]
+    );
+    const row = result.rows[0];
+    return row ? toAsset(row) : null;
   }
 
   async createJob(input: CreateJobInput): Promise<GenerationJob> {
@@ -458,6 +472,7 @@ export const db: DbAdapter = {
   updateProduct: (productId, patch) => getAdapter().updateProduct(productId, patch),
   createAsset: (input) => getAdapter().createAsset(input),
   getAsset: (assetId) => getAdapter().getAsset(assetId),
+  findProductImageAssetByUrl: (url) => getAdapter().findProductImageAssetByUrl(url),
   createJob: (input) => getAdapter().createJob(input),
   getJob: (jobId) => getAdapter().getJob(jobId),
   updateJob: (jobId, patch) => getAdapter().updateJob(jobId, patch),
