@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
+import { createFileTraceLogger } from "../trace/trace-log.js";
 import {
   generateCreativeBlueprintWithArk,
   type CreateTextModelCall,
@@ -125,6 +129,60 @@ describe("generateCreativeBlueprintWithArk", () => {
         detail: "high"
       }
     });
+  });
+
+  it("writes redacted provider trace events with full prompt and text output", async () => {
+    const traceRoot = await mkdtemp(path.join(os.tmpdir(), "blueprint-trace-"));
+    const traceLogger = createFileTraceLogger({
+      traceId: "script_with_image",
+      traceRoot
+    });
+    const callTextModel: TextModelCall = async () => JSON.stringify(validBlueprint);
+
+    await generateCreativeBlueprintWithArk(
+      {
+        title: "Portable Mini Blender",
+        sellingPoints: "USB-C charging",
+        audience: "busy office workers",
+        stylePreference: "clean premium ecommerce",
+        imageUrl: "/uploads/product-images/demo.png"
+      },
+      {
+        callTextModel,
+        model: "ark-test-model",
+        traceLogger,
+        imageInput: {
+          url: "data:image/png;base64,cHJvZHVjdA==",
+          mode: "data_url",
+          detail: "high"
+        }
+      }
+    );
+
+    const events = (await readFile(traceLogger.filePath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    assert.deepEqual(
+      events.map((event) => event.kind),
+      [
+        "blueprint.request_prepared",
+        "provider.request_started",
+        "provider.response_received",
+        "blueprint.parsed"
+      ]
+    );
+    assert.match(events[0].meta.prompt, /merchant-readable creative blueprint/);
+    assert.equal(events[0].meta.imageReferenceMode, "data_url");
+    assert.equal(events[0].meta.image.mimeType, "image/png");
+    assert.equal(events[0].meta.image.byteSize, Buffer.from("product").byteLength);
+    assert.equal(typeof events[0].meta.image.sha256, "string");
+    assert.match(events[2].meta.output, /USB-C charging/);
+
+    const traceText = await readFile(traceLogger.filePath, "utf8");
+    assert.doesNotMatch(traceText, /cHJvZHVjdA==/);
+    assert.match(traceText, /data:image\/<redacted>;base64,<redacted>/);
   });
 
   it("repairs invalid model output once before returning a blueprint", async () => {

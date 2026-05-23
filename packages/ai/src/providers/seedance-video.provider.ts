@@ -3,6 +3,7 @@ import {
   resolveArkVideoProviderConfig,
   type ProviderEnv
 } from "./provider-config.js";
+import type { FileTraceLogger } from "../trace/trace-log.js";
 
 export interface SeedanceVideoRequest {
   imageUrl: string;
@@ -23,6 +24,8 @@ interface SeedanceProviderOptions {
   env?: ProviderEnv;
   pollIntervalMs?: number;
   maxPollAttempts?: number;
+  traceLogger?: Pick<FileTraceLogger, "append">;
+  jobId?: string;
 }
 
 function extractVideoUrl(payload: unknown): string | null {
@@ -204,9 +207,14 @@ async function buildFailureMessage(prefix: string, response: Response) {
 async function pollVideoTask(
   taskId: string,
   options: Required<Pick<SeedanceProviderOptions, "fetch">> &
-    Pick<SeedanceProviderOptions, "pollIntervalMs" | "maxPollAttempts"> & {
+    Pick<
+      SeedanceProviderOptions,
+      "pollIntervalMs" | "maxPollAttempts" | "traceLogger" | "jobId"
+    > & {
       apiKey: string;
       baseURL: string;
+      provider: string;
+      model: string;
     }
 ) {
   const pollIntervalMs = options.pollIntervalMs ?? 2000;
@@ -230,6 +238,19 @@ async function pollVideoTask(
 
     const payload = await readJsonResponse(response);
     const videoUrl = extractVideoUrl(payload);
+    await options.traceLogger?.append({
+      kind: "video.task_polled",
+      pipeline: "one_click_video",
+      status: "ok",
+      jobId: options.jobId,
+      provider: options.provider,
+      model: options.model,
+      meta: {
+        taskId,
+        status: extractTaskStatus(payload),
+        hasVideoUrl: Boolean(videoUrl)
+      }
+    });
     if (videoUrl) {
       return videoUrl;
     }
@@ -279,6 +300,20 @@ export async function generateVideoWithSeedance(
   }
 
   const fetchImpl = options.fetch ?? fetch;
+  await options.traceLogger?.append({
+    kind: "video.task_create_started",
+    pipeline: "one_click_video",
+    status: "ok",
+    jobId: options.jobId,
+    provider: "seedance",
+    model: config.model,
+    meta: {
+      endpointFamily: "ark_video_task",
+      baseURL: config.baseURL,
+      prompt: request.prompt,
+      imageUrl: request.imageUrl
+    }
+  });
   const response = await fetchImpl(
     joinArkPath(config.baseURL, "contents/generations/tasks"),
     {
@@ -309,14 +344,36 @@ export async function generateVideoWithSeedance(
   );
 
   if (!response.ok) {
-    throw new Error(await buildFailureMessage("Seedance request failed", response));
+    const message = await buildFailureMessage("Seedance request failed", response);
+    await options.traceLogger?.append({
+      kind: "video.failed",
+      pipeline: "one_click_video",
+      status: "error",
+      jobId: options.jobId,
+      provider: "seedance",
+      model: config.model,
+      meta: { error: message }
+    });
+    throw new Error(message);
   }
 
   const payload = await readJsonResponse(response);
+  const taskId = extractTaskId(payload);
+  await options.traceLogger?.append({
+    kind: "video.task_created",
+    pipeline: "one_click_video",
+    status: "ok",
+    jobId: options.jobId,
+    provider: "seedance",
+    model: config.model,
+    meta: {
+      taskId,
+      hasImmediateVideoUrl: Boolean(extractVideoUrl(payload))
+    }
+  });
   const videoUrl =
     extractVideoUrl(payload) ??
     (await (async () => {
-      const taskId = extractTaskId(payload);
       if (!taskId) {
         return null;
       }
@@ -325,12 +382,27 @@ export async function generateVideoWithSeedance(
         apiKey: config.apiKey,
         baseURL: config.baseURL,
         pollIntervalMs: options.pollIntervalMs,
-        maxPollAttempts: options.maxPollAttempts
+        maxPollAttempts: options.maxPollAttempts,
+        traceLogger: options.traceLogger,
+        jobId: options.jobId,
+        provider: "seedance",
+        model: config.model
       });
     })());
   if (!videoUrl) {
     throw new Error("Seedance response did not include a video URL");
   }
+  await options.traceLogger?.append({
+    kind: "video.completed",
+    pipeline: "one_click_video",
+    status: "ok",
+    jobId: options.jobId,
+    provider: "seedance",
+    model: config.model,
+    meta: {
+      videoUrl
+    }
+  });
 
   return {
     videoUrl,

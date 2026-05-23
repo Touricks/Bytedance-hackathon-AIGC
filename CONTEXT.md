@@ -40,6 +40,18 @@ _Avoid_: automatic prompt rewrite
 Merchant-editable structured inputs that guide script generation without exposing the video prompt.
 _Avoid_: raw prompt
 
+**创作会话**:
+A working unit centered on one creative-blueprint attempt. It may fail before a blueprint exists, stop after blueprint generation, or continue into one or more final-video jobs.
+_Avoid_: provider request, isolated video job
+
+**创作会话追踪**:
+An audit trail for one creative session that records blueprint generation and any final-video jobs that follow from it.
+_Avoid_: provider dashboard only, server console log
+
+**模型探测**:
+A standalone provider test that calls a text or video model without creating a merchant creative session.
+_Avoid_: demo session, generation job
+
 **分镜**:
 A script structure unit describing one beat of the final video.
 _Avoid_: render segment, clip
@@ -70,6 +82,10 @@ _Avoid_: primary generation path
 - A **冻结蓝图** can be used by multiple **成片任务** attempts.
 - A **改进提示** points to one or more **创作参数** and does not change them automatically.
 - **创作参数** guide **剧本** generation but do not directly expose the video prompt.
+- A **创作会话** may produce one **创作蓝图** and can create zero or more **成片任务**.
+- A failed **创作会话** can still have **创作会话追踪** even when no **创作蓝图** was produced.
+- **创作会话追踪** belongs to one **创作会话** and may include provider request and response summaries for both **创作蓝图生成** and **成片任务**.
+- A **模型探测** can produce trace logs using a reserved probe identifier, but it is not a **创作会话**.
 - **一键成片** happens after a **剧本** and **分镜** are visible to the merchant.
 - A **成片任务** produces at most one current **成片**.
 - **上传素材** can be used to create a **剧本** and guide **成片** generation.
@@ -91,3 +107,6 @@ _Avoid_: primary generation path
 - "生成任务" could mean both blueprint generation and video generation. Resolved: V0 uses **创作蓝图生成** for the first command and **成片任务** for the asynchronous video-generation command.
 - "重新生成蓝图" could mean always creating versions. Resolved: a **草稿蓝图** is overwritten before video generation; a **冻结蓝图** is read-only and edits create a new version.
 - "一键成片" could imply only one attempt per blueprint. Resolved: one **冻结蓝图** can start multiple **成片任务** attempts.
+- "session" could mean a browser visit, provider run, or video job. Resolved: use **创作会话** for the blueprint-centered working unit that may include zero or more **成片任务**.
+- "trace" could mean only provider dashboard traces or only server console logs. Resolved: use **创作会话追踪** for the app-owned audit trail across blueprint and final-video work.
+- "provider test" could imply a real merchant workflow. Resolved: use **模型探测** for standalone provider checks, with reserved probe identifiers rather than real creative-session IDs.

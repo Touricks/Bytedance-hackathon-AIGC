@@ -10,6 +10,12 @@ function readRepoFile(path: string) {
   return readFileSync(resolve(repoRoot, path), "utf8");
 }
 
+function readFirstExistingRepoFile(paths: string[]) {
+  const existingPath = paths.find((path) => existsSync(resolve(repoRoot, path)));
+  assert.ok(existingPath, `Expected one of ${paths.join(", ")} to exist`);
+  return readRepoFile(existingPath);
+}
+
 function assertMentions(source: string, terms: string[]) {
   for (const term of terms) {
     assert.ok(source.includes(term), `Expected demo readiness docs to mention ${term}`);
@@ -20,9 +26,18 @@ describe("demo readiness handoff", () => {
   it("documents the V0 route, setup modes, validation, and out-of-scope boundary", () => {
     const docs = [
       readRepoFile("README.md"),
-      readRepoFile("docs/plan_0523/current-support/model-smoke.md"),
-      readRepoFile("docs/plan_0523/current-support/demo-readiness.md"),
-      readRepoFile("docs/plan_0523/current-support/provider-contract-correction.md")
+      readFirstExistingRepoFile([
+        "docs/plan_0523/current-support/model-smoke.md",
+        "docs/archived/0523-ArchitectureDesign/current-support/model-smoke.md"
+      ]),
+      readFirstExistingRepoFile([
+        "docs/plan_0523/current-support/demo-readiness.md",
+        "docs/archived/0523-ArchitectureDesign/current-support/demo-readiness.md"
+      ]),
+      readFirstExistingRepoFile([
+        "docs/plan_0523/current-support/provider-contract-correction.md",
+        "docs/archived/0523-ArchitectureDesign/current-support/provider-contract-correction.md"
+      ])
     ].join("\n");
 
     assertMentions(docs, [

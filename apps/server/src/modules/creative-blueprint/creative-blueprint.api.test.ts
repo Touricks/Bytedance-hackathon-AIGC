@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
@@ -120,13 +123,23 @@ function setArkTextEnv(url: string) {
 
 describe("creative blueprint API", () => {
   let app: FastifyInstance;
+  let traceRoot: string;
+  let previousTraceLogDir: string | undefined;
 
   before(async () => {
+    traceRoot = await mkdtemp(path.join(os.tmpdir(), "aigc-server-trace-"));
+    previousTraceLogDir = process.env.TRACE_LOG_DIR;
+    process.env.TRACE_LOG_DIR = traceRoot;
     app = await buildServer();
   });
 
   after(async () => {
     await app.close();
+    if (previousTraceLogDir === undefined) {
+      delete process.env.TRACE_LOG_DIR;
+    } else {
+      process.env.TRACE_LOG_DIR = previousTraceLogDir;
+    }
   });
 
   it("persists a creative blueprint synchronously and returns a stable scriptId", async () => {
@@ -153,6 +166,21 @@ describe("creative blueprint API", () => {
     assert.equal(body.shots.length, 3);
     assert.equal(body.shots[0].scriptId, body.scriptId);
     assert.equal(body.job, undefined);
+
+    const traceLines = (
+      await readFile(
+        path.join(traceRoot, body.scriptId, "events.jsonl"),
+        "utf8"
+      )
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      traceLines.map((event) => event.kind),
+      ["session.started", "blueprint.completed"]
+    );
+    assert.equal(traceLines[0].scriptId, body.scriptId);
   });
 
   it("hydrates a persisted creative blueprint by scriptId", async () => {
@@ -182,6 +210,58 @@ describe("creative blueprint API", () => {
     assert.equal(body.imageAsset.url, "/mocks/products/demo-product.svg");
     assert.equal(body.creativeBlueprint.coreSellingPoint, "leakproof bottles, compact pouch, TSA friendly");
     assert.equal(body.shots.length, 3);
+  });
+
+  it("returns scriptId and writes failure trace when blueprint generation fails before persistence", async () => {
+    const previousModelMode = process.env.MODEL_MODE;
+    process.env.MODEL_MODE = "real";
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/creative-blueprints",
+        payload: {
+          title: "Portable Mini Blender",
+          sellingPoints: "USB-C charging",
+          audience: "busy office workers",
+          stylePreference: "clean premium ecommerce",
+          imageUrl: "/mocks/products/demo-product.svg"
+        }
+      });
+
+      assert.equal(response.statusCode, 400, response.body);
+      const body = response.json();
+      assert.equal(typeof body.scriptId, "string");
+      assert.match(body.message, /real-provider mode requires Ark text config/);
+
+      const getResponse = await app.inject({
+        method: "GET",
+        url: `/api/creative-blueprints/${body.scriptId}`
+      });
+      assert.equal(getResponse.statusCode, 404);
+
+      const traceLines = (
+        await readFile(
+          path.join(traceRoot, body.scriptId, "events.jsonl"),
+          "utf8"
+        )
+      )
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      assert.deepEqual(
+        traceLines.map((event) => event.kind),
+        ["session.started", "blueprint.failed"]
+      );
+      assert.equal(traceLines[1].status, "error");
+      assert.match(traceLines[1].meta.error, /real-provider mode requires/);
+    } finally {
+      if (previousModelMode === undefined) {
+        delete process.env.MODEL_MODE;
+      } else {
+        process.env.MODEL_MODE = previousModelMode;
+      }
+    }
   });
 
   it("overwrites an unfrozen draft when regenerating with draftScriptId", async () => {
@@ -267,6 +347,15 @@ describe("creative blueprint API", () => {
         imagePart?.image_url?.url ?? "",
         /\/uploads\/product-images\//
       );
+
+      const traceText = await readFile(
+        path.join(traceRoot, blueprint.scriptId, "events.jsonl"),
+        "utf8"
+      );
+      assert.match(traceText, /provider.response_received/);
+      assert.match(traceText, /USB-C charging/);
+      assert.doesNotMatch(traceText, /cG5nIHByb2R1Y3QgaW1hZ2U=/);
+      assert.match(traceText, /data:image\/<redacted>;base64,<redacted>/);
     } finally {
       restoreEnv();
       await arkText.close();

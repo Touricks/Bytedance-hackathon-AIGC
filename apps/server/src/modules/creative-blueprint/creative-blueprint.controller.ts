@@ -7,7 +7,7 @@ export async function registerCreativeBlueprintController(app: FastifyInstance) 
   app.post("/api/creative-blueprints", async (request, reply) => {
     try {
       const body = createCreativeBlueprintRequestSchema.parse(request.body);
-      return creativeBlueprintService.createCreativeBlueprint(body);
+      return await creativeBlueprintService.createCreativeBlueprint(body);
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);
@@ -17,7 +17,7 @@ export async function registerCreativeBlueprintController(app: FastifyInstance) 
   app.get("/api/creative-blueprints/:scriptId", async (request, reply) => {
     try {
       const params = request.params as { scriptId: string };
-      return creativeBlueprintService.getCreativeBlueprint(params.scriptId);
+      return await creativeBlueprintService.getCreativeBlueprint(params.scriptId);
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);

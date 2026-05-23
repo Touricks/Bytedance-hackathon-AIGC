@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
@@ -148,13 +151,23 @@ function setArkVideoEnv(url: string) {
 
 describe("creation API", () => {
   let app: FastifyInstance;
+  let traceRoot: string;
+  let previousTraceLogDir: string | undefined;
 
   before(async () => {
+    traceRoot = await mkdtemp(path.join(os.tmpdir(), "aigc-video-trace-"));
+    previousTraceLogDir = process.env.TRACE_LOG_DIR;
+    process.env.TRACE_LOG_DIR = traceRoot;
     app = await buildServer();
   });
 
   after(async () => {
     await app.close();
+    if (previousTraceLogDir === undefined) {
+      delete process.env.TRACE_LOG_DIR;
+    } else {
+      process.env.TRACE_LOG_DIR = previousTraceLogDir;
+    }
   });
 
   it("creates a video generation job from a persisted scriptId", async () => {
@@ -274,6 +287,18 @@ describe("creation API", () => {
 
       assert(detail.finalAsset);
       assert.equal(detail.finalAsset.type, "final_video");
+
+      const traceText = await readFile(
+        path.join(traceRoot, blueprint.scriptId, "events.jsonl"),
+        "utf8"
+      );
+      assert.match(traceText, /video.image_prepared/);
+      assert.match(traceText, /video.task_created/);
+      assert.match(traceText, /video.completed/);
+      assert.match(traceText, new RegExp(created.job.id));
+      assert.match(traceText, /"sha256"/);
+      assert.doesNotMatch(traceText, /cG5nIHByb2R1Y3QgaW1hZ2U=/);
+      assert.match(traceText, /data:image\/<redacted>;base64,<redacted>/);
     } finally {
       arkVideo.releaseResponse();
       await arkVideo.close();

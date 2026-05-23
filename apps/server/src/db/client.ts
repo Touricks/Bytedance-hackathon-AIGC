@@ -15,7 +15,8 @@ type CreateProductInput = Omit<Product, "id" | "createdAt">;
 type CreateAssetInput = Omit<Asset, "id" | "createdAt">;
 type CreateJobInput = Pick<GenerationJob, "productId" | "payload"> &
   Partial<Pick<GenerationJob, "scriptId">>;
-type CreateScriptInput = Omit<Script, "id" | "createdAt">;
+type CreateScriptInput = Omit<Script, "id" | "createdAt"> &
+  Partial<Pick<Script, "id">>;
 type CreateShotInput = Omit<StoryboardShot, "id" | "scriptId">;
 
 interface DbAdapter {
@@ -304,7 +305,7 @@ class PostgresDbAdapter implements DbAdapter {
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        returning *`,
       [
-        nanoid(),
+        input.id ?? nanoid(),
         input.productId,
         input.jobId ?? null,
         input.parentScriptId ?? null,

@@ -9,6 +9,7 @@ coverage/
 *.log
 apps/web/.vite/
 apps/server/tmp/
+logs/
 
 # Keep the PRD locally only; it includes private challenge resource credentials.
 docs/prd.pdf

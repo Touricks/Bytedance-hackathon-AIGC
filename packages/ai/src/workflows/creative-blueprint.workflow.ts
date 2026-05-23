@@ -17,6 +17,10 @@ import {
   type ProviderEnv,
   type TextProviderConfig
 } from "../providers/provider-config.js";
+import {
+  createImageTraceMeta,
+  type FileTraceLogger
+} from "../trace/trace-log.js";
 
 export type CreativeBlueprintImageReferenceMode =
   | "none"
@@ -88,6 +92,7 @@ export interface GenerateCreativeBlueprintOptions {
   apiKey?: string;
   baseURL?: string;
   imageInput?: CreativeBlueprintImageInput;
+  traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
 function summarizeRawOutput(rawOutput: string) {
@@ -127,6 +132,18 @@ function buildCreativeBlueprintModelRequest(
     ],
     imageReferenceMode: imageInput.mode
   };
+}
+
+function buildImageTraceMeta(imageInput?: CreativeBlueprintImageInput) {
+  if (!imageInput) {
+    return undefined;
+  }
+
+  return createImageTraceMeta({
+    url: imageInput.url,
+    referenceMode: imageInput.mode,
+    detail: imageInput.detail,
+  });
 }
 
 function getTextOnlyFallbackImageMode(
@@ -242,7 +259,8 @@ async function runTextProvider(
   provider: TextProviderConfig,
   callTextModel: TextModelCall,
   prompt: string,
-  imageInput?: CreativeBlueprintImageInput
+  imageInput?: CreativeBlueprintImageInput,
+  traceLogger?: Pick<FileTraceLogger, "append">
 ): Promise<GenerateCreativeBlueprintResult> {
   let rawOutput = "";
   const providerImageInput =
@@ -252,12 +270,65 @@ async function runTextProvider(
     : getTextOnlyFallbackImageMode(imageInput);
 
   try {
-    rawOutput = await callTextModel(
-      buildCreativeBlueprintModelRequest(prompt, providerImageInput)
+    const modelRequest = buildCreativeBlueprintModelRequest(
+      prompt,
+      providerImageInput
     );
+    await traceLogger?.append({
+      kind: "blueprint.request_prepared",
+      pipeline: "creative_blueprint",
+      status: "ok",
+      provider: provider.provider,
+      model: provider.model,
+      meta: {
+        promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
+        prompt,
+        content: modelRequest.content,
+        imageReferenceMode: traceImageReferenceMode,
+        image: buildImageTraceMeta(providerImageInput)
+      }
+    });
+    const startedAt = Date.now();
+    await traceLogger?.append({
+      kind: "provider.request_started",
+      pipeline: "creative_blueprint",
+      status: "ok",
+      provider: provider.provider,
+      model: provider.model,
+      meta: {
+        endpointFamily:
+          provider.provider === "ark" ? "ark_openai_compatible" : "openai",
+        baseURL: provider.baseURL,
+        imageReferenceMode: traceImageReferenceMode,
+        image: buildImageTraceMeta(providerImageInput)
+      }
+    });
+    rawOutput = await callTextModel(modelRequest);
+    await traceLogger?.append({
+      kind: "provider.response_received",
+      pipeline: "creative_blueprint",
+      status: "ok",
+      provider: provider.provider,
+      model: provider.model,
+      latencyMs: Date.now() - startedAt,
+      meta: {
+        output: rawOutput
+      }
+    });
+    const creativeBlueprint = parseCreativeBlueprint(rawOutput);
+    await traceLogger?.append({
+      kind: "blueprint.parsed",
+      pipeline: "creative_blueprint",
+      status: "ok",
+      provider: provider.provider,
+      model: provider.model,
+      meta: {
+        parsedOutputStatus: "valid"
+      }
+    });
     return {
       provider: provider.provider === "ark" ? "ark" : "fallback",
-      creativeBlueprint: parseCreativeBlueprint(rawOutput),
+      creativeBlueprint,
       trace: {
         promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
         model: provider.model,
@@ -271,18 +342,57 @@ async function runTextProvider(
     };
   } catch (firstError) {
     if (!rawOutput) {
+      await traceLogger?.append({
+        kind: "provider.failed",
+        pipeline: "creative_blueprint",
+        status: "error",
+        provider: provider.provider,
+        model: provider.model,
+        meta: {
+          error:
+            firstError instanceof Error
+              ? firstError.message
+              : "Unknown provider failure"
+        }
+      });
       throw firstError;
     }
 
     try {
+      await traceLogger?.append({
+        kind: "blueprint.parse_failed",
+        pipeline: "creative_blueprint",
+        status: "error",
+        provider: provider.provider,
+        model: provider.model,
+        meta: {
+          output: rawOutput,
+          error:
+            firstError instanceof Error
+              ? firstError.message
+              : "Unknown parse failure"
+        }
+      });
       const repairedOutput = await callTextModel(
         buildCreativeBlueprintModelRequest(
           buildCreativeBlueprintRepairPrompt(rawOutput)
         )
       );
+      const creativeBlueprint = parseCreativeBlueprint(repairedOutput);
+      await traceLogger?.append({
+        kind: "blueprint.repaired",
+        pipeline: "creative_blueprint",
+        status: "ok",
+        provider: provider.provider,
+        model: provider.model,
+        meta: {
+          output: repairedOutput,
+          parsedOutputStatus: "repaired"
+        }
+      });
       return {
         provider: provider.provider === "ark" ? "ark" : "fallback",
-        creativeBlueprint: parseCreativeBlueprint(repairedOutput),
+        creativeBlueprint,
         trace: {
           promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
           model: provider.model,
@@ -296,6 +406,17 @@ async function runTextProvider(
       };
     } catch (repairError) {
       const error = repairError instanceof Error ? repairError : firstError;
+      await traceLogger?.append({
+        kind: "blueprint.fallback_used",
+        pipeline: "creative_blueprint",
+        status: "error",
+        provider: provider.provider,
+        model: provider.model,
+        meta: {
+          output: rawOutput,
+          error: error instanceof Error ? error.message : "Unknown model failure"
+        }
+      });
       return deterministicFallbackResult(
         input,
         provider.model,
@@ -327,7 +448,8 @@ export async function generateCreativeBlueprintWithArk(
       provider,
       options.callTextModel,
       prompt,
-      options.imageInput
+      options.imageInput,
+      options.traceLogger
     );
   }
 
@@ -346,7 +468,8 @@ export async function generateCreativeBlueprintWithArk(
         fallbackProvider,
         createModelCall(fallbackProvider),
         prompt,
-        options.imageInput
+        options.imageInput,
+        options.traceLogger
       );
     }
 
@@ -371,7 +494,8 @@ export async function generateCreativeBlueprintWithArk(
       arkProvider,
       createModelCall(arkProvider),
       prompt,
-      options.imageInput
+      options.imageInput,
+      options.traceLogger
     );
   } catch (arkError) {
     if (fallbackProvider && isProviderAuthOrConfigError(arkError)) {
@@ -381,7 +505,8 @@ export async function generateCreativeBlueprintWithArk(
           fallbackProvider,
           createModelCall(fallbackProvider),
           prompt,
-          options.imageInput
+          options.imageInput,
+          options.traceLogger
         );
       } catch (fallbackError) {
         const error =

@@ -3,13 +3,10 @@ import {
   type GeneratedScript,
   generatedScriptSchema
 } from "@aigc-video/shared";
-import { buildScriptPrompt } from "../prompts/script.prompt.js";
 
 export async function generateScriptWithSeed(
   input: CreateCreativeBlueprintRequest
 ): Promise<GeneratedScript> {
-  const _prompt = buildScriptPrompt(input);
-
   // TODO: Replace this deterministic fallback with Doubao-Seed-2.0-pro.
   const fallback: GeneratedScript = {
     narrative: `${input.title} 的 12 秒带货短视频：开场抓注意力，中段突出卖点，结尾推动转化。`,
