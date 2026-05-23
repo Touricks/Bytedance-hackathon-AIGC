@@ -15,7 +15,7 @@
 
 ## 1. r4 文档定位
 
-本文是 `docs/arc_codex_r3.md` 与 `docs/plan_0523/proposed_architecture.md` 之后的当前实现架构记录。
+本文是当前实现架构记录，取代已归档的 Codex r3 架构草案和 `proposed_architecture.md` 计划文档。
 
 r3 主要回答“应该怎么建”；r4 记录“当前代码已经如何落地”。本轮关键修正是：
 

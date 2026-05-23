@@ -7,26 +7,19 @@
 1. [CONTEXT.md](./CONTEXT.md)  
    领域词汇表。先确认“创作蓝图”“草稿蓝图”“冻结蓝图”“一键成片”“成片任务”等词的含义。
 
-2. [docs/plan_0523/proposed_architecture.md](./docs/plan_0523/proposed_architecture.md)  
-   当前架构主文档，也是 V0 取舍的主要来源。
+2. [docs/architecture.md](./docs/architecture.md)
+   当前架构入口，指向实现架构、数据模型、演示与模型 smoke 文档。
 
-3. [docs/plan_0523/grill-with-docs-note/](./docs/plan_0523/grill-with-docs-note/)  
-   架构追问和已确认决策记录。重点看：
-   - `20260523-07-creative-blueprint-prompt.md`
-   - `20260523-08-two-command-api.md`
-   - `20260523-09-persist-creative-blueprint.md`
-   - `20260523-10-blueprint-draft-freeze-version.md`
+3. [docs/arc_codex_r4.md](./docs/arc_codex_r4.md)
+   当前已实现架构事实源：Postgres 事实源、两步式创作蓝图、Seedance 整片生成和 review 状态恢复。
 
-4. [docs/plan_0523/supporting_docs/implementation-slices.md](./docs/plan_0523/supporting_docs/implementation-slices.md)  
-   V0 实现切片。
+4. [docs/plan_0523/current-support/demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md)
+   V0 演示与验收交接：上传素材、创作蓝图、一键成片、任务进度、预览导出、mock 兜底。
 
-5. [docs/plan_0523/supporting_docs/worktree-modules.md](./docs/plan_0523/supporting_docs/worktree-modules.md)  
-   后续 worktree 开发边界。
+5. [docs/plan_0523/current-support/model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)
+   真实 Ark/Seedance provider smoke check 步骤。
 
-6. [docs/plan_0523/supporting_docs/demo-readiness.md](./docs/plan_0523/supporting_docs/demo-readiness.md)
-   V0 演示与验收交接：上传素材、创作蓝图、一键成片、任务进度、预览导出、mock 兜底和真实模型 smoke checks。
-
-7. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
+6. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
    原始安全版 PRD。
 
 ## V0 范围
@@ -118,7 +111,7 @@ V0 演示资产：
 - 商品图：`apps/web/public/mocks/products/demo-product.svg`
 - 现场兜底成片：`apps/web/public/mocks/videos/fallback-flower.mp4`
 
-默认 mock fallback 可离线运行；真实 Ark/Seedance 凭证和 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/supporting_docs/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/supporting_docs/model-smoke.md)。
+默认 mock fallback 可离线运行；真实 Ark/Seedance 凭证和 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。
 
 ## Worktree 环境准备
 

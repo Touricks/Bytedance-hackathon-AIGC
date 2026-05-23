@@ -120,7 +120,7 @@ Run real-provider smoke checks when credentials are available:
 
 1. Use `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` for Ark creative-blueprint generation.
 2. Use `SEEDANCE_API_URL`, `SEEDANCE_API_KEY`, and `SEEDANCE_MODEL` for Seedance image-to-video generation.
-3. Follow `docs/plan_0523/supporting_docs/model-smoke.md` for curl examples and expected trace/result fields.
+3. Follow `docs/plan_0523/current-support/model-smoke.md` for curl examples and expected trace/result fields.
 
 ## V0 out of scope
 

@@ -6,9 +6,10 @@ How the engineering skills should consume this repo's domain documentation when 
 
 - **`CONTEXT.md`** at the repo root for the project glossary and resolved ambiguities.
 - **`README.md`** at the repo root for the current V0 entrypoint and required reading order.
-- **`docs/plan_0523/proposed_architecture.md`** for the confirmed V0 architecture baseline.
+- **`docs/architecture.md`** for the current architecture entrypoint.
+- **`docs/arc_codex_r4.md`** for the current implemented V0 architecture.
+- **`docs/plan_0523/current-support/`** for demo readiness and real-provider smoke checks.
 - **`docs/plan_0523/grill-with-docs-note/`** for confirmed architectural decisions.
-- **`docs/plan_0523/supporting_docs/`** for implementation slices and worktree boundaries.
 - **`docs/adr/`** if it is added later; read ADRs that touch the area you're about to work in.
 
 If any optional file does not exist, proceed silently. Do not suggest creating missing ADR files upfront.
@@ -52,4 +53,4 @@ Avoid glossary drift such as raw prompt, URL mock, render segment, generated cli
 
 ## Flag decision conflicts
 
-If output contradicts the README, the proposed architecture, or a grill-note decision, surface it explicitly rather than silently overriding it.
+If output contradicts the README, current architecture docs, or a grill-note decision, surface it explicitly rather than silently overriding it.
