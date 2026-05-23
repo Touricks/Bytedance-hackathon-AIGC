@@ -34,6 +34,40 @@ export interface CreativeBlueprintDetail {
   shots: StoryboardShot[];
 }
 
+export async function uploadProductImage(file: File): Promise<Asset> {
+  const dataBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const result = String(reader.result);
+      resolve(result.includes(",") ? result.split(",")[1] ?? "" : result);
+    });
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
+
+  const response = await fetch(`${apiBaseUrl}/api/materials/product-image`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type || "image/png",
+      dataBase64
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as Asset;
+}
+
+export function toAbsoluteAssetUrl(url: string) {
+  return url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
+}
+
 export async function createCreativeBlueprint(
   input: CreateCreativeBlueprintRequest
 ): Promise<CreativeBlueprintDetail> {

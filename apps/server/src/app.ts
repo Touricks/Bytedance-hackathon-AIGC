@@ -1,3 +1,6 @@
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { config } from "./common/config.js";
@@ -14,6 +17,19 @@ export async function buildServer() {
     ok: true,
     runtime: config.runtime
   }));
+
+  app.get("/uploads/*", async (request, reply) => {
+    const params = request.params as { "*": string };
+    const uploadRoot = path.resolve(config.uploadDir);
+    const filePath = path.resolve(uploadRoot, params["*"]);
+
+    if (!filePath.startsWith(uploadRoot)) {
+      return reply.status(400).send({ message: "Invalid upload path" });
+    }
+
+    await stat(filePath);
+    return reply.send(createReadStream(filePath));
+  });
 
   await registerMaterialController(app);
   await registerScriptController(app);

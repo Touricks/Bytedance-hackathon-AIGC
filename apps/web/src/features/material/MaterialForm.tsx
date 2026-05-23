@@ -1,5 +1,10 @@
+import { useState, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
+import {
+  toAbsoluteAssetUrl,
+  uploadProductImage
+} from "../../lib/api/client.js";
 
 interface MaterialFormProps {
   onSubmit: (input: CreateCreativeBlueprintRequest) => Promise<void>;
@@ -15,9 +20,27 @@ const defaultValues: CreateCreativeBlueprintRequest = {
 };
 
 export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
-  const { register, handleSubmit } = useForm<CreateCreativeBlueprintRequest>({
+  const { register, handleSubmit, setValue, watch } =
+    useForm<CreateCreativeBlueprintRequest>({
     defaultValues
   });
+  const imageUrl = watch("imageUrl");
+  const [isUploading, setIsUploading] = useState(false);
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const asset = await uploadProductImage(file);
+      setValue("imageUrl", asset.url, { shouldDirty: true, shouldValidate: true });
+    } finally {
+      setIsUploading(false);
+    }
+  }
 
   return (
     <form className="panel form-grid" onSubmit={handleSubmit(onSubmit)}>
@@ -41,8 +64,19 @@ export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
         <span>商品主图 URL</span>
         <input {...register("imageUrl", { required: true })} />
       </label>
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "生成中..." : "生成创作蓝图"}
+      <label>
+        <span>上传商品主图</span>
+        <input type="file" accept="image/*" onChange={handleFileChange} />
+      </label>
+      {imageUrl ? (
+        <img
+          className="product-image-preview"
+          src={toAbsoluteAssetUrl(imageUrl)}
+          alt="商品主图预览"
+        />
+      ) : null}
+      <button type="submit" disabled={isSubmitting || isUploading}>
+        {isUploading ? "上传中..." : isSubmitting ? "生成中..." : "生成创作蓝图"}
       </button>
     </form>
   );
