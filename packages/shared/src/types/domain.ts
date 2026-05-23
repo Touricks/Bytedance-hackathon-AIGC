@@ -52,9 +52,12 @@ export interface Script {
   id: string;
   productId: string;
   jobId?: string;
+  parentScriptId?: string;
   version: number;
   narrative: string;
   visualStyle: string;
+  frozen: boolean;
+  frozenAt?: string;
   rawJson: unknown;
   createdAt: string;
 }

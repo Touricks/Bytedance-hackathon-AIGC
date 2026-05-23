@@ -68,4 +68,41 @@ describe("creative blueprint API", () => {
     assert.equal(body.creativeBlueprint.coreSellingPoint, "leakproof bottles, compact pouch, TSA friendly");
     assert.equal(body.shots.length, 3);
   });
+
+  it("overwrites an unfrozen draft when regenerating with draftScriptId", async () => {
+    const firstResponse = await app.inject({
+      method: "POST",
+      url: "/api/creative-blueprints",
+      payload: {
+        title: "Portable Mini Blender",
+        sellingPoints: "USB-C charging",
+        audience: "busy office workers",
+        stylePreference: "clean premium ecommerce",
+        imageUrl: "/mocks/products/demo-product.svg"
+      }
+    });
+    const first = firstResponse.json();
+
+    const secondResponse = await app.inject({
+      method: "POST",
+      url: "/api/creative-blueprints",
+      payload: {
+        draftScriptId: first.scriptId,
+        title: "Portable Mini Blender Pro",
+        sellingPoints: "quiet motor and dishwasher-safe cup",
+        audience: "fitness beginners",
+        stylePreference: "bright studio demo",
+        imageUrl: "/mocks/products/demo-product.svg"
+      }
+    });
+
+    assert.equal(secondResponse.statusCode, 200);
+
+    const second = secondResponse.json();
+    assert.equal(second.scriptId, first.scriptId);
+    assert.equal(second.script.version, 1);
+    assert.equal(second.product.title, "Portable Mini Blender Pro");
+    assert.ok(second.creativeBlueprint.narrative.includes("Portable Mini Blender Pro"));
+    assert.equal(second.shots[1].subtitle, "quiet motor and dishwasher-safe cup");
+  });
 });

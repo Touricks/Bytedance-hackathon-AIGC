@@ -33,10 +33,14 @@ create table generation_job (
 
 create table script (
   id text primary key,
-  job_id text not null references generation_job(id),
+  product_id text not null references product(id),
+  job_id text references generation_job(id),
+  parent_script_id text references script(id),
   version integer not null,
   narrative text not null,
   visual_style text not null,
+  frozen boolean not null default false,
+  frozen_at timestamptz,
   raw_json jsonb not null,
   created_at timestamptz not null default now()
 );

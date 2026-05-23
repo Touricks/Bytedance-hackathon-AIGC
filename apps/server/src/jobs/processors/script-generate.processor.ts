@@ -22,6 +22,7 @@ export async function processScriptGeneration(
     version: 1,
     narrative: generated.narrative,
     visualStyle: generated.visualStyle,
+    frozen: false,
     rawJson: generated
   });
 

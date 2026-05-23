@@ -30,6 +30,18 @@ export const db = {
     return product;
   },
 
+  updateProduct(productId: string, patch: Partial<Product>): Product {
+    const product = this.getProduct(productId);
+    const updated = {
+      ...product,
+      ...patch,
+      id: product.id,
+      createdAt: product.createdAt
+    };
+    products.set(productId, updated);
+    return updated;
+  },
+
   createAsset(input: Omit<Asset, "id" | "createdAt">): Asset {
     const asset = {
       ...input,
@@ -40,11 +52,19 @@ export const db = {
     return asset;
   },
 
-  createJob(input: Pick<GenerationJob, "productId" | "payload">): GenerationJob {
+  createJob(
+    input: Pick<GenerationJob, "productId" | "payload"> &
+      Partial<Pick<GenerationJob, "scriptId">>
+  ): GenerationJob {
+    if (input.scriptId) {
+      this.freezeScript(input.scriptId);
+    }
+
     const now = new Date().toISOString();
     const job: GenerationJob = {
       id: nanoid(),
       productId: input.productId,
+      scriptId: input.scriptId,
       status: "queued",
       stage: "queued",
       progress: 0,
@@ -79,6 +99,7 @@ export const db = {
   createScript(input: Omit<Script, "id" | "createdAt">): Script {
     const script = {
       ...input,
+      frozen: input.frozen ?? false,
       id: nanoid(),
       createdAt: new Date().toISOString()
     };
@@ -94,6 +115,35 @@ export const db = {
     return script;
   },
 
+  updateScript(scriptId: string, patch: Partial<Script>): Script {
+    const script = this.getScript(scriptId);
+    const updated = {
+      ...script,
+      ...patch,
+      id: script.id,
+      productId: script.productId,
+      version: script.version,
+      createdAt: script.createdAt
+    };
+    scripts.set(scriptId, updated);
+    return updated;
+  },
+
+  freezeScript(scriptId: string): Script {
+    const script = this.getScript(scriptId);
+    if (script.frozen) {
+      return script;
+    }
+
+    const updated = {
+      ...script,
+      frozen: true,
+      frozenAt: new Date().toISOString()
+    };
+    scripts.set(scriptId, updated);
+    return updated;
+  },
+
   listShots(scriptId: string): StoryboardShot[] {
     return shotsByScript.get(scriptId) ?? [];
   },
@@ -106,6 +156,13 @@ export const db = {
     }));
     shotsByScript.set(scriptId, created);
     return created;
+  },
+
+  replaceShots(
+    scriptId: string,
+    shots: Omit<StoryboardShot, "id" | "scriptId">[]
+  ) {
+    return this.createShots(scriptId, shots);
   },
 
   getAsset(assetId: string): Asset {

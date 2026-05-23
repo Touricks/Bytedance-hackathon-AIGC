@@ -69,14 +69,64 @@ function buildMockCreativeBlueprint(
 
 export const creativeBlueprintService = {
   createCreativeBlueprint(input: CreateCreativeBlueprintRequest) {
+    if (input.draftScriptId) {
+      const draft = db.getScript(input.draftScriptId);
+      if (!draft.frozen) {
+        const imageAsset = db.createAsset({
+          type: "product_image",
+          url: input.imageUrl,
+          source: input.imageUrl.startsWith("/mocks/") ? "mock" : "upload"
+        });
+        const product = db.updateProduct(draft.productId, {
+          title: input.title,
+          sellingPoints: input.sellingPoints,
+          audience: input.audience,
+          mainImageAssetId: imageAsset.id
+        });
+        const creativeBlueprint = buildMockCreativeBlueprint(input);
+        const script = db.updateScript(draft.id, {
+          narrative: creativeBlueprint.narrative,
+          visualStyle: creativeBlueprint.visualStyle,
+          rawJson: creativeBlueprint
+        });
+        const shots = db.replaceShots(
+          script.id,
+          creativeBlueprint.shots.map((shot) => ({
+            index: shot.index,
+            durationSec: shot.durationSec,
+            purpose: shot.purpose,
+            visualPrompt: shot.visualPrompt,
+            cameraMotion: shot.cameraMotion,
+            voiceover: shot.voiceover,
+            subtitle: shot.subtitle,
+            status: "ready"
+          }))
+        );
+
+        return {
+          scriptId: script.id,
+          product,
+          imageAsset,
+          script,
+          creativeBlueprint,
+          shots
+        };
+      }
+    }
+
     const { product, imageAsset } = creativeBlueprintRepository.createDraft(input);
     const creativeBlueprint = buildMockCreativeBlueprint(input);
+    const parentScript = input.draftScriptId
+      ? db.getScript(input.draftScriptId)
+      : null;
 
     const script = db.createScript({
       productId: product.id,
-      version: 1,
+      parentScriptId: parentScript?.id,
+      version: parentScript ? parentScript.version + 1 : 1,
       narrative: creativeBlueprint.narrative,
       visualStyle: creativeBlueprint.visualStyle,
+      frozen: false,
       rawJson: creativeBlueprint
     });
 
@@ -106,5 +156,18 @@ export const creativeBlueprintService = {
 
   getCreativeBlueprint(scriptId: string) {
     return creativeBlueprintRepository.getBlueprint(scriptId);
+  },
+
+  freezeCreativeBlueprint(scriptId: string) {
+    return db.freezeScript(scriptId);
+  },
+
+  createGenerationAttempt(scriptId: string) {
+    const script = db.getScript(scriptId);
+    return db.createJob({
+      productId: script.productId,
+      scriptId,
+      payload: { scriptId }
+    });
   }
 };
