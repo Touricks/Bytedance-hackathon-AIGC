@@ -33,3 +33,40 @@ Expected result:
 - Response includes sanitized `trace` metadata with `promptVersion`, `model`, parse status, repair attempts, and fallback status.
 
 If credentials are missing or the model output cannot be repaired, the provider returns a deterministic fallback blueprint and marks `trace.fallbackUsed` as true.
+
+## Seedance Image-To-Video
+
+The V0 成片任务 uses Seedance as an image-to-video provider when configured, and falls back to `MOCK_FINAL_VIDEO_URL` for local development.
+
+Set environment variables before starting the server:
+
+```bash
+SEEDANCE_API_URL=<seedance-image-to-video-endpoint>
+SEEDANCE_API_KEY=<seedance-api-key>
+SEEDANCE_MODEL=<seedance-model-or-endpoint-id>
+```
+
+Then create a 创作蓝图 and start a 成片任务:
+
+```bash
+SCRIPT_ID=$(curl -s -X POST http://localhost:3000/api/creative-blueprints \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Portable Mini Blender",
+    "sellingPoints": "USB-C charging, easy cleaning, powerful smoothie blending",
+    "audience": "busy office workers and fitness beginners",
+    "stylePreference": "clean premium ecommerce",
+    "imageUrl": "/mocks/products/demo-product.svg"
+  }' | node -e 'let s=""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => console.log(JSON.parse(s).scriptId));')
+
+curl -s -X POST http://localhost:3000/api/creation/jobs \
+  -H 'Content-Type: application/json' \
+  -d "{\"scriptId\":\"$SCRIPT_ID\"}"
+```
+
+Expected result:
+
+- The GenerationJob starts at `queued`, moves through `media_generating`, then reaches `completed`.
+- The final Asset has `type=final_video`.
+- Asset metadata includes the internal conservative 12-second whole-video prompt and provider name.
+- If Seedance credentials are not configured, the provider remains `mock` and returns `MOCK_FINAL_VIDEO_URL`.
