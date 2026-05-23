@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { createGenerationJob } from "./client.js";
+import { createGenerationJob, uploadProductImage } from "./client.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -9,6 +9,26 @@ afterEach(() => {
 });
 
 describe("api client", () => {
+  it("surfaces product image upload validation failures as readable errors", async () => {
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          statusCode: 400,
+          message: "Uploaded product image must be a valid image file"
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+
+    const file = new File(["fake image bytes"], "fake-product.png", {
+      type: "image/png"
+    });
+
+    await assert.rejects(
+      () => uploadProductImage(file),
+      /Uploaded product image must be a valid image file/
+    );
+  });
+
   it("creates a generation job from scriptId and returns hydrated job detail", async () => {
     globalThis.fetch = async (url, init) => {
       assert.equal(String(url), "http://localhost:3000/api/creation/jobs");

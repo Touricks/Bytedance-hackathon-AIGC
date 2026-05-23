@@ -6,6 +6,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+import { transparentPngBase64 } from "../../test/image-fixtures.js";
 
 const validBlueprint = {
   narrative: "A focused 12-second product story for a mini blender.",
@@ -312,7 +313,7 @@ describe("creative blueprint API", () => {
         payload: {
           filename: "mini-blender.png",
           contentType: "image/png",
-          dataBase64: Buffer.from("png product image").toString("base64")
+          dataBase64: transparentPngBase64
         }
       });
       assert.equal(uploadResponse.statusCode, 200);

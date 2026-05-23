@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { toHttpError } from "../../common/errors.js";
 import {
   materialUploadRequestSchema,
   productImageUploadRequestSchema
@@ -11,8 +12,13 @@ export async function registerMaterialController(app: FastifyInstance) {
     return materialService.registerProductImage(body.imageUrl);
   });
 
-  app.post("/api/materials/product-image", async (request) => {
-    const body = productImageUploadRequestSchema.parse(request.body);
-    return materialService.uploadProductImage(body);
+  app.post("/api/materials/product-image", async (request, reply) => {
+    try {
+      const body = productImageUploadRequestSchema.parse(request.body);
+      return await materialService.uploadProductImage(body);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
   });
 }
