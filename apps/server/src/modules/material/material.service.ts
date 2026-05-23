@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { config } from "../../common/config.js";
+import { assertValidRasterImageBytes } from "../../common/image-validation.js";
 import { materialRepository } from "./material.repository.js";
 
 const extensionByContentType: Record<string, string> = {
@@ -33,12 +34,13 @@ export const materialService = {
     dataBase64: string;
   }) {
     const bytes = Buffer.from(input.dataBase64, "base64");
+    const contentType = assertValidRasterImageBytes(bytes, input.contentType);
     const uploadRoot = path.resolve(config.uploadDir, "product-images");
     await mkdir(uploadRoot, { recursive: true });
 
     const storedFilename = `${nanoid()}${safeExtension(
       input.filename,
-      input.contentType
+      contentType
     )}`;
     const storagePath = path.join(uploadRoot, storedFilename);
     await writeFile(storagePath, bytes);
@@ -46,7 +48,7 @@ export const materialService = {
     return materialRepository.createUploadedProductImageAsset({
       url: `/uploads/product-images/${storedFilename}`,
       originalFilename: input.filename,
-      contentType: input.contentType,
+      contentType,
       sizeBytes: bytes.byteLength,
       storagePath
     });

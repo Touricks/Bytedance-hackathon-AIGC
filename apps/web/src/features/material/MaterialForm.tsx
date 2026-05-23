@@ -26,6 +26,7 @@ export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
   });
   const imageUrl = watch("imageUrl");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -34,9 +35,12 @@ export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
     }
 
     setIsUploading(true);
+    setUploadError(null);
     try {
       const asset = await uploadProductImage(file);
       setValue("imageUrl", asset.url, { shouldDirty: true, shouldValidate: true });
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "商品主图上传失败");
     } finally {
       setIsUploading(false);
     }
@@ -68,6 +72,7 @@ export function MaterialForm({ onSubmit, isSubmitting }: MaterialFormProps) {
         <span>上传商品主图</span>
         <input type="file" accept="image/*" onChange={handleFileChange} />
       </label>
+      {uploadError ? <p className="error">{uploadError}</p> : null}
       {imageUrl ? (
         <img
           className="product-image-preview"

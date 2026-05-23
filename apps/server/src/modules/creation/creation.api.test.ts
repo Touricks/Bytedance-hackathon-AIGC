@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+import { transparentPngBytes } from "../../test/image-fixtures.js";
 
 interface JobDetail {
   job: {
@@ -24,7 +25,7 @@ async function uploadProductImage(
     bytes?: Buffer;
   } = {}
 ) {
-  const bytes = input.bytes ?? Buffer.from("product image bytes");
+  const bytes = input.bytes ?? transparentPngBytes;
   const response = await app.inject({
     method: "POST",
     url: "/api/materials/product-image",
@@ -250,7 +251,7 @@ describe("creation API", () => {
 
     try {
       const imageAsset = await uploadProductImage(app, {
-        bytes: Buffer.from("png product image")
+        bytes: transparentPngBytes
       });
       const blueprint = await createBlueprint(app, imageAsset.url);
       const createResponse = await app.inject({
@@ -281,40 +282,19 @@ describe("creation API", () => {
     }
   });
 
-  it("fails unsupported SVG uploads before Ark video receives a request", async () => {
-    const arkVideo = await startHoldingArkVideoServer();
-    const restoreEnv = setArkVideoEnv(arkVideo.url);
-
-    try {
-      const imageAsset = await uploadProductImage(app, {
+  it("rejects unsupported SVG uploads before they become 上传素材", async () => {
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: "/api/materials/product-image",
+      payload: {
         filename: "product.svg",
         contentType: "image/svg+xml",
-        bytes: Buffer.from("<svg></svg>")
-      });
-      const blueprint = await createBlueprint(app, imageAsset.url);
-      const createResponse = await app.inject({
-        method: "POST",
-        url: "/api/creation/jobs",
-        payload: { scriptId: blueprint.scriptId }
-      });
-      const created = createResponse.json();
+        dataBase64: Buffer.from("<svg></svg>").toString("base64")
+      }
+    });
 
-      const detail = await waitForJob(
-        app,
-        created.job.id,
-        (jobDetail) => jobDetail.job.status === "failed"
-      );
-
-      assert.match(
-        detail.job.errorMessage ?? "",
-        /Unsupported Seedance product image/
-      );
-      assert.equal(arkVideo.bodies.length, 0);
-    } finally {
-      arkVideo.releaseResponse();
-      await arkVideo.close();
-      restoreEnv();
-    }
+    assert.equal(uploadResponse.statusCode, 400);
+    assert.match(uploadResponse.body, /Unsupported product image content type/);
   });
 });
 

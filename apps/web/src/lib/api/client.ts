@@ -34,16 +34,30 @@ export interface CreativeBlueprintDetail {
   shots: StoryboardShot[];
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function readApiErrorMessage(response: Response): Promise<string> {
+  const body = await response.text();
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown };
+    if (typeof parsed.message === "string" && parsed.message) {
+      return parsed.message;
+    }
+  } catch {
+    // Fall back to the raw response body below.
+  }
+  return body || `Request failed with status ${response.status}`;
+}
+
 export async function uploadProductImage(file: File): Promise<Asset> {
-  const dataBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      const result = String(reader.result);
-      resolve(result.includes(",") ? result.split(",")[1] ?? "" : result);
-    });
-    reader.addEventListener("error", () => reject(reader.error));
-    reader.readAsDataURL(file);
-  });
+  const dataBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
 
   const response = await fetch(`${apiBaseUrl}/api/materials/product-image`, {
     method: "POST",
@@ -58,7 +72,7 @@ export async function uploadProductImage(file: File): Promise<Asset> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await readApiErrorMessage(response));
   }
 
   return (await response.json()) as Asset;
