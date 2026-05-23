@@ -105,6 +105,43 @@ pnpm lint
 pnpm build
 ```
 
+## Worktree 环境准备
+
+后续 PRD 提炼和实现分支建议使用 git worktree。remote 不提交 `.env`、`node_modules`、本地上传文件和模型权重；这些都需要在每个 worktree 本地准备。
+
+从当前主工作目录创建 worktree：
+
+```bash
+git fetch origin
+git switch main
+git pull --ff-only origin main
+
+mkdir -p ../Bytedancehack-wt
+git worktree add -b feat/prd ../Bytedancehack-wt/prd main
+```
+
+进入 worktree 后复制本地环境变量：
+
+```bash
+cd ../Bytedancehack-wt/prd
+cp /Users/carrick/ResearchWorkspace/Bytedancehack/.env .env
+pnpm install
+```
+
+如果 worktree 要和主目录同时启动应用，注意端口冲突，可在该 worktree 的 `.env` 中调整：
+
+```text
+WEB_PORT=
+SERVER_PORT=
+```
+
+说明：
+
+- `.env` 从本机主工作目录复制，不从 remote 获取，不提交。
+- `node_modules` 每个 worktree 单独 `pnpm install`；pnpm 会复用全局 store。
+- Postgres/Redis 等基础设施本机通常只启动一套即可。
+- 本地模型、大文件和上传目录通过 `.env` 或本地路径约定引用，不进 Git。
+
 ## 后续 PRD 工作
 
 后续 PRD 提炼请在 git worktree 中进行。建议先基于已提交的 `main` 创建工作树，再在工作树内产出 PRD 或任务拆分文档。
