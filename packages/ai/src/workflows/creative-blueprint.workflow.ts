@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import {
   creativeBlueprintSchema,
   type CreateCreativeBlueprintRequest,
@@ -17,6 +16,7 @@ import {
   type ProviderEnv,
   type TextProviderConfig
 } from "../providers/provider-config.js";
+import { generateTextWithArk } from "../providers/ark-text.provider.js";
 import {
   createImageTraceMeta,
   type FileTraceLogger
@@ -212,20 +212,20 @@ function buildFallbackCreativeBlueprint(
 }
 
 function createOpenAITextModelCall(config: TextProviderConfig): TextModelCall {
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL
-  });
-
   return async (request) => {
-    const response = await client.chat.completions.create({
-      model: config.model,
-      messages: [{ role: "user", content: request.content }],
-      temperature: Number(process.env.OPENAI_TEMPERATURE ?? 0.7),
-      top_p: Number(process.env.OPENAI_TOP_P ?? 0.9)
-    });
+    const result = await generateTextWithArk(
+      {
+        prompt: request.prompt,
+        content: request.content
+      },
+      config,
+      {
+        temperature: Number(process.env.OPENAI_TEMPERATURE ?? 0.7),
+        topP: Number(process.env.OPENAI_TOP_P ?? 0.9)
+      }
+    );
 
-    return response.choices[0]?.message.content ?? "";
+    return result.output;
   };
 }
 

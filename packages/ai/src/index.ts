@@ -1,3 +1,4 @@
+export * from "./providers/ark-text.provider.js";
 export * from "./providers/seed-text.provider.js";
 export * from "./providers/seedance-video.provider.js";
 export * from "./providers/tts.provider.js";
