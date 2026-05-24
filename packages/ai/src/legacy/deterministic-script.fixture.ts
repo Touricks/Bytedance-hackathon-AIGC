@@ -4,10 +4,9 @@ import {
   generatedScriptSchema
 } from "@aigc-video/shared";
 
-export async function generateScriptWithSeed(
+export async function generateDeterministicScriptFixture(
   input: CreateCreativeBlueprintRequest
 ): Promise<GeneratedScript> {
-  // TODO: Replace this deterministic fallback with Doubao-Seed-2.0-pro.
   const fallback: GeneratedScript = {
     narrative: `${input.title} 的 12 秒带货短视频：开场抓注意力，中段突出卖点，结尾推动转化。`,
     visualStyle: "clean ecommerce product demo, bright, premium, vertical short video",

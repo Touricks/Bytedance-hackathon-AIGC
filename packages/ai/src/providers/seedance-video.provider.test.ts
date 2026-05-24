@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
+import { createFileTraceLogger } from "../trace/trace-log.js";
 import { generateVideoWithSeedance } from "./seedance-video.provider.js";
 
 describe("generateVideoWithSeedance", () => {
@@ -83,6 +87,51 @@ describe("generateVideoWithSeedance", () => {
     });
   });
 
+  it("returns normalized provider details and Ark video trace metadata", async () => {
+    const events: unknown[] = [];
+
+    const result = await generateVideoWithSeedance(
+      {
+        imageUrl: "data:image/png;base64,cHJvZHVjdA==",
+        prompt: "Create a vertical ecommerce product showcase video"
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
+        traceLogger: {
+          append: async (event) => {
+            events.push(event);
+          }
+        },
+        fetch: async () =>
+          new Response(
+            JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
+            { status: 200 }
+          )
+      }
+    );
+
+    assert.deepEqual(result, {
+      provider: "seedance",
+      model: "ark-video-endpoint",
+      videoUrl: "https://cdn.example/video.mp4",
+      prompt: "Create a vertical ecommerce product showcase video"
+    });
+    assert.deepEqual(
+      events.map((event) => (event as { kind: string }).kind),
+      ["video.task_create_started", "video.task_created", "video.completed"]
+    );
+    assert.deepEqual((events[0] as { meta: Record<string, unknown> }).meta, {
+      endpointFamily: "ark_video_task",
+      baseURL: "https://ark.example/api/v3",
+      prompt: "Create a vertical ecommerce product showcase video",
+      imageUrl: "data:image/png;base64,cHJvZHVjdA=="
+    });
+  });
+
   it("polls Ark video tasks when the create response returns a task id", async () => {
     const calls: string[] = [];
     const result = await generateVideoWithSeedance(
@@ -121,6 +170,76 @@ describe("generateVideoWithSeedance", () => {
       "https://ark.example/api/v3/contents/generations/tasks",
       "https://ark.example/api/v3/contents/generations/tasks/task-123"
     ]);
+  });
+
+  it("writes script-scoped task polling trace events with jobId and redacted image data", async () => {
+    const traceRoot = await mkdtemp(path.join(os.tmpdir(), "seedance-trace-"));
+    const traceLogger = createFileTraceLogger({
+      traceId: "script_video_trace",
+      traceRoot,
+      traceScope: "users"
+    });
+    const calls: string[] = [];
+
+    const result = await generateVideoWithSeedance(
+      {
+        imageUrl: "data:image/png;base64,cHJvZHVjdA==",
+        prompt: "Create a vertical ecommerce product showcase video"
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
+        jobId: "job_video_trace",
+        traceLogger,
+        pollIntervalMs: 0,
+        fetch: async (url) => {
+          calls.push(String(url));
+          if (calls.length === 1) {
+            return new Response(JSON.stringify({ id: "task-123" }), {
+              status: 200
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              status: "succeeded",
+              content: { video_url: "https://cdn.example/video.mp4" }
+            }),
+            { status: 200 }
+          );
+        }
+      }
+    );
+
+    assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
+    assert.equal(
+      traceLogger.filePath,
+      path.join(traceRoot, "users", "script_video_trace", "events.jsonl")
+    );
+
+    const traceText = await readFile(traceLogger.filePath, "utf8");
+    const events = traceText
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    assert.deepEqual(
+      events.map((event) => event.kind),
+      [
+        "video.task_create_started",
+        "video.task_created",
+        "video.task_polled",
+        "video.completed"
+      ]
+    );
+    assert.equal(events[0].jobId, "job_video_trace");
+    assert.equal(events[2].meta.taskId, "task-123");
+    assert.equal(events[2].meta.status, "succeeded");
+    assert.equal(events[3].meta.videoUrl, "https://cdn.example/video.mp4");
+    assert.doesNotMatch(traceText, /cHJvZHVjdA==/);
+    assert.match(traceText, /data:image\/<redacted>;base64,<redacted>/);
   });
 
   it("passes an already-normalized data URL through to Ark video", async () => {

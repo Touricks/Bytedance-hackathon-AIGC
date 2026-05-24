@@ -248,7 +248,7 @@ status: queued | running | completed | failed
 stage: queued | script_generating | media_generating | completed | failed
 ```
 
-The current V0 creation path creates video jobs from an existing `scriptId`, so the active async stage is `media_generating`. The legacy script-generation processor remains in the codebase for compatibility, but the V0 UI path uses creative blueprint generation synchronously before job creation.
+The current V0 creation path creates video jobs from an existing `scriptId`, so the active async stage is `media_generating`. Legacy deterministic script generation is no longer exposed as an active provider boundary; the remaining fixture lives under `packages/ai/src/legacy/` for compatibility-only code paths.
 
 Job transitions are centralized in `apps/server/src/jobs/job-state.ts`:
 
@@ -276,6 +276,15 @@ It owns:
 - Conservative 12-second whole-video prompt construction.
 - Real-provider smoke check.
 
+The active V0 provider modules are:
+
+```text
+packages/ai/src/providers/ark-text.provider.ts
+packages/ai/src/providers/seedance-video.provider.ts
+```
+
+Workflows, probes, smoke checks, and server code must consume provider interfaces instead of directly constructing model SDK clients or hand-writing external model transport payloads. A repo-level guard test enforces this rule and allows direct SDK/transport construction only inside approved provider modules. Legacy deterministic script fixtures and P1-only TTS placeholders are not active providers.
+
 Provider modes:
 
 ```text
@@ -298,7 +307,7 @@ OPENAI_API_KEY
 OPENAI_MODEL
 ```
 
-The smoke command is a dependency-interface health check. It sends minimal chat-completion probes to Ark text and the OpenAI-compatible fallback provider. It does not create or read a product image, and it does not call Seedance video.
+The smoke command is a dependency-interface health check. It sends minimal chat-completion probes through the shared Ark text provider boundary for Ark text and the OpenAI-compatible fallback provider. It does not create or read a product image, and it does not call Seedance video.
 
 Full creative-blueprint validation uses the app/API flow with a supported product image. When Ark text config is present, server-side creative blueprint generation sends Doubao-Seed-2.0-pro a multimodal Chat request with text plus `image_url`. App-created local raster uploads are converted to `data:image/<format>;base64,...` before the Ark Chat request, and blueprint trace metadata records `imageReferenceMode`.
 
@@ -380,6 +389,8 @@ Trace redaction is part of the architecture contract:
 - Image trace metadata keeps `referenceMode`, `mimeType`, `byteSize`, and `sha256` so we can prove which image bytes were sent without storing the raw image payload in trace.
 - Creative-blueprint errors include `scriptId` in the HTTP error body, so a failed request can be mapped back to `{TRACE_LOG_DIR}/users/<scriptId>/events.jsonl`.
 - Video job trace shares the same `scriptId` directory and adds `jobId` to media-generation events.
+- To inspect a local browser/API run, open `{TRACE_LOG_DIR}/users/<scriptId>/events.jsonl`.
+- To inspect automated tests or provider probes, open `{TRACE_LOG_DIR}/tests/<traceId>/events.jsonl`.
 
 This is intentionally file-based for V0. A database-backed observability store remains a P1/P2 concern.
 

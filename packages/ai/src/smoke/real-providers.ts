@@ -1,5 +1,5 @@
-import OpenAI from "openai";
 import { loadWorkspaceEnv } from "../env.js";
+import { generateTextWithArk } from "../providers/ark-text.provider.js";
 import {
   resolveArkTextProviderConfig,
   resolveFallbackTextProviderConfig,
@@ -33,29 +33,18 @@ async function probeTextProvider(
   config: TextProviderConfig
 ): Promise<ProviderProbeResult> {
   const startedAt = Date.now();
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-    timeout: Number(process.env.SMOKE_PROVIDER_TIMEOUT_MS ?? 30000)
-  });
+  const result = await generateTextWithArk(
+    {
+      prompt: "Reply with the single word OK.",
+      content: "Reply with the single word OK."
+    },
+    config,
+    {
+      temperature: 0
+    }
+  );
 
-  const response = await client.chat.completions.create({
-    model: config.model,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a dependency health check. Reply with a tiny confirmation."
-      },
-      {
-        role: "user",
-        content: "Reply with the single word OK."
-      }
-    ],
-    max_tokens: 8
-  });
-
-  const output = response.choices[0]?.message.content?.trim();
+  const output = result.output.trim();
   if (!output) {
     throw new Error(`${config.provider} smoke returned empty output`);
   }

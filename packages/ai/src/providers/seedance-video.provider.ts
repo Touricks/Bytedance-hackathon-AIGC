@@ -13,6 +13,7 @@ export interface SeedanceVideoRequest {
 export interface SeedanceVideoResult {
   videoUrl: string;
   provider: "mock" | "seedance";
+  model: string;
   prompt: string;
 }
 
@@ -295,6 +296,7 @@ export async function generateVideoWithSeedance(
     return {
       videoUrl,
       provider: "mock",
+      model: "mock",
       prompt: request.prompt
     };
   }
@@ -407,6 +409,7 @@ export async function generateVideoWithSeedance(
   return {
     videoUrl,
     provider: "seedance",
+    model: config.model,
     prompt: request.prompt
   };
 }

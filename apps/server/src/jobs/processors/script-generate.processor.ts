@@ -1,4 +1,4 @@
-import { generateScriptWithSeed } from "@aigc-video/ai";
+import { generateDeterministicScriptFixture } from "@aigc-video/ai";
 import type { CreateCreativeBlueprintRequest } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { appendTrace } from "../../common/trace.js";
@@ -15,7 +15,7 @@ export async function processScriptGeneration(
     progress: 25
   });
 
-  const generated = await generateScriptWithSeed(input);
+  const generated = await generateDeterministicScriptFixture(input);
   const script = await db.createScript({
     jobId,
     productId: current.productId,

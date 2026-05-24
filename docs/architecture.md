@@ -31,4 +31,6 @@ Fallback LLM: OPENAI_BASE_URL + OPENAI_API_KEY + OPENAI_MODEL
 
 The fallback LLM is only for 创作蓝图 recovery when the Ark text entry point is unavailable. It is not a video-generation fallback.
 
+Provider boundary rule: workflows, probes, smoke checks, and server code consume the active provider modules instead of directly constructing model SDK clients. Active V0 provider modules are Ark text and Ark-backed Seedance video; deterministic script fixtures and P1-only TTS placeholders are not active providers.
+
 Historical planning documents, including Codex r3 and `proposed_architecture.md`, are archived under `docs/archived/`.
