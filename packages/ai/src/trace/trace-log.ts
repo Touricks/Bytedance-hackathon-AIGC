@@ -37,6 +37,7 @@ export interface ImageTraceMetaInput {
 export interface FileTraceLogger {
   traceId: string;
   traceScope: TraceScope;
+  traceBatchId: string;
   traceDir: string;
   filePath: string;
   append(event: TraceEventInput): Promise<void>;
@@ -54,12 +55,39 @@ interface FileTraceLoggerOptions {
   clock?: () => Date;
 }
 
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+export function formatTraceBatchTimestamp(date: Date) {
+  const year = date.getFullYear();
+  const month = padDatePart(date.getMonth() + 1);
+  const day = padDatePart(date.getDate());
+  const hour = padDatePart(date.getHours());
+  const minute = padDatePart(date.getMinutes());
+  const second = padDatePart(date.getSeconds());
+  return `${year}${month}${day}${hour}-${minute}-${second}`;
+}
+
+const defaultTraceBatchId = formatTraceBatchTimestamp(new Date());
+
+export function getDefaultTraceBatchId() {
+  return defaultTraceBatchId;
+}
+
+function requireTraceLogDir() {
+  const value = process.env.TRACE_LOG_DIR;
+  if (!value) {
+    throw new Error(
+      "TRACE_LOG_DIR is required. File trace storage must be explicit; no logs/trace fallback is allowed."
+    );
+  }
+  return value;
+}
+
 export function getDefaultTraceRoot() {
   const workspaceRoot = loadWorkspaceEnv() ?? process.cwd();
-  return resolveWorkspacePath(
-    process.env.TRACE_LOG_DIR ?? "logs/trace",
-    workspaceRoot
-  );
+  return resolveWorkspacePath(requireTraceLogDir(), workspaceRoot);
 }
 
 export function resolveTraceScope(traceScope?: TraceScope): TraceScope {
@@ -124,13 +152,18 @@ export function createFileTraceLogger(
   loadWorkspaceEnv();
   const traceRoot = path.resolve(options.traceRoot ?? getDefaultTraceRoot());
   const traceScope = resolveTraceScope(options.traceScope);
-  const traceDir = path.join(traceRoot, traceScope, options.traceId);
+  const traceBatchId = getDefaultTraceBatchId();
+  const traceDir =
+    traceScope === "users"
+      ? path.join(traceRoot, traceScope, traceBatchId)
+      : path.join(traceRoot, traceScope, traceBatchId, options.traceId);
   const filePath = path.join(traceDir, "events.jsonl");
   const clock = options.clock ?? (() => new Date());
 
   return {
     traceId: options.traceId,
     traceScope,
+    traceBatchId,
     traceDir,
     filePath,
     async append(event) {

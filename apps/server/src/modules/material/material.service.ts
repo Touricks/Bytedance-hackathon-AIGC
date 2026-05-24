@@ -23,6 +23,10 @@ function safeExtension(filename: string, contentType: string) {
   return parsed && parsed.length <= 10 ? parsed : ".img";
 }
 
+function buildUploadUrl(pathname: string) {
+  return `${config.uploadUrlPrefix}/${pathname.replace(/^\/+/, "")}`;
+}
+
 export const materialService = {
   registerProductImage(imageUrl: string) {
     return materialRepository.createProductImageAsset(imageUrl);
@@ -46,7 +50,7 @@ export const materialService = {
     await writeFile(storagePath, bytes);
 
     return materialRepository.createUploadedProductImageAsset({
-      url: `/uploads/product-images/${storedFilename}`,
+      url: buildUploadUrl(`product-images/${storedFilename}`),
       originalFilename: input.filename,
       contentType,
       sizeBytes: bytes.byteLength,

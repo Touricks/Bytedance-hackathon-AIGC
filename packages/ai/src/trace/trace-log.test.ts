@@ -12,7 +12,12 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, it } from "node:test";
-import { createFileTraceLogger, redactTraceValue } from "./trace-log.js";
+import {
+  createFileTraceLogger,
+  formatTraceBatchTimestamp,
+  getDefaultTraceBatchId,
+  redactTraceValue
+} from "./trace-log.js";
 
 const traceLogModuleUrl = pathToFileURL(
   path.resolve("src/trace/trace-log.ts")
@@ -28,6 +33,35 @@ function withoutTraceEnv() {
 }
 
 describe("file trace logger", () => {
+  it("formats local-time trace batch timestamps", () => {
+    assert.equal(
+      formatTraceBatchTimestamp(new Date(2026, 4, 24, 7, 8, 9)),
+      "2026052407-08-09"
+    );
+  });
+
+  it("uses one default trace batch id across loggers in the same process", async () => {
+    const traceRoot = await mkdtemp(path.join(os.tmpdir(), "aigc-trace-"));
+
+    try {
+      const firstLogger = createFileTraceLogger({
+        traceId: "script_123",
+        traceRoot,
+        traceScope: "tests"
+      });
+      const secondLogger = createFileTraceLogger({
+        traceId: "script_456",
+        traceRoot,
+        traceScope: "tests"
+      });
+
+      assert.equal(firstLogger.traceBatchId, secondLogger.traceBatchId);
+      assert.equal(firstLogger.traceBatchId, getDefaultTraceBatchId());
+    } finally {
+      await rm(traceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("appends JSONL events under the scoped trace id directory", async () => {
     const traceRoot = await mkdtemp(path.join(os.tmpdir(), "aigc-trace-"));
     const logger = createFileTraceLogger({
@@ -52,9 +86,16 @@ describe("file trace logger", () => {
 
     assert.equal(logger.traceId, "script_123");
     assert.equal(logger.traceScope, "tests");
+    assert.equal(logger.traceBatchId, getDefaultTraceBatchId());
     assert.equal(
       logger.filePath,
-      path.join(traceRoot, "tests", "script_123", "events.jsonl")
+      path.join(
+        traceRoot,
+        "tests",
+        getDefaultTraceBatchId(),
+        "script_123",
+        "events.jsonl"
+      )
     );
 
     const lines = (await readFile(logger.filePath, "utf8")).trim().split("\n");
@@ -70,12 +111,44 @@ describe("file trace logger", () => {
     assert.equal(JSON.parse(lines[1]!).latencyMs, 12);
   });
 
+  it("fails loudly when the default trace root is not configured", () => {
+    const result = spawnSync(
+      tsxBin,
+      [
+        "--eval",
+        `import(${JSON.stringify(traceLogModuleUrl)})
+          .then(({ createFileTraceLogger }) => {
+            createFileTraceLogger({ traceId: "script_123" });
+            process.exit(0);
+          })
+          .catch((error) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
+          });`
+      ],
+      {
+        env: {
+          ...withoutTraceEnv(),
+          AIGC_VIDEO_SKIP_ENV_FILE: "true"
+        },
+        encoding: "utf8"
+      }
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /TRACE_LOG_DIR is required/);
+    assert.match(result.stderr, /no logs\/trace fallback is allowed/);
+  });
+
   it("resolves default TRACE_LOG_DIR from the workspace .env root with users scope", async () => {
     const fixtureDir = await mkdtemp(path.join(os.tmpdir(), "aigc-trace-env-"));
     const nestedServerDir = path.join(fixtureDir, "apps", "server");
     await mkdir(nestedServerDir, { recursive: true });
     const resolvedFixtureDir = await realpath(fixtureDir);
-    await writeFile(path.join(fixtureDir, ".env"), "TRACE_LOG_DIR=logs/trace\n");
+    await writeFile(
+      path.join(fixtureDir, ".env"),
+      "TRACE_LOG_DIR=storage/trace\n"
+    );
 
     try {
       const result = spawnSync(
@@ -93,7 +166,10 @@ describe("file trace logger", () => {
                 pipeline: "creative_blueprint",
                 status: "ok"
               });
-              console.log(logger.filePath);
+              console.log(JSON.stringify({
+                filePath: logger.filePath,
+                traceBatchId: logger.traceBatchId
+              }));
             })
             .catch((error) => {
               console.error(error instanceof Error ? error.message : String(error));
@@ -108,15 +184,20 @@ describe("file trace logger", () => {
       );
 
       assert.equal(result.status, 0, result.stderr);
+      const parsed = JSON.parse(result.stdout.trim()) as {
+        filePath: string;
+        traceBatchId: string;
+      };
       const expectedFilePath = path.join(
         resolvedFixtureDir,
-        "logs",
+        "storage",
         "trace",
         "users",
-        "script_123",
+        parsed.traceBatchId,
         "events.jsonl"
       );
-      assert.equal(result.stdout.trim(), expectedFilePath);
+      assert.match(parsed.traceBatchId, /^\d{10}-\d{2}-\d{2}$/);
+      assert.equal(parsed.filePath, expectedFilePath);
 
       const lines = (await readFile(expectedFilePath, "utf8")).trim().split("\n");
       assert.equal(lines.length, 1);
@@ -140,7 +221,10 @@ describe("file trace logger", () => {
                 traceId: "script_123",
                 traceRoot: ${JSON.stringify(traceRoot)}
               });
-              console.log(logger.filePath);
+              console.log(JSON.stringify({
+                filePath: logger.filePath,
+                traceBatchId: logger.traceBatchId
+              }));
             })
             .catch((error) => {
               console.error(error instanceof Error ? error.message : String(error));
@@ -157,10 +241,21 @@ describe("file trace logger", () => {
       );
 
       assert.equal(result.status, 0, result.stderr);
+      const parsed = JSON.parse(result.stdout.trim()) as {
+        filePath: string;
+        traceBatchId: string;
+      };
       assert.equal(
-        result.stdout.trim(),
-        path.join(traceRoot, "tests", "script_123", "events.jsonl")
+        parsed.filePath,
+        path.join(
+          traceRoot,
+          "tests",
+          parsed.traceBatchId,
+          "script_123",
+          "events.jsonl"
+        )
       );
+      assert.match(parsed.traceBatchId, /^\d{10}-\d{2}-\d{2}$/);
     } finally {
       await rm(traceRoot, { recursive: true, force: true });
     }
@@ -170,16 +265,42 @@ describe("file trace logger", () => {
     const traceRoot = await mkdtemp(path.join(os.tmpdir(), "aigc-trace-scope-"));
 
     try {
-      const logger = createFileTraceLogger({
+      const firstLogger = createFileTraceLogger({
         traceId: "script_123",
         traceRoot,
         traceScope: "users"
       });
+      const secondLogger = createFileTraceLogger({
+        traceId: "script_456",
+        traceRoot,
+        traceScope: "users"
+      });
 
-      assert.equal(logger.traceScope, "users");
+      assert.equal(firstLogger.traceScope, "users");
+      assert.equal(firstLogger.filePath, secondLogger.filePath);
       assert.equal(
-        logger.filePath,
-        path.join(traceRoot, "users", "script_123", "events.jsonl")
+        firstLogger.filePath,
+        path.join(traceRoot, "users", getDefaultTraceBatchId(), "events.jsonl")
+      );
+
+      await firstLogger.append({
+        kind: "session.started",
+        pipeline: "creative_blueprint",
+        status: "ok"
+      });
+      await secondLogger.append({
+        kind: "session.started",
+        pipeline: "one_click_video",
+        status: "ok"
+      });
+
+      const lines = (await readFile(firstLogger.filePath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      assert.deepEqual(
+        lines.map((line) => line.scriptId),
+        ["script_123", "script_456"]
       );
     } finally {
       await rm(traceRoot, { recursive: true, force: true });

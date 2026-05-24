@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { runImageToVideoProbe } from "./image-to-video.js";
 import { runToTextProbe } from "./to-text.js";
+import { getDefaultTraceBatchId } from "../trace/trace-log.js";
 
 async function writeProbeImage(rootPrefix: string) {
   const root = await mkdtemp(path.join(os.tmpdir(), rootPrefix));
@@ -51,7 +52,13 @@ describe("provider probes", () => {
     assert.equal(result.traceId, "probe-fixed-to-text");
     assert.equal(
       result.traceFile,
-      path.join(root, "tests", "probe-fixed-to-text", "events.jsonl")
+      path.join(
+        root,
+        "tests",
+        getDefaultTraceBatchId(),
+        "probe-fixed-to-text",
+        "events.jsonl"
+      )
     );
     assert.equal(result.output, "A compact product on a clean background.");
     assert.equal(result.provider, "ark");
@@ -125,7 +132,13 @@ describe("provider probes", () => {
     assert.equal(result.traceId, "probe-fixed-image-to-video");
     assert.equal(
       result.traceFile,
-      path.join(root, "tests", "probe-fixed-image-to-video", "events.jsonl")
+      path.join(
+        root,
+        "tests",
+        getDefaultTraceBatchId(),
+        "probe-fixed-image-to-video",
+        "events.jsonl"
+      )
     );
     assert.equal(result.videoUrl, "https://cdn.example/probe.mp4");
     assert.equal(requests.length, 1);

@@ -22,6 +22,8 @@ export function buildCreativeBlueprintPrompt(
     "Use simple scenes and stable camera motion.",
     "Do not promise exact subtitles, exact TTS, complex transitions, or per-shot rendering.",
     "Include improvement hints that tell the merchant which structured UI field to change if the video result is poor.",
+    "For improvementHints.fieldsToChange, use only these exact enum values: productImage, title, coreSellingPoint, audience, stylePreference.",
+    "Use coreSellingPoint when the merchant should change the selected selling point; do not use sellingPoints.",
     "",
     "Output:",
     "Return strict JSON matching this shape and do not include markdown:",
@@ -50,7 +52,7 @@ export function buildCreativeBlueprintPrompt(
         {
           ifVideoLooksBad: "商品不像原图",
           suggestedUserAction: "上传更清晰的正面商品图",
-          fieldsToChange: ["productImage"]
+          fieldsToChange: ["productImage", "coreSellingPoint"]
         }
       ]
     })
@@ -60,6 +62,9 @@ export function buildCreativeBlueprintPrompt(
 export function buildCreativeBlueprintRepairPrompt(rawOutput: string): string {
   return [
     "Repair the following model output into strict JSON matching the creative blueprint schema.",
+    "For improvementHints.fieldsToChange, use only these exact enum values: productImage, title, coreSellingPoint, audience, stylePreference.",
+    "If the output uses sellingPoints or coreSellingPoint as a natural-language field target, normalize the field target to coreSellingPoint.",
+    "Do not use sellingPoints in fieldsToChange.",
     "Do not include markdown. Preserve merchant-readable content where possible.",
     "",
     rawOutput

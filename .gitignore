@@ -11,6 +11,7 @@ apps/web/.vite/
 apps/server/tmp/
 tmp/
 logs/
+storage/
 
 # Keep the PRD locally only; it includes private challenge resource credentials.
 docs/prd.pdf

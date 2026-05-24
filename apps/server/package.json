@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "pretest": "pnpm --filter @aigc-video/shared build && pnpm --filter @aigc-video/ai build",
-    "test": "TRACE_LOG_SCOPE=tests TRACE_LOG_DIR=logs/trace UPLOAD_DIR=tmp/uploads MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= OPENAI_API_KEY= OPENAI_MODEL= node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
+    "test": "TRACE_LOG_SCOPE=tests UPLOAD_DIR=${TMPDIR:-/tmp}/aigc-video-test-uploads UPLOAD_URL_PREFIX=/uploads MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= OPENAI_API_KEY= OPENAI_MODEL= node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0"
   },

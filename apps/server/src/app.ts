@@ -10,6 +10,15 @@ import { registerCreativeBlueprintController } from "./modules/creative-blueprin
 import { registerMaterialController } from "./modules/material/material.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
 
+function isLocalUrlPathPrefix(prefix: string) {
+  return prefix.startsWith("/");
+}
+
+function isInsideDirectory(filePath: string, rootPath: string) {
+  const relativePath = path.relative(rootPath, filePath);
+  return !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
+}
+
 export async function buildServer() {
   await db.initialize();
   const app = Fastify({ logger: false });
@@ -24,18 +33,20 @@ export async function buildServer() {
     runtime: config.runtime
   }));
 
-  app.get("/uploads/*", async (request, reply) => {
-    const params = request.params as { "*": string };
-    const uploadRoot = path.resolve(config.uploadDir);
-    const filePath = path.resolve(uploadRoot, params["*"]);
+  if (isLocalUrlPathPrefix(config.uploadUrlPrefix)) {
+    app.get(`${config.uploadUrlPrefix}/*`, async (request, reply) => {
+      const params = request.params as { "*": string };
+      const uploadRoot = path.resolve(config.uploadDir);
+      const filePath = path.resolve(uploadRoot, params["*"]);
 
-    if (!filePath.startsWith(uploadRoot)) {
-      return reply.status(400).send({ message: "Invalid upload path" });
-    }
+      if (!isInsideDirectory(filePath, uploadRoot)) {
+        return reply.status(400).send({ message: "Invalid upload path" });
+      }
 
-    await stat(filePath);
-    return reply.send(createReadStream(filePath));
-  });
+      await stat(filePath);
+      return reply.send(createReadStream(filePath));
+    });
+  }
 
   await registerMaterialController(app);
   await registerScriptController(app);

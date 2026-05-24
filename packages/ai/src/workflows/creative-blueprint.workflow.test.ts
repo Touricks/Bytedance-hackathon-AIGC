@@ -54,7 +54,7 @@ const validBlueprint = {
     {
       ifVideoLooksBad: "商品不像原图",
       suggestedUserAction: "上传更清晰的正面商品图。",
-      fieldsToChange: ["productImage"]
+      fieldsToChange: ["productImage", "coreSellingPoint"]
     }
   ]
 };
@@ -89,6 +89,8 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.fallbackUsed, false);
     assert.equal(calls.length, 1);
     assert.match(calls[0]!.prompt, /merchant-readable creative blueprint/);
+    assert.match(calls[0]!.prompt, /coreSellingPoint/);
+    assert.doesNotMatch(calls[0]!.prompt, /fieldsToChange.*sellingPoints/);
     assert.equal(calls[0]!.content, calls[0]!.prompt);
   });
 
@@ -210,6 +212,8 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.fallbackUsed, false);
     assert.equal(calls.length, 2);
     assert.match(calls[1]!.prompt, /Repair the following model output/);
+    assert.match(calls[1]!.prompt, /coreSellingPoint/);
+    assert.match(calls[1]!.prompt, /do not use sellingPoints/i);
   });
 
   it("falls back to a deterministic creative blueprint when repair fails", async () => {
@@ -234,6 +238,55 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.repairAttempts, 1);
     assert.equal(result.trace.fallbackUsed, true);
     assert.ok(result.trace.failureReason);
+  });
+
+  it("fails loudly in real-provider mode when model output cannot be repaired", async () => {
+    const traceRoot = await mkdtemp(path.join(os.tmpdir(), "blueprint-real-repair-"));
+    const traceLogger = createFileTraceLogger({
+      traceId: "real_provider_repair_failure",
+      traceRoot
+    });
+    const createTextModelCall: CreateTextModelCall = () => async () => "not json";
+
+    await assert.rejects(
+      () =>
+        generateCreativeBlueprintWithArk(
+          {
+            title: "Portable Mini Blender",
+            sellingPoints: "USB-C charging",
+            audience: "busy office workers",
+            stylePreference: "clean premium ecommerce",
+            imageUrl: "/mocks/products/demo-product.svg"
+          },
+          {
+            createTextModelCall,
+            traceLogger,
+            env: {
+              MODEL_MODE: "real",
+              ARK_API_KEY: "real-ark-key",
+              ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint"
+            }
+          }
+        ),
+      /Creative blueprint repair failed in real-provider mode/
+    );
+
+    const events = (await readFile(traceLogger.filePath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      events.map((event) => event.kind),
+      [
+        "blueprint.request_prepared",
+        "provider.request_started",
+        "provider.response_received",
+        "blueprint.parse_failed",
+        "blueprint.repair_failed"
+      ]
+    );
+    assert.equal(events.at(-1)?.provider, "ark");
+    assert.equal(events.at(-1)?.meta.deterministicFallbackAllowed, false);
   });
 
   it("uses fallback LLM only when Ark text auth or config fails", async () => {

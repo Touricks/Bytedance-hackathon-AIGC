@@ -72,14 +72,43 @@ function resolveWorkspacePath(input: string, workspaceRoot: string): string {
   return path.isAbsolute(input) ? input : path.resolve(workspaceRoot, input);
 }
 
-function requireEnv(name: string): string {
+function hasUrlScheme(input: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(input);
+}
+
+function requireEnv(name: string, reason: string): string {
   const value = process.env[name];
   if (!value) {
+    throw new Error(`${name} is required. ${reason}`);
+  }
+  return value;
+}
+
+function requireLocalFilesystemPath(name: string, reason: string): string {
+  const value = requireEnv(name, reason);
+  if (hasUrlScheme(value)) {
     throw new Error(
-      `${name} is required. Postgres is the only supported V0 fact source.`
+      [
+        `${name} must be a local filesystem path for the current local upload storage adapter;`,
+        `received ${JSON.stringify(value)}.`,
+        "Use a mounted filesystem path here, or add an object-storage adapter before using cloud URLs."
+      ].join(" ")
     );
   }
   return value;
+}
+
+function normalizeUploadUrlPrefix(input: string): string {
+  const prefix = input.trim().replace(/\/+$/, "");
+  const isHttpUrl = /^https?:\/\//i.test(prefix);
+
+  if (!prefix || (!prefix.startsWith("/") && !isHttpUrl)) {
+    throw new Error(
+      "UPLOAD_URL_PREFIX must be an absolute URL path such as /uploads or an http(s) public base URL."
+    );
+  }
+
+  return prefix;
 }
 
 const workspaceRoot = loadWorkspaceEnv() ?? process.cwd();
@@ -87,13 +116,25 @@ const workspaceRoot = loadWorkspaceEnv() ?? process.cwd();
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.SERVER_PORT ?? 3000),
-  databaseUrl: requireEnv("DATABASE_URL"),
+  databaseUrl: requireEnv(
+    "DATABASE_URL",
+    "Postgres is the only supported V0 fact source."
+  ),
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   useRedisQueue: process.env.USE_REDIS_QUEUE === "true",
   runtime: process.env.SERVER_RUNTIME ?? "all",
   uploadDir: resolveWorkspacePath(
-    process.env.UPLOAD_DIR ?? "tmp/uploads",
+    requireLocalFilesystemPath(
+      "UPLOAD_DIR",
+      "Local file upload storage must be explicit; no tmp/uploads fallback is allowed."
+    ),
     workspaceRoot
+  ),
+  uploadUrlPrefix: normalizeUploadUrlPrefix(
+    requireEnv(
+      "UPLOAD_URL_PREFIX",
+      "Upload URL prefix must be explicit so local filesystem paths are not confused with public asset URLs."
+    )
   )
 };
 

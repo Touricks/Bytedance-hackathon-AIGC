@@ -31,7 +31,7 @@ r3 主要回答“应该怎么建”；r4 记录“当前代码已经如何落�
 - Ark 文本 provider 的创作蓝图生成已从纯文本修正为多模态请求：商品图以 `image_url` 进入 Doubao-Seed-2.0-pro。
 - Ark-backed Seedance 图生视频 provider 已修正为 Ark video task contract：`ARK_API_KEY + ARK_VIDEO_ENDPOINT_ID`，文本 prompt + 商品图 `image_url`，轮询任务产出视频 URL。
 - 本地上传商品图在进入真实 provider 前会被校验为真实 raster bytes；上传图会按 provider 需要转换为 `data:image/<format>;base64,...`。
-- Trace 系统已从 job 内部状态扩展为 script-scoped 文件日志：`{TRACE_LOG_DIR}/users/<scriptId>/events.jsonl`。
+- Trace 系统已从 job 内部状态扩展为 batch-scoped 文件日志：`{TRACE_LOG_DIR}/users/<batchId>/events.jsonl`。
 
 ---
 
@@ -157,12 +157,14 @@ V0 user-visible flow:
    Uploaded product-image bytes are validated before an Asset is created.
 2. User fills structured creative parameters:
    title / sellingPoints / audience / stylePreference.
+   CreativeBlueprint `fieldsToChange` points to productImage / title / coreSellingPoint / audience / stylePreference; coreSellingPoint is the blueprint-level field derived from the user selling points.
 3. Web calls POST /api/creative-blueprints.
 4. Server creates or reuses a scriptId-scoped trace log.
 5. Server resolves the product image into a provider-safe image reference.
 6. Server calls packages/ai to generate a CreativeBlueprint.
    With Ark text config, the request is text + image_url, not text only.
-7. Output is validated with Zod; one repair retry is allowed; fallback is explicit.
+7. Output is validated with Zod; one repair retry is allowed.
+   In mock mode, unrepaired output may use deterministic fallback; in real mode, unrepaired output fails loudly and is marked in trace.
 8. Server persists Product in Postgres.
 9. Web displays read-only Script and 2-4 StoryboardShot items.
 10. User clicks "一键成片".
@@ -187,7 +189,7 @@ The video prompt explicitly tells Seedance that storyboard shots are inspiration
 Provider image handoff contract:
 
 ```text
-app-created local upload -> validate bytes -> store under /uploads/product-images -> data:image/... for real providers
+app-created local upload -> validate bytes -> store under configured UPLOAD_URL_PREFIX -> data:image/... for real providers
 public http(s) URL         -> pass through when provider can fetch it
 asset:// provider asset    -> pass through for provider-native references
 /mocks/* or fake fixtures  -> local/demo only, not valid real-provider inputs
@@ -289,7 +291,7 @@ Provider modes:
 
 ```text
 MODEL_MODE=mock   local fallback allowed
-MODEL_MODE=real   missing real credentials fail loudly
+MODEL_MODE=real   missing real credentials and unrepaired provider output fail loudly
 ```
 
 Real-provider acceptance command:
@@ -338,11 +340,11 @@ Trace now has two layers:
 
 ```text
 GenerationJob.trace              compact job progress for API polling
-{TRACE_LOG_DIR}/users/<scriptId>/events.jsonl  user-session provider and pipeline event log
-{TRACE_LOG_DIR}/tests/<traceId>/events.jsonl   automated-test and provider-probe trace log
+{TRACE_LOG_DIR}/users/<batchId>/events.jsonl            user-session provider and pipeline event log
+{TRACE_LOG_DIR}/tests/<batchId>/<traceId>/events.jsonl   automated-test and provider-probe trace log
 ```
 
-`packages/ai/src/trace/trace-log.ts` owns file trace logging. The default root is `logs/trace`, or `TRACE_LOG_DIR` when set. Relative trace roots are resolved from the workspace `.env` root, not from the caller process cwd. `TRACE_LOG_SCOPE=users|tests` controls the scope subdirectory; production app/API flows default to `users`, while automated tests and provider probes use `tests`. Every event includes:
+`packages/ai/src/trace/trace-log.ts` owns file trace logging. `TRACE_LOG_DIR` must be configured explicitly unless a caller passes an explicit `traceRoot`; there is no `logs/trace` fallback for runtime default traces. Relative trace roots are resolved from the workspace `.env` root, not from the caller process cwd. A process-level trace batch id is generated once at module load in local time with `YYYYMMDDHH-MM-SS` format. `TRACE_LOG_SCOPE=users|tests` controls the scope subdirectory; production app/API flows default to `users`, while server API tests use the configured `TRACE_LOG_DIR` with `tests`, usually `storage/trace/tests/<batchId>/...`. Lower-level trace logger unit tests may pass explicit OS temp `traceRoot` values to keep fixed trace ids isolated. Every event includes:
 
 ```text
 at
@@ -374,7 +376,7 @@ session.started
 blueprint.request_prepared
 provider.request_started
 provider.response_received
-blueprint.parsed / blueprint.repaired / blueprint.fallback_used
+blueprint.parsed / blueprint.repaired / blueprint.repair_failed / blueprint.fallback_used
 video.image_prepared
 video.task_create_started
 video.task_created
@@ -387,10 +389,10 @@ Trace redaction is part of the architecture contract:
 
 - API keys, tokens, secrets, bearer tokens, and raw `data:image/...;base64,...` values are redacted before writing JSONL.
 - Image trace metadata keeps `referenceMode`, `mimeType`, `byteSize`, and `sha256` so we can prove which image bytes were sent without storing the raw image payload in trace.
-- Creative-blueprint errors include `scriptId` in the HTTP error body, so a failed request can be mapped back to `{TRACE_LOG_DIR}/users/<scriptId>/events.jsonl`.
-- Video job trace shares the same `scriptId` directory and adds `jobId` to media-generation events.
-- To inspect a local browser/API run, open `{TRACE_LOG_DIR}/users/<scriptId>/events.jsonl`.
-- To inspect automated tests or provider probes, open `{TRACE_LOG_DIR}/tests/<traceId>/events.jsonl`.
+- Creative-blueprint errors include `scriptId` in the HTTP error body, so a failed request can be filtered inside `{TRACE_LOG_DIR}/users/<batchId>/events.jsonl`.
+- Video job trace shares the same user batch file and adds `jobId` to media-generation events.
+- To inspect a local browser/API run, open the latest `{TRACE_LOG_DIR}/users/<batchId>/events.jsonl` and filter by the event `scriptId`.
+- To inspect automated tests or provider probes, open `{TRACE_LOG_DIR}/tests/<batchId>/<traceId>/events.jsonl`.
 
 This is intentionally file-based for V0. A database-backed observability store remains a P1/P2 concern.
 
@@ -428,8 +430,10 @@ On reload:
 P0 upload storage:
 
 - uploaded product images are stored under the server upload directory;
-- `UPLOAD_DIR` defaults to `tmp/uploads` and may be overridden in `.env`;
-- upload URLs are served from `/uploads/*`;
+- `UPLOAD_DIR` must be configured explicitly and must be a local or mounted filesystem path; object-storage URLs such as `s3://...` are rejected until an object-storage adapter exists;
+- `UPLOAD_URL_PREFIX` must be configured explicitly and controls the public URL path or base URL returned for uploaded assets;
+- local upload URLs are served from the configured `UPLOAD_URL_PREFIX` path, such as `/uploads/*`;
+- local development should use a repo-relative filesystem path such as `storage/uploads`; `/uploads` is the HTTP URL prefix, not the recommended local filesystem directory;
 - local uploads remain gitignored.
 
 P0 data infrastructure:
@@ -449,7 +453,9 @@ MinIO/S3 remains a future storage adapter upgrade. P0 intentionally keeps local 
 The current architecture is protected by these test surfaces:
 
 - config test: missing `DATABASE_URL` fails loudly;
+- config test: missing `UPLOAD_DIR` fails loudly instead of falling back to `tmp/uploads`;
 - config test: root `.env` loading provides `DATABASE_URL` and root-resolved `UPLOAD_DIR`;
+- trace test: missing `TRACE_LOG_DIR` fails loudly instead of falling back to `logs/trace`;
 - persistence test: `scriptId` can be read after server process restart;
 - creation API tests: job creation, hydration, running state, completion;
 - lifecycle tests: frozen blueprint versioning and multiple generation attempts;

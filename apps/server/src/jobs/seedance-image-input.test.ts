@@ -79,6 +79,30 @@ describe("resolveSeedanceImageInput", () => {
     });
   });
 
+  it("uses the configured upload URL prefix for local upload handoff", async () => {
+    await withUploadDir(async ({ uploadDir, productDir }) => {
+      const storagePath = path.join(productDir, "demo.png");
+      await writeFile(storagePath, Buffer.from("prefixed png"));
+
+      const result = await resolveSeedanceImageInput(
+        productImageAsset({
+          url: "/assets/uploads/product-images/demo.png",
+          metadata: {
+            contentType: "image/png",
+            sizeBytes: 12,
+            storagePath
+          }
+        }),
+        { uploadDir, uploadUrlPrefix: "/assets/uploads" }
+      );
+
+      assert.equal(
+        result,
+        `data:image/png;base64,${Buffer.from("prefixed png").toString("base64")}`
+      );
+    });
+  });
+
   it("passes through public URLs, existing data URLs, and Ark asset IDs", async () => {
     await assert.doesNotReject(async () => {
       assert.equal(

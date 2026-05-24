@@ -3,7 +3,6 @@ import path from "node:path";
 import type { Asset } from "@aigc-video/shared";
 import { config } from "../common/config.js";
 
-const uploadUrlPrefix = "/uploads/";
 const dataImagePattern = /^data:(image\/[a-z0-9.+-]+);base64,/i;
 
 const supportedSeedanceImageTypes = new Set([
@@ -19,6 +18,7 @@ export const maxSeedanceLocalImageBytes = 10 * 1024 * 1024;
 
 interface ResolveSeedanceImageInputOptions {
   uploadDir?: string;
+  uploadUrlPrefix?: string;
   maxSizeBytes?: number;
 }
 
@@ -57,14 +57,26 @@ function assertInsideDirectory(filePath: string, rootPath: string) {
   }
 }
 
+function normalizeLocalUploadUrlPrefix(prefix: string): string {
+  const normalized = prefix.replace(/\/+$/, "");
+  if (!normalized.startsWith("/")) {
+    throw new Error(
+      "Local upload URL prefix must be an absolute URL path for local file handoff"
+    );
+  }
+  return normalized;
+}
+
 function resolveUploadStoragePath(
   asset: Asset,
-  uploadRoot: string
+  uploadRoot: string,
+  uploadUrlPrefix: string
 ): string {
   const metadataStoragePath = getStringMetadata(asset, "storagePath");
+  const urlPrefix = `${normalizeLocalUploadUrlPrefix(uploadUrlPrefix)}/`;
   const storagePath = metadataStoragePath
     ? path.resolve(metadataStoragePath)
-    : path.resolve(uploadRoot, asset.url.slice(uploadUrlPrefix.length));
+    : path.resolve(uploadRoot, asset.url.slice(urlPrefix.length));
 
   assertInsideDirectory(storagePath, uploadRoot);
   return storagePath;
@@ -86,7 +98,10 @@ export async function resolveSeedanceImageInput(
     return url;
   }
 
-  if (!url.startsWith(uploadUrlPrefix)) {
+  const uploadUrlPrefix = normalizeLocalUploadUrlPrefix(
+    options.uploadUrlPrefix ?? config.uploadUrlPrefix
+  );
+  if (!url.startsWith(`${uploadUrlPrefix}/`)) {
     throw new Error(`Unsupported Seedance product image reference: ${url}`);
   }
 
@@ -97,7 +112,11 @@ export async function resolveSeedanceImageInput(
 
   const normalizedContentType = assertSupportedImageContentType(contentType);
   const uploadRoot = path.resolve(options.uploadDir ?? config.uploadDir);
-  const storagePath = resolveUploadStoragePath(asset, uploadRoot);
+  const storagePath = resolveUploadStoragePath(
+    asset,
+    uploadRoot,
+    uploadUrlPrefix
+  );
   const maxSizeBytes = options.maxSizeBytes ?? maxSeedanceLocalImageBytes;
   const metadataSizeBytes = getNumberMetadata(asset, "sizeBytes");
 

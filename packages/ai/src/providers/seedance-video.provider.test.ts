@@ -3,7 +3,10 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { createFileTraceLogger } from "../trace/trace-log.js";
+import {
+  createFileTraceLogger,
+  getDefaultTraceBatchId
+} from "../trace/trace-log.js";
 import { generateVideoWithSeedance } from "./seedance-video.provider.js";
 
 describe("generateVideoWithSeedance", () => {
@@ -216,7 +219,7 @@ describe("generateVideoWithSeedance", () => {
     assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
     assert.equal(
       traceLogger.filePath,
-      path.join(traceRoot, "users", "script_video_trace", "events.jsonl")
+      path.join(traceRoot, "users", getDefaultTraceBatchId(), "events.jsonl")
     );
 
     const traceText = await readFile(traceLogger.filePath, "utf8");
@@ -349,7 +352,7 @@ describe("generateVideoWithSeedance", () => {
       /did not complete in time/
     );
 
-    assert.equal(queryCount, 100);
+    assert.equal(queryCount, 20);
   });
 
   it("fails loudly in real-provider mode when Ark video config is missing", async () => {

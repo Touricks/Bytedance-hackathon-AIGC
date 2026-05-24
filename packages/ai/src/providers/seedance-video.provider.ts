@@ -218,8 +218,8 @@ async function pollVideoTask(
       model: string;
     }
 ) {
-  const pollIntervalMs = options.pollIntervalMs ?? 2000;
-  const maxPollAttempts = options.maxPollAttempts ?? 100;
+  const pollIntervalMs = options.pollIntervalMs ?? 10000;
+  const maxPollAttempts = options.maxPollAttempts ?? 20;
   const taskUrl = joinArkPath(
     options.baseURL,
     `contents/generations/tasks/${taskId}`

@@ -251,7 +251,8 @@ async function runTextProvider(
   callTextModel: TextModelCall,
   prompt: string,
   imageInput?: CreativeBlueprintImageInput,
-  traceLogger?: Pick<FileTraceLogger, "append">
+  traceLogger?: Pick<FileTraceLogger, "append">,
+  allowDeterministicFallback = true
 ): Promise<GenerateCreativeBlueprintResult> {
   let rawOutput = "";
   const providerImageInput = provider.provider === "ark" ? imageInput : undefined;
@@ -387,16 +388,26 @@ async function runTextProvider(
     } catch (repairError) {
       const error = repairError instanceof Error ? repairError : firstError;
       await traceLogger?.append({
-        kind: "blueprint.fallback_used",
+        kind: allowDeterministicFallback
+          ? "blueprint.fallback_used"
+          : "blueprint.repair_failed",
         pipeline: "creative_blueprint",
         status: "error",
         provider: provider.provider,
         model: provider.model,
         meta: {
           output: rawOutput,
-          error: error instanceof Error ? error.message : "Unknown model failure"
+          error: error instanceof Error ? error.message : "Unknown model failure",
+          deterministicFallbackAllowed: allowDeterministicFallback
         }
       });
+      if (!allowDeterministicFallback) {
+        throw new Error(
+          `Creative blueprint repair failed in real-provider mode: ${
+            error instanceof Error ? error.message : "Unknown model failure"
+          }`
+        );
+      }
       return deterministicFallbackResult(
         input,
         provider.model,
@@ -415,6 +426,8 @@ export async function generateCreativeBlueprintWithArk(
 ): Promise<GenerateCreativeBlueprintResult> {
   const prompt = buildCreativeBlueprintPrompt(input);
   const createModelCall = options.createTextModelCall ?? createOpenAITextModelCall;
+  const env = options.env ?? process.env;
+  const allowDeterministicFallback = !isRealProviderMode(env);
 
   if (options.callTextModel) {
     const provider: TextProviderConfig = {
@@ -429,11 +442,11 @@ export async function generateCreativeBlueprintWithArk(
       options.callTextModel,
       prompt,
       options.imageInput,
-      options.traceLogger
+      options.traceLogger,
+      allowDeterministicFallback
     );
   }
 
-  const env = options.env ?? process.env;
   const arkProvider = resolveArkTextProviderConfig(env, {
     apiKey: options.apiKey,
     model: options.model,
@@ -455,7 +468,8 @@ export async function generateCreativeBlueprintWithArk(
         createModelCall(fallbackProvider),
         prompt,
         options.imageInput,
-        options.traceLogger
+        options.traceLogger,
+        allowDeterministicFallback
       );
     }
 
@@ -475,10 +489,11 @@ export async function generateCreativeBlueprintWithArk(
       createModelCall(arkProvider),
       prompt,
       options.imageInput,
-      options.traceLogger
+      options.traceLogger,
+      allowDeterministicFallback
     );
   } catch (arkError) {
-    if (isRealProviderMode(env) && isProviderAuthOrConfigError(arkError)) {
+    if (isRealProviderMode(env)) {
       throw arkError;
     }
 
@@ -490,7 +505,8 @@ export async function generateCreativeBlueprintWithArk(
           createModelCall(fallbackProvider),
           prompt,
           options.imageInput,
-          options.traceLogger
+          options.traceLogger,
+          allowDeterministicFallback
         );
       } catch (fallbackError) {
         const error = fallbackError instanceof Error ? fallbackError : arkError;

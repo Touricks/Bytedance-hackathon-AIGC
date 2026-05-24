@@ -4,7 +4,7 @@ import { storyboardShotSchema } from "./script.js";
 export const creativeFieldSchema = z.enum([
   "productImage",
   "title",
-  "sellingPoints",
+  "coreSellingPoint",
   "audience",
   "stylePreference"
 ]);
