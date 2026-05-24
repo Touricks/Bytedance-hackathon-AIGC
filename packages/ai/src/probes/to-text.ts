@@ -1,20 +1,30 @@
-import OpenAI from "openai";
 import { loadWorkspaceEnv } from "../env.js";
+import {
+  generateTextWithArk,
+  type ArkTextProviderOptions
+} from "../providers/ark-text.provider.js";
 import {
   resolveArkTextProviderConfig,
   type ProviderEnv
 } from "../providers/provider-config.js";
-import { createFileTraceLogger, type TraceScope } from "../trace/trace-log.js";
+import {
+  createFileTraceLogger,
+  type FileTraceLogger,
+  type TraceScope
+} from "../trace/trace-log.js";
 import {
   createProbeTraceId,
   isDirectCliRun,
   readCliOption,
-  readLocalImageReference
+  readLocalImageReference,
+  type LocalImageReference
 } from "./probe-utils.js";
 
-interface ToTextProbeModelRequest {
+interface ToTextProbeModelInput {
   prompt: string;
   imageDataUrl: string;
+  imageMeta: LocalImageReference["meta"];
+  traceLogger: Pick<FileTraceLogger, "append">;
 }
 
 interface ToTextProbeModelResult {
@@ -30,9 +40,7 @@ export interface RunToTextProbeOptions {
   traceScope?: TraceScope;
   traceId?: string;
   env?: ProviderEnv;
-  callModel?: (
-    request: ToTextProbeModelRequest
-  ) => Promise<ToTextProbeModelResult>;
+  createClient?: ArkTextProviderOptions["createClient"];
 }
 
 export interface ToTextProbeResult {
@@ -44,8 +52,9 @@ export interface ToTextProbeResult {
 }
 
 async function callConfiguredArkTextModel(
-  request: ToTextProbeModelRequest,
-  env: ProviderEnv
+  request: ToTextProbeModelInput,
+  env: ProviderEnv,
+  createClient?: ArkTextProviderOptions["createClient"]
 ): Promise<ToTextProbeModelResult> {
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
@@ -54,32 +63,32 @@ async function callConfiguredArkTextModel(
     );
   }
 
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL
-  });
-  const response = await client.chat.completions.create({
-    model: config.model,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: request.prompt },
-          {
-            type: "image_url",
-            image_url: { url: request.imageDataUrl, detail: "high" }
-          }
-        ]
+  return generateTextWithArk(
+    {
+      prompt: request.prompt,
+      content: [
+        { type: "text", text: request.prompt },
+        {
+          type: "image_url",
+          image_url: { url: request.imageDataUrl, detail: "high" }
+        }
+      ]
+    },
+    config,
+    {
+      createClient,
+      temperature: 0,
+      traceLogger: request.traceLogger,
+      trace: {
+        pipeline: "probe_to_text",
+        meta: {
+          prompt: request.prompt,
+          imageReferenceMode: "data_url",
+          image: request.imageMeta
+        }
       }
-    ],
-    temperature: 0
-  });
-
-  return {
-    provider: config.provider,
-    model: config.model,
-    output: response.choices[0]?.message.content ?? ""
-  };
+    }
+  );
 }
 
 export async function runToTextProbe(
@@ -102,37 +111,19 @@ export async function runToTextProbe(
       imageDataUrl: image.imageDataUrl
     }
   });
-  await traceLogger.append({
-    kind: "provider.request_started",
-    pipeline: "probe_to_text",
-    status: "ok",
-    meta: {
-      prompt: options.prompt,
-      image: image.meta
-    }
-  });
 
   try {
-    const result = await (options.callModel ??
-      ((request: ToTextProbeModelRequest) => {
-        loadWorkspaceEnv();
-        return callConfiguredArkTextModel(request, options.env ?? process.env);
-      }))({
-      prompt: options.prompt,
-      imageDataUrl: image.imageDataUrl
-    });
-
-    await traceLogger.append({
-      kind: "provider.response_received",
-      pipeline: "probe_to_text",
-      status: "ok",
-      provider: result.provider,
-      model: result.model,
-      meta: {
+    loadWorkspaceEnv();
+    const result = await callConfiguredArkTextModel(
+      {
         prompt: options.prompt,
-        output: result.output
-      }
-    });
+        imageDataUrl: image.imageDataUrl,
+        imageMeta: image.meta,
+        traceLogger
+      },
+      options.env ?? process.env,
+      options.createClient
+    );
 
     return {
       traceId,
@@ -143,10 +134,11 @@ export async function runToTextProbe(
     };
   } catch (error) {
     await traceLogger.append({
-      kind: "provider.failed",
+      kind: "probe.failed",
       pipeline: "probe_to_text",
       status: "error",
       meta: {
+        prompt: options.prompt,
         error: error instanceof Error ? error.message : "Unknown probe failure"
       }
     });

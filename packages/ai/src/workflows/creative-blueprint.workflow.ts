@@ -17,10 +17,7 @@ import {
   type TextProviderConfig
 } from "../providers/provider-config.js";
 import { generateTextWithArk } from "../providers/ark-text.provider.js";
-import {
-  createImageTraceMeta,
-  type FileTraceLogger
-} from "../trace/trace-log.js";
+import { createImageTraceMeta, type FileTraceLogger } from "../trace/trace-log.js";
 
 export type CreativeBlueprintImageReferenceMode =
   | "none"
@@ -31,10 +28,7 @@ export type CreativeBlueprintImageReferenceMode =
 
 export interface CreativeBlueprintImageInput {
   url: string;
-  mode: Exclude<
-    CreativeBlueprintImageReferenceMode,
-    "none" | "text_only_fallback"
-  >;
+  mode: Exclude<CreativeBlueprintImageReferenceMode, "none" | "text_only_fallback">;
   detail?: "low" | "high";
 }
 
@@ -61,9 +55,7 @@ export interface CreativeBlueprintModelRequest {
   imageReferenceMode: CreativeBlueprintImageReferenceMode;
 }
 
-export type TextModelCall = (
-  request: CreativeBlueprintModelRequest
-) => Promise<string>;
+export type TextModelCall = (request: CreativeBlueprintModelRequest) => Promise<string>;
 export type CreateTextModelCall = (config: TextProviderConfig) => TextModelCall;
 
 export interface CreativeBlueprintTrace {
@@ -142,7 +134,7 @@ function buildImageTraceMeta(imageInput?: CreativeBlueprintImageInput) {
   return createImageTraceMeta({
     url: imageInput.url,
     referenceMode: imageInput.mode,
-    detail: imageInput.detail,
+    detail: imageInput.detail
   });
 }
 
@@ -203,8 +195,7 @@ function buildFallbackCreativeBlueprint(
     improvementHints: [
       {
         ifVideoLooksBad: "商品不像原图",
-        suggestedUserAction:
-          "上传更清晰的正面商品图，或减少风格偏好中的复杂场景词。",
+        suggestedUserAction: "上传更清晰的正面商品图，或减少风格偏好中的复杂场景词。",
         fieldsToChange: ["productImage", "stylePreference"]
       }
     ]
@@ -263,17 +254,13 @@ async function runTextProvider(
   traceLogger?: Pick<FileTraceLogger, "append">
 ): Promise<GenerateCreativeBlueprintResult> {
   let rawOutput = "";
-  const providerImageInput =
-    provider.provider === "ark" ? imageInput : undefined;
+  const providerImageInput = provider.provider === "ark" ? imageInput : undefined;
   const traceImageReferenceMode = providerImageInput
     ? providerImageInput.mode
     : getTextOnlyFallbackImageMode(imageInput);
 
   try {
-    const modelRequest = buildCreativeBlueprintModelRequest(
-      prompt,
-      providerImageInput
-    );
+    const modelRequest = buildCreativeBlueprintModelRequest(prompt, providerImageInput);
     await traceLogger?.append({
       kind: "blueprint.request_prepared",
       pipeline: "creative_blueprint",
@@ -296,8 +283,7 @@ async function runTextProvider(
       provider: provider.provider,
       model: provider.model,
       meta: {
-        endpointFamily:
-          provider.provider === "ark" ? "ark_openai_compatible" : "openai",
+        endpointFamily: provider.provider === "ark" ? "ark_openai_compatible" : "openai",
         baseURL: provider.baseURL,
         imageReferenceMode: traceImageReferenceMode,
         image: buildImageTraceMeta(providerImageInput)
@@ -350,9 +336,7 @@ async function runTextProvider(
         model: provider.model,
         meta: {
           error:
-            firstError instanceof Error
-              ? firstError.message
-              : "Unknown provider failure"
+            firstError instanceof Error ? firstError.message : "Unknown provider failure"
         }
       });
       throw firstError;
@@ -368,15 +352,11 @@ async function runTextProvider(
         meta: {
           output: rawOutput,
           error:
-            firstError instanceof Error
-              ? firstError.message
-              : "Unknown parse failure"
+            firstError instanceof Error ? firstError.message : "Unknown parse failure"
         }
       });
       const repairedOutput = await callTextModel(
-        buildCreativeBlueprintModelRequest(
-          buildCreativeBlueprintRepairPrompt(rawOutput)
-        )
+        buildCreativeBlueprintModelRequest(buildCreativeBlueprintRepairPrompt(rawOutput))
       );
       const creativeBlueprint = parseCreativeBlueprint(repairedOutput);
       await traceLogger?.append({
@@ -462,6 +442,12 @@ export async function generateCreativeBlueprintWithArk(
   const fallbackProvider = resolveFallbackTextProviderConfig(env);
 
   if (!arkProvider) {
+    if (isRealProviderMode(env)) {
+      throw new Error(
+        "real-provider mode requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID"
+      );
+    }
+
     if (fallbackProvider) {
       return runTextProvider(
         input,
@@ -470,12 +456,6 @@ export async function generateCreativeBlueprintWithArk(
         prompt,
         options.imageInput,
         options.traceLogger
-      );
-    }
-
-    if (isRealProviderMode(env)) {
-      throw new Error(
-        "real-provider mode requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID"
       );
     }
 
@@ -498,6 +478,10 @@ export async function generateCreativeBlueprintWithArk(
       options.traceLogger
     );
   } catch (arkError) {
+    if (isRealProviderMode(env) && isProviderAuthOrConfigError(arkError)) {
+      throw arkError;
+    }
+
     if (fallbackProvider && isProviderAuthOrConfigError(arkError)) {
       try {
         return await runTextProvider(
@@ -509,8 +493,7 @@ export async function generateCreativeBlueprintWithArk(
           options.traceLogger
         );
       } catch (fallbackError) {
-        const error =
-          fallbackError instanceof Error ? fallbackError : arkError;
+        const error = fallbackError instanceof Error ? fallbackError : arkError;
         return deterministicFallbackResult(
           input,
           fallbackProvider.model,
@@ -519,10 +502,6 @@ export async function generateCreativeBlueprintWithArk(
           getTextOnlyFallbackImageMode(options.imageInput)
         );
       }
-    }
-
-    if (isRealProviderMode(env) && isProviderAuthOrConfigError(arkError)) {
-      throw arkError;
     }
 
     const error = arkError instanceof Error ? arkError : undefined;

@@ -286,6 +286,28 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(fallbackRequests[0]!.content, fallbackRequests[0]!.prompt);
   });
 
+  it("uses deterministic fallback in mock mode when no text provider is configured", async () => {
+    const result = await generateCreativeBlueprintWithArk(
+      {
+        title: "Portable Mini Blender",
+        sellingPoints: "USB-C charging",
+        audience: "busy office workers",
+        stylePreference: "clean premium ecommerce",
+        imageUrl: "/mocks/products/demo-product.svg"
+      },
+      {
+        env: {
+          MODEL_MODE: "mock"
+        }
+      }
+    );
+
+    assert.equal(result.provider, "fallback");
+    assert.equal(result.trace.textProvider, "deterministic");
+    assert.equal(result.trace.model, "unconfigured");
+    assert.equal(result.trace.fallbackUsed, true);
+  });
+
   it("fails loudly in real-provider mode when text model credentials are missing", async () => {
     const originalMode = process.env.MODEL_MODE;
     const originalArkApiKey = process.env.ARK_API_KEY;
@@ -337,5 +359,89 @@ describe("generateCreativeBlueprintWithArk", () => {
         process.env.ARK_TEXT_ENDPOINT_ID = originalArkModel;
       }
     }
+  });
+
+  it("fails loudly in real-provider mode instead of using configured fallback LLM when Ark text config is missing", async () => {
+    const providerCalls: string[] = [];
+    const createTextModelCall: CreateTextModelCall = (config) => {
+      providerCalls.push(config.provider);
+      return async () => JSON.stringify(validBlueprint);
+    };
+
+    await assert.rejects(
+      () =>
+        generateCreativeBlueprintWithArk(
+          {
+            title: "Portable Mini Blender",
+            sellingPoints: "USB-C charging",
+            audience: "busy office workers",
+            stylePreference: "clean premium ecommerce",
+            imageUrl: "/mocks/products/demo-product.svg"
+          },
+          {
+            createTextModelCall,
+            env: {
+              MODEL_MODE: "real",
+              OPENAI_BASE_URL: "https://fallback.example/v1",
+              OPENAI_API_KEY: "fallback-key",
+              OPENAI_MODEL: "fallback-model"
+            }
+          }
+        ),
+      /real-provider mode requires Ark text config/
+    );
+    assert.deepEqual(providerCalls, []);
+  });
+
+  it("fails loudly in real-provider mode instead of using fallback LLM when Ark auth fails", async () => {
+    const traceRoot = await mkdtemp(path.join(os.tmpdir(), "blueprint-real-"));
+    const traceLogger = createFileTraceLogger({
+      traceId: "real_provider_failure",
+      traceRoot
+    });
+    const providerCalls: string[] = [];
+    const createTextModelCall: CreateTextModelCall = (config) => {
+      providerCalls.push(config.provider);
+      return async () => {
+        throw Object.assign(new Error("Unauthorized Ark key"), {
+          status: 401
+        });
+      };
+    };
+
+    await assert.rejects(
+      () =>
+        generateCreativeBlueprintWithArk(
+          {
+            title: "Portable Mini Blender",
+            sellingPoints: "USB-C charging",
+            audience: "busy office workers",
+            stylePreference: "clean premium ecommerce",
+            imageUrl: "/mocks/products/demo-product.svg"
+          },
+          {
+            createTextModelCall,
+            traceLogger,
+            env: {
+              MODEL_MODE: "real",
+              ARK_API_KEY: "bad-ark-key",
+              ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint",
+              OPENAI_BASE_URL: "https://fallback.example/v1",
+              OPENAI_API_KEY: "fallback-key",
+              OPENAI_MODEL: "fallback-model"
+            }
+          }
+        ),
+      /Unauthorized Ark key/
+    );
+
+    assert.deepEqual(providerCalls, ["ark"]);
+    const events = (await readFile(traceLogger.filePath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(events.at(-1)?.kind, "provider.failed");
+    assert.equal(events.at(-1)?.provider, "ark");
+    assert.equal(events.at(-1)?.model, "ark-text-endpoint");
   });
 });
