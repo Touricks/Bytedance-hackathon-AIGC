@@ -34,6 +34,10 @@ describe("provider probes", () => {
     });
 
     assert.equal(result.traceId, "probe-fixed-to-text");
+    assert.equal(
+      result.traceFile,
+      path.join(root, "tests", "probe-fixed-to-text", "events.jsonl")
+    );
     assert.equal(result.output, "A compact product on a clean background.");
     assert.equal(seenRequests.length, 1);
     assert.match(seenRequests[0]!.imageDataUrl, /^data:image\/png;base64,/);
@@ -74,6 +78,10 @@ describe("provider probes", () => {
     });
 
     assert.equal(result.traceId, "probe-fixed-image-to-video");
+    assert.equal(
+      result.traceFile,
+      path.join(root, "tests", "probe-fixed-image-to-video", "events.jsonl")
+    );
     assert.equal(result.videoUrl, "https://cdn.example/probe.mp4");
     assert.equal(requests.length, 1);
 

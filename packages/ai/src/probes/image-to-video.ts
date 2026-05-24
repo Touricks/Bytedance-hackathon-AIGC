@@ -1,6 +1,6 @@
 import { generateVideoWithSeedance } from "../providers/seedance-video.provider.js";
 import type { ProviderEnv } from "../providers/provider-config.js";
-import { createFileTraceLogger } from "../trace/trace-log.js";
+import { createFileTraceLogger, type TraceScope } from "../trace/trace-log.js";
 import { loadWorkspaceEnv } from "../env.js";
 import {
   createProbeTraceId,
@@ -13,6 +13,7 @@ export interface RunImageToVideoProbeOptions {
   imagePath: string;
   prompt: string;
   traceRoot?: string;
+  traceScope?: TraceScope;
   traceId?: string;
   env?: ProviderEnv;
   fetch?: typeof fetch;
@@ -31,7 +32,8 @@ export async function runImageToVideoProbe(
   const traceId = options.traceId ?? createProbeTraceId("image-to-video");
   const traceLogger = createFileTraceLogger({
     traceId,
-    traceRoot: options.traceRoot
+    traceRoot: options.traceRoot,
+    traceScope: options.traceScope ?? "tests"
   });
   const image = await readLocalImageReference(options.imagePath);
 

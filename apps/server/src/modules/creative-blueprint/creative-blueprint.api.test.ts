@@ -170,7 +170,7 @@ describe("creative blueprint API", () => {
 
     const traceLines = (
       await readFile(
-        path.join(traceRoot, body.scriptId, "events.jsonl"),
+        path.join(traceRoot, "tests", body.scriptId, "events.jsonl"),
         "utf8"
       )
     )
@@ -243,7 +243,7 @@ describe("creative blueprint API", () => {
 
       const traceLines = (
         await readFile(
-          path.join(traceRoot, body.scriptId, "events.jsonl"),
+          path.join(traceRoot, "tests", body.scriptId, "events.jsonl"),
           "utf8"
         )
       )
@@ -350,7 +350,7 @@ describe("creative blueprint API", () => {
       );
 
       const traceText = await readFile(
-        path.join(traceRoot, blueprint.scriptId, "events.jsonl"),
+        path.join(traceRoot, "tests", blueprint.scriptId, "events.jsonl"),
         "utf8"
       );
       assert.match(traceText, /provider.response_received/);

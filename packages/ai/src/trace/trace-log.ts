@@ -1,6 +1,7 @@
 import { mkdir, appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { loadWorkspaceEnv, resolveWorkspacePath } from "../env.js";
 
 export type TracePipeline =
   | "creative_blueprint"
@@ -9,6 +10,7 @@ export type TracePipeline =
   | "probe_image_to_video";
 
 export type TraceStatus = "ok" | "error";
+export type TraceScope = "users" | "tests";
 
 export interface TraceEventInput {
   kind: string;
@@ -34,6 +36,7 @@ export interface ImageTraceMetaInput {
 
 export interface FileTraceLogger {
   traceId: string;
+  traceScope: TraceScope;
   traceDir: string;
   filePath: string;
   append(event: TraceEventInput): Promise<void>;
@@ -47,11 +50,27 @@ const BEARER_PATTERN = /Bearer\s+[a-z0-9._~+/=-]+/gi;
 interface FileTraceLoggerOptions {
   traceId: string;
   traceRoot?: string;
+  traceScope?: TraceScope;
   clock?: () => Date;
 }
 
 export function getDefaultTraceRoot() {
-  return path.resolve(process.env.TRACE_LOG_DIR ?? "logs/trace");
+  const workspaceRoot = loadWorkspaceEnv() ?? process.cwd();
+  return resolveWorkspacePath(
+    process.env.TRACE_LOG_DIR ?? "logs/trace",
+    workspaceRoot
+  );
+}
+
+export function resolveTraceScope(traceScope?: TraceScope): TraceScope {
+  const value = traceScope ?? process.env.TRACE_LOG_SCOPE ?? "users";
+  if (value === "users" || value === "tests") {
+    return value;
+  }
+
+  throw new Error(
+    `TRACE_LOG_SCOPE must be "users" or "tests"; received ${JSON.stringify(value)}`
+  );
 }
 
 export function redactTraceValue(value: unknown): unknown {
@@ -102,13 +121,16 @@ export function createImageTraceMeta(input: ImageTraceMetaInput) {
 export function createFileTraceLogger(
   options: FileTraceLoggerOptions
 ): FileTraceLogger {
+  loadWorkspaceEnv();
   const traceRoot = path.resolve(options.traceRoot ?? getDefaultTraceRoot());
-  const traceDir = path.join(traceRoot, options.traceId);
+  const traceScope = resolveTraceScope(options.traceScope);
+  const traceDir = path.join(traceRoot, traceScope, options.traceId);
   const filePath = path.join(traceDir, "events.jsonl");
   const clock = options.clock ?? (() => new Date());
 
   return {
     traceId: options.traceId,
+    traceScope,
     traceDir,
     filePath,
     async append(event) {

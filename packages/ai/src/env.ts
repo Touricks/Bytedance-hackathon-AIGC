@@ -28,7 +28,7 @@ function parseDotEnvLine(line: string): [string, string] | null {
   return [key, value];
 }
 
-function findWorkspaceEnvFile(startDir: string): string | null {
+export function findWorkspaceEnvFile(startDir = process.cwd()): string | null {
   let currentDir = path.resolve(startDir);
 
   while (true) {
@@ -45,14 +45,26 @@ function findWorkspaceEnvFile(startDir: string): string | null {
   }
 }
 
-export function loadWorkspaceEnv() {
+export function getWorkspaceRoot(startDir = process.cwd()): string {
+  const envFile = findWorkspaceEnvFile(startDir);
+  return envFile ? path.dirname(envFile) : path.resolve(startDir);
+}
+
+export function resolveWorkspacePath(
+  input: string,
+  workspaceRoot: string
+): string {
+  return path.isAbsolute(input) ? input : path.resolve(workspaceRoot, input);
+}
+
+export function loadWorkspaceEnv(): string | null {
   if (process.env.AIGC_VIDEO_SKIP_ENV_FILE === "true") {
-    return;
+    return null;
   }
 
-  const envFile = findWorkspaceEnvFile(process.cwd());
+  const envFile = findWorkspaceEnvFile();
   if (!envFile) {
-    return;
+    return null;
   }
 
   for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
@@ -64,4 +76,6 @@ export function loadWorkspaceEnv() {
     const [key, value] = parsed;
     process.env[key] ??= value;
   }
+
+  return path.dirname(envFile);
 }

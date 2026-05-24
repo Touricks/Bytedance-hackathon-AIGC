@@ -1,7 +1,10 @@
 import OpenAI from "openai";
 import { loadWorkspaceEnv } from "../env.js";
-import { resolveArkTextProviderConfig, type ProviderEnv } from "../providers/provider-config.js";
-import { createFileTraceLogger } from "../trace/trace-log.js";
+import {
+  resolveArkTextProviderConfig,
+  type ProviderEnv
+} from "../providers/provider-config.js";
+import { createFileTraceLogger, type TraceScope } from "../trace/trace-log.js";
 import {
   createProbeTraceId,
   isDirectCliRun,
@@ -24,6 +27,7 @@ export interface RunToTextProbeOptions {
   imagePath: string;
   prompt: string;
   traceRoot?: string;
+  traceScope?: TraceScope;
   traceId?: string;
   env?: ProviderEnv;
   callModel?: (
@@ -84,7 +88,8 @@ export async function runToTextProbe(
   const traceId = options.traceId ?? createProbeTraceId("to-text");
   const traceLogger = createFileTraceLogger({
     traceId,
-    traceRoot: options.traceRoot
+    traceRoot: options.traceRoot,
+    traceScope: options.traceScope ?? "tests"
   });
   const image = await readLocalImageReference(options.imagePath);
 

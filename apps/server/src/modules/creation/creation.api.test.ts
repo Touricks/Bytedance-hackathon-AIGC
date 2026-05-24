@@ -290,7 +290,7 @@ describe("creation API", () => {
       assert.equal(detail.finalAsset.type, "final_video");
 
       const traceText = await readFile(
-        path.join(traceRoot, blueprint.scriptId, "events.jsonl"),
+        path.join(traceRoot, "tests", blueprint.scriptId, "events.jsonl"),
         "utf8"
       );
       assert.match(traceText, /video.image_prepared/);

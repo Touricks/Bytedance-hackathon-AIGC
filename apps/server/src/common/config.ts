@@ -45,14 +45,14 @@ function findWorkspaceEnvFile(startDir: string): string | null {
   }
 }
 
-function loadWorkspaceEnv() {
+function loadWorkspaceEnv(): string | null {
   if (process.env.AIGC_VIDEO_SKIP_ENV_FILE === "true") {
-    return;
+    return null;
   }
 
   const envFile = findWorkspaceEnvFile(process.cwd());
   if (!envFile) {
-    return;
+    return null;
   }
 
   for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
@@ -64,6 +64,12 @@ function loadWorkspaceEnv() {
     const [key, value] = parsed;
     process.env[key] ??= value;
   }
+
+  return path.dirname(envFile);
+}
+
+function resolveWorkspacePath(input: string, workspaceRoot: string): string {
+  return path.isAbsolute(input) ? input : path.resolve(workspaceRoot, input);
 }
 
 function requireEnv(name: string): string {
@@ -76,7 +82,7 @@ function requireEnv(name: string): string {
   return value;
 }
 
-loadWorkspaceEnv();
+const workspaceRoot = loadWorkspaceEnv() ?? process.cwd();
 
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
@@ -85,7 +91,10 @@ export const config = {
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   useRedisQueue: process.env.USE_REDIS_QUEUE === "true",
   runtime: process.env.SERVER_RUNTIME ?? "all",
-  uploadDir: process.env.UPLOAD_DIR ?? "tmp/uploads"
+  uploadDir: resolveWorkspacePath(
+    process.env.UPLOAD_DIR ?? "tmp/uploads",
+    workspaceRoot
+  )
 };
 
 export function shouldStartApi(): boolean {
