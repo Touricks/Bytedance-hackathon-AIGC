@@ -17,4 +17,4 @@ storage/
 docs/prd.pdf
 
 # assets only for local test (e.g. image)
-assets_test/
+assets/
