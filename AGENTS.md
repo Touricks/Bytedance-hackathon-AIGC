@@ -14,3 +14,6 @@ This repo uses a single-context domain layout rooted at `CONTEXT.md`. See `docs/
 
 ## API related problems reference
 - https://www.volcengine.com/docs/82379/1494384?lang=zh
+
+# System
+为了适配Seedance，所有prompt需要以中文构建

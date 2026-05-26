@@ -40,7 +40,8 @@ async function probeTextProvider(
     },
     config,
     {
-      temperature: 0
+      temperature: Number(process.env.OPENAI_TEMPERATURE ?? 1),
+      topP: Number(process.env.OPENAI_TOP_P ?? 0.9)
     }
   );
 

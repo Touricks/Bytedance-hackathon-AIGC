@@ -44,8 +44,16 @@ _Avoid_: raw prompt
 A working unit centered on one creative-blueprint attempt. It may fail before a blueprint exists, stop after blueprint generation, or continue into one or more final-video jobs.
 _Avoid_: provider request, isolated video job
 
+**创作工作目录**:
+A registered merchant-owned project folder that scopes product material and creative work for one commerce-video effort.
+_Avoid_: thread, random folder, deployment workspace
+
+**创作线路**:
+The single current path of work inside a creative workspace, from material intake through blueprint review to final-video attempts.
+_Avoid_: version history, multi-branch workflow
+
 **创作会话追踪**:
-An audit trail for one creative session that records blueprint generation and any final-video jobs that follow from it.
+A shareable audit trail for one creative session that records blueprint generation and any final-video jobs that follow from it.
 _Avoid_: provider dashboard only, server console log
 
 **模型探测**:
@@ -80,14 +88,22 @@ _Avoid_: primary generation path
 - A **草稿蓝图** becomes a **冻结蓝图** when **一键成片** creates a **成片任务**.
 - Editing a **冻结蓝图** creates a new **草稿蓝图**.
 - A **冻结蓝图** can be used by multiple **成片任务** attempts.
+- A **创作蓝图** can be used as the recovery anchor for its review and final-video attempts.
 - A **改进提示** points to one or more **创作参数** and does not change them automatically.
 - **创作参数** guide **剧本** generation but do not directly expose the video prompt.
+- A **创作工作目录** scopes one or more **创作会话** for a merchant's product-video effort.
+- A **创作工作目录** must be recognized by the system before it can resume or advance creative work.
+- A **创作工作目录** may have one current **创作线路** for V0+.
+- A **创作工作目录** may point to its current **创作线路** and generated outputs, but it does not prove those facts by itself.
+- A future **创作工作目录** may contain multiple **创作线路**, but V1 exposes only the current one.
 - A **创作会话** may produce one **创作蓝图** and can create zero or more **成片任务**.
 - A failed **创作会话** can still have **创作会话追踪** even when no **创作蓝图** was produced.
 - **创作会话追踪** belongs to one **创作会话** and may include provider request and response summaries for both **创作蓝图生成** and **成片任务**.
+- **创作会话追踪** records machine-readable event kinds; human-readable explanation belongs in event details only when it adds new information.
 - A **模型探测** can produce trace logs using a reserved probe identifier, but it is not a **创作会话**.
 - **一键成片** happens after a **剧本** and **分镜** are visible to the merchant.
 - A **成片任务** produces at most one current **成片**.
+- A **成片任务** is the recovery anchor for asynchronous final-video progress and result retrieval.
 - **上传素材** can be used to create a **剧本** and guide **成片** generation.
 - A **兜底样例** can be shown for demo resilience but does not replace the primary **成片任务**.
 
@@ -108,5 +124,8 @@ _Avoid_: primary generation path
 - "重新生成蓝图" could mean always creating versions. Resolved: a **草稿蓝图** is overwritten before video generation; a **冻结蓝图** is read-only and edits create a new version.
 - "一键成片" could imply only one attempt per blueprint. Resolved: one **冻结蓝图** can start multiple **成片任务** attempts.
 - "session" could mean a browser visit, provider run, or video job. Resolved: use **创作会话** for the blueprint-centered working unit that may include zero or more **成片任务**.
+- "thread" could mean an agent conversation or a merchant project folder. Resolved: use **创作工作目录** for the merchant-owned folder and **创作会话** for the creative attempt inside it.
+- "workdir state" could imply the local folder is trusted as the source of truth. Resolved: **创作工作目录** can carry recovery pointers, but the system must recognize it before acting on them.
+- "scriptId/sessionId" could imply the blueprint identifier also authenticates the local folder. Resolved: a preallocated script identifier can anchor the current **创作线路** and its **创作蓝图**, while **创作工作目录** remains a separate project boundary.
 - "trace" could mean only provider dashboard traces or only server console logs. Resolved: use **创作会话追踪** for the app-owned audit trail across blueprint and final-video work.
 - "provider test" could imply a real merchant workflow. Resolved: use **模型探测** for standalone provider checks, with reserved probe identifiers rather than real creative-session IDs.

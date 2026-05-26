@@ -83,3 +83,29 @@ export interface TraceEvent {
   message: string;
   meta?: Record<string, unknown>;
 }
+
+export type WorkspaceStatus =
+  | "draft"
+  | "materials_ready"
+  | "brief_proposed"
+  | "brief_approved"
+  | "storyboard_proposed"
+  | "storyboard_approved"
+  | "shotprompt_proposed"
+  | "shotprompt_approved"
+  | "video_generating"
+  | "video_ready"
+  | "failed"
+  | "missing";
+
+export interface CreativeWorkspace {
+  id: string;
+  localPath: string;
+  currentScriptId: string;
+  currentJobId?: string;
+  status: WorkspaceStatus;
+  traceFile: string;
+  createdAt: string;
+  updatedAt: string;
+  lastSeenAt: string;
+}

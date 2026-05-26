@@ -111,24 +111,30 @@ function normalizeUploadUrlPrefix(input: string): string {
   return prefix;
 }
 
-const workspaceRoot = loadWorkspaceEnv() ?? process.cwd();
+const envFileRoot = loadWorkspaceEnv() ?? process.cwd();
+const databaseUrl = requireEnv(
+  "DATABASE_URL",
+  "Postgres is the only supported V0 fact source."
+);
+const uploadDir = resolveWorkspacePath(
+  requireLocalFilesystemPath(
+    "UPLOAD_DIR",
+    "Local file upload storage must be explicit; no tmp/uploads fallback is allowed."
+  ),
+  envFileRoot
+);
 
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.SERVER_PORT ?? 3000),
-  databaseUrl: requireEnv(
-    "DATABASE_URL",
-    "Postgres is the only supported V0 fact source."
-  ),
+  databaseUrl,
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   useRedisQueue: process.env.USE_REDIS_QUEUE === "true",
   runtime: process.env.SERVER_RUNTIME ?? "all",
-  uploadDir: resolveWorkspacePath(
-    requireLocalFilesystemPath(
-      "UPLOAD_DIR",
-      "Local file upload storage must be explicit; no tmp/uploads fallback is allowed."
-    ),
-    workspaceRoot
+  uploadDir,
+  workspaceDir: resolveWorkspacePath(
+    process.env.WORKSPACE_DIR ?? path.join(uploadDir, "workspaces"),
+    envFileRoot
   ),
   uploadUrlPrefix: normalizeUploadUrlPrefix(
     requireEnv(

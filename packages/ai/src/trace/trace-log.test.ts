@@ -111,6 +111,47 @@ describe("file trace logger", () => {
     assert.equal(JSON.parse(lines[1]!).latencyMs, 12);
   });
 
+  it("can write workspace-local trace events enriched with workspaceId", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "daireel-trace-"));
+    const traceFilePath = path.join(
+      workspaceDir,
+      ".daireel",
+      "trace",
+      "events.jsonl"
+    );
+    const logger = createFileTraceLogger({
+      traceId: "script_123",
+      workspaceId: "workspace_123",
+      traceFilePath,
+      clock: () => new Date("2026-05-25T12:00:00.000Z")
+    });
+
+    try {
+      await logger.append({
+        kind: "provider.response_received",
+        pipeline: "creative_blueprint",
+        status: "ok",
+        provider: "ark",
+        model: "doubao-seed"
+      });
+
+      assert.equal(logger.filePath, traceFilePath);
+      const lines = (await readFile(traceFilePath, "utf8")).trim().split("\n");
+      assert.deepEqual(JSON.parse(lines[0]!), {
+        at: "2026-05-25T12:00:00.000Z",
+        workspaceId: "workspace_123",
+        scriptId: "script_123",
+        kind: "provider.response_received",
+        pipeline: "creative_blueprint",
+        status: "ok",
+        provider: "ark",
+        model: "doubao-seed"
+      });
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails loudly when the default trace root is not configured", () => {
     const result = spawnSync(
       tsxBin,

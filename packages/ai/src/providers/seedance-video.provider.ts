@@ -27,6 +27,8 @@ interface SeedanceProviderOptions {
   maxPollAttempts?: number;
   traceLogger?: Pick<FileTraceLogger, "append">;
   jobId?: string;
+  contractId?: string;
+  contractVersion?: string;
 }
 
 function extractVideoUrl(payload: unknown): string | null {
@@ -210,7 +212,12 @@ async function pollVideoTask(
   options: Required<Pick<SeedanceProviderOptions, "fetch">> &
     Pick<
       SeedanceProviderOptions,
-      "pollIntervalMs" | "maxPollAttempts" | "traceLogger" | "jobId"
+      | "pollIntervalMs"
+      | "maxPollAttempts"
+      | "traceLogger"
+      | "jobId"
+      | "contractId"
+      | "contractVersion"
     > & {
       apiKey: string;
       baseURL: string;
@@ -246,6 +253,8 @@ async function pollVideoTask(
       jobId: options.jobId,
       provider: options.provider,
       model: options.model,
+      ...(options.contractId ? { contractId: options.contractId } : {}),
+      ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
       meta: {
         taskId,
         status: extractTaskStatus(payload),
@@ -309,6 +318,8 @@ export async function generateVideoWithSeedance(
     jobId: options.jobId,
     provider: "seedance",
     model: config.model,
+    ...(options.contractId ? { contractId: options.contractId } : {}),
+    ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
     meta: {
       endpointFamily: "ark_video_task",
       baseURL: config.baseURL,
@@ -354,6 +365,8 @@ export async function generateVideoWithSeedance(
       jobId: options.jobId,
       provider: "seedance",
       model: config.model,
+      ...(options.contractId ? { contractId: options.contractId } : {}),
+      ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
       meta: { error: message }
     });
     throw new Error(message);
@@ -368,6 +381,8 @@ export async function generateVideoWithSeedance(
     jobId: options.jobId,
     provider: "seedance",
     model: config.model,
+    ...(options.contractId ? { contractId: options.contractId } : {}),
+    ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
     meta: {
       taskId,
       hasImmediateVideoUrl: Boolean(extractVideoUrl(payload))
@@ -388,7 +403,9 @@ export async function generateVideoWithSeedance(
         traceLogger: options.traceLogger,
         jobId: options.jobId,
         provider: "seedance",
-        model: config.model
+        model: config.model,
+        contractId: options.contractId,
+        contractVersion: options.contractVersion
       });
     })());
   if (!videoUrl) {
@@ -401,6 +418,8 @@ export async function generateVideoWithSeedance(
     jobId: options.jobId,
     provider: "seedance",
     model: config.model,
+    ...(options.contractId ? { contractId: options.contractId } : {}),
+    ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
     meta: {
       videoUrl
     }

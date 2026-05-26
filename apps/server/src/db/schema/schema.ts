@@ -32,6 +32,46 @@ create table if not exists generation_job (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists creative_workspace (
+  id text primary key,
+  local_path text not null unique,
+  current_script_id text not null,
+  current_job_id text,
+  status text not null,
+  trace_file text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+
+create table if not exists workspace_artifact (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id),
+  script_id text not null,
+  artifact_type text not null,
+  status text not null,
+  data jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz,
+  unique (workspace_id, artifact_type)
+);
+
+create table if not exists workspace_video_archive (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id),
+  script_id text not null,
+  job_id text not null unique references generation_job(id),
+  provider text not null,
+  prompt_view jsonb not null,
+  final_asset_id text not null references asset(id),
+  local_path text not null,
+  local_url text not null,
+  provider_url text not null,
+  archived_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists script (
   id text primary key,
   product_id text not null references product(id),

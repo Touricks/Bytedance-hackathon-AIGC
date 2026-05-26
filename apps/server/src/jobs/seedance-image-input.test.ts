@@ -103,6 +103,39 @@ describe("resolveSeedanceImageInput", () => {
     });
   });
 
+  it("converts a workspace-managed material image outside UPLOAD_DIR to a data URL", async () => {
+    await withUploadDir(async ({ uploadDir }) => {
+      const workspaceDir = await mkdtemp(
+        path.join(os.tmpdir(), "seedance-workspace-")
+      );
+      const materialDir = path.join(workspaceDir, ".daireel", "materials");
+      const storagePath = path.join(materialDir, "display_1.png");
+      await mkdir(materialDir, { recursive: true });
+      await writeFile(storagePath, Buffer.from("workspace png"));
+
+      try {
+        const result = await resolveSeedanceImageInput(
+          productImageAsset({
+            url: "/uploads/workspace-materials/workspace_123/display_1.png",
+            metadata: {
+              contentType: "image/png",
+              sizeBytes: 13,
+              storagePath
+            }
+          }),
+          { uploadDir }
+        );
+
+        assert.equal(
+          result,
+          `data:image/png;base64,${Buffer.from("workspace png").toString("base64")}`
+        );
+      } finally {
+        await rm(workspaceDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("passes through public URLs, existing data URLs, and Ark asset IDs", async () => {
     await assert.doesNotReject(async () => {
       assert.equal(
@@ -178,6 +211,27 @@ describe("resolveSeedanceImageInput", () => {
                 contentType: "image/png",
                 sizeBytes: 10,
                 storagePath: path.join(uploadDir, "..", "private.png")
+              }
+            }),
+            { uploadDir }
+          ),
+        /Invalid upload path/
+      );
+
+      await assert.rejects(
+        () =>
+          resolveSeedanceImageInput(
+            productImageAsset({
+              url: "/uploads/workspace-materials/workspace_123/display_1.png",
+              metadata: {
+                contentType: "image/png",
+                sizeBytes: 10,
+                storagePath: path.join(
+                  uploadDir,
+                  "..",
+                  "private",
+                  "display_1.png"
+                )
               }
             }),
             { uploadDir }

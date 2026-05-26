@@ -5,6 +5,10 @@ import { loadWorkspaceEnv, resolveWorkspacePath } from "../env.js";
 
 export type TracePipeline =
   | "creative_blueprint"
+  | "material_intake"
+  | "product_brief"
+  | "shotprompt"
+  | "storyboard"
   | "one_click_video"
   | "probe_to_text"
   | "probe_image_to_video";
@@ -16,9 +20,12 @@ export interface TraceEventInput {
   kind: string;
   pipeline: TracePipeline;
   status: TraceStatus;
+  workspaceId?: string;
   jobId?: string;
   provider?: string;
   model?: string;
+  contractId?: string;
+  contractVersion?: string;
   latencyMs?: number;
   meta?: Record<string, unknown>;
 }
@@ -50,6 +57,8 @@ const BEARER_PATTERN = /Bearer\s+[a-z0-9._~+/=-]+/gi;
 
 interface FileTraceLoggerOptions {
   traceId: string;
+  workspaceId?: string;
+  traceFilePath?: string;
   traceRoot?: string;
   traceScope?: TraceScope;
   clock?: () => Date;
@@ -150,14 +159,22 @@ export function createFileTraceLogger(
   options: FileTraceLoggerOptions
 ): FileTraceLogger {
   loadWorkspaceEnv();
-  const traceRoot = path.resolve(options.traceRoot ?? getDefaultTraceRoot());
-  const traceScope = resolveTraceScope(options.traceScope);
+  const traceRoot = options.traceFilePath
+    ? undefined
+    : path.resolve(options.traceRoot ?? getDefaultTraceRoot());
+  const traceScope = options.traceFilePath
+    ? resolveTraceScope(options.traceScope ?? "users")
+    : resolveTraceScope(options.traceScope);
   const traceBatchId = getDefaultTraceBatchId();
-  const traceDir =
-    traceScope === "users"
-      ? path.join(traceRoot, traceScope, traceBatchId)
-      : path.join(traceRoot, traceScope, traceBatchId, options.traceId);
-  const filePath = path.join(traceDir, "events.jsonl");
+  const filePath = options.traceFilePath
+    ? path.resolve(options.traceFilePath)
+    : path.join(
+        traceScope === "users"
+          ? path.join(traceRoot!, traceScope, traceBatchId)
+          : path.join(traceRoot!, traceScope, traceBatchId, options.traceId),
+        "events.jsonl"
+      );
+  const traceDir = path.dirname(filePath);
   const clock = options.clock ?? (() => new Date());
 
   return {
@@ -170,6 +187,7 @@ export function createFileTraceLogger(
       await mkdir(traceDir, { recursive: true });
       const traceEvent: TraceEvent = {
         at: clock().toISOString(),
+        workspaceId: options.workspaceId,
         scriptId: options.traceId,
         ...event
       };

@@ -18,6 +18,7 @@
     "@aigc-video/ai": "workspace:*",
     "@aigc-video/shared": "workspace:*",
     "@fastify/cors": "^10.0.2",
+    "@fastify/multipart": "^9.0.3",
     "bullmq": "^5.34.2",
     "fastify": "^5.2.1",
     "ioredis": "^5.4.2",

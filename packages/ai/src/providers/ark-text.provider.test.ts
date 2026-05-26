@@ -190,10 +190,94 @@ describe("generateTextWithArk", () => {
         model: "doubao-seed-endpoint",
         latencyMs: 0,
         meta: {
+          imageReferenceMode: "none",
           output: "blueprint json"
         }
       }
     ]);
+  });
+
+  it("sends strict JSON Schema response_format and traces only a compact summary", async () => {
+    const calls: unknown[] = [];
+    const events: unknown[] = [];
+
+    await generateTextWithArk(
+      {
+        prompt: "Create a storyboard.",
+        content: "Create a storyboard."
+      },
+      {
+        provider: "ark",
+        apiKey: "test-key",
+        model: "doubao-seed-endpoint",
+        baseURL: "https://ark.example/api/v3"
+      },
+      {
+        responseFormat: {
+          type: "json_schema",
+          name: "storyboard_v1",
+          description: "Storyboard output schema",
+          schemaVersion: "ugc-storyboard.v1",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sentinelField"],
+            properties: {
+              sentinelField: { type: "string" }
+            }
+          }
+        },
+        traceLogger: {
+          append: async (event) => {
+            events.push(event);
+          }
+        },
+        trace: {
+          pipeline: "storyboard",
+          contractVersion: "ugc-storyboard.v1"
+        },
+        createClient: () => ({
+          chat: {
+            completions: {
+              create: async (request) => {
+                calls.push(request);
+                return {
+                  choices: [{ message: { content: '{"ok":true}' } }]
+                };
+              }
+            }
+          }
+        })
+      }
+    );
+
+    assert.deepEqual((calls[0] as { response_format: unknown }).response_format, {
+      type: "json_schema",
+      json_schema: {
+        name: "storyboard_v1",
+        description: "Storyboard output schema",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["sentinelField"],
+          properties: {
+            sentinelField: { type: "string" }
+          }
+        }
+      }
+    });
+    assert.deepEqual(
+      (events[0] as { meta: { responseFormat: unknown } }).meta.responseFormat,
+      {
+        type: "json_schema",
+        name: "storyboard_v1",
+        strict: true,
+        schemaVersion: "ugc-storyboard.v1"
+      }
+    );
+    assert.equal(JSON.stringify(events).includes("sentinelField"), false);
   });
 
   it("emits sanitized provider failure diagnostics", async () => {

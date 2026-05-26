@@ -57,6 +57,11 @@ function assertInsideDirectory(filePath: string, rootPath: string) {
   }
 }
 
+function isInsideDirectory(filePath: string, rootPath: string) {
+  const relative = path.relative(rootPath, filePath);
+  return !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 function normalizeLocalUploadUrlPrefix(prefix: string): string {
   const normalized = prefix.replace(/\/+$/, "");
   if (!normalized.startsWith("/")) {
@@ -65,6 +70,53 @@ function normalizeLocalUploadUrlPrefix(prefix: string): string {
     );
   }
   return normalized;
+}
+
+function workspaceMaterialRefFromUrl(url: string, uploadUrlPrefix: string) {
+  const workspaceMaterialPrefix = `${normalizeLocalUploadUrlPrefix(
+    uploadUrlPrefix
+  )}/workspace-materials/`;
+  if (!url.startsWith(workspaceMaterialPrefix)) {
+    return null;
+  }
+
+  const rest = url.slice(workspaceMaterialPrefix.length);
+  const separatorIndex = rest.indexOf("/");
+  if (separatorIndex <= 0 || separatorIndex === rest.length - 1) {
+    return null;
+  }
+
+  const encodedRef = rest.slice(separatorIndex + 1);
+  let ref;
+  try {
+    ref = decodeURIComponent(encodedRef);
+  } catch {
+    return null;
+  }
+
+  if (
+    path.basename(ref) !== ref ||
+    ref.startsWith(".") ||
+    ref === "." ||
+    ref === ".."
+  ) {
+    return null;
+  }
+
+  return ref;
+}
+
+function assertWorkspaceMaterialStoragePath(
+  storagePath: string,
+  expectedRef: string
+) {
+  if (
+    path.basename(storagePath) !== expectedRef ||
+    path.basename(path.dirname(storagePath)) !== "materials" ||
+    path.basename(path.dirname(path.dirname(storagePath))) !== ".daireel"
+  ) {
+    throw new Error("Invalid upload path for Seedance product image");
+  }
 }
 
 function resolveUploadStoragePath(
@@ -77,6 +129,18 @@ function resolveUploadStoragePath(
   const storagePath = metadataStoragePath
     ? path.resolve(metadataStoragePath)
     : path.resolve(uploadRoot, asset.url.slice(urlPrefix.length));
+
+  if (isInsideDirectory(storagePath, uploadRoot)) {
+    return storagePath;
+  }
+
+  const workspaceMaterialRef = metadataStoragePath
+    ? workspaceMaterialRefFromUrl(asset.url, uploadUrlPrefix)
+    : null;
+  if (workspaceMaterialRef) {
+    assertWorkspaceMaterialStoragePath(storagePath, workspaceMaterialRef);
+    return storagePath;
+  }
 
   assertInsideDirectory(storagePath, uploadRoot);
   return storagePath;
