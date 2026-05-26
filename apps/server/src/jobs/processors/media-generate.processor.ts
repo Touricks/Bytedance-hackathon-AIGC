@@ -2,14 +2,14 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  buildTwelveSecondVideoPrompt,
+  buildSeedanceVideoExportPrompt,
   buildVideoPromptView,
   createFileTraceLogger,
   createImageTraceMeta,
   generateVideoWithSeedance,
   getPipelineContractStep,
 } from "@aigc-video/ai";
-import type { Asset, GeneratedScript } from "@aigc-video/shared";
+import type { Asset, ShotPromptArtifact } from "@aigc-video/shared";
 import { config } from "../../common/config.js";
 import { db } from "../../db/client.js";
 import { markJobCompleted, markJobMediaGenerating } from "../job-state.js";
@@ -19,6 +19,12 @@ interface MediaGenerationInput {
   imageAsset: Asset;
   scriptId: string;
 }
+
+export type MediaGenerationPromptSource =
+  {
+    kind: "shotprompt";
+    shotPrompt: ShotPromptArtifact;
+  };
 
 function hasRealVideoProviderConfig() {
   return Boolean(process.env.ARK_API_KEY && process.env.ARK_VIDEO_ENDPOINT_ID);
@@ -149,27 +155,32 @@ async function createVideoTraceLogger(input: {
 export async function processMediaGeneration(
   jobId: string,
   input: MediaGenerationInput,
-  script: GeneratedScript,
+  promptSource: MediaGenerationPromptSource,
 ) {
   await markJobMediaGenerating(jobId);
   const contract = getPipelineContractStep("video_export");
 
-  const prompt = buildTwelveSecondVideoPrompt(script);
+  const prompt = buildSeedanceVideoExportPrompt({
+    shotPrompt: promptSource.shotPrompt,
+  });
   const job = await db.getJob(jobId);
   const workspaceId =
     job.payload && typeof job.payload.workspaceId === "string"
       ? job.payload.workspaceId
       : undefined;
+  const promptSourceLabel = "compiled_shotprompt";
+  const promptViewSource = promptSource.shotPrompt;
   const traceLogger = await createVideoTraceLogger({
     scriptId: input.scriptId,
     workspaceId,
   });
   const preparedPromptView = buildVideoPromptView({
-    script,
+    source: promptViewSource,
     prompt,
     contractId: contract.id,
     promptVersion: contract.activeVersion,
     provider: hasRealVideoProviderConfig() ? "seedance" : "deterministic",
+    promptSource: promptSourceLabel,
     ...(hasRealVideoProviderConfig() && process.env.ARK_VIDEO_ENDPOINT_ID
       ? { model: process.env.ARK_VIDEO_ENDPOINT_ID }
       : {}),
@@ -187,6 +198,7 @@ export async function processMediaGeneration(
     contractId: contract.id,
     contractVersion: contract.activeVersion,
     meta: {
+      promptSource: promptSourceLabel,
       prompt,
       promptView: preparedPromptView,
     },
@@ -218,6 +230,9 @@ export async function processMediaGeneration(
       {
         imageUrl,
         prompt,
+        durationSec: promptSource.shotPrompt.durationSec,
+        aspectRatio: promptSource.shotPrompt.aspectRatio,
+        generateAudio: promptSource.shotPrompt.tts.enabled,
       },
       {
         traceLogger,
@@ -227,11 +242,12 @@ export async function processMediaGeneration(
       },
     );
     const promptView = buildVideoPromptView({
-      script,
+      source: promptViewSource,
       prompt,
       contractId: contract.id,
       promptVersion: contract.activeVersion,
       provider: video.provider === "seedance" ? "seedance" : "deterministic",
+      promptSource: promptSourceLabel,
       model: video.model,
       jobId,
       scriptId: input.scriptId,

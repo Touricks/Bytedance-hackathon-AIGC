@@ -115,6 +115,8 @@ export const feedbackRouteArtifactSchema = z.object({
   targetArtifact: z.enum(["brief", "storyboard", "shotprompt"]),
   previousJobId: z.string().min(1).optional(),
   reason: z.string().min(1),
+  revisionInstruction: z.string().min(1),
+  confidence: z.enum(["high", "medium", "low"]),
   routedAt: z.string().min(1),
 });
 

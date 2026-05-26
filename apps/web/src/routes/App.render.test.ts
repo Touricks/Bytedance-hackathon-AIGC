@@ -9,6 +9,7 @@ import {
   ArtifactFormEditor,
   MaterialImportStrip,
   PromptPreview,
+  runtimeProviderLabelFor,
   validateArtifactRequiredFields,
 } from "./App.js";
 import { JobProgress } from "../features/creation/JobProgress.js";
@@ -40,6 +41,39 @@ describe("V1 workspace shell", () => {
     assert.doesNotMatch(html, /工作目录素材库/);
   });
 
+  it("labels mock runtime as local template mode so users know SeedPro is not called", () => {
+    assert.equal(
+      runtimeProviderLabelFor({
+        stage: "brief",
+        endpoint: "/api/workspaces/brief/propose",
+        method: "POST",
+        actionType: "runtime_builder",
+        runtimeBuilder: "product_brief",
+        runtimeMode: "mock",
+        requiresHumanApproval: false,
+        willCallProvider: false,
+        requiresProviderConfig: false
+      }),
+      "本地模板（未调用模型）",
+    );
+
+    assert.equal(
+      runtimeProviderLabelFor({
+        stage: "brief",
+        endpoint: "/api/workspaces/brief/propose",
+        method: "POST",
+        actionType: "runtime_builder",
+        runtimeBuilder: "product_brief",
+        runtimeMode: "real",
+        provider: "ark",
+        requiresHumanApproval: false,
+        willCallProvider: true,
+        requiresProviderConfig: true
+      }),
+      "Ark SeedPro",
+    );
+  });
+
   it("renders runtime prompt previews from NL sections only", () => {
     const html = renderToString(
       createElement(PromptPreview, {
@@ -48,16 +82,16 @@ describe("V1 workspace shell", () => {
           promptVersion: "material-intake.v1",
           provider: "deterministic",
           nl: {
-            title: "Material intake prompt",
+            title: "素材清点提示词",
             sections: [
               {
                 id: "role",
-                label: "Role",
-                body: "You are a material intake tagging builder."
+                label: "角色",
+                body: "你是素材清点标签构建器。"
               },
               {
                 id: "selected_material_manifest",
-                label: "Selected material manifest",
+                label: "已选择素材清单",
                 body: "product.png"
               }
             ]
@@ -69,10 +103,12 @@ describe("V1 workspace shell", () => {
       })
     );
 
-    assert.match(html, /Material intake prompt/);
+    assert.match(html, /素材清点提示词/);
     assert.match(html, /material-intake\.v1/);
-    assert.match(html, /Selected material manifest/);
+    assert.match(html, /已选择素材清单/);
     assert.match(html, /product\.png/);
+    assert.doesNotMatch(html, /Material intake prompt/);
+    assert.doesNotMatch(html, /You are a material intake/);
     assert.doesNotMatch(html, /SHOULD_NOT_RENDER/);
     assert.doesNotMatch(html, /rawPayload/);
   });

@@ -10,7 +10,7 @@
 当前状态：
 
 - **素材导入/复制问题已解决**：multipart 上传会写入 `.daireel/materials/`；对历史/旧工作目录，素材清点前会将用户显式选中的根目录素材复制到 `.daireel/materials/`。
-- **最终 Seedance prompt 组装已修复**：最终视频 prompt 会把 approved `shotprompt.prompt` 放在最前面作为主创意约束，并继续保留 `shots[].providerPrompt` 作为 per-shot 分镜补充。
+- **最终 Seedance prompt 组装已修复**：最终视频 prompt 直接由 approved `ShotPromptArtifact` 编译，保留 `prompt`、`shots[].providerPrompt`、时间段、引用素材、口播和 `negativePrompt`。
 - **最终 prompt trace 已修复**：成片前会向当前 workspace 的 `.daireel/trace/events.jsonl` 写入 `video.prompt_prepared`，用于确认即将发送给 Seedance 的 promptView。
 
 原始报错来自工作目录 `/Users/carrick/TestWorkspace/Project-AIGC/0526v1/`，成片阶段失败：
@@ -44,16 +44,18 @@ ENOENT: no such file or directory, stat '/Users/carrick/TestWorkspace/Project-AI
   - `shots[].providerPrompt`
   - `shots[].referenceAssetRefs`
   - `shots[].voiceover`
-- `startVideoGeneration()` 会把 approved shotprompt 转成 `GeneratedScript`。
-- `processMediaGeneration()` 调用 `buildTwelveSecondVideoPrompt(script)`。
-- `buildTwelveSecondVideoPrompt()` 会把 `script.shots[].visualPrompt` 拼入最终 prompt 的 `Storyboard inspiration only` 段落。
+- `startVideoGeneration()` 会把 approved shotprompt 存入 job payload。
+- `processMediaGeneration()` 优先解析 `job.payload.shotprompt`。
+- `buildSeedanceVideoExportPrompt()` 直接从 `ShotPromptArtifact` 生成最终 Seedance prompt。
 
-因此：**分镜内容会以 shotprompt 编译后的 `providerPrompt / visualPrompt` 形式进入最终 Seedance prompt，不是以原始 storyboard JSON 形式进入。**
+因此：**分镜内容会以 shotprompt 编译后的 `providerPrompt`、时间段、引用素材和口播形式进入最终 Seedance prompt，不再经过 V0 `GeneratedScript` 桥接。**
 
 已修复后的边界：
 
-- `shotprompt.prompt` 作为最终 Seedance prompt 的开头部分进入 provider request。
-- `shots[].providerPrompt` 仍作为 `Storyboard inspiration only` 进入最终 prompt，帮助 Seedance 保留镜头顺序和局部画面意图。
+- `shotprompt.prompt` 作为最终 Seedance prompt 的主创意约束进入 provider request。
+- `shots[].providerPrompt` 作为逐镜头时间线进入最终 prompt，帮助 Seedance 保留镜头顺序和局部画面意图。
+- `negativePrompt`、`tts.voiceover` 和 `referenceAssetRefs` 会进入最终 prompt。
+- `GeneratedScript` 已降级为 V0 legacy 占位，只保留给旧 fixture/mock/兼容链路，不再作为 V1 成片 prompt 来源。
 - 成片前写入 `video.prompt_prepared` trace，包含 prompt 和 promptView。
 - 对 workspace 链路，视频阶段 trace 写入当前工作目录 `.daireel/trace/events.jsonl`，而不是默认批次 trace 目录。
 
@@ -117,8 +119,8 @@ Issue #83 之后，系统的目标设计变成：
   - 这样即使 provider 调用失败，也能确认最终 prompt 是否包含 shotprompt / storyboard-derived 内容。
 
 - [x] Prompt 组装改进：
-  - video export 使用 `shotprompt.prompt` 作为主 prompt 的第一段。
-  - `buildTwelveSecondVideoPrompt()` 继续补充产品一致性、不可读文字约束、通用时长结构和 `shots[].providerPrompt` 分镜灵感。
+  - video export 使用 `shotprompt.prompt` 作为主创意约束。
+  - `buildSeedanceVideoExportPrompt()` 直接编译 approved `ShotPromptArtifact`，不再注入 V0 的固定 0-3 / 3-8 / 8-12 模板和英文镜头运动占位。
 
 ## Test Plan
 

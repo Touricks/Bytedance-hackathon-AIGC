@@ -33,6 +33,7 @@ describe("pipeline contract registry", () => {
         ["product_brief", "product-brief.v1"],
         ["storyboard", "ugc-storyboard.v1"],
         ["shotprompt", "video-shotprompt.v1"],
+        ["feedback_route", "feedback-route.v1"],
         ["video_export", "seedance-video-export.v1"]
       ]
     );

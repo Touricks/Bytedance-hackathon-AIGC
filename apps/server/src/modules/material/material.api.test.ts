@@ -40,7 +40,7 @@ describe("material API", () => {
     }
   });
 
-  it("accepts uploaded product image bytes and returns an asset URL usable by creative blueprint generation", async () => {
+  it("accepts uploaded product image bytes and returns an asset URL", async () => {
     const uploadResponse = await app.inject({
       method: "POST",
       url: "/api/materials/product-image",
@@ -59,22 +59,5 @@ describe("material API", () => {
     assert.match(asset.url, /^\/uploads\/product-images\//);
     assert.equal(asset.metadata.originalFilename, "mini-blender.png");
     assert.equal(asset.metadata.contentType, "image/png");
-
-    const blueprintResponse = await app.inject({
-      method: "POST",
-      url: "/api/creative-blueprints",
-      payload: {
-        title: "Portable Mini Blender",
-        sellingPoints: "USB-C charging and easy cleaning",
-        audience: "busy office workers",
-        stylePreference: "clean premium ecommerce",
-        imageUrl: asset.url
-      }
-    });
-
-    assert.equal(blueprintResponse.statusCode, 200);
-    const blueprint = blueprintResponse.json();
-    assert.equal(blueprint.imageAsset.url, asset.url);
-    assert.equal(blueprint.imageAsset.source, "upload");
   });
 });

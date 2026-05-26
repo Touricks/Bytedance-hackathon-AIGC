@@ -88,9 +88,10 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.repairAttempts, 0);
     assert.equal(result.trace.fallbackUsed, false);
     assert.equal(calls.length, 1);
-    assert.match(calls[0]!.prompt, /merchant-readable creative blueprint/);
+    assert.match(calls[0]!.prompt, /商家可读的创作蓝图/);
     assert.match(calls[0]!.prompt, /coreSellingPoint/);
     assert.doesNotMatch(calls[0]!.prompt, /fieldsToChange.*sellingPoints/);
+    assert.doesNotMatch(calls[0]!.prompt, /\bRole:/);
     assert.equal(calls[0]!.content, calls[0]!.prompt);
   });
 
@@ -175,7 +176,7 @@ describe("generateCreativeBlueprintWithArk", () => {
         "blueprint.parsed"
       ]
     );
-    assert.match(events[0].meta.prompt, /merchant-readable creative blueprint/);
+    assert.match(events[0].meta.prompt, /商家可读的创作蓝图/);
     assert.equal(events[0].meta.imageReferenceMode, "data_url");
     assert.equal(events[0].meta.image.mimeType, "image/png");
     assert.equal(events[0].meta.image.byteSize, Buffer.from("product").byteLength);
@@ -211,9 +212,9 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.repairAttempts, 1);
     assert.equal(result.trace.fallbackUsed, false);
     assert.equal(calls.length, 2);
-    assert.match(calls[1]!.prompt, /Repair the following model output/);
+    assert.match(calls[1]!.prompt, /修复为符合创作蓝图 schema 的严格 JSON/);
     assert.match(calls[1]!.prompt, /coreSellingPoint/);
-    assert.match(calls[1]!.prompt, /do not use sellingPoints/i);
+    assert.match(calls[1]!.prompt, /不要使用 sellingPoints/);
   });
 
   it("falls back to a deterministic creative blueprint when repair fails", async () => {

@@ -148,7 +148,7 @@ function buildFallbackCreativeBlueprint(
   input: CreateCreativeBlueprintRequest
 ): CreativeBlueprint {
   return creativeBlueprintSchema.parse({
-    narrative: `${input.title} 的 12 秒带货短视频：先用干净商品 hero 镜头建立信任，再突出 ${input.sellingPoints}，最后回到购买暗示。`,
+    narrative: `${input.title} 的 12 秒带货短视频：先用干净商品主视觉镜头建立信任，再突出 ${input.sellingPoints}，最后回到购买暗示。`,
     visualStyle: input.stylePreference,
     targetAudience: input.audience,
     coreSellingPoint: input.sellingPoints,
@@ -157,8 +157,8 @@ function buildFallbackCreativeBlueprint(
         index: 1,
         durationSec: 3,
         purpose: "hook",
-        visualPrompt: `Clean hero shot of ${input.title}, centered and well lit`,
-        cameraMotion: "slow push in",
+        visualPrompt: `${input.title} 的干净商品主视觉镜头，商品居中，布光清晰`,
+        cameraMotion: "缓慢推进",
         voiceover: `${input.title}，第一眼就能抓住注意力。`,
         subtitle: "第一眼就被吸引"
       },
@@ -166,8 +166,8 @@ function buildFallbackCreativeBlueprint(
         index: 2,
         durationSec: 5,
         purpose: "benefit",
-        visualPrompt: `Simple product detail or use-context shot showing ${input.sellingPoints}`,
-        cameraMotion: "smooth stable pan",
+        visualPrompt: `用简单商品细节或使用场景展示 ${input.sellingPoints}`,
+        cameraMotion: "平稳横移",
         voiceover: `核心卖点是：${input.sellingPoints}`,
         subtitle: input.sellingPoints
       },
@@ -175,22 +175,22 @@ function buildFallbackCreativeBlueprint(
         index: 3,
         durationSec: 4,
         purpose: "cta",
-        visualPrompt: `Polished closing hero shot for ${input.audience}`,
-        cameraMotion: "gentle pull back",
+        visualPrompt: `面向 ${input.audience} 的精致收束主视觉镜头`,
+        cameraMotion: "轻微后拉",
         voiceover: `适合${input.audience}，现在就试试。`,
         subtitle: "现在就试试"
       }
     ],
     renderBrief: {
       productConsistencyRules: [
-        "Use the uploaded product image as the visual source of truth",
-        "Keep product shape, color, material, logo, and packaging consistent"
+        "以上传商品图作为视觉事实源",
+        "保持商品形状、颜色、材质、Logo 和包装一致"
       ],
       avoid: [
-        "Do not invent new product parts",
-        "Do not add extra brands or readable text"
+        "不要生成新的商品部件",
+        "不要添加额外品牌或可读文字"
       ],
-      videoPromptSummary: `12-second ${input.stylePreference} ecommerce product showcase for ${input.title}`
+      videoPromptSummary: `${input.title} 的 12 秒 ${input.stylePreference} 电商商品展示视频`
     },
     improvementHints: [
       {

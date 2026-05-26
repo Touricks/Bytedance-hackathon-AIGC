@@ -36,7 +36,7 @@ function materialManifestPreview(input: MaterialIntakeArtifact) {
   return input.assets
     .map(
       (asset) =>
-        `${asset.ref} (${asset.kind}, ${asset.mime}, ${asset.bytes} bytes, default role: ${asset.role})`
+        `${asset.ref}（${asset.kind}，${asset.mime}，${asset.bytes} 字节，默认角色：${asset.role}）`
     )
     .join("\n");
 }
@@ -50,35 +50,35 @@ export function buildMaterialIntakePromptView(
     provider: input.provider,
     ...(input.model ? { model: input.model } : {}),
     nl: {
-      title: "Material intake prompt",
+      title: "素材清点提示词",
       sections: [
         {
           id: "role",
-          label: "Role",
+          label: "角色",
           body:
-            "You are a material intake tagging builder for workspace files used in ecommerce video generation."
+            "你是电商视频生成工作区的素材清点标签构建器，负责给已验证素材打标。"
         },
         {
           id: "user_intent",
-          label: "User intent",
-          body: input.initialPrompt?.trim() || "No initial user direction provided."
+          label: "用户意图",
+          body: input.initialPrompt?.trim() || "未提供初始用户方向。"
         },
         {
           id: "selected_material_manifest",
-          label: "Selected material manifest",
-          body: materialManifestPreview(input.scanned) || "No valid material selected."
+          label: "已选择素材清单",
+          body: materialManifestPreview(input.scanned) || "没有选择可用素材。"
         },
         {
           id: "task",
-          label: "Task",
+          label: "任务",
           body:
-            "For each validated asset, choose a role, description, relevance, and whether it should be included. Prefer one valid product image as the primary product reference."
+            "为每个已验证素材选择角色、描述、相关性和是否纳入生成。优先选择一张有效商品图作为 primaryProductRef。"
         },
         {
           id: "output_contract",
-          label: "Output contract",
+          label: "输出契约",
           body:
-            "Return strict JSON with primaryProductRef and tags. Do not create product briefs, hooks, storyboards, or video prompts."
+            "返回包含 primaryProductRef 和 tags 的严格 JSON。不要生成商品 brief、开场钩子、分镜或视频生成提示词。"
         }
       ]
     },
@@ -93,33 +93,33 @@ export function buildMaterialIntakePromptView(
 
 export function buildMaterialIntakePrompt(input: BuildMaterialIntakePromptInput) {
   return [
-    "Role:",
-    "You are a material intake tagging builder. You label already-validated workspace files for ecommerce video generation.",
+    "角色：",
+    "你是素材清点标签构建器。你会为已验证的工作区文件打标，供电商视频生成使用。",
     "",
-    "Inputs:",
-    `User initial prompt: ${input.initialPrompt ?? "unspecified"}`,
-    "Validated material manifest:",
+    "输入：",
+    `用户初始意图：${input.initialPrompt ?? "未指定"}`,
+    "已验证素材清单：",
     JSON.stringify(input.scanned.assets),
-    "Rejected files, for awareness only. Do not include them in tags:",
+    "被拒绝文件，仅作背景信息。不要把这些文件写入 tags：",
     JSON.stringify(input.scanned.rejected),
-    "Text previews:",
+    "文本预览：",
     JSON.stringify(input.textPreviews ?? []),
     "",
-    "Task:",
-    "For each validated asset, choose role, description, relevance, and included.",
-    "Prefer one image as primaryProductRef when a valid product image exists.",
-    "Never invent refs. Use refs exactly from the validated material manifest.",
-    "Do not create product briefs, hooks, storyboards, or video prompts.",
+    "任务：",
+    "为每个已验证素材选择 role、description、relevance 和 included。",
+    "存在有效商品图片时，优先选择一张图片作为 primaryProductRef。",
+    "不要编造 ref，必须逐字使用已验证素材清单中的 ref。",
+    "不要生成商品 brief、开场钩子、分镜或视频生成提示词。",
     "",
-    "Output:",
-    "Return strict JSON matching this shape and do not include markdown:",
+    "输出：",
+    "返回严格 JSON，匹配以下结构，不要包含 Markdown：",
     JSON.stringify({
       primaryProductRef: "product.png",
       tags: [
         {
           ref: "product.png",
           role: "product_main",
-          description: "short factual description",
+          description: "简短事实描述",
           relevance: "high",
           included: true
         }

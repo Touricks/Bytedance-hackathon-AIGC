@@ -64,7 +64,7 @@ export function buildMaterialIntakeResponseFormat(
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
     name: "material_intake_v1",
-    description: "Tags scanned workspace materials for the V1 material intake step.",
+    description: "为 V1 素材清点步骤中的工作区素材打标。",
     schemaVersion,
     schema: strictObject(
       {
@@ -112,7 +112,7 @@ export function buildProductBriefResponseFormat(
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
     name: "product_brief_v1",
-    description: "Creates the editable V1 product brief artifact.",
+    description: "生成可编辑的 V1 商品 brief artifact。",
     schemaVersion,
     schema: strictObject(
       {
@@ -164,7 +164,7 @@ export function buildStoryboardResponseFormat(input: {
   const refs = materialRefs(input.material);
   return responseFormat({
     name: "ugc_storyboard_v1",
-    description: "Creates the editable V1 UGC storyboard artifact.",
+    description: "生成可编辑的 V1 口播分镜 artifact。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
       {
@@ -209,7 +209,7 @@ export function buildShotPromptResponseFormat(input: {
   const refs = materialRefs(input.material);
   return responseFormat({
     name: "video_shotprompt_v1",
-    description: "Creates the editable V1 Seedance shotprompt artifact.",
+    description: "生成可编辑的 V1 Seedance 视频生成提示词 artifact。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
       {
@@ -259,6 +259,28 @@ export function buildShotPromptResponseFormat(input: {
         "tts",
         "assumptions",
       ],
+    ),
+  });
+}
+
+export function buildFeedbackRouteResponseFormat(
+  schemaVersion: string,
+): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "feedback_route_v1",
+    description: "把成片反馈结构化路由到 brief、storyboard 或 shotprompt。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        targetArtifact: {
+          type: "string",
+          enum: ["brief", "storyboard", "shotprompt"],
+        },
+        reason: nonEmptyString,
+        revisionInstruction: nonEmptyString,
+        confidence: { type: "string", enum: ["high", "medium", "low"] },
+      },
+      ["targetArtifact", "reason", "revisionInstruction", "confidence"],
     ),
   });
 }

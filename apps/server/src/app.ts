@@ -7,7 +7,6 @@ import multipart from "@fastify/multipart";
 import { config } from "./common/config.js";
 import { db } from "./db/client.js";
 import { registerCreationController } from "./modules/creation/creation.controller.js";
-import { registerCreativeBlueprintController } from "./modules/creative-blueprint/creative-blueprint.controller.js";
 import { registerMaterialController } from "./modules/material/material.controller.js";
 import { registerPipelineController } from "./modules/pipeline/pipeline.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
@@ -115,7 +114,6 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerWorkspaceController(app, {
     selectWorkspaceDirectory: options.selectWorkspaceDirectory,
   });
-  await registerCreativeBlueprintController(app);
   await registerCreationController(app);
 
   return app;

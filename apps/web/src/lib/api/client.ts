@@ -1,12 +1,8 @@
 import type {
   Asset,
-  CreateCreativeBlueprintRequest,
-  CreativeBlueprint,
-  CreateGenerationJobRequest,
   CreativeWorkspace,
   GenerationJob,
   MaterialIntakeArtifact,
-  Product,
   ProductBriefArtifact,
   Script,
   ShotPromptArtifact,
@@ -29,15 +25,6 @@ export interface JobDetail {
   shots?: StoryboardShot[];
   finalAsset?: Asset | null;
   videoExport?: VideoExportRunView;
-}
-
-export interface CreativeBlueprintDetail {
-  scriptId: string;
-  product: Product;
-  imageAsset: Asset | null;
-  script: Script;
-  creativeBlueprint: CreativeBlueprint;
-  shots: StoryboardShot[];
 }
 
 export interface WorkspaceNextAction {
@@ -211,6 +198,8 @@ export interface WorkspaceFeedbackRouteDetail {
   route: {
     targetArtifact: "brief" | "storyboard" | "shotprompt";
     reason: string;
+    revisionInstruction: string;
+    confidence: "high" | "medium" | "low";
   };
 }
 
@@ -303,32 +292,6 @@ export async function uploadProductImage(file: File): Promise<Asset> {
 
 export function toAbsoluteAssetUrl(url: string) {
   return url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
-}
-
-export async function createCreativeBlueprint(
-  input: CreateCreativeBlueprintRequest,
-): Promise<CreativeBlueprintDetail> {
-  return postJson<CreativeBlueprintDetail>("/api/creative-blueprints", input);
-}
-
-export async function getCreativeBlueprint(
-  scriptId: string,
-): Promise<CreativeBlueprintDetail> {
-  const response = await fetch(
-    `${apiBaseUrl}/api/creative-blueprints/${scriptId}`,
-  );
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  return (await response.json()) as CreativeBlueprintDetail;
-}
-
-export async function createGenerationJob(
-  input: CreateGenerationJobRequest,
-): Promise<JobDetail> {
-  return postJson<JobDetail>("/api/creation/jobs", input);
 }
 
 export async function getJobDetail(jobId: string): Promise<JobDetail> {

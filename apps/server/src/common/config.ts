@@ -114,7 +114,7 @@ function normalizeUploadUrlPrefix(input: string): string {
 const envFileRoot = loadWorkspaceEnv() ?? process.cwd();
 const databaseUrl = requireEnv(
   "DATABASE_URL",
-  "Postgres is the only supported V0 fact source."
+  "Postgres is the only supported business fact source."
 );
 const uploadDir = resolveWorkspacePath(
   requireLocalFilesystemPath(

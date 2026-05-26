@@ -44,12 +44,14 @@ const brief = {
 };
 
 describe("buildStoryboardPrompt", () => {
-  it("documents the exact purpose enum and non-empty material ref contract", () => {
+  it("documents the exact purpose enum and material ref contract in Chinese", () => {
     const prompt = buildStoryboardPrompt({ brief, material });
 
     assert.match(prompt, /purpose.*hook.*benefit.*proof.*cta/is);
-    assert.match(prompt, /productAssetRef.*non-empty/is);
-    assert.match(prompt, /productAssetRef.*approved material manifest/is);
+    assert.match(prompt, /productAssetRef.*非空 ref/);
+    assert.match(prompt, /已确认素材清单/);
     assert.match(prompt, /display_1\.png/);
+    assert.doesNotMatch(prompt, /\bRole:/);
+    assert.doesNotMatch(prompt, /approved material manifest/i);
   });
 });

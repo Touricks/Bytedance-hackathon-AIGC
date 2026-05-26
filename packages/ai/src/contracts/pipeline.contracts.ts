@@ -2,6 +2,7 @@ import { MATERIAL_INTAKE_PROMPT_VERSION } from "../prompts/material-intake.promp
 import { PRODUCT_BRIEF_PROMPT_VERSION } from "../prompts/product-brief.prompt.js";
 import { SHOTPROMPT_PROMPT_VERSION } from "../prompts/shotprompt.prompt.js";
 import { STORYBOARD_PROMPT_VERSION } from "../prompts/storyboard.prompt.js";
+import { FEEDBACK_ROUTE_PROMPT_VERSION } from "../prompts/feedback-route.prompt.js";
 
 export const VIDEO_EXPORT_CONTRACT_VERSION = "seedance-video-export.v1";
 
@@ -11,6 +12,7 @@ export interface PipelineContractStep {
     | "product_brief"
     | "storyboard"
     | "shotprompt"
+    | "feedback_route"
     | "video_export";
   activeVersion: string;
   promptBuilder: string;
@@ -159,9 +161,34 @@ const steps: PipelineContractStep[] = [
     targetSharedArtifact: "ShotPromptArtifact"
   },
   {
+    id: "feedback_route",
+    activeVersion: FEEDBACK_ROUTE_PROMPT_VERSION,
+    promptBuilder: "buildFeedbackRoutePrompt",
+    provider: "ark",
+    inputJsonSchema: objectSchema(
+      {
+        feedback: stringSchema,
+        brief: objectSchema({}, []),
+        storyboard: objectSchema({}, []),
+        shotprompt: objectSchema({}, [])
+      },
+      ["feedback", "brief", "storyboard", "shotprompt"]
+    ),
+    outputJsonSchema: objectSchema(
+      {
+        targetArtifact: stringSchema,
+        reason: stringSchema,
+        revisionInstruction: stringSchema,
+        confidence: stringSchema
+      },
+      ["targetArtifact", "reason", "revisionInstruction", "confidence"]
+    ),
+    targetSharedArtifact: "FeedbackRouteArtifact"
+  },
+  {
     id: "video_export",
     activeVersion: VIDEO_EXPORT_CONTRACT_VERSION,
-    promptBuilder: "buildTwelveSecondVideoPrompt",
+    promptBuilder: "buildSeedanceVideoExportPrompt",
     provider: "seedance",
     inputJsonSchema: objectSchema(
       {

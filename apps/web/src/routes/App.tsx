@@ -46,6 +46,24 @@ import { useGenerationJob } from "../lib/job/useGenerationJob.js";
 import { JobProgress } from "../features/creation/JobProgress.js";
 import { VideoPreview } from "../features/creation/VideoPreview.js";
 
+export function runtimeProviderLabelFor(
+  nextAction: WorkspaceStatusDetail["nextAction"] | undefined,
+) {
+  if (!nextAction) {
+    return "选择工作目录";
+  }
+  if (nextAction.provider === "ark") {
+    return "Ark SeedPro";
+  }
+  if (nextAction.provider === "seedance") {
+    return "Seedance";
+  }
+  if (nextAction.runtimeMode === "mock") {
+    return "本地模板（未调用模型）";
+  }
+  return nextAction.actionType;
+}
+
 export function App() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [manualPathOpen, setManualPathOpen] = useState(false);
@@ -94,10 +112,7 @@ export function App() {
   const workspacePathDisplay =
     selectedWorkspace?.localPath || workspacePath || "尚未选择工作目录";
   const nextAction = status?.nextAction;
-  const runtimeProviderLabel = nextAction
-    ? (nextAction.provider ??
-      (nextAction.runtimeMode === "mock" ? "local builder" : nextAction.actionType))
-    : "select workspace";
+  const runtimeProviderLabel = runtimeProviderLabelFor(nextAction);
   const materialLibrary = material?.artifact.data ?? status?.materialLibrary;
   const materialCandidateRefs = useMemo(
     () => materialLibrary?.assets.map((asset) => asset.ref) ?? [],
@@ -498,7 +513,9 @@ export function App() {
     if (!result) {
       return;
     }
-    setFeedbackRoute(`${result.route.targetArtifact}: ${result.route.reason}`);
+    setFeedbackRoute(
+      `${result.route.targetArtifact}: ${result.route.reason}；${result.route.revisionInstruction}`,
+    );
     if (result.route.targetArtifact === "brief") {
       const detail = {
         workspace: result.workspace,

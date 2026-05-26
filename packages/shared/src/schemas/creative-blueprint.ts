@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { storyboardShotSchema } from "./script.js";
+import { legacyGeneratedStoryboardShotSchema } from "./script.js";
 
 export const creativeFieldSchema = z.enum([
   "productImage",
@@ -20,7 +20,7 @@ export const creativeBlueprintSchema = z.object({
   visualStyle: z.string().min(2),
   targetAudience: z.string().min(1),
   coreSellingPoint: z.string().min(1),
-  shots: z.array(storyboardShotSchema).min(2).max(4),
+  shots: z.array(legacyGeneratedStoryboardShotSchema).min(2).max(4),
   renderBrief: z.object({
     productConsistencyRules: z.array(z.string().min(1)),
     avoid: z.array(z.string().min(1)),

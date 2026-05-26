@@ -8,6 +8,9 @@ import type { FileTraceLogger } from "../trace/trace-log.js";
 export interface SeedanceVideoRequest {
   imageUrl: string;
   prompt: string;
+  durationSec?: number;
+  aspectRatio?: "9:16" | "16:9" | "1:1";
+  generateAudio?: boolean;
 }
 
 export interface SeedanceVideoResult {
@@ -157,6 +160,16 @@ function sanitizeProviderMessage(text: string) {
     .replace(/Bearer\s+[a-z0-9._~+/=-]+/gi, "Bearer <redacted>");
 }
 
+function validatedDurationSec(durationSec = 12) {
+  if (!Number.isInteger(durationSec)) {
+    throw new Error("Seedance durationSec must be an integer between 4 and 12 seconds");
+  }
+  if (durationSec < 4 || durationSec > 12) {
+    throw new Error("Seedance durationSec must be between 4 and 12 seconds");
+  }
+  return durationSec;
+}
+
 function findStringValue(payload: unknown, keys: string[]): string | null {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -285,6 +298,9 @@ export async function generateVideoWithSeedance(
   request: SeedanceVideoRequest,
   options: SeedanceProviderOptions = {}
 ): Promise<SeedanceVideoResult> {
+  const duration = validatedDurationSec(request.durationSec);
+  const ratio = request.aspectRatio ?? "9:16";
+  const generateAudio = request.generateAudio ?? true;
   const env = options.env ?? process.env;
   const config = resolveArkVideoProviderConfig(env, {
     apiKey: options.apiKey,
@@ -324,7 +340,10 @@ export async function generateVideoWithSeedance(
       endpointFamily: "ark_video_task",
       baseURL: config.baseURL,
       prompt: request.prompt,
-      imageUrl: request.imageUrl
+      imageUrl: request.imageUrl,
+      duration,
+      ratio,
+      generateAudio
     }
   });
   const response = await fetchImpl(
@@ -350,8 +369,9 @@ export async function generateVideoWithSeedance(
             role: "first_frame"
           }
         ],
-        duration: 12,
-        ratio: "9:16"
+        duration,
+        ratio,
+        generate_audio: generateAudio
       })
     }
   );

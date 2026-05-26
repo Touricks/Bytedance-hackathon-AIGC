@@ -1,13 +1,13 @@
 import {
   type CreateCreativeBlueprintRequest,
-  type GeneratedScript,
-  generatedScriptSchema
+  type LegacyGeneratedScript,
+  legacyGeneratedScriptSchema
 } from "@aigc-video/shared";
 
 export async function generateDeterministicScriptFixture(
   input: CreateCreativeBlueprintRequest
-): Promise<GeneratedScript> {
-  const fallback: GeneratedScript = {
+): Promise<LegacyGeneratedScript> {
+  const fallback: LegacyGeneratedScript = {
     narrative: `${input.title} 的 12 秒带货短视频：开场抓注意力，中段突出卖点，结尾推动转化。`,
     visualStyle: "clean ecommerce product demo, bright, premium, vertical short video",
     shots: [
@@ -38,5 +38,5 @@ export async function generateDeterministicScriptFixture(
     ]
   };
 
-  return generatedScriptSchema.parse(fallback);
+  return legacyGeneratedScriptSchema.parse(fallback);
 }

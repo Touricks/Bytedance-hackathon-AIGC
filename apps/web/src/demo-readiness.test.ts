@@ -10,12 +10,6 @@ function readRepoFile(path: string) {
   return readFileSync(resolve(repoRoot, path), "utf8");
 }
 
-function readFirstExistingRepoFile(paths: string[]) {
-  const existingPath = paths.find((path) => existsSync(resolve(repoRoot, path)));
-  assert.ok(existingPath, `Expected one of ${paths.join(", ")} to exist`);
-  return readRepoFile(existingPath);
-}
-
 function assertMentions(source: string, terms: string[]) {
   for (const term of terms) {
     assert.ok(source.includes(term), `Expected demo readiness docs to mention ${term}`);
@@ -23,35 +17,34 @@ function assertMentions(source: string, terms: string[]) {
 }
 
 describe("demo readiness handoff", () => {
-  it("documents the V0 route, setup modes, validation, and out-of-scope boundary", () => {
+  it("documents the V1 workspace route, setup modes, validation, and out-of-scope boundary", () => {
     const docs = [
       readRepoFile("README.md"),
-      readFirstExistingRepoFile([
-        "docs/plan_0523/current-support/model-smoke.md",
-        "docs/archived/0523-ArchitectureDesign/current-support/model-smoke.md"
-      ]),
-      readFirstExistingRepoFile([
-        "docs/plan_0523/current-support/demo-readiness.md",
-        "docs/archived/0523-ArchitectureDesign/current-support/demo-readiness.md"
-      ]),
-      readFirstExistingRepoFile([
-        "docs/plan_0523/current-support/provider-contract-correction.md",
-        "docs/archived/0523-ArchitectureDesign/current-support/provider-contract-correction.md"
-      ])
+      readRepoFile("docs/architecture.md"),
+      readRepoFile("docs/arc_v5.md"),
+      readRepoFile("docs/export/sdd.md"),
+      readRepoFile(".env.example"),
     ].join("\n");
 
     assertMentions(docs, [
       "上传素材",
-      "创作蓝图",
+      "素材清点",
+      "商品 brief",
+      "UGC storyboard",
+      "video shotprompt",
       "一键成片",
       "任务进度",
       "预览导出",
+      "feedback_route_v1",
+      "ShotPromptArtifact",
       "docker compose -f infra/docker-compose.yml up -d",
       "ARK_API_KEY",
       "ARK_TEXT_ENDPOINT_ID",
       "ARK_VIDEO_ENDPOINT_ID",
       "fallback LLM",
+      "response_format",
       "MOCK_FINAL_VIDEO_URL",
+      "pnpm dev:real",
       "pnpm --filter @aigc-video/web test",
       "pnpm --filter @aigc-video/server test",
       "pnpm --filter @aigc-video/ai test",

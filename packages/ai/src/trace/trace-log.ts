@@ -7,6 +7,7 @@ export type TracePipeline =
   | "creative_blueprint"
   | "material_intake"
   | "product_brief"
+  | "feedback"
   | "shotprompt"
   | "storyboard"
   | "one_click_video"

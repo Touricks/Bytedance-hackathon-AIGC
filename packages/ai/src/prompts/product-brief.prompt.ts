@@ -31,13 +31,13 @@ function summarizeMaterial(input: MaterialIntakeArtifact) {
 
 function legacySeed(input: BuildProductBriefPromptInput) {
   const lines = [
-    input.title ? `Product title: ${input.title}` : "",
-    input.sellingPoints ? `Selling points: ${input.sellingPoints}` : "",
-    input.audience ? `Target audience: ${input.audience}` : "",
-    input.stylePreference ? `Style preference: ${input.stylePreference}` : "",
+    input.title ? `商品标题：${input.title}` : "",
+    input.sellingPoints ? `卖点：${input.sellingPoints}` : "",
+    input.audience ? `目标人群：${input.audience}` : "",
+    input.stylePreference ? `风格偏好：${input.stylePreference}` : "",
   ].filter(Boolean);
 
-  return lines.length ? lines.join("\n") : "No prefilled form fields provided.";
+  return lines.length ? lines.join("\n") : "未提供预填表单字段。";
 }
 
 export function buildProductBriefPromptView(
@@ -49,41 +49,41 @@ export function buildProductBriefPromptView(
     provider: input.provider,
     ...(input.model ? { model: input.model } : {}),
     nl: {
-      title: "Product brief prompt",
+      title: "商品简报提示词",
       sections: [
         {
           id: "role",
-          label: "Role",
-          body: "You are an ecommerce product brief builder. Create a merchant-editable product brief, not hooks, storyboards, or final video prompts.",
+          label: "角色",
+          body: "你是电商商品简报构建器。请生成商家可编辑的商品 brief，不要生成开场钩子、分镜或最终视频提示词。",
         },
         {
           id: "user_direction",
-          label: "User direction",
+          label: "用户方向",
           body:
             input.userDirection?.trim() ||
-            "No optional product direction provided.",
+            "未提供额外商品方向。",
         },
         {
           id: "legacy_seed",
-          label: "Optional prefilled fields",
+          label: "可选预填字段",
           body: legacySeed(input),
         },
         {
           id: "approved_material",
-          label: "Approved material",
+          label: "已确认素材",
           body:
             summarizeMaterial(input.material) ||
-            "No included material assets are available.",
+            "没有可纳入生成的素材。",
         },
         {
           id: "task",
-          label: "Task",
-          body: "Infer one concise product brief from the approved material. Pick exactly one core selling point and keep unsupported claims in assumptions.",
+          label: "任务",
+          body: "基于已确认素材推断一份简洁商品 brief。只选择一个核心卖点；没有输入依据的结论必须写入 assumptions。",
         },
         {
           id: "output_contract",
-          label: "Output contract",
-          body: "Return strict JSON with product, audience, coreSellingPoint, proof, offer, platform, brandTone, bannedExpressions, landingInfo, and assumptions.",
+          label: "输出契约",
+          body: "返回严格 JSON，包含 product、audience、coreSellingPoint、proof、offer、platform、brandTone、bannedExpressions、landingInfo 和 assumptions。",
         },
       ],
     },
@@ -105,54 +105,54 @@ export function buildProductBriefPromptView(
 
 export function buildProductBriefPrompt(input: BuildProductBriefPromptInput) {
   return [
-    "Role:",
-    "You are an ecommerce product brief builder. You create a merchant-editable product brief, not a hook, storyboard, or final video prompt.",
+    "角色：",
+    "你是电商商品简报构建器。你要生成商家可编辑的商品 brief，不要生成开场钩子、分镜或最终视频提示词。",
     "",
-    "Inputs:",
-    `User direction: ${input.userDirection ?? "unspecified"}`,
+    "输入：",
+    `用户方向：${input.userDirection ?? "未指定"}`,
     legacySeed(input),
-    `Primary product asset ref: ${input.material.primaryProductRef}`,
-    "Usable material manifest:",
+    `主商品素材 ref：${input.material.primaryProductRef}`,
+    "可用素材清单：",
     JSON.stringify(input.material.assets),
     "",
-    "Task:",
-    "Create one concise product brief for a short ecommerce video.",
-    "Pick exactly one coreSellingPoint.",
-    "Use product.assets refs only from the material manifest.",
-    "Do not write hooks, storyboard beats, voiceover, CTA copy, or image-to-video prompts.",
-    "If a fact is not directly supported by the inputs, mark it in assumptions.",
+    "任务：",
+    "为一条电商短视频生成一份简洁商品 brief。",
+    "只选择一个 coreSellingPoint。",
+    "product.assets 中的 ref 只能来自素材清单。",
+    "不要写开场钩子、分镜节拍、口播、CTA 文案或图生视频提示词。",
+    "如果事实没有被输入直接支持，必须写入 assumptions。",
     "",
-    "Output:",
-    "Return strict JSON matching this shape and do not include markdown:",
+    "输出：",
+    "返回严格 JSON，匹配以下结构，不要包含 Markdown：",
     JSON.stringify({
       product: {
-        name: "string",
-        category: "string",
-        keyFacts: ["string"],
+        name: "字符串",
+        category: "字符串",
+        keyFacts: ["字符串"],
         assets: [{ ref: "product.png", useAs: "primary | support" }],
       },
       audience: {
-        who: "string",
-        painOrDesire: "string",
+        who: "字符串",
+        painOrDesire: "字符串",
       },
-      coreSellingPoint: "single string",
-      proof: ["string"],
+      coreSellingPoint: "单个字符串",
+      proof: ["字符串"],
       offer: null,
       platform: "Seedance",
-      brandTone: "string",
-      bannedExpressions: ["string"],
+      brandTone: "字符串",
+      bannedExpressions: ["字符串"],
       landingInfo: null,
-      assumptions: ["string"],
+      assumptions: ["字符串"],
     }),
   ].join("\n");
 }
 
 export function buildProductBriefRepairPrompt(rawOutput: string) {
   return [
-    "Repair the following model output into strict JSON matching the product brief schema.",
-    "Keep exactly one coreSellingPoint string.",
-    "Do not add hooks, storyboard beats, voiceover, CTA copy, or image-to-video prompts.",
-    "Do not include markdown.",
+    "请把以下模型输出修复为符合商品 brief schema 的严格 JSON。",
+    "必须只保留一个 coreSellingPoint 字符串。",
+    "不要添加开场钩子、分镜节拍、口播、CTA 文案或图生视频提示词。",
+    "不要包含 Markdown。",
     "",
     rawOutput,
   ].join("\n");

@@ -5,7 +5,10 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "dev": "turbo dev",
+    "dev:mock": "MODEL_MODE=mock turbo dev",
+    "dev:real": "MODEL_MODE=real turbo dev",
     "build": "turbo build",
+    "db:clear": "node scripts/clear-postgres.mjs",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "format": "prettier --write .",

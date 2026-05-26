@@ -1,23 +1,23 @@
 # 电商场景 AIGC 带货视频生成系统
 
-这是 ByteDance Hackathon AIGC 电商带货视频项目。当前仓库已经进入 **V0 架构基线已确认** 的状态，后续 PRD 提炼和实现拆分应基于本文档入口继续，不要重新从零做架构判断。
+这是 ByteDance Hackathon AIGC 电商带货视频项目。当前仓库的 active 实现已经切到 **V1 workspace pipeline**：素材清点、商品 brief、UGC 分镜、视频剧本、Seedance 成片与结构化成片反馈路由。
 
 ## 新会话先读
 
 1. [CONTEXT.md](./CONTEXT.md)  
-   领域词汇表。先确认“创作蓝图”“草稿蓝图”“冻结蓝图”“一键成片”“成片任务”等词的含义。
+   领域词汇表。先确认“商品素材”“商品 brief”“UGC 分镜”“视频剧本”“一键成片”“成片任务”等词的含义。
 
 2. [docs/architecture.md](./docs/architecture.md)
    当前架构入口，指向实现架构、数据模型、演示与模型 smoke 文档。
 
-3. [docs/arc_codex_r4.md](./docs/arc_codex_r4.md)
-   当前已实现架构事实源：Postgres 事实源、两步式创作蓝图、Seedance 整片生成和 review 状态恢复。
+3. [docs/arc_v5.md](./docs/arc_v5.md)
+   当前已实现 V1 架构事实源：Postgres 事实源、workspace `.daireel/`、五段 prompt 链路、Seedance 整片生成和反馈路由。
 
-4. [docs/plan_0523/current-support/demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md)
-   V0 演示与验收交接：上传素材、创作蓝图、一键成片、任务进度、预览导出、mock 兜底。
+4. [docs/export/sdd.md](./docs/export/sdd.md)
+   当前软件设计文档：V1 API 表面、prompt 模板、Ark `response_format`、Seedance prompt 边界与四人分工。
 
 5. [docs/plan_0523/current-support/model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)
-   真实 Ark text / OpenAI fallback dependency smoke check 步骤。
+   历史真实 Ark text / OpenAI fallback dependency smoke check 步骤，可作为 provider smoke 参考。
 
 6. [docs/plan_0523/current-support/provider-contract-correction.md](./docs/plan_0523/current-support/provider-contract-correction.md)
    Provider contract 修正历史：解释旧 `SEEDANCE_*` 口径为什么被替换。
@@ -25,9 +25,9 @@
 7. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
    原始安全版 PRD。
 
-## V0 范围
+## V1 主链路范围
 
-V0 只交付六项：
+P0 仍围绕六项演示能力交付：
 
 - 商品素材上传。
 - 剧本生成。
@@ -36,41 +36,45 @@ V0 只交付六项：
 - 任务进度。
 - 预览导出。
 
-以下不进入 V0 主路径：检索、TTS、字幕合成、BGM 合成、数据看板、A/B 对比、复杂分镜编辑、移动端专项优化。
+以下不进入当前 V1 主路径：检索、真实 TTS 合成、字幕合成、BGM 合成、数据看板、A/B 对比、复杂分镜编辑、移动端专项优化。
 
 ## 已确认主流程
 
 ```text
-上传商品素材与结构化创作参数
-  -> 同步生成并持久化创作蓝图
-  -> 用户只读确认剧本/基础分镜
-  -> 点击一键成片
-  -> 创建异步成片任务 GenerationJob
-  -> Ark-backed Seedance 图生视频生成 <=12s 成片
+选择或恢复 workspace
+  -> 上传/导入商品素材到 .daireel/materials/
+  -> 素材清点 material_intake
+  -> 生成并人工确认商品 brief
+  -> 生成并人工确认 UGC storyboard
+  -> 生成并人工确认 video shotprompt
+  -> 点击一键成片，创建异步 GenerationJob
+  -> Ark-backed Seedance 图生视频生成成片
   -> 轮询任务进度
   -> 预览导出
+  -> 提交成片反馈，structured route 回 brief/storyboard/shotprompt
 ```
 
 关键边界：
 
-- 用户只修改结构化字段：商品标题、核心卖点、目标人群、风格偏好、商品主图。
-- 用户不直接编辑图生视频 prompt。
-- 创作蓝图生成同步返回，UI 使用普通 loading。
+- 用户修改结构化 artifact：商品 brief、UGC storyboard、video shotprompt。
+- 用户不直接编辑最终 Seedance provider prompt。
+- Brief、storyboard、shotprompt 先 proposed，人工确认后 approved。
 - 成片任务异步执行，任务进度只服务视频生成长任务。
-- `POST /api/creative-blueprints` 返回稳定 `scriptId`。
-- `POST /api/creation/jobs` 接收 `scriptId` 并创建成片任务。
-- 视频生成前的草稿蓝图可覆盖；一旦创建成片任务即冻结，后续修改创建新版本。
-- 同一冻结 `scriptId` 可创建多个成片任务，用于失败重试或多次生成择优。
+- V1 成片任务只消费 approved `ShotPromptArtifact`，不再从 V0 `GeneratedScript` / `CreativeBlueprint` 构建 prompt。
+- `POST /api/creative-blueprints` 和 `POST /api/creation/jobs` 已从 active server/web surface 移除。
+- `POST /api/workspaces/feedback/route` 在 real mode 使用 Ark `feedback_route_v1` structured output，而不是靠关键词规则改写 artifact。
 
 ## 模型与存储口径
 
 - P0 必须真实调用 Ark 文本 endpoint 和 Ark 视频 endpoint。
 - Seedance 是视频能力/模型名；鉴权与 endpoint 配置统一走 Ark provider contract。
-- 视频主路径固定为图生视频：上传商品图或 demo 商品图 + 内部 whole-video prompt。
-- V0 Seedance prompt 使用保守三段式模板：商品 hero -> 卖点/使用场景 -> CTA。
-- `OPENAI_BASE_URL` 下的 OpenAI-compatible 配置只作为 fallback LLM，用于 Ark 文本 auth/config 失效时的创作蓝图恢复，不参与视频生成。
+- 视频主路径固定为图生视频：approved 商品素材 + 由 approved `ShotPromptArtifact` 编译出的中文 Seedance prompt。
+- 所有 Seedance-facing prompt 必须以中文构建；JSON 字段名和 enum 仍保持英文作为机器契约。
+- Ark 文本链路通过 strict JSON Schema `response_format` 约束输出；mock/deterministic 只服务本地开发与测试。
+- `OPENAI_BASE_URL` 下的 OpenAI-compatible 配置只作为历史 fallback LLM 参考，不参与视频生成。
 - mock provider 和预生成视频只作为本地开发与现场兜底，不替代 P0 验收。
-- P0 上传素材先保存到 server 本地文件目录；MinIO/S3 推迟到对象存储升级。
+- Postgres 是业务事实源；workspace `.daireel/trace/events.jsonl` 是当前 workspace trace。repo-local `storage/trace` 已 deprecated。
+- `MOCK_FINAL_VIDEO_URL` 可用于本地/现场 fallback 成片预览。
 
 ## 本地开发
 
@@ -111,12 +115,12 @@ pnpm lint
 pnpm build
 ```
 
-V0 演示资产：
+V1 演示资产：
 
 - 商品图：`apps/web/public/mocks/products/demo-product.svg`
 - 现场兜底成片：`apps/web/public/mocks/videos/fallback-flower.mp4`
 
-默认 mock fallback 可离线运行；真实 Ark text / OpenAI fallback 依赖接口 smoke check 步骤见 [demo-readiness.md](./docs/plan_0523/current-support/demo-readiness.md) 与 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。完整 Seedance 成片验收可通过本地上传 raster 商品图由 server 转 base64，也可使用公网商品图。
+默认 mock fallback 可离线运行；真实 Ark/Seedance smoke 可参考 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。完整 Seedance 成片验收建议使用 `pnpm dev:real` 并上传 raster 商品图。
 
 ## Worktree 环境准备
 
@@ -159,4 +163,4 @@ SERVER_PORT=
 
 后续 PRD 提炼请在 git worktree 中进行。建议先基于已提交的 `main` 创建工作树，再在工作树内产出 PRD 或任务拆分文档。
 
-不要为了延续讨论而继续追问明显实现细节。只有会改变 V0 范围、数据模型边界、用户可见流程、模型调用主路径或 Demo 交付风险的问题，才需要继续拉用户确认。
+不要为了延续讨论而继续追问明显实现细节。只有会改变 V1 主链路范围、数据模型边界、用户可见流程、模型调用主路径或 Demo 交付风险的问题，才需要继续拉用户确认。

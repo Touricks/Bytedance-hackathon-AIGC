@@ -86,8 +86,72 @@ describe("generateVideoWithSeedance", () => {
         }
       ],
       duration: 12,
-      ratio: "9:16"
+      ratio: "9:16",
+      generate_audio: true
     });
+  });
+
+  it("passes Seedance duration, ratio, and audio controls in the request body", async () => {
+    const calls: Array<{ body: unknown }> = [];
+
+    await generateVideoWithSeedance(
+      {
+        imageUrl: "/uploads/product-images/demo.png",
+        prompt: "生成 1:1 商品展示视频",
+        durationSec: 8,
+        aspectRatio: "1:1",
+        generateAudio: false
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
+        fetch: async (_url, init) => {
+          calls.push({ body: JSON.parse(String(init?.body)) });
+          return new Response(
+            JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
+            { status: 200 }
+          );
+        }
+      }
+    );
+
+    assert.equal((calls[0]!.body as { duration: unknown }).duration, 8);
+    assert.equal((calls[0]!.body as { ratio: unknown }).ratio, "1:1");
+    assert.equal(
+      (calls[0]!.body as { generate_audio: unknown }).generate_audio,
+      false
+    );
+  });
+
+  it("fails loudly when Seedance duration is outside the shared supported range", async () => {
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "/uploads/product-images/demo.png",
+            prompt: "生成商品展示视频",
+            durationSec: 15
+          },
+          { env: {} }
+        ),
+      /durationSec must be between 4 and 12/
+    );
+
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "/uploads/product-images/demo.png",
+            prompt: "生成商品展示视频",
+            durationSec: 5.5
+          },
+          { env: {} }
+        ),
+      /durationSec must be an integer/
+    );
   });
 
   it("returns normalized provider details and Ark video trace metadata", async () => {
@@ -131,7 +195,10 @@ describe("generateVideoWithSeedance", () => {
       endpointFamily: "ark_video_task",
       baseURL: "https://ark.example/api/v3",
       prompt: "Create a vertical ecommerce product showcase video",
-      imageUrl: "data:image/png;base64,cHJvZHVjdA=="
+      imageUrl: "data:image/png;base64,cHJvZHVjdA==",
+      duration: 12,
+      ratio: "9:16",
+      generateAudio: true
     });
   });
 

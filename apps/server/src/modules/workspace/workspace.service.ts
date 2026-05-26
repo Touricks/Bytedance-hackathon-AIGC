@@ -15,6 +15,7 @@ import {
   buildShotPromptPromptView,
   buildStoryboardPromptView,
   createFileTraceLogger,
+  generateFeedbackRouteWithArk,
   generateMaterialIntakeWithArk,
   generateProductBriefWithArk,
   generateShotPromptWithArk,
@@ -33,7 +34,7 @@ import {
   type ProductBriefArtifact,
   type ShotPromptArtifact,
   type StoryboardArtifact,
-  type GeneratedScript,
+  type FeedbackRouteArtifact,
   type CreativeWorkspace,
 } from "@aigc-video/shared";
 import { assertValidRasterImageBytes } from "../../common/image-validation.js";
@@ -627,36 +628,35 @@ function workspaceAssetUrl(workspaceId: string, ref: string) {
   return `${config.uploadUrlPrefix.replace(/\/+$/, "")}/workspace-materials/${workspaceId}/${encodeURIComponent(ref)}`;
 }
 
-function toGeneratedScript(shotPrompt: ShotPromptArtifact): GeneratedScript {
+function workspaceShotPurpose(index: number, shotCount: number) {
+  if (index === 0) {
+    return "hook" as const;
+  }
+  if (index === shotCount - 1) {
+    return "cta" as const;
+  }
+  return "benefit" as const;
+}
+
+function toLegacyScriptPlaceholder(shotPrompt: ShotPromptArtifact) {
   return {
-    narrative: shotPrompt.prompt,
-    visualStyle: `${shotPrompt.aspectRatio} ecommerce UGC video`,
-    shots: shotPrompt.shots.map((shot, index) => ({
-      index: index + 1,
-      durationSec: shot.endSec - shot.startSec,
-      purpose:
-        index === 0
-          ? "hook"
-          : index === shotPrompt.shots.length - 1
-            ? "cta"
-            : "benefit",
-      visualPrompt: shot.providerPrompt,
-      cameraMotion: "smooth stable product move",
-      voiceover: shot.voiceover,
-      subtitle: "",
-    })),
+    kind: "legacy_script_placeholder",
+    reason:
+      "GeneratedScript is V0 legacy. V1 workspace video export compiles the approved ShotPromptArtifact from job.payload.shotprompt.",
+    promptSource: "job.payload.shotprompt",
+    shotprompt: shotPrompt,
   };
 }
 
-function toDbShots(generatedScript: GeneratedScript) {
-  return generatedScript.shots.map((shot) => ({
-    index: shot.index,
-    durationSec: shot.durationSec,
-    purpose: shot.purpose,
-    visualPrompt: shot.visualPrompt,
-    cameraMotion: shot.cameraMotion,
+function toDbShots(shotPrompt: ShotPromptArtifact) {
+  return shotPrompt.shots.map((shot, index) => ({
+    index: index + 1,
+    durationSec: shot.endSec - shot.startSec,
+    purpose: workspaceShotPurpose(index, shotPrompt.shots.length),
+    visualPrompt: shot.providerPrompt,
+    cameraMotion: "按已批准视频剧本平稳衔接",
     voiceover: shot.voiceover,
-    subtitle: shot.subtitle,
+    subtitle: shot.voiceover,
     status: "pending" as const,
   }));
 }
@@ -678,17 +678,19 @@ async function createScriptBundleForShotPrompt(input: {
   brief: ProductBriefArtifact;
   shotPrompt: ShotPromptArtifact;
 }) {
-  const generatedScript = toGeneratedScript(input.shotPrompt);
+  const scriptRawJson = toLegacyScriptPlaceholder(input.shotPrompt);
+  const narrative = input.shotPrompt.prompt;
+  const visualStyle = `${input.shotPrompt.aspectRatio} Seedance 视频剧本事实源`;
   const existing = await getExistingScript(input.workspace.currentScriptId);
   if (existing) {
     const script = await db.updateScript(existing.id, {
-      narrative: generatedScript.narrative,
-      visualStyle: generatedScript.visualStyle,
+      narrative,
+      visualStyle,
       frozen: false,
       frozenAt: undefined,
-      rawJson: generatedScript,
+      rawJson: scriptRawJson,
     });
-    await db.replaceShots(script.id, toDbShots(generatedScript));
+    await db.replaceShots(script.id, toDbShots(input.shotPrompt));
     return script;
   }
 
@@ -719,12 +721,12 @@ async function createScriptBundleForShotPrompt(input: {
     id: input.workspace.currentScriptId,
     productId: product.id,
     version: 1,
-    narrative: generatedScript.narrative,
-    visualStyle: generatedScript.visualStyle,
+    narrative,
+    visualStyle,
     frozen: false,
-    rawJson: generatedScript,
+    rawJson: scriptRawJson,
   });
-  await db.createShots(script.id, toDbShots(generatedScript));
+  await db.createShots(script.id, toDbShots(input.shotPrompt));
 
   return script;
 }
@@ -743,34 +745,6 @@ async function refreshWorkspaceForCurrentJob(workspace: CreativeWorkspace) {
   }
 
   return workspace;
-}
-
-function routeFeedbackTarget(feedback: string) {
-  const normalized = feedback.toLowerCase();
-  if (
-    ["opening", "hook", "shot", "scene", "earlier", "faster"].some((term) =>
-      normalized.includes(term),
-    )
-  ) {
-    return {
-      targetArtifact: "storyboard" as const,
-      reason: "Feedback refers to shot timing or scene structure.",
-    };
-  }
-  if (
-    ["voice", "tts", "prompt", "negative", "caption", "text"].some((term) =>
-      normalized.includes(term),
-    )
-  ) {
-    return {
-      targetArtifact: "shotprompt" as const,
-      reason: "Feedback refers to generated prompt, voice, or text details.",
-    };
-  }
-  return {
-    targetArtifact: "brief" as const,
-    reason: "Feedback refers to product positioning or audience assumptions.",
-  };
 }
 
 function runtimeMode() {
@@ -820,81 +794,56 @@ function humanApprovalNextAction(input: { stage: string; endpoint: string }) {
   };
 }
 
-function applyFeedbackToStoryboard(
-  storyboard: StoryboardArtifact,
-  feedback: string,
-): StoryboardArtifact {
-  const revisedScene = feedback.toLowerCase().includes("earlier")
-    ? "Earlier product reveal hook"
-    : "Revised opening hook";
-  return storyboardArtifactSchema.parse({
-    ...storyboard,
-    shots: storyboard.shots.map((shot) =>
-      shot.index === 0
-        ? {
-            ...shot,
-            scene: revisedScene,
-            visualDirection: `${shot.visualDirection} Adjust the opening beat to satisfy the latest routed revision while preserving the approved product claim.`,
-          }
-        : shot,
-    ),
-    assumptions: [
-      ...storyboard.assumptions,
-      "Latest feedback was routed to storyboard structure; review before approval.",
-    ],
-  });
+type FeedbackRouteDecision = Pick<
+  FeedbackRouteArtifact,
+  "targetArtifact" | "reason" | "revisionInstruction" | "confidence"
+>;
+
+function deterministicFeedbackRoute(feedback: string): FeedbackRouteDecision {
+  const normalized = feedback.toLowerCase();
+  if (
+    /商品不像|不像原图|镜头运动|运镜|运动|演示动作|时长|结尾|定格|负向|禁用|不要出现|违规|prompt|negative|camera|motion|duration/.test(
+      normalized,
+    )
+  ) {
+    return {
+      targetArtifact: "shotprompt",
+      reason: "反馈主要涉及画面生成约束、商品保真或视频提示词细节，应该回到视频剧本。",
+      revisionInstruction:
+        "根据成片反馈调整视频剧本中的画面约束、镜头运动或禁止项，保持商品外观一致。",
+      confidence: "medium",
+    };
+  }
+  if (
+    /口播|旁白|字幕|文案|hook|开头|节奏|cta|脚本|更早|更快|voice|caption|text|faster|earlier/.test(
+      normalized,
+    )
+  ) {
+    return {
+      targetArtifact: "storyboard",
+      reason: "反馈主要涉及叙事节奏、开头钩子、口播或 CTA，应该回到 UGC 分镜。",
+      revisionInstruction:
+        "根据成片反馈调整分镜节奏、开头呈现方式和口播表达，保留已确认商品卖点。",
+      confidence: "medium",
+    };
+  }
+  return {
+    targetArtifact: "brief",
+    reason: "反馈主要涉及商品定位、受众、卖点或品牌表达，应该回到商品 brief。",
+    revisionInstruction:
+      "根据成片反馈调整商品定位、目标人群或核心卖点，避免影响已确认素材事实。",
+    confidence: "medium",
+  };
 }
 
-function applyFeedbackToBrief(
-  brief: ProductBriefArtifact,
-  feedback: string,
-): ProductBriefArtifact {
-  const asksForAudience = /audience|人群|用户|buyer|customer/i.test(feedback);
-  return productBriefArtifactSchema.parse({
-    ...brief,
-    audience: {
-      ...brief.audience,
-      painOrDesire: asksForAudience
-        ? "Revised around the latest audience direction."
-        : brief.audience.painOrDesire,
-    },
-    assumptions: [
-      ...brief.assumptions,
-      "Latest feedback was routed to product positioning; review before approval.",
-    ],
-  });
-}
-
-function applyFeedbackToShotPrompt(
-  shotPrompt: ShotPromptArtifact,
-  feedback: string,
-): ShotPromptArtifact {
-  const asksForVoice = /voice|tts|旁白|语音/i.test(feedback);
-  const shots = shotPrompt.shots.map((shot, index) =>
-    index === 0
-      ? {
-          ...shot,
-          providerPrompt: `${shot.providerPrompt} Revise motion and composition according to the latest routed direction while preserving the product identity.`,
-          voiceover: asksForVoice
-            ? "Updated voiceover direction for the revised opening."
-            : shot.voiceover,
-        }
-      : shot,
-  );
-
-  return shotPromptArtifactSchema.parse({
-    ...shotPrompt,
-    shots,
-    tts: {
-      ...shotPrompt.tts,
-      source: "shots.voiceover",
-      voiceover: shots.map((shot) => shot.voiceover.trim()).join(" "),
-    },
-    assumptions: [
-      ...shotPrompt.assumptions,
-      "Latest feedback was routed to shotprompt details; review before approval.",
-    ],
-  });
+function proposedStatusForFeedbackTarget(
+  targetArtifact: FeedbackRouteDecision["targetArtifact"],
+) {
+  return targetArtifact === "shotprompt"
+    ? "shotprompt_proposed"
+    : targetArtifact === "storyboard"
+      ? "storyboard_proposed"
+      : "brief_proposed";
 }
 
 function nextActionFor(workspace: CreativeWorkspace) {
@@ -1082,8 +1031,7 @@ async function copySelectedLegacyRootMaterials(input: {
   }
 }
 
-async function collectWorkspaceMaterialLibrary(directory: string) {
-  const materialDirectory = workspaceMaterialsPath(directory);
+async function collectMaterialLibraryFromDirectory(materialDirectory: string) {
   let entries;
   try {
     entries = await readdir(materialDirectory, { withFileTypes: true });
@@ -1175,6 +1123,17 @@ async function collectWorkspaceMaterialLibrary(directory: string) {
     assets: accepted,
     rejected,
   };
+}
+
+async function collectWorkspaceMaterialLibrary(directory: string) {
+  const managed = await collectMaterialLibraryFromDirectory(
+    workspaceMaterialsPath(directory),
+  );
+  if (managed.assets.length > 0 || managed.rejected.length > 0) {
+    return managed;
+  }
+
+  return collectMaterialLibraryFromDirectory(directory);
 }
 
 async function getOptionalWorkspaceArtifact(
@@ -1678,7 +1637,34 @@ export const workspaceService = {
   ) {
     const localPath = await resolveWorkspaceLocalPath(target);
     const { workspace } = await this.status(localPath);
-    const route = routeFeedbackTarget(feedback);
+    const [briefArtifact, storyboardArtifact, shotPromptArtifact] =
+      await Promise.all([
+        db.getWorkspaceArtifact(workspace.id, "brief"),
+        db.getWorkspaceArtifact(workspace.id, "storyboard"),
+        db.getWorkspaceArtifact(workspace.id, "shotprompt"),
+      ]);
+    const brief = productBriefArtifactSchema.parse(briefArtifact.data);
+    const storyboard = storyboardArtifactSchema.parse(storyboardArtifact.data);
+    const shotPrompt = shotPromptArtifactSchema.parse(shotPromptArtifact.data);
+    let trace;
+    const route =
+      runtimeMode() === "real"
+        ? await (async () => {
+            const result = await generateFeedbackRouteWithArk(
+              {
+                feedback,
+                brief,
+                storyboard,
+                shotPrompt,
+              },
+              {
+                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+              },
+            );
+            trace = result.trace;
+            return result.route;
+          })()
+        : deterministicFeedbackRoute(feedback);
     const routeData = feedbackRouteArtifactSchema.parse({
       feedback,
       targetArtifact: route.targetArtifact,
@@ -1687,6 +1673,8 @@ export const workspaceService = {
           ? workspace.currentJobId
           : (target.jobId ?? workspace.currentJobId),
       reason: route.reason,
+      revisionInstruction: route.revisionInstruction,
+      confidence: route.confidence,
       routedAt: new Date().toISOString(),
     });
     const routeArtifact = await db.upsertWorkspaceArtifact({
@@ -1696,58 +1684,23 @@ export const workspaceService = {
       status: "approved",
       data: routeData,
     });
-
-    if (route.targetArtifact === "storyboard") {
-      const storyboardArtifact = await db.getWorkspaceArtifact(
-        workspace.id,
-        "storyboard",
-      );
-      const storyboard = storyboardArtifactSchema.parse(
-        storyboardArtifact.data,
-      );
-      const data = applyFeedbackToStoryboard(storyboard, feedback);
-      const artifact = await db.upsertWorkspaceArtifact({
-        workspaceId: workspace.id,
-        scriptId: workspace.currentScriptId,
-        type: "storyboard",
-        status: "proposed",
-        data,
-      });
-      const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-        status: "storyboard_proposed",
-      });
-
-      return { workspace: updatedWorkspace, routeArtifact, artifact, route };
-    }
-
-    const currentArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      route.targetArtifact,
-    );
-    const nextData =
-      route.targetArtifact === "shotprompt"
-        ? applyFeedbackToShotPrompt(
-            shotPromptArtifactSchema.parse(currentArtifact.data),
-            feedback,
-          )
-        : applyFeedbackToBrief(
-            productBriefArtifactSchema.parse(currentArtifact.data),
-            feedback,
-          );
+    const currentArtifact =
+      route.targetArtifact === "brief"
+        ? briefArtifact
+        : route.targetArtifact === "storyboard"
+          ? storyboardArtifact
+          : shotPromptArtifact;
     const artifact = await db.upsertWorkspaceArtifact({
       workspaceId: workspace.id,
       scriptId: workspace.currentScriptId,
       type: route.targetArtifact,
       status: "proposed",
-      data: nextData,
+      data: currentArtifact.data,
     });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status:
-        route.targetArtifact === "shotprompt"
-          ? "shotprompt_proposed"
-          : "brief_proposed",
+      status: proposedStatusForFeedbackTarget(route.targetArtifact),
     });
 
-    return { workspace: updatedWorkspace, routeArtifact, artifact, route };
+    return { workspace: updatedWorkspace, routeArtifact, artifact, route, trace };
   },
 };

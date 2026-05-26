@@ -92,17 +92,17 @@ const providerShotPrompt = {
   durationSec: 12,
   aspectRatio: "9:16",
   prompt:
-    "Provider-authored Seedance prompt: keep product.png stable on an office desk while showing a quick smoothie routine.",
-  negativePrompt: "extra products, warped logo, unreadable labels",
+    "Seedance 已批准总提示词：保持 product.png 的商品外观稳定，在办公桌场景展示快速制作果昔的完整流程。",
+  negativePrompt: "禁止额外商品、变形 Logo、不可读标签和任何字幕水印。",
   shots: [
     {
       index: 0,
       startSec: 0,
       endSec: 3,
       providerPrompt:
-        "0-3s hook: hand places product.png beside a laptop, stable product shape.",
+        "办公桌开场镜头，手把 product.png 放在笔记本电脑旁，商品形状保持稳定。",
       referenceAssetRefs: ["product.png"],
-      voiceover: "No time for breakfast before calls?",
+      voiceover: "开会前来不及准备早餐？",
       onScreenText: "No time before calls?",
     },
     {
@@ -110,37 +110,56 @@ const providerShotPrompt = {
       startSec: 3,
       endSec: 6,
       providerPrompt:
-        "3-6s benefit: show USB-C charging and a quick blend, product remains unchanged.",
+        "展示 USB-C 充电和快速搅拌，product.png 的杯身与底座保持不变。",
       referenceAssetRefs: ["product.png"],
-      voiceover: "This little blender charges by USB-C.",
+      voiceover: "这台小型搅拌杯支持 USB-C 充电。",
       onScreenText: "USB-C charging",
     },
     {
       index: 2,
       startSec: 6,
       endSec: 9,
-      providerPrompt: "6-9s proof: rinse the cup under an office pantry tap.",
+      providerPrompt: "在办公室茶水间水龙头下冲洗杯身，突出清洁方便。",
       referenceAssetRefs: ["product.png"],
-      voiceover: "And cleanup is just a quick rinse.",
+      voiceover: "用完简单一冲就干净。",
       onScreenText: "Easy rinse cleanup",
     },
     {
       index: 3,
       startSec: 9,
       endSec: 12,
-      providerPrompt: "9-12s CTA: stable packshot on the desk.",
+      providerPrompt: "回到办公桌稳定产品主视觉，形成清爽可信的收束画面。",
       referenceAssetRefs: ["product.png"],
-      voiceover: "Keep one at your desk.",
+      voiceover: "放在桌上，随时补充能量。",
       onScreenText: "Desk smoothie, done",
     },
   ],
   tts: {
     enabled: true,
     voiceover:
-      "No time for breakfast before calls? This little blender charges by USB-C. And cleanup is just a quick rinse. Keep one at your desk.",
+      "开会前来不及准备早餐？这台小型搅拌杯支持 USB-C 充电。用完简单一冲就干净。放在桌上，随时补充能量。",
   },
-  assumptions: ["Shotprompt keeps product.png as the only visual reference."],
+  assumptions: ["Shotprompt 保持 product.png 作为唯一视觉参考。"],
 };
+
+function assertNoEnglishPromptScaffold(text: string) {
+  const forbidden = [
+    /Material intake prompt/i,
+    /\bRole:/,
+    /\bInputs:/,
+    /\bTask:/,
+    /\bOutput:/,
+    /Return strict JSON/i,
+    /You are a material intake/i,
+    /Validated material manifest/i,
+    /Rejected files/i,
+    /Text previews/i,
+    /For each validated asset/i,
+  ];
+  for (const pattern of forbidden) {
+    assert.doesNotMatch(text, pattern);
+  }
+}
 
 async function startArkJsonServer(responses: unknown[]) {
   const bodies: unknown[] = [];
@@ -995,7 +1014,7 @@ describe("workspace API", () => {
     assert.equal(body.promptView.contractId, "material_intake");
     assert.equal(body.promptView.promptVersion, "material-intake.v1");
     assert.equal(body.promptView.provider, "deterministic");
-    assert.equal(body.promptView.nl.title, "Material intake prompt");
+    assert.equal(body.promptView.nl.title, "素材清点提示词");
     assert.deepEqual(
       body.promptView.nl.sections.map((section: { id: string }) => section.id),
       [
@@ -1011,8 +1030,12 @@ describe("workspace API", () => {
         (section: { id: string }) =>
           section.id === "selected_material_manifest",
       ).body,
-      /product\.png/,
+        /product\.png/,
     );
+    const promptViewText = JSON.stringify(body.promptView.nl);
+    assert.match(promptViewText, /素材清点/);
+    assert.match(promptViewText, /输出契约/);
+    assertNoEnglishPromptScaffold(promptViewText);
     assert.equal(
       JSON.stringify(body.promptView).includes(
         transparentPngBytes.toString("base64"),
@@ -1135,6 +1158,33 @@ describe("workspace API", () => {
     );
   });
 
+  it("surfaces legacy root material candidates after opening an existing workspace directory", async () => {
+    const directory = await createWorkspaceDir();
+    await writeFile(path.join(directory, "display_1.png"), transparentPngBytes);
+
+    const initResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/init",
+      payload: { directory },
+    });
+    assert.equal(initResponse.statusCode, 200, initResponse.body);
+    const initialized = initResponse.json();
+
+    const statusResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/status",
+      payload: { workspaceId: initialized.workspace.id },
+    });
+
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    const status = statusResponse.json();
+    assert.deepEqual(
+      status.materialLibrary.assets.map((asset: { ref: string }) => asset.ref),
+      ["display_1.png"],
+    );
+    assert.equal(status.materialLibrary.primaryProductRef, "display_1.png");
+  });
+
   it("rejects selected material refs that are not valid candidates", async () => {
     const directory = await createWorkspaceDir();
     await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
@@ -1241,7 +1291,9 @@ describe("workspace API", () => {
       };
       assertStrictJsonSchemaResponseFormat(requestBody, "material_intake_v1");
       const content = requestBody.messages[0]!.content;
-      assert.match(content[0]!.text ?? "", /material intake/i);
+      assert.match(content[0]!.text ?? "", /素材清点/);
+      assert.match(content[0]!.text ?? "", /返回严格 JSON/);
+      assertNoEnglishPromptScaffold(content[0]!.text ?? "");
       assert.match(
         content.find((part) => part.type === "image_url")?.image_url?.url ?? "",
         /^data:image\/png;base64,/,
@@ -1338,7 +1390,7 @@ describe("workspace API", () => {
     ]);
     assert.equal(proposed.artifact.data.coreSellingPoint, "USB-C charging");
     assert.equal(proposed.form.artifactType, "brief");
-    assert.equal(proposed.promptView.nl.title, "Product brief prompt");
+    assert.equal(proposed.promptView.nl.title, "商品简报提示词");
     assert.deepEqual(
       proposed.form.fields.map((field: { path: string }) => field.path),
       [
@@ -1431,7 +1483,7 @@ describe("workspace API", () => {
       };
       assertStrictJsonSchemaResponseFormat(requestBody, "product_brief_v1");
       const content = requestBody.messages[0]!.content;
-      assert.match(content[0]!.text ?? "", /product brief/i);
+      assert.match(content[0]!.text ?? "", /商品简报/);
       assert.match(
         content.find((part) => part.type === "image_url")?.image_url?.url ?? "",
         /^data:image\/png;base64,/,
@@ -1551,7 +1603,7 @@ describe("workspace API", () => {
       transition: "cut",
     });
     assert.equal(proposed.form.artifactType, "storyboard");
-    assert.equal(proposed.promptView.nl.title, "UGC storyboard prompt");
+    assert.equal(proposed.promptView.nl.title, "口播分镜提示词");
     assert.deepEqual(
       proposed.form.fields.map((field: { path: string }) => field.path),
       [
@@ -1651,7 +1703,7 @@ describe("workspace API", () => {
         ["product.png"],
       );
       assert.equal("onScreenText" in shotSchema, false);
-      assert.match(requestBody.messages[0]!.content, /UGC storyboard/i);
+      assert.match(requestBody.messages[0]!.content, /口播分镜/);
       assert.match(requestBody.messages[0]!.content, /Portable Mini Blender/);
       assert.doesNotMatch(requestBody.messages[0]!.content, /on-screen text/i);
       assert.doesNotMatch(requestBody.messages[0]!.content, /onScreenText/);
@@ -1689,12 +1741,22 @@ describe("workspace API", () => {
     assert.equal(proposed.artifact.data.shots.length, 4);
     assert.equal(
       proposed.artifact.data.shots[0].providerPrompt,
-      "0-3s hook: Portable Mini Blender hero problem hook. Show product.png as the primary product asset with clean premium ecommerce styling. Reference product.png.",
+      "0-3 秒 开场吸引：Portable Mini Blender hero problem hook。Show product.png as the primary product asset with clean premium ecommerce styling。参考素材：product.png。",
     );
     assert.equal(proposed.artifact.data.shots[0].onScreenText, undefined);
     assert.match(
       proposed.artifact.data.prompt,
-      /12 second 9:16 ecommerce UGC video/,
+      /12 秒 9:16 电商 UGC 视频/,
+    );
+    assert.doesNotMatch(
+      proposed.artifact.data.prompt,
+      /0-3 秒 开场吸引：Portable Mini Blender hero problem hook/,
+    );
+    assert.match(
+      proposed.artifact.data.shots
+        .map((shot: { providerPrompt: string }) => shot.providerPrompt)
+        .join("\n"),
+      /0-3 秒 开场吸引：Portable Mini Blender hero problem hook/,
     );
     assert.deepEqual(proposed.artifact.data.tts, {
       enabled: true,
@@ -1702,7 +1764,7 @@ describe("workspace API", () => {
       voiceover:
         "Meet Portable Mini Blender. USB-C charging. Accepted image asset product.png Try Portable Mini Blender today.",
     });
-    assert.equal(proposed.promptView.nl.title, "Video shotprompt prompt");
+    assert.equal(proposed.promptView.nl.title, "视频生成提示词");
     assert.deepEqual(
       proposed.form.fields.map((field: { path: string }) => field.path),
       [
@@ -1778,7 +1840,7 @@ describe("workspace API", () => {
       assert.equal(body.artifact.data.prompt, providerShotPrompt.prompt);
       assert.equal(
         body.artifact.data.negativePrompt,
-        "extra products, warped logo, unreadable labels",
+        "禁止额外商品、变形 Logo、不可读标签和任何字幕水印。",
       );
       assert.equal(body.artifact.data.tts.enabled, true);
       assert.equal(body.trace.provider, "ark");
@@ -1792,7 +1854,7 @@ describe("workspace API", () => {
         }>;
       };
       assertStrictJsonSchemaResponseFormat(requestBody, "video_shotprompt_v1");
-      assert.match(requestBody.messages[0]!.content, /video shotprompt/i);
+      assert.match(requestBody.messages[0]!.content, /Seedance 图生视频提示词/);
       assert.match(requestBody.messages[0]!.content, /Seedance/i);
 
       const traceText = await readFile(
@@ -1823,7 +1885,7 @@ describe("workspace API", () => {
     assert.equal(body.workspace.currentJobId, body.job.id);
     assert.equal(body.job.scriptId, body.workspace.currentScriptId);
     assert.equal(body.job.payload.workspaceId, body.workspace.id);
-    assert.match(body.job.payload.shotprompt.prompt, /ecommerce UGC video/);
+    assert.match(body.job.payload.shotprompt.prompt, /电商 UGC 视频/);
 
     const manifest = JSON.parse(
       await readFile(
@@ -1835,13 +1897,19 @@ describe("workspace API", () => {
 
     const detail = await waitForCompletedJob(body.job.id);
     assert.equal(detail.job.status, "completed");
+    assert.equal(detail.script.rawJson.kind, "legacy_script_placeholder");
+    assert.equal(detail.script.rawJson.promptSource, "job.payload.shotprompt");
     assert.equal(detail.finalAsset.type, "final_video");
     assert.equal(detail.videoExport.jobId, body.job.id);
     assert.equal(detail.videoExport.workspaceId, body.workspace.id);
     assert.equal(detail.videoExport.scriptId, body.workspace.currentScriptId);
     assert.equal(
+      detail.videoExport.promptView.variables.promptSource,
+      "compiled_shotprompt",
+    );
+    assert.equal(
       detail.videoExport.promptView.nl.title,
-      "Seedance video prompt",
+      "Seedance 成片提示词",
     );
     assert.match(detail.videoExport.finalVideo.localUrl, /workspace-videos/);
 
@@ -1872,6 +1940,9 @@ describe("workspace API", () => {
           type: string;
           image_url?: { url?: string };
         }>;
+        duration?: number;
+        ratio?: string;
+        generate_audio?: boolean;
       };
       const imageInput = requestBody.content.find(
         (item) => item.type === "image_url",
@@ -1880,6 +1951,9 @@ describe("workspace API", () => {
         imageInput?.image_url?.url ?? "",
         /^data:image\/png;base64,/,
       );
+      assert.equal(requestBody.duration, 12);
+      assert.equal(requestBody.ratio, "9:16");
+      assert.equal(requestBody.generate_audio, true);
     } finally {
       restoreEnv();
       await arkVideo.close();
@@ -1920,19 +1994,38 @@ describe("workspace API", () => {
       assert.equal(arkVideo.bodies.length, 1);
       const requestBody = arkVideo.bodies[0] as {
         content: Array<{ type: string; text?: string }>;
+        duration?: number;
+        ratio?: string;
+        generate_audio?: boolean;
       };
       const textInput = requestBody.content.find(
         (item) => item.type === "text",
       );
-      assert.match(textInput?.text ?? "", /Provider-authored Seedance prompt/);
-      assert.match(textInput?.text ?? "", /0-3s hook/);
+      assert.match(textInput?.text ?? "", /Seedance 已批准总提示词/);
+      assert.match(textInput?.text ?? "", /0-3 秒：办公桌开场镜头/);
+      assert.match(textInput?.text ?? "", /3-6 秒：展示 USB-C 充电和快速搅拌/);
+      assert.match(textInput?.text ?? "", /6-9 秒：在办公室茶水间水龙头下冲洗杯身/);
+      assert.match(textInput?.text ?? "", /9-12 秒：回到办公桌稳定产品主视觉/);
+      assert.match(textInput?.text ?? "", /禁止额外商品、变形 Logo/);
+      assert.match(textInput?.text ?? "", /开会前来不及准备早餐/);
+      assert.equal(requestBody.duration, 12);
+      assert.equal(requestBody.ratio, "9:16");
+      assert.equal(requestBody.generate_audio, true);
+      assert.doesNotMatch(textInput?.text ?? "", /smooth stable product move/);
+      assert.doesNotMatch(textInput?.text ?? "", /目标人群：电商消费者/);
+      assert.doesNotMatch(
+        textInput?.text ?? "",
+        /3-8 秒：用简单使用场景或细节特写/,
+      );
+      assert.doesNotMatch(textInput?.text ?? "", /Storyboard inspiration only/i);
 
       const traceText = await readFile(
         path.join(directory, ".daireel", "trace", "events.jsonl"),
         "utf8",
       );
       assert.match(traceText, /video.prompt_prepared/);
-      assert.match(traceText, /Provider-authored Seedance prompt/);
+      assert.match(traceText, /compiled_shotprompt/);
+      assert.match(traceText, /Seedance 已批准总提示词/);
     } finally {
       restoreVideoEnv();
       await arkVideo.close();
@@ -2050,6 +2143,7 @@ describe("workspace API", () => {
         { id: "product_brief", activeVersion: "product-brief.v1" },
         { id: "storyboard", activeVersion: "ugc-storyboard.v1" },
         { id: "shotprompt", activeVersion: "video-shotprompt.v1" },
+        { id: "feedback_route", activeVersion: "feedback-route.v1" },
         { id: "video_export", activeVersion: "seedance-video-export.v1" },
       ],
     );
@@ -2060,6 +2154,49 @@ describe("workspace API", () => {
       assert.equal(typeof step.outputJsonSchema, "object");
     }
     assert.equal(body.steps.at(-1).promptSource, "compiled_shotprompt");
+  });
+
+  it("routes video feedback through the real structured feedback router", async () => {
+    const directory = await createWorkspaceWithApprovedShotPrompt();
+    const arkText = await startArkJsonServer([
+      {
+        targetArtifact: "storyboard",
+        reason: "用户希望旁白更口语化，属于分镜口播表达问题。",
+        revisionInstruction: "重写 storyboard 的口播，使开头更自然、更像真人表达。",
+        confidence: "high",
+      },
+    ]);
+    const restoreEnv = setRealArkTextEnv(arkText.url);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/workspaces/feedback/route",
+        payload: {
+          directory,
+          feedback: "旁白更口语化",
+        },
+      });
+
+      assert.equal(response.statusCode, 200, response.body);
+      const body = response.json();
+      assert.equal(body.route.targetArtifact, "storyboard");
+      assert.equal(body.routeArtifact.data.confidence, "high");
+      assert.match(body.routeArtifact.data.revisionInstruction, /口播/);
+      assert.equal(arkText.bodies.length, 1);
+      assertStrictJsonSchemaResponseFormat(arkText.bodies[0], "feedback_route_v1");
+
+      const traceText = await readFile(
+        path.join(directory, ".daireel", "trace", "events.jsonl"),
+        "utf8",
+      );
+      assert.match(traceText, /feedback_route.request_prepared/);
+      assert.match(traceText, /feedback_route.parsed/);
+      assert.match(traceText, /feedback_route_v1/);
+    } finally {
+      restoreEnv();
+      await arkText.close();
+    }
   });
 
   it("routes feedback into the current editable artifacts without overwriting older jobs", async () => {
@@ -2073,7 +2210,7 @@ describe("workspace API", () => {
       url: "/api/workspaces/feedback/route",
       payload: {
         directory,
-        feedback: "Make the opening faster and show the product earlier",
+        feedback: "开头更早展示产品，旁白更口语化",
       },
     });
 
@@ -2084,15 +2221,16 @@ describe("workspace API", () => {
     assert.equal(feedback.routeArtifact.type, "feedbackRoute");
     assert.equal(feedback.routeArtifact.data.previousJobId, firstJobId);
     assert.equal(feedback.routeArtifact.data.targetArtifact, "storyboard");
+    assert.match(
+      feedback.routeArtifact.data.revisionInstruction,
+      /分镜|口播|开头/,
+    );
+    assert.equal(feedback.routeArtifact.data.confidence, "medium");
     assert.equal(feedback.artifact.type, "storyboard");
     assert.equal(feedback.artifact.status, "proposed");
-    assert.match(
-      feedback.artifact.data.shots[0].scene,
-      /Earlier product reveal hook/,
-    );
     assert.doesNotMatch(
-      feedback.artifact.data.shots[0].visualDirection,
-      /Make the opening faster/,
+      JSON.stringify(feedback.artifact.data),
+      /Latest feedback|routed revision|Revise motion|开头更早展示产品/,
     );
 
     await app.inject({
@@ -2118,10 +2256,7 @@ describe("workspace API", () => {
       secondGeneration.workspace.currentJobId,
       secondGeneration.job.id,
     );
-    assert.match(
-      secondGeneration.job.payload.shotprompt.prompt,
-      /latest routed revision/,
-    );
+    assert.equal(secondGeneration.job.payload.shotprompt.targetProvider, "seedance");
 
     const stillRecoverable = await app.inject({
       method: "GET",
@@ -2133,7 +2268,10 @@ describe("workspace API", () => {
 
     const secondDetail = await waitForCompletedJob(secondGeneration.job.id);
     assert.equal(secondDetail.job.status, "completed");
-    assert.match(secondDetail.script.narrative, /latest routed revision/);
+    assert.equal(
+      secondDetail.videoExport.promptView.variables.promptSource,
+      "compiled_shotprompt",
+    );
     assert.equal(secondDetail.finalAsset.type, "final_video");
     assert.equal(secondDetail.videoExport.jobId, secondGeneration.job.id);
   });

@@ -2,16 +2,38 @@ import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 import {
   GENERATION_QUEUE_NAME,
-  type GenerateVideoJobPayload
+  shotPromptArtifactSchema,
+  type GenerateVideoJobPayload,
 } from "@aigc-video/shared";
 import { config } from "../common/config.js";
 import { logger } from "../common/logger.js";
 import { db } from "../db/client.js";
 import { markJobFailed } from "./job-state.js";
-import { processMediaGeneration } from "./processors/media-generate.processor.js";
+import {
+  processMediaGeneration,
+  type MediaGenerationPromptSource,
+} from "./processors/media-generate.processor.js";
 
 let queue: Queue<GenerateVideoJobPayload> | undefined;
 let worker: Worker<GenerateVideoJobPayload> | undefined;
+
+function resolvePromptSource(input: {
+  payload: Record<string, unknown>;
+}): MediaGenerationPromptSource {
+  const shotPromptResult = shotPromptArtifactSchema.safeParse(
+    input.payload.shotprompt,
+  );
+  if (!shotPromptResult.success) {
+    throw new Error(
+      "V1 video generation requires a valid job.payload.shotprompt",
+    );
+  }
+
+  return {
+    kind: "shotprompt",
+    shotPrompt: shotPromptResult.data,
+  };
+}
 
 async function runGeneration(payload: GenerateVideoJobPayload) {
   const script = await db.getScript(payload.scriptId);
@@ -24,17 +46,15 @@ async function runGeneration(payload: GenerateVideoJobPayload) {
     throw new Error("Product image asset not found for script");
   }
 
-  const creativeBlueprint =
-    script.rawJson &&
-    typeof script.rawJson === "object" &&
-    "creativeBlueprint" in script.rawJson
-      ? (script.rawJson as { creativeBlueprint: unknown }).creativeBlueprint
-      : script.rawJson;
+  const job = await db.getJob(payload.jobId);
+  const promptSource = resolvePromptSource({
+    payload: job.payload,
+  });
 
   await processMediaGeneration(
     payload.jobId,
     { imageAsset, scriptId: payload.scriptId },
-    creativeBlueprint as Parameters<typeof processMediaGeneration>[2]
+    promptSource,
   );
 }
 
