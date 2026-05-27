@@ -18,6 +18,26 @@ Before a new-version test run, use `pnpm db:clear -- --yes` to clear Postgres bu
 
 The cleanup script only clears Postgres. It does not delete workspace `.daireel/trace/events.jsonl`, deprecated repo-local `storage/trace`, `storage/uploads`, Redis, or MinIO content. If you reuse the same workspace directory and need trace isolation, create a fresh workspace or handle that workspace trace file explicitly.
 
+### Release worktree hygiene
+
+When a release commit is tagged and pushed from a Codex worktree, leave the worktree detached after the tag operation so the user can check out the same version in the project root under `/Users/carrick/ResearchWorkspace/Bytedancehack`.
+
+Use `git worktree list` and `git branch -vv --all` to verify which worktree owns `main`. If a Codex worktree still owns `main` after tagging, detach that worktree at the release commit with `git switch --detach HEAD`. If the release commit was created from a detached worktree and should become local `main`, update the local branch ref with `git update-ref refs/heads/main HEAD`, then keep the Codex worktree detached.
+
+Do not clean or reset another worktree's dirty files unless the user explicitly asks. Detaching a worktree should preserve its working tree changes.
+
+### Root workspace cleanup
+
+When `/Users/carrick/ResearchWorkspace/Bytedancehack` contains files that are not on the remote, distinguish them before deleting anything:
+
+1. `git status --short --branch` shows tracked modifications plus non-ignored untracked files.
+2. `git ls-files --others --exclude-standard` shows non-ignored untracked files. These are candidates for review before cleanup.
+3. `git ls-files --others -i --exclude-standard` shows ignored local files such as `.env`, `node_modules/`, `dist/`, and `.turbo/`.
+4. `git clean -nd` previews deletion of non-ignored untracked files.
+5. `git clean -ndx` previews deletion of ignored and non-ignored files together. Treat this as diagnostic output, not an automatic cleanup command.
+
+Never delete `.env`, credential files, keys, or local workspace data unless the user explicitly confirms. Prefer targeted cleanup, for example `git clean -fd -- apps/web/public/bgm apps/web/src/components`, instead of broad `git clean -fdx`.
+
 ## API related problems reference
 - https://www.volcengine.com/docs/82379/1494384?lang=zh
 
