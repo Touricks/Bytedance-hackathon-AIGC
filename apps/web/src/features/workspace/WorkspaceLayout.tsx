@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./TopBar.js";
 import {
   parseWorkspaceUrl,
@@ -10,6 +10,8 @@ import { LeftRail } from "./LeftRail/LeftRail.js";
 import { AssetRail } from "./AssetRail/AssetRail.js";
 import { FocusRouter } from "./Focus/FocusRouter.js";
 import { TraceDrawer } from "./TraceDrawer/TraceDrawer.js";
+import { ToastHost, notify } from "./Toasts/ToastHost.js";
+import { useShotWorkflowStatus } from "./hooks/useShotWorkflowStatus.js";
 
 function useUrlState() {
   const [parsed, setParsed] = useState(() =>
@@ -40,10 +42,33 @@ export function navigateFocus(input: {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+const NOTIFY_STATUSES = new Set([
+  "IMAGE_CANDIDATES_READY",
+  "VIDEO_CANDIDATES_READY",
+  "VIDEO_SELECTED",
+]);
+
+function useShotCompletionToasts(workspaceId: string) {
+  const { data } = useShotWorkflowStatus(workspaceId);
+  const prev = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const shots = data?.data.shots ?? [];
+    for (const s of shots) {
+      const last = prev.current[s.shotId];
+      if (last && last !== s.status && NOTIFY_STATUSES.has(s.status)) {
+        notify("success", `Shot ${s.orderIndex + 1} → ${s.status}`);
+      }
+      prev.current[s.shotId] = s.status;
+    }
+  }, [data]);
+}
+
 export function WorkspaceLayout() {
   const parsed = useUrlState();
   const [traceOpen, setTraceOpen] = useState(false);
   const workspaceId = parsed.workspaceId;
+  // Always call hooks unconditionally
+  useShotCompletionToasts(workspaceId ?? "");
   if (!workspaceId) {
     return <div className="workspace-layout__empty">未指定工作区</div>;
   }
@@ -74,6 +99,7 @@ export function WorkspaceLayout() {
           <TraceDrawer workspaceId={workspaceId} />
         </aside>
       ) : null}
+      <ToastHost />
     </div>
   );
 }

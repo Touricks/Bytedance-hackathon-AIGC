@@ -1040,3 +1040,9 @@ button:disabled {
 .trace-row__time { color: #888; font-size: 11px; }
 .trace-row__preview { background: #fafafd; padding: 6px; border-radius: 4px; font-size: 11px; overflow-x: auto; margin: 4px 0 0; white-space: pre-wrap; }
 .trace-drawer__more { margin-top: 8px; padding: 6px 12px; border: 1px solid #c8c8d0; border-radius: 6px; background: white; cursor: pointer; }
+
+/* ===== Toasts ===== */
+.toast-host { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
+.toast { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: white; border: 1px solid #e0e0e6; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); font-size: 13px; }
+.toast--success { border-color: #b8e0c5; }
+.toast--error { border-color: #f3a8a8; background: #fff5f5; }
