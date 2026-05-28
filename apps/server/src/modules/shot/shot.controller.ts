@@ -165,20 +165,138 @@ export async function registerShotController(app: FastifyInstance) {
     }
   });
 
-  // ----- Video script / video batches / selected-video / retry — still 501 until Wave 4 -----
-  for (const route of [
-    { m: "POST", p: "/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose", schema: proposeVideoScriptRequest },
-    { m: "PATCH", p: "/api/shots/:shotId/video-scripts/:scriptId", schema: patchVideoScriptRequest },
-    { m: "GET", p: "/api/shots/:shotId/video-scripts" },
-    { m: "POST", p: "/api/shots/:shotId/video-batches", schema: createVideoBatchRequest },
-    { m: "GET", p: "/api/shots/:shotId/video-batches" },
-    { m: "GET", p: "/api/shots/:shotId/video-batches/:batchId" },
-    { m: "POST", p: "/api/shots/:shotId/selected-video", schema: selectVideoRequest },
-    { m: "GET", p: "/api/shots/:shotId/selected-video" },
-    { m: "POST", p: "/api/shots/:shotId/retry", schema: retryRequest },
-  ] as const) {
-    (app as any)[route.m.toLowerCase()](route.p, async (_req: any, reply: any) =>
-      notImplemented(reply),
-    );
-  }
+  // ----- Video script -----
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = proposeVideoScriptRequest.parse(req.body);
+        return await shotWorkflowService.proposeVideoScript({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+          durationSec: body.durationSec,
+          useNeighborFrames: body.useNeighborFrames,
+          userHint: body.userHint,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.patch("/api/shots/:shotId/video-scripts/:scriptId", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string; scriptId: string };
+      const body = patchVideoScriptRequest.parse(req.body);
+      return await shotWorkflowService.patchVideoScript({
+        shotId: params.shotId,
+        scriptId: params.scriptId,
+        baseVersion: body.baseVersion,
+        durationSec: body.durationSec,
+        scriptJson: body.scriptJson,
+        providerPrompt: body.providerPrompt,
+      });
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.get("/api/shots/:shotId/video-scripts", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string };
+      return await shotWorkflowService.listVideoScripts(params.shotId);
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  // ----- Video batches -----
+  app.post("/api/shots/:shotId/video-batches", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string };
+      const body = createVideoBatchRequest.parse(req.body);
+      const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+      if (!idempotencyKey) {
+        return reply.status(400).send({ code: "IDEMPOTENCY_KEY_REQUIRED" });
+      }
+      const shot = await db.db2.getShot(params.shotId);
+      return await generationService.createVideoBatch({
+        workspaceId: shot.workspaceId,
+        shotId: params.shotId,
+        videoScriptArtifactId: body.videoScriptArtifactId,
+        count: body.count,
+        aspectRatio: body.aspectRatio,
+        idempotencyKey,
+      });
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.get("/api/shots/:shotId/video-batches", async (_req, reply) => notImplemented(reply));
+
+  app.get("/api/shots/:shotId/video-batches/:batchId", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string; batchId: string };
+      const batch = await db.db2.getVideoBatch(params.batchId);
+      const candidates = await db.db2.listVideoCandidatesByBatch(params.batchId);
+      return { data: { ...batch, candidates } };
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  // ----- Selected video -----
+  app.post("/api/shots/:shotId/selected-video", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string };
+      const body = selectVideoRequest.parse(req.body);
+      return await shotWorkflowService.selectVideo({
+        shotId: params.shotId,
+        videoCandidateId: body.videoCandidateId,
+        videoGenerationBatchId: body.videoGenerationBatchId,
+      });
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.get("/api/shots/:shotId/selected-video", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string };
+      const sel = await db.db2.pool().query(
+        `select video_candidate_id, video_generation_batch_id from selected_shot_videos where shot_id=$1`,
+        [params.shotId],
+      );
+      if (sel.rows.length === 0) {
+        return reply.status(404).send({ code: "NO_SELECTED_VIDEO" });
+      }
+      const candidate = await db.db2.getVideoCandidate(sel.rows[0].video_candidate_id);
+      return {
+        data: {
+          selection: {
+            videoCandidateId: sel.rows[0].video_candidate_id,
+            videoGenerationBatchId: sel.rows[0].video_generation_batch_id,
+          },
+          candidate,
+        },
+      };
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  // ----- Retry (still 501 until Task 28) -----
+  app.post("/api/shots/:shotId/retry", async (_req, reply) => notImplemented(reply));
+
+  // Unused imports — schema imports kept to satisfy any future refactor.
+  void retryRequest;
 }
