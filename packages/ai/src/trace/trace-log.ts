@@ -12,7 +12,8 @@ export type TracePipeline =
   | "storyboard"
   | "one_click_video"
   | "probe_to_text"
-  | "probe_image_to_video";
+  | "probe_image_to_video"
+  | "shot_image";
 
 export type TraceStatus = "ok" | "error";
 export type TraceScope = "users" | "tests";
