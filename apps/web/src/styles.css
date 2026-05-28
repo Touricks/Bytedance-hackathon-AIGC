@@ -1009,3 +1009,8 @@ button:disabled {
 .progress-strip__fill { width: 30%; height: 100%; background: #2c3aff; animation: progress-pulse 1.5s ease-in-out infinite; }
 @keyframes progress-pulse { 0% { margin-left: 0; } 100% { margin-left: 70%; } }
 .step-card__meta { color: #888; font-size: 12px; }
+
+/* ===== Video script form ===== */
+.video-script-form label { display: block; margin: 10px 0 4px; font-size: 13px; color: #555; }
+.video-script-form input, .video-script-form textarea { width: 100%; font: inherit; padding: 8px; border: 1px solid #c8c8d0; border-radius: 6px; box-sizing: border-box; }
+.step-card__count label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
