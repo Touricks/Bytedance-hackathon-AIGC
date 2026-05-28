@@ -10,6 +10,7 @@ import {
   createImagePromptVersionAtomic,
   createVideoScriptVersionAtomic,
 } from "../artifact/artifact.versioning.js";
+import { generationService } from "../generation/generation.service.js";
 import { traceService } from "../trace/trace.service.js";
 import { getNextAction, type ShotStatus } from "./shot.state.js";
 import { staleRules } from "./shot.stale.js";
@@ -376,6 +377,36 @@ export const shotWorkflowService = {
       shotStatus: "VIDEO_SELECTED",
       nextAction: getNextAction("VIDEO_SELECTED"),
     };
+  },
+
+  async retry(args: {
+    shotId: string;
+    what: "image_batch" | "video_batch";
+    idempotencyKey: string;
+  }) {
+    const shot = await db.db2.getShot(args.shotId);
+    if (args.what === "image_batch") {
+      if (!shot.activeImagePromptArtifactId) {
+        throw new HttpError(409, "NO_ACTIVE_IMAGE_PROMPT");
+      }
+      return await generationService.createImageBatch({
+        workspaceId: shot.workspaceId,
+        shotId: shot.id,
+        imagePromptArtifactId: shot.activeImagePromptArtifactId,
+        aspectRatio: "9:16",
+        idempotencyKey: args.idempotencyKey,
+      });
+    }
+    if (!shot.activeVideoScriptArtifactId) {
+      throw new HttpError(409, "NO_ACTIVE_VIDEO_SCRIPT");
+    }
+    return await generationService.createVideoBatch({
+      workspaceId: shot.workspaceId,
+      shotId: shot.id,
+      videoScriptArtifactId: shot.activeVideoScriptArtifactId,
+      aspectRatio: "9:16",
+      idempotencyKey: args.idempotencyKey,
+    });
   },
 };
 

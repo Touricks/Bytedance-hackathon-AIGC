@@ -294,9 +294,23 @@ export async function registerShotController(app: FastifyInstance) {
     }
   });
 
-  // ----- Retry (still 501 until Task 28) -----
-  app.post("/api/shots/:shotId/retry", async (_req, reply) => notImplemented(reply));
-
-  // Unused imports — schema imports kept to satisfy any future refactor.
-  void retryRequest;
+  // ----- Retry -----
+  app.post("/api/shots/:shotId/retry", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string };
+      const body = retryRequest.parse(req.body);
+      const key = req.headers["idempotency-key"] as string | undefined;
+      if (!key) {
+        return reply.status(400).send({ code: "IDEMPOTENCY_KEY_REQUIRED" });
+      }
+      return await shotWorkflowService.retry({
+        shotId: params.shotId,
+        what: body.what,
+        idempotencyKey: key,
+      });
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
 }
