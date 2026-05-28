@@ -8,6 +8,7 @@ import {
 import { getFocusStore } from "./state/focusStore.js";
 import { LeftRail } from "./LeftRail/LeftRail.js";
 import { AssetRail } from "./AssetRail/AssetRail.js";
+import { FocusRouter } from "./Focus/FocusRouter.js";
 
 function useUrlState() {
   const [parsed, setParsed] = useState(() =>
@@ -61,7 +62,9 @@ export function WorkspaceLayout() {
       <aside className="workspace-layout__left-rail">
         <LeftRail workspaceId={workspaceId} />
       </aside>
-      <main className="workspace-layout__focus">Focus panel (Waves E-G)</main>
+      <main className="workspace-layout__focus">
+        <FocusRouter workspaceId={workspaceId} />
+      </main>
       <aside className="workspace-layout__asset-rail">
         <AssetRail workspaceId={workspaceId} />
       </aside>

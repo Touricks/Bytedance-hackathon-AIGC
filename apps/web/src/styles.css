@@ -975,3 +975,13 @@ button:disabled {
 .asset-rail__refs button { background: none; border: 1px solid #e7e7eb; border-radius: 4px; padding: 1px 6px; cursor: pointer; font-size: 11px; }
 .quick-upload { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px dashed #c8c8d0; border-radius: 6px; cursor: pointer; margin-top: 8px; font-size: 13px; }
 .quick-upload--busy { opacity: 0.5; }
+
+/* ===== Focus shared ===== */
+.asset-strip { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f7f7fa; border-radius: 6px; font-size: 12px; margin-bottom: 12px; }
+.asset-strip__label { color: #888; }
+.asset-strip__chip { padding: 2px 8px; background: #fff; border: 1px solid #e0e0e6; border-radius: 999px; }
+.version-chips { display: flex; gap: 6px; margin-top: 8px; }
+.version-chip { padding: 3px 10px; border: 1px solid #d0d0d8; border-radius: 999px; background: white; cursor: pointer; font-size: 12px; }
+.version-chip--active { border-color: #2c3aff; color: #2c3aff; font-weight: 600; }
+.stale-banner { padding: 8px 12px; background: #fff3e0; border: 1px solid #ffd098; color: #8a4400; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+.focus-empty { display: grid; place-items: center; height: 100%; color: #888; }
