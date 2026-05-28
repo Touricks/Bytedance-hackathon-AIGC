@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm --filter @aigc-video/shared build",
-    "test": "TRACE_LOG_SCOPE=tests AIGC_VIDEO_SKIP_ENV_FILE=true MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= OPENAI_API_KEY= OPENAI_MODEL= node --import tsx --test \"src/**/*.test.ts\"",
+    "test": "TRACE_LOG_SCOPE=tests AIGC_VIDEO_SKIP_ENV_FILE=true MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= node --import tsx --test \"src/**/*.test.ts\"",
     "probe:to-text": "tsx src/probes/to-text.ts",
     "probe:image-to-video": "tsx src/probes/image-to-video.ts",
     "smoke:real-providers": "MODEL_MODE=real tsx src/smoke/real-providers.ts",

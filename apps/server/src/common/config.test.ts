@@ -46,13 +46,19 @@ describe("server config", () => {
     assert.match(result.stderr, /DATABASE_URL is required/);
   });
 
-  it("fails loudly without an explicit upload directory", () => {
+  it("loads V1 runtime config without legacy upload env", () => {
     const result = spawnSync(
       tsxBin,
       [
         "--eval",
         `import(${JSON.stringify(configModuleUrl)})
-          .then(() => process.exit(0))
+          .then(({ config }) => {
+            console.log(JSON.stringify({
+              uploadDir: config.uploadDir ?? null,
+              uploadUrlPrefix: config.uploadUrlPrefix ?? null,
+              workspaceDir: config.workspaceDir
+            }));
+          })
           .catch((error) => {
             console.error(error instanceof Error ? error.message : String(error));
             process.exit(1);
@@ -63,16 +69,18 @@ describe("server config", () => {
         env: {
           ...withoutDatabaseEnv(),
           AIGC_VIDEO_SKIP_ENV_FILE: "true",
-          DATABASE_URL: "postgres://env-user:env-pass@localhost:5432/env_db",
-          UPLOAD_URL_PREFIX: "/uploads"
+          DATABASE_URL: "postgres://env-user:env-pass@localhost:5432/env_db"
         },
         encoding: "utf8"
       }
     );
 
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /UPLOAD_DIR is required/);
-    assert.match(result.stderr, /no tmp\/uploads fallback is allowed/);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      uploadDir: null,
+      uploadUrlPrefix: null,
+      workspaceDir: path.resolve(process.cwd(), "storage", "workspaces")
+    });
   });
 
   it("rejects cloud URLs in UPLOAD_DIR for the local storage adapter", () => {
@@ -105,7 +113,7 @@ describe("server config", () => {
     assert.match(result.stderr, /object-storage adapter/);
   });
 
-  it("fails loudly without an explicit upload URL prefix", () => {
+  it("fails loudly when only one legacy upload env value is configured", () => {
     const result = spawnSync(
       tsxBin,
       [
@@ -130,7 +138,10 @@ describe("server config", () => {
     );
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /UPLOAD_URL_PREFIX is required/);
+    assert.match(
+      result.stderr,
+      /UPLOAD_DIR and UPLOAD_URL_PREFIX must be configured together/
+    );
   });
 
   it("loads DATABASE_URL from the nearest workspace .env file", () => {

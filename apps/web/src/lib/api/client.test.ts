@@ -217,7 +217,7 @@ describe("api client", () => {
           material: {
             ref: "notes.txt",
             bytes: 15,
-            url: "/uploads/workspace-materials/workspace_123/notes.txt"
+            url: "/api/workspaces/workspace_123/materials/notes.txt"
           }
         }),
         { status: 200 }

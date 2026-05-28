@@ -17,7 +17,7 @@
    当前软件设计文档：V1 API 表面、prompt 模板、Ark `response_format`、Seedance prompt 边界与四人分工。
 
 5. [docs/plan_0523/current-support/model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)
-   历史真实 Ark text / OpenAI fallback dependency smoke check 步骤，可作为 provider smoke 参考。
+   历史真实 provider smoke 记录；当前 active smoke 以 Ark text/video 配置为准。
 
 6. [docs/plan_0523/current-support/provider-contract-correction.md](./docs/plan_0523/current-support/provider-contract-correction.md)
    Provider contract 修正历史：解释旧 `SEEDANCE_*` 口径为什么被替换。
@@ -71,10 +71,9 @@ P0 仍围绕六项演示能力交付：
 - 视频主路径固定为图生视频：approved 商品素材 + 由 approved `ShotPromptArtifact` 编译出的中文 Seedance prompt。
 - 所有 Seedance-facing prompt 必须以中文构建；JSON 字段名和 enum 仍保持英文作为机器契约。
 - Ark 文本链路通过 strict JSON Schema `response_format` 约束输出；mock/deterministic 只服务本地开发与测试。
-- `OPENAI_BASE_URL` 下的 OpenAI-compatible 配置只作为历史 fallback LLM 参考，不参与视频生成。
-- mock provider 和预生成视频只作为本地开发与现场兜底，不替代 P0 验收。
+- mock provider 和预生成素材只作为本地开发与测试 fixture，不替代 P0 验收。
 - Postgres 是业务事实源；workspace `.daireel/trace/events.jsonl` 是当前 workspace trace。repo-local `storage/trace` 已 deprecated。
-- `MOCK_FINAL_VIDEO_URL` 可用于本地/现场 fallback 成片预览。
+- 成片阶段必须配置 Ark video provider；缺少 Ark video 配置时应失败而不是返回 fallback 视频。
 
 ## 本地开发
 
@@ -120,7 +119,7 @@ V1 演示资产：
 - 商品图：`apps/web/public/mocks/products/demo-product.svg`
 - 现场兜底成片：`apps/web/public/mocks/videos/fallback-flower.mp4`
 
-默认 mock fallback 可离线运行；真实 Ark/Seedance smoke 可参考 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。完整 Seedance 成片验收建议使用 `pnpm dev:real` 并上传 raster 商品图。
+默认 mock provider 可离线运行；真实 Ark/Seedance smoke 可参考 [model-smoke.md](./docs/plan_0523/current-support/model-smoke.md)。完整 Seedance 成片验收建议使用 `pnpm dev:real` 并上传 raster 商品图。
 
 ## Worktree 环境准备
 

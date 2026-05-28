@@ -627,7 +627,7 @@ describe("workspace API", () => {
     assert.equal(uploaded.material.ref, "notes.txt");
     assert.equal(
       uploaded.material.url,
-      `/uploads/workspace-materials/${created.workspace.id}/notes.txt`,
+      `/api/workspaces/${created.workspace.id}/materials/notes.txt`,
     );
 
     const servedResponse = await app.inject({
@@ -1870,7 +1870,7 @@ describe("workspace API", () => {
     }
   });
 
-  it("starts final video generation from an approved shotprompt and keeps jobId recoverable", async () => {
+  it("fails final video generation loudly when Ark video config is missing", async () => {
     const directory = await createWorkspaceWithApprovedShotPrompt();
 
     const response = await app.inject({
@@ -1895,32 +1895,14 @@ describe("workspace API", () => {
     );
     assert.equal(manifest.currentJobId, body.job.id);
 
-    const detail = await waitForCompletedJob(body.job.id);
-    assert.equal(detail.job.status, "completed");
+    const detail = await waitForTerminalJob(body.job.id);
+    assert.equal(detail.job.status, "failed");
+    assert.match(
+      detail.job.errorMessage,
+      /Seedance video export requires Ark video config/,
+    );
     assert.equal(detail.script.rawJson.kind, "legacy_script_placeholder");
     assert.equal(detail.script.rawJson.promptSource, "job.payload.shotprompt");
-    assert.equal(detail.finalAsset.type, "final_video");
-    assert.equal(detail.videoExport.jobId, body.job.id);
-    assert.equal(detail.videoExport.workspaceId, body.workspace.id);
-    assert.equal(detail.videoExport.scriptId, body.workspace.currentScriptId);
-    assert.equal(
-      detail.videoExport.promptView.variables.promptSource,
-      "compiled_shotprompt",
-    );
-    assert.equal(
-      detail.videoExport.promptView.nl.title,
-      "Seedance 成片提示词",
-    );
-    assert.match(detail.videoExport.finalVideo.localUrl, /workspace-videos/);
-
-    const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { directory },
-    });
-    const status = statusResponse.json();
-    assert.equal(status.workspace.currentJobId, body.job.id);
-    assert.equal(status.workspace.status, "video_ready");
   });
 
   it("submits a workspace-managed product image to the real Seedance video provider", async () => {
@@ -1934,6 +1916,10 @@ describe("workspace API", () => {
 
       assert.equal(detail.job.status, "completed", detail.job.errorMessage);
       assert.equal(detail.finalAsset.type, "final_video");
+      assert.match(
+        detail.videoExport.finalVideo.localUrl,
+        new RegExp(`/api/workspaces/${detail.videoExport.workspaceId}/videos/`),
+      );
       assert.equal(arkVideo.bodies.length, 1);
       const requestBody = arkVideo.bodies[0] as {
         content: Array<{
@@ -2067,17 +2053,24 @@ describe("workspace API", () => {
     assert.equal(videoAction.endpoint, "/api/workspaces/video/generate");
     assert.equal(videoAction.willCallProvider, false);
 
-    const generation = await startWorkspaceVideo(shotPromptDirectory);
-    await waitForCompletedJob(generation.job.id);
-    const readyForFeedbackResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { directory: shotPromptDirectory },
-    });
-    const feedbackAction = readyForFeedbackResponse.json().nextAction;
-    assert.equal(feedbackAction.actionType, "feedback");
-    assert.equal(feedbackAction.stage, "feedback");
-    assert.equal(feedbackAction.endpoint, "/api/workspaces/feedback/route");
+    const arkVideo = await startArkVideoServer();
+    const restoreVideoEnv = setRealArkVideoEnv(arkVideo.url);
+    try {
+      const generation = await startWorkspaceVideo(shotPromptDirectory);
+      await waitForCompletedJob(generation.job.id);
+      const readyForFeedbackResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces/status",
+        payload: { directory: shotPromptDirectory },
+      });
+      const feedbackAction = readyForFeedbackResponse.json().nextAction;
+      assert.equal(feedbackAction.actionType, "feedback");
+      assert.equal(feedbackAction.stage, "feedback");
+      assert.equal(feedbackAction.endpoint, "/api/workspaces/feedback/route");
+    } finally {
+      restoreVideoEnv();
+      await arkVideo.close();
+    }
   });
 
   it("reports real provider continuation metadata for runtime builder stages", async () => {
@@ -2201,78 +2194,85 @@ describe("workspace API", () => {
 
   it("routes feedback into the current editable artifacts without overwriting older jobs", async () => {
     const directory = await createWorkspaceWithApprovedShotPrompt();
-    const firstGeneration = await startWorkspaceVideo(directory);
-    const firstJobId = firstGeneration.job.id;
-    const firstDetail = await waitForCompletedJob(firstJobId);
+    const arkVideo = await startArkVideoServer();
+    const restoreVideoEnv = setRealArkVideoEnv(arkVideo.url);
+    try {
+      const firstGeneration = await startWorkspaceVideo(directory);
+      const firstJobId = firstGeneration.job.id;
+      const firstDetail = await waitForCompletedJob(firstJobId);
 
-    const feedbackResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/feedback/route",
-      payload: {
-        directory,
-        feedback: "开头更早展示产品，旁白更口语化",
-      },
-    });
+      const feedbackResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces/feedback/route",
+        payload: {
+          directory,
+          feedback: "开头更早展示产品，旁白更口语化",
+        },
+      });
 
-    assert.equal(feedbackResponse.statusCode, 200, feedbackResponse.body);
-    const feedback = feedbackResponse.json();
-    assert.equal(feedback.workspace.status, "storyboard_proposed");
-    assert.equal(feedback.workspace.currentJobId, firstJobId);
-    assert.equal(feedback.routeArtifact.type, "feedbackRoute");
-    assert.equal(feedback.routeArtifact.data.previousJobId, firstJobId);
-    assert.equal(feedback.routeArtifact.data.targetArtifact, "storyboard");
-    assert.match(
-      feedback.routeArtifact.data.revisionInstruction,
-      /分镜|口播|开头/,
-    );
-    assert.equal(feedback.routeArtifact.data.confidence, "medium");
-    assert.equal(feedback.artifact.type, "storyboard");
-    assert.equal(feedback.artifact.status, "proposed");
-    assert.doesNotMatch(
-      JSON.stringify(feedback.artifact.data),
-      /Latest feedback|routed revision|Revise motion|开头更早展示产品/,
-    );
+      assert.equal(feedbackResponse.statusCode, 200, feedbackResponse.body);
+      const feedback = feedbackResponse.json();
+      assert.equal(feedback.workspace.status, "storyboard_proposed");
+      assert.equal(feedback.workspace.currentJobId, firstJobId);
+      assert.equal(feedback.routeArtifact.type, "feedbackRoute");
+      assert.equal(feedback.routeArtifact.data.previousJobId, firstJobId);
+      assert.equal(feedback.routeArtifact.data.targetArtifact, "storyboard");
+      assert.match(
+        feedback.routeArtifact.data.revisionInstruction,
+        /分镜|口播|开头/,
+      );
+      assert.equal(feedback.routeArtifact.data.confidence, "medium");
+      assert.equal(feedback.artifact.type, "storyboard");
+      assert.equal(feedback.artifact.status, "proposed");
+      assert.doesNotMatch(
+        JSON.stringify(feedback.artifact.data),
+        /Latest feedback|routed revision|Revise motion|开头更早展示产品/,
+      );
 
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/storyboard/approve",
-      payload: { directory, data: feedback.artifact.data },
-    });
-    const shotPromptResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/shotprompt/compile",
-      payload: { directory, aspectRatio: "9:16" },
-    });
-    const shotPrompt = shotPromptResponse.json();
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/shotprompt/approve",
-      payload: { directory, data: shotPrompt.artifact.data },
-    });
+      await app.inject({
+        method: "POST",
+        url: "/api/workspaces/artifacts/storyboard/approve",
+        payload: { directory, data: feedback.artifact.data },
+      });
+      const shotPromptResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces/shotprompt/compile",
+        payload: { directory, aspectRatio: "9:16" },
+      });
+      const shotPrompt = shotPromptResponse.json();
+      await app.inject({
+        method: "POST",
+        url: "/api/workspaces/artifacts/shotprompt/approve",
+        payload: { directory, data: shotPrompt.artifact.data },
+      });
 
-    const secondGeneration = await startWorkspaceVideo(directory);
-    assert.notEqual(secondGeneration.job.id, firstJobId);
-    assert.equal(
-      secondGeneration.workspace.currentJobId,
-      secondGeneration.job.id,
-    );
-    assert.equal(secondGeneration.job.payload.shotprompt.targetProvider, "seedance");
+      const secondGeneration = await startWorkspaceVideo(directory);
+      assert.notEqual(secondGeneration.job.id, firstJobId);
+      assert.equal(
+        secondGeneration.workspace.currentJobId,
+        secondGeneration.job.id,
+      );
+      assert.equal(secondGeneration.job.payload.shotprompt.targetProvider, "seedance");
 
-    const stillRecoverable = await app.inject({
-      method: "GET",
-      url: `/api/jobs/${firstJobId}`,
-    });
-    const oldJob = stillRecoverable.json();
-    assert.equal(oldJob.job.status, "completed");
-    assert.equal(oldJob.finalAsset.id, firstDetail.finalAsset.id);
+      const stillRecoverable = await app.inject({
+        method: "GET",
+        url: `/api/jobs/${firstJobId}`,
+      });
+      const oldJob = stillRecoverable.json();
+      assert.equal(oldJob.job.status, "completed");
+      assert.equal(oldJob.finalAsset.id, firstDetail.finalAsset.id);
 
-    const secondDetail = await waitForCompletedJob(secondGeneration.job.id);
-    assert.equal(secondDetail.job.status, "completed");
-    assert.equal(
-      secondDetail.videoExport.promptView.variables.promptSource,
-      "compiled_shotprompt",
-    );
-    assert.equal(secondDetail.finalAsset.type, "final_video");
-    assert.equal(secondDetail.videoExport.jobId, secondGeneration.job.id);
+      const secondDetail = await waitForCompletedJob(secondGeneration.job.id);
+      assert.equal(secondDetail.job.status, "completed");
+      assert.equal(
+        secondDetail.videoExport.promptView.variables.promptSource,
+        "compiled_shotprompt",
+      );
+      assert.equal(secondDetail.finalAsset.type, "final_video");
+      assert.equal(secondDetail.videoExport.jobId, secondGeneration.job.id);
+    } finally {
+      restoreVideoEnv();
+      await arkVideo.close();
+    }
   });
 });

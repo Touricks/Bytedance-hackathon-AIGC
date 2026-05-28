@@ -10,28 +10,18 @@ import {
 import { generateVideoWithSeedance } from "./seedance-video.provider.js";
 
 describe("generateVideoWithSeedance", () => {
-  it("falls back to the mock final video when Ark video is not configured", async () => {
-    const originalMockUrl = process.env.MOCK_FINAL_VIDEO_URL;
-    delete process.env.MOCK_FINAL_VIDEO_URL;
-
-    try {
-      const result = await generateVideoWithSeedance(
-        {
-          imageUrl: "/mocks/products/demo-product.svg",
-          prompt: "test prompt"
-        },
-        { env: {} }
-      );
-
-      assert.equal(result.provider, "mock");
-      assert.equal(result.videoUrl, "/mocks/videos/fallback-flower.mp4");
-    } finally {
-      if (originalMockUrl === undefined) {
-        delete process.env.MOCK_FINAL_VIDEO_URL;
-      } else {
-        process.env.MOCK_FINAL_VIDEO_URL = originalMockUrl;
-      }
-    }
+  it("fails loudly when Ark video is not configured", async () => {
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "/mocks/products/demo-product.svg",
+            prompt: "test prompt"
+          },
+          { env: {} }
+        ),
+      /Seedance video export requires Ark video config/
+    );
   });
 
   it("calls the configured Ark video endpoint for Seedance image-to-video", async () => {
@@ -436,7 +426,7 @@ describe("generateVideoWithSeedance", () => {
             },
             { env: { MODEL_MODE: "real" } }
           ),
-        /real-provider mode requires Ark video config/
+        /Seedance video export requires Ark video config/
       );
     } finally {
       if (originalMode === undefined) {

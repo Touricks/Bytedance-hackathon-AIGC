@@ -625,7 +625,7 @@ async function materialIntakeTextPreviews(
 }
 
 function workspaceAssetUrl(workspaceId: string, ref: string) {
-  return `${config.uploadUrlPrefix.replace(/\/+$/, "")}/workspace-materials/${workspaceId}/${encodeURIComponent(ref)}`;
+  return `/api/workspaces/${workspaceId}/materials/${encodeURIComponent(ref)}`;
 }
 
 function workspaceShotPurpose(index: number, shotCount: number) {

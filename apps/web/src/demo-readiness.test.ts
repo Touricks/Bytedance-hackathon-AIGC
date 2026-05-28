@@ -41,9 +41,7 @@ describe("demo readiness handoff", () => {
       "ARK_API_KEY",
       "ARK_TEXT_ENDPOINT_ID",
       "ARK_VIDEO_ENDPOINT_ID",
-      "fallback LLM",
       "response_format",
-      "MOCK_FINAL_VIDEO_URL",
       "pnpm dev:real",
       "pnpm --filter @aigc-video/web test",
       "pnpm --filter @aigc-video/server test",
@@ -61,7 +59,7 @@ describe("demo readiness handoff", () => {
     ]);
   });
 
-  it("ships public demo assets for uploaded product media and onsite fallback video", () => {
+  it("ships public demo fixture assets for uploaded product media and local previews", () => {
     const productImagePath = resolve(repoRoot, "apps/web/public/mocks/products/demo-product.svg");
     const fallbackVideoPath = resolve(repoRoot, "apps/web/public/mocks/videos/fallback-flower.mp4");
 

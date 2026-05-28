@@ -24,7 +24,21 @@ function safeExtension(filename: string, contentType: string) {
 }
 
 function buildUploadUrl(pathname: string) {
+  if (!config.uploadUrlPrefix) {
+    throw new Error(
+      "Legacy product image uploads require UPLOAD_DIR and UPLOAD_URL_PREFIX."
+    );
+  }
   return `${config.uploadUrlPrefix}/${pathname.replace(/^\/+/, "")}`;
+}
+
+function requireLegacyUploadDir() {
+  if (!config.uploadDir) {
+    throw new Error(
+      "Legacy product image uploads require UPLOAD_DIR and UPLOAD_URL_PREFIX."
+    );
+  }
+  return config.uploadDir;
 }
 
 export const materialService = {
@@ -39,7 +53,7 @@ export const materialService = {
   }) {
     const bytes = Buffer.from(input.dataBase64, "base64");
     const contentType = assertValidRasterImageBytes(bytes, input.contentType);
-    const uploadRoot = path.resolve(config.uploadDir, "product-images");
+    const uploadRoot = path.resolve(requireLegacyUploadDir(), "product-images");
     await mkdir(uploadRoot, { recursive: true });
 
     const storedFilename = `${nanoid()}${safeExtension(

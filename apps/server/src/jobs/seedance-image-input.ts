@@ -72,7 +72,18 @@ function normalizeLocalUploadUrlPrefix(prefix: string): string {
   return normalized;
 }
 
-function workspaceMaterialRefFromUrl(url: string, uploadUrlPrefix: string) {
+function workspaceMaterialRefFromUrl(url: string, uploadUrlPrefix?: string) {
+  const workspaceApiMatch = /^\/api\/workspaces\/[^/]+\/materials\/(.+)$/.exec(
+    url
+  );
+  if (workspaceApiMatch) {
+    return decodeWorkspaceMaterialRef(workspaceApiMatch[1]!);
+  }
+
+  if (!uploadUrlPrefix) {
+    return null;
+  }
+
   const workspaceMaterialPrefix = `${normalizeLocalUploadUrlPrefix(
     uploadUrlPrefix
   )}/workspace-materials/`;
@@ -87,6 +98,10 @@ function workspaceMaterialRefFromUrl(url: string, uploadUrlPrefix: string) {
   }
 
   const encodedRef = rest.slice(separatorIndex + 1);
+  return decodeWorkspaceMaterialRef(encodedRef);
+}
+
+function decodeWorkspaceMaterialRef(encodedRef: string) {
   let ref;
   try {
     ref = decodeURIComponent(encodedRef);
@@ -121,24 +136,31 @@ function assertWorkspaceMaterialStoragePath(
 
 function resolveUploadStoragePath(
   asset: Asset,
-  uploadRoot: string,
-  uploadUrlPrefix: string
+  uploadRoot: string | undefined,
+  uploadUrlPrefix: string | undefined
 ): string {
   const metadataStoragePath = getStringMetadata(asset, "storagePath");
+  const workspaceMaterialRef = metadataStoragePath
+    ? workspaceMaterialRefFromUrl(asset.url, uploadUrlPrefix)
+    : null;
+  if (workspaceMaterialRef) {
+    const storagePath = path.resolve(metadataStoragePath!);
+    assertWorkspaceMaterialStoragePath(storagePath, workspaceMaterialRef);
+    return storagePath;
+  }
+
+  if (!uploadRoot || !uploadUrlPrefix) {
+    throw new Error(
+      "Legacy uploaded product images require UPLOAD_DIR and UPLOAD_URL_PREFIX for Seedance handoff"
+    );
+  }
+
   const urlPrefix = `${normalizeLocalUploadUrlPrefix(uploadUrlPrefix)}/`;
   const storagePath = metadataStoragePath
     ? path.resolve(metadataStoragePath)
     : path.resolve(uploadRoot, asset.url.slice(urlPrefix.length));
 
   if (isInsideDirectory(storagePath, uploadRoot)) {
-    return storagePath;
-  }
-
-  const workspaceMaterialRef = metadataStoragePath
-    ? workspaceMaterialRefFromUrl(asset.url, uploadUrlPrefix)
-    : null;
-  if (workspaceMaterialRef) {
-    assertWorkspaceMaterialStoragePath(storagePath, workspaceMaterialRef);
     return storagePath;
   }
 
@@ -162,10 +184,15 @@ export async function resolveSeedanceImageInput(
     return url;
   }
 
-  const uploadUrlPrefix = normalizeLocalUploadUrlPrefix(
-    options.uploadUrlPrefix ?? config.uploadUrlPrefix
-  );
-  if (!url.startsWith(`${uploadUrlPrefix}/`)) {
+  const uploadUrlPrefix = options.uploadUrlPrefix ?? config.uploadUrlPrefix;
+  const normalizedUploadUrlPrefix = uploadUrlPrefix
+    ? normalizeLocalUploadUrlPrefix(uploadUrlPrefix)
+    : undefined;
+  const workspaceMaterialRef = workspaceMaterialRefFromUrl(url, uploadUrlPrefix);
+  if (
+    !workspaceMaterialRef &&
+    (!normalizedUploadUrlPrefix || !url.startsWith(`${normalizedUploadUrlPrefix}/`))
+  ) {
     throw new Error(`Unsupported Seedance product image reference: ${url}`);
   }
 
@@ -175,11 +202,14 @@ export async function resolveSeedanceImageInput(
   }
 
   const normalizedContentType = assertSupportedImageContentType(contentType);
-  const uploadRoot = path.resolve(options.uploadDir ?? config.uploadDir);
+  const configuredUploadDir = options.uploadDir ?? config.uploadDir;
+  const uploadRoot = configuredUploadDir
+    ? path.resolve(configuredUploadDir)
+    : undefined;
   const storagePath = resolveUploadStoragePath(
     asset,
     uploadRoot,
-    uploadUrlPrefix
+    normalizedUploadUrlPrefix
   );
   const maxSizeBytes = options.maxSizeBytes ?? maxSeedanceLocalImageBytes;
   const metadataSizeBytes = getNumberMetadata(asset, "sizeBytes");

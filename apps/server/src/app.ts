@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import Fastify from "fastify";
+import type { FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { config } from "./common/config.js";
@@ -27,6 +28,25 @@ function isInsideDirectory(filePath: string, rootPath: string) {
   return !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
 }
 
+async function sendWorkspaceFile(
+  workspaceId: string,
+  relativePath: string,
+  directoryName: "materials" | "videos",
+  invalidPathMessage: string,
+  reply: FastifyReply,
+) {
+  const workspace = await db.getWorkspace(workspaceId);
+  const root = path.resolve(workspace.localPath, ".daireel", directoryName);
+  const filePath = path.resolve(root, relativePath);
+
+  if (!isInsideDirectory(filePath, root)) {
+    return reply.status(400).send({ message: invalidPathMessage });
+  }
+
+  await stat(filePath);
+  return reply.send(createReadStream(filePath));
+}
+
 export async function buildServer(options: BuildServerOptions = {}) {
   await db.initialize();
   const app = Fastify({ logger: false });
@@ -47,56 +67,66 @@ export async function buildServer(options: BuildServerOptions = {}) {
     runtime: config.runtime,
   }));
 
-  if (isLocalUrlPathPrefix(config.uploadUrlPrefix)) {
+  app.get("/api/workspaces/:workspaceId/videos/*", async (request, reply) => {
+    const params = request.params as { workspaceId: string; "*": string };
+    return sendWorkspaceFile(
+      params.workspaceId,
+      params["*"],
+      "videos",
+      "Invalid workspace video path",
+      reply,
+    );
+  });
+
+  app.get("/api/workspaces/:workspaceId/materials/*", async (request, reply) => {
+    const params = request.params as { workspaceId: string; "*": string };
+    return sendWorkspaceFile(
+      params.workspaceId,
+      params["*"],
+      "materials",
+      "Invalid workspace material path",
+      reply,
+    );
+  });
+
+  const legacyUploadDir = config.uploadDir;
+  const legacyUploadUrlPrefix = config.uploadUrlPrefix;
+  if (
+    legacyUploadUrlPrefix &&
+    legacyUploadDir &&
+    isLocalUrlPathPrefix(legacyUploadUrlPrefix)
+  ) {
     app.get(
-      `${config.uploadUrlPrefix}/workspace-videos/:workspaceId/*`,
+      `${legacyUploadUrlPrefix}/workspace-videos/:workspaceId/*`,
       async (request, reply) => {
         const params = request.params as { workspaceId: string; "*": string };
-        const workspace = await db.getWorkspace(params.workspaceId);
-        const videoRoot = path.resolve(
-          workspace.localPath,
-          ".daireel",
+        return sendWorkspaceFile(
+          params.workspaceId,
+          params["*"],
           "videos",
+          "Invalid workspace video path",
+          reply,
         );
-        const filePath = path.resolve(videoRoot, params["*"]);
-
-        if (!isInsideDirectory(filePath, videoRoot)) {
-          return reply
-            .status(400)
-            .send({ message: "Invalid workspace video path" });
-        }
-
-        await stat(filePath);
-        return reply.send(createReadStream(filePath));
       },
     );
 
     app.get(
-      `${config.uploadUrlPrefix}/workspace-materials/:workspaceId/*`,
+      `${legacyUploadUrlPrefix}/workspace-materials/:workspaceId/*`,
       async (request, reply) => {
         const params = request.params as { workspaceId: string; "*": string };
-        const workspace = await db.getWorkspace(params.workspaceId);
-        const workspaceRoot = path.resolve(
-          workspace.localPath,
-          ".daireel",
+        return sendWorkspaceFile(
+          params.workspaceId,
+          params["*"],
           "materials",
+          "Invalid workspace material path",
+          reply,
         );
-        const filePath = path.resolve(workspaceRoot, params["*"]);
-
-        if (!isInsideDirectory(filePath, workspaceRoot)) {
-          return reply
-            .status(400)
-            .send({ message: "Invalid workspace material path" });
-        }
-
-        await stat(filePath);
-        return reply.send(createReadStream(filePath));
       },
     );
 
-    app.get(`${config.uploadUrlPrefix}/*`, async (request, reply) => {
+    app.get(`${legacyUploadUrlPrefix}/*`, async (request, reply) => {
       const params = request.params as { "*": string };
-      const uploadRoot = path.resolve(config.uploadDir);
+      const uploadRoot = path.resolve(legacyUploadDir);
       const filePath = path.resolve(uploadRoot, params["*"]);
 
       if (!isInsideDirectory(filePath, uploadRoot)) {

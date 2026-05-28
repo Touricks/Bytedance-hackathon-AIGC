@@ -1,5 +1,4 @@
 import {
-  isRealProviderMode,
   resolveArkVideoProviderConfig,
   type ProviderEnv
 } from "./provider-config.js";
@@ -309,21 +308,9 @@ export async function generateVideoWithSeedance(
   });
 
   if (!config) {
-    if (isRealProviderMode(env)) {
-      throw new Error(
-        "real-provider mode requires Ark video config: ARK_API_KEY and ARK_VIDEO_ENDPOINT_ID"
-      );
-    }
-
-    const videoUrl =
-      process.env.MOCK_FINAL_VIDEO_URL ?? "/mocks/videos/fallback-flower.mp4";
-
-    return {
-      videoUrl,
-      provider: "mock",
-      model: "mock",
-      prompt: request.prompt
-    };
+    throw new Error(
+      "Seedance video export requires Ark video config: ARK_API_KEY and ARK_VIDEO_ENDPOINT_ID"
+    );
   }
 
   const fetchImpl = options.fetch ?? fetch;

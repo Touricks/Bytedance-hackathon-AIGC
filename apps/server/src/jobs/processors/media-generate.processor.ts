@@ -10,7 +10,6 @@ import {
   getPipelineContractStep,
 } from "@aigc-video/ai";
 import type { Asset, ShotPromptArtifact } from "@aigc-video/shared";
-import { config } from "../../common/config.js";
 import { db } from "../../db/client.js";
 import { markJobCompleted, markJobMediaGenerating } from "../job-state.js";
 import { resolveSeedanceImageInput } from "../seedance-image-input.js";
@@ -36,7 +35,7 @@ function archiveFilename(jobId: string, archivedAt: string) {
 }
 
 function workspaceVideoUrl(workspaceId: string, filename: string) {
-  return `${config.uploadUrlPrefix.replace(/\/+$/, "")}/workspace-videos/${workspaceId}/${encodeURIComponent(filename)}`;
+  return `/api/workspaces/${workspaceId}/videos/${encodeURIComponent(filename)}`;
 }
 
 function resolveMockVideoPath(videoUrl: string) {
@@ -136,7 +135,9 @@ async function createVideoTraceLogger(input: {
   workspaceId?: string;
 }) {
   if (!input.workspaceId) {
-    return createFileTraceLogger({ traceId: input.scriptId });
+    throw new Error(
+      "V1 video generation requires workspaceId to write workspace-local trace"
+    );
   }
 
   const workspace = await db.getWorkspace(input.workspaceId);

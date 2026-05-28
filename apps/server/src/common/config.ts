@@ -84,8 +84,7 @@ function requireEnv(name: string, reason: string): string {
   return value;
 }
 
-function requireLocalFilesystemPath(name: string, reason: string): string {
-  const value = requireEnv(name, reason);
+function validateLocalFilesystemPath(name: string, value: string): string {
   if (hasUrlScheme(value)) {
     throw new Error(
       [
@@ -116,13 +115,22 @@ const databaseUrl = requireEnv(
   "DATABASE_URL",
   "Postgres is the only supported business fact source."
 );
-const uploadDir = resolveWorkspacePath(
-  requireLocalFilesystemPath(
-    "UPLOAD_DIR",
-    "Local file upload storage must be explicit; no tmp/uploads fallback is allowed."
-  ),
-  envFileRoot
-);
+const legacyUploadDir = process.env.UPLOAD_DIR;
+const legacyUploadUrlPrefix = process.env.UPLOAD_URL_PREFIX;
+if (Boolean(legacyUploadDir) !== Boolean(legacyUploadUrlPrefix)) {
+  throw new Error(
+    "UPLOAD_DIR and UPLOAD_URL_PREFIX must be configured together for the legacy upload adapter."
+  );
+}
+const uploadDir = legacyUploadDir
+  ? resolveWorkspacePath(
+      validateLocalFilesystemPath("UPLOAD_DIR", legacyUploadDir),
+      envFileRoot
+    )
+  : undefined;
+const uploadUrlPrefix = legacyUploadUrlPrefix
+  ? normalizeUploadUrlPrefix(legacyUploadUrlPrefix)
+  : undefined;
 
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
@@ -133,15 +141,10 @@ export const config = {
   runtime: process.env.SERVER_RUNTIME ?? "all",
   uploadDir,
   workspaceDir: resolveWorkspacePath(
-    process.env.WORKSPACE_DIR ?? path.join(uploadDir, "workspaces"),
+    process.env.WORKSPACE_DIR ?? path.join("storage", "workspaces"),
     envFileRoot
   ),
-  uploadUrlPrefix: normalizeUploadUrlPrefix(
-    requireEnv(
-      "UPLOAD_URL_PREFIX",
-      "Upload URL prefix must be explicit so local filesystem paths are not confused with public asset URLs."
-    )
-  )
+  uploadUrlPrefix
 };
 
 export function shouldStartApi(): boolean {

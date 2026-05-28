@@ -131,7 +131,7 @@ export async function generateTextWithArk(
       ? { contractVersion: options.trace.contractVersion }
       : {}),
     meta: {
-      endpointFamily: config.provider === "ark" ? "ark_openai_compatible" : "openai",
+      endpointFamily: "ark_openai_compatible",
       baseURL: config.baseURL,
       ...(options.responseFormat
         ? { responseFormat: responseFormatTraceSummary(options.responseFormat) }
@@ -144,8 +144,8 @@ export async function generateTextWithArk(
     response = await client.chat.completions.create({
       model: config.model,
       messages: [{ role: "user", content: request.content }],
-      temperature: options.temperature ?? Number(process.env.OPENAI_TEMPERATURE ?? 0.7),
-      top_p: options.topP ?? Number(process.env.OPENAI_TOP_P ?? 0.9),
+      temperature: options.temperature ?? 0.7,
+      top_p: options.topP ?? 0.9,
       ...(options.responseFormat
         ? { response_format: toArkResponseFormat(options.responseFormat) }
         : {})

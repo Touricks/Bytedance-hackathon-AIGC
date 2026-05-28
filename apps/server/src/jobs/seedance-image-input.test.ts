@@ -116,7 +116,7 @@ describe("resolveSeedanceImageInput", () => {
       try {
         const result = await resolveSeedanceImageInput(
           productImageAsset({
-            url: "/uploads/workspace-materials/workspace_123/display_1.png",
+            url: "/api/workspaces/workspace_123/materials/display_1.png",
             metadata: {
               contentType: "image/png",
               sizeBytes: 13,
@@ -222,7 +222,7 @@ describe("resolveSeedanceImageInput", () => {
         () =>
           resolveSeedanceImageInput(
             productImageAsset({
-              url: "/uploads/workspace-materials/workspace_123/display_1.png",
+              url: "/api/workspaces/workspace_123/materials/display_1.png",
               metadata: {
                 contentType: "image/png",
                 sizeBytes: 10,

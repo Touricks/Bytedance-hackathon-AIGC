@@ -290,56 +290,6 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(events.at(-1)?.meta.deterministicFallbackAllowed, false);
   });
 
-  it("uses fallback LLM only when Ark text auth or config fails", async () => {
-    const providerCalls: string[] = [];
-    const fallbackRequests: CreativeBlueprintModelRequest[] = [];
-    const createTextModelCall: CreateTextModelCall = (config) => {
-      providerCalls.push(config.provider);
-      return async (request) => {
-        if (config.provider === "ark") {
-          throw Object.assign(new Error("Unauthorized Ark key"), {
-            status: 401
-          });
-        }
-        fallbackRequests.push(request);
-        return JSON.stringify(validBlueprint);
-      };
-    };
-
-    const result = await generateCreativeBlueprintWithArk(
-      {
-        title: "Portable Mini Blender",
-        sellingPoints: "USB-C charging",
-        audience: "busy office workers",
-        stylePreference: "clean premium ecommerce",
-        imageUrl: "/mocks/products/demo-product.svg"
-      },
-      {
-        createTextModelCall,
-        imageInput: {
-          url: "data:image/png;base64,cHJvZHVjdA==",
-          mode: "data_url"
-        },
-        env: {
-          ARK_API_KEY: "bad-ark-key",
-          ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint",
-          OPENAI_BASE_URL: "https://fallback.example/v1",
-          OPENAI_API_KEY: "fallback-key",
-          OPENAI_MODEL: "fallback-model"
-        }
-      }
-    );
-
-    assert.equal(result.provider, "fallback");
-    assert.equal(result.trace.textProvider, "fallback-llm");
-    assert.equal(result.trace.imageReferenceMode, "text_only_fallback");
-    assert.equal(result.trace.model, "fallback-model");
-    assert.equal(result.trace.fallbackUsed, true);
-    assert.deepEqual(providerCalls, ["ark", "fallback-llm"]);
-    assert.equal(fallbackRequests.length, 1);
-    assert.equal(fallbackRequests[0]!.content, fallbackRequests[0]!.prompt);
-  });
-
   it("uses deterministic fallback in mock mode when no text provider is configured", async () => {
     const result = await generateCreativeBlueprintWithArk(
       {
@@ -360,18 +310,15 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.equal(result.trace.textProvider, "deterministic");
     assert.equal(result.trace.model, "unconfigured");
     assert.equal(result.trace.fallbackUsed, true);
+    assert.equal(result.trace.failureReason, "Ark text provider is not configured");
   });
 
   it("fails loudly in real-provider mode when text model credentials are missing", async () => {
     const originalMode = process.env.MODEL_MODE;
     const originalArkApiKey = process.env.ARK_API_KEY;
-    const originalApiKey = process.env.OPENAI_API_KEY;
-    const originalModel = process.env.OPENAI_MODEL;
     const originalArkModel = process.env.ARK_TEXT_ENDPOINT_ID;
     process.env.MODEL_MODE = "real";
     delete process.env.ARK_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_MODEL;
     delete process.env.ARK_TEXT_ENDPOINT_ID;
 
     try {
@@ -397,16 +344,6 @@ describe("generateCreativeBlueprintWithArk", () => {
       } else {
         process.env.ARK_API_KEY = originalArkApiKey;
       }
-      if (originalApiKey === undefined) {
-        delete process.env.OPENAI_API_KEY;
-      } else {
-        process.env.OPENAI_API_KEY = originalApiKey;
-      }
-      if (originalModel === undefined) {
-        delete process.env.OPENAI_MODEL;
-      } else {
-        process.env.OPENAI_MODEL = originalModel;
-      }
       if (originalArkModel === undefined) {
         delete process.env.ARK_TEXT_ENDPOINT_ID;
       } else {
@@ -415,7 +352,7 @@ describe("generateCreativeBlueprintWithArk", () => {
     }
   });
 
-  it("fails loudly in real-provider mode instead of using configured fallback LLM when Ark text config is missing", async () => {
+  it("fails loudly in real-provider mode when Ark text config is missing", async () => {
     const providerCalls: string[] = [];
     const createTextModelCall: CreateTextModelCall = (config) => {
       providerCalls.push(config.provider);
@@ -435,10 +372,7 @@ describe("generateCreativeBlueprintWithArk", () => {
           {
             createTextModelCall,
             env: {
-              MODEL_MODE: "real",
-              OPENAI_BASE_URL: "https://fallback.example/v1",
-              OPENAI_API_KEY: "fallback-key",
-              OPENAI_MODEL: "fallback-model"
+              MODEL_MODE: "real"
             }
           }
         ),
@@ -447,7 +381,7 @@ describe("generateCreativeBlueprintWithArk", () => {
     assert.deepEqual(providerCalls, []);
   });
 
-  it("fails loudly in real-provider mode instead of using fallback LLM when Ark auth fails", async () => {
+  it("fails loudly in real-provider mode when Ark auth fails", async () => {
     const traceRoot = await mkdtemp(path.join(os.tmpdir(), "blueprint-real-"));
     const traceLogger = createFileTraceLogger({
       traceId: "real_provider_failure",
@@ -479,10 +413,7 @@ describe("generateCreativeBlueprintWithArk", () => {
             env: {
               MODEL_MODE: "real",
               ARK_API_KEY: "bad-ark-key",
-              ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint",
-              OPENAI_BASE_URL: "https://fallback.example/v1",
-              OPENAI_API_KEY: "fallback-key",
-              OPENAI_MODEL: "fallback-model"
+              ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint"
             }
           }
         ),

@@ -9,10 +9,8 @@ import {
   CREATIVE_BLUEPRINT_PROMPT_VERSION
 } from "../prompts/creative-blueprint.prompt.js";
 import {
-  isProviderAuthOrConfigError,
   isRealProviderMode,
   resolveArkTextProviderConfig,
-  resolveFallbackTextProviderConfig,
   type ProviderEnv,
   type TextProviderConfig
 } from "../providers/provider-config.js";
@@ -61,7 +59,7 @@ export type CreateTextModelCall = (config: TextProviderConfig) => TextModelCall;
 export interface CreativeBlueprintTrace {
   promptVersion: string;
   model: string;
-  textProvider: "ark" | "fallback-llm" | "deterministic";
+  textProvider: "ark" | "deterministic";
   imageReferenceMode: CreativeBlueprintImageReferenceMode;
   rawOutputSummary?: string;
   parsedOutputStatus: "valid" | "repaired" | "fallback";
@@ -202,7 +200,7 @@ function buildFallbackCreativeBlueprint(
   });
 }
 
-function createOpenAITextModelCall(config: TextProviderConfig): TextModelCall {
+function createArkTextModelCall(config: TextProviderConfig): TextModelCall {
   return async (request) => {
     const result = await generateTextWithArk(
       {
@@ -211,8 +209,8 @@ function createOpenAITextModelCall(config: TextProviderConfig): TextModelCall {
       },
       config,
       {
-        temperature: Number(process.env.OPENAI_TEMPERATURE ?? 0.7),
-        topP: Number(process.env.OPENAI_TOP_P ?? 0.9)
+        temperature: 0.7,
+        topP: 0.9
       }
     );
 
@@ -255,13 +253,12 @@ async function runTextProvider(
   allowDeterministicFallback = true
 ): Promise<GenerateCreativeBlueprintResult> {
   let rawOutput = "";
-  const providerImageInput = provider.provider === "ark" ? imageInput : undefined;
-  const traceImageReferenceMode = providerImageInput
-    ? providerImageInput.mode
+  const traceImageReferenceMode = imageInput
+    ? imageInput.mode
     : getTextOnlyFallbackImageMode(imageInput);
 
   try {
-    const modelRequest = buildCreativeBlueprintModelRequest(prompt, providerImageInput);
+    const modelRequest = buildCreativeBlueprintModelRequest(prompt, imageInput);
     await traceLogger?.append({
       kind: "blueprint.request_prepared",
       pipeline: "creative_blueprint",
@@ -273,7 +270,7 @@ async function runTextProvider(
         prompt,
         content: modelRequest.content,
         imageReferenceMode: traceImageReferenceMode,
-        image: buildImageTraceMeta(providerImageInput)
+        image: buildImageTraceMeta(imageInput)
       }
     });
     const startedAt = Date.now();
@@ -284,10 +281,10 @@ async function runTextProvider(
       provider: provider.provider,
       model: provider.model,
       meta: {
-        endpointFamily: provider.provider === "ark" ? "ark_openai_compatible" : "openai",
+        endpointFamily: "ark_openai_compatible",
         baseURL: provider.baseURL,
         imageReferenceMode: traceImageReferenceMode,
-        image: buildImageTraceMeta(providerImageInput)
+        image: buildImageTraceMeta(imageInput)
       }
     });
     rawOutput = await callTextModel(modelRequest);
@@ -314,7 +311,7 @@ async function runTextProvider(
       }
     });
     return {
-      provider: provider.provider === "ark" ? "ark" : "fallback",
+      provider: "ark",
       creativeBlueprint,
       trace: {
         promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
@@ -324,7 +321,7 @@ async function runTextProvider(
         rawOutputSummary: summarizeRawOutput(rawOutput),
         parsedOutputStatus: "valid",
         repairAttempts: 0,
-        fallbackUsed: provider.provider === "fallback-llm"
+        fallbackUsed: false
       }
     };
   } catch (firstError) {
@@ -372,7 +369,7 @@ async function runTextProvider(
         }
       });
       return {
-        provider: provider.provider === "ark" ? "ark" : "fallback",
+        provider: "ark",
         creativeBlueprint,
         trace: {
           promptVersion: CREATIVE_BLUEPRINT_PROMPT_VERSION,
@@ -382,7 +379,7 @@ async function runTextProvider(
           rawOutputSummary: summarizeRawOutput(repairedOutput),
           parsedOutputStatus: "repaired",
           repairAttempts: 1,
-          fallbackUsed: provider.provider === "fallback-llm"
+          fallbackUsed: false
         }
       };
     } catch (repairError) {
@@ -425,7 +422,7 @@ export async function generateCreativeBlueprintWithArk(
   options: GenerateCreativeBlueprintOptions = {}
 ): Promise<GenerateCreativeBlueprintResult> {
   const prompt = buildCreativeBlueprintPrompt(input);
-  const createModelCall = options.createTextModelCall ?? createOpenAITextModelCall;
+  const createModelCall = options.createTextModelCall ?? createArkTextModelCall;
   const env = options.env ?? process.env;
   const allowDeterministicFallback = !isRealProviderMode(env);
 
@@ -452,7 +449,6 @@ export async function generateCreativeBlueprintWithArk(
     model: options.model,
     baseURL: options.baseURL
   });
-  const fallbackProvider = resolveFallbackTextProviderConfig(env);
 
   if (!arkProvider) {
     if (isRealProviderMode(env)) {
@@ -461,23 +457,11 @@ export async function generateCreativeBlueprintWithArk(
       );
     }
 
-    if (fallbackProvider) {
-      return runTextProvider(
-        input,
-        fallbackProvider,
-        createModelCall(fallbackProvider),
-        prompt,
-        options.imageInput,
-        options.traceLogger,
-        allowDeterministicFallback
-      );
-    }
-
     return deterministicFallbackResult(
       input,
       "unconfigured",
       0,
-      "Ark text provider and fallback LLM are not configured",
+      "Ark text provider is not configured",
       getTextOnlyFallbackImageMode(options.imageInput)
     );
   }
@@ -495,29 +479,6 @@ export async function generateCreativeBlueprintWithArk(
   } catch (arkError) {
     if (isRealProviderMode(env)) {
       throw arkError;
-    }
-
-    if (fallbackProvider && isProviderAuthOrConfigError(arkError)) {
-      try {
-        return await runTextProvider(
-          input,
-          fallbackProvider,
-          createModelCall(fallbackProvider),
-          prompt,
-          options.imageInput,
-          options.traceLogger,
-          allowDeterministicFallback
-        );
-      } catch (fallbackError) {
-        const error = fallbackError instanceof Error ? fallbackError : arkError;
-        return deterministicFallbackResult(
-          input,
-          fallbackProvider.model,
-          0,
-          error instanceof Error ? error.message : "Unknown fallback LLM failure",
-          getTextOnlyFallbackImageMode(options.imageInput)
-        );
-      }
     }
 
     const error = arkError instanceof Error ? arkError : undefined;

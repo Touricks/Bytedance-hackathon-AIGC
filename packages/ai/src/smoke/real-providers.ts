@@ -2,8 +2,9 @@ import { loadWorkspaceEnv } from "../env.js";
 import { generateTextWithArk } from "../providers/ark-text.provider.js";
 import {
   resolveArkTextProviderConfig,
-  resolveFallbackTextProviderConfig,
-  type TextProviderConfig
+  resolveArkVideoProviderConfig,
+  type TextProviderConfig,
+  type VideoProviderConfig
 } from "../providers/provider-config.js";
 
 loadWorkspaceEnv();
@@ -17,16 +18,11 @@ interface ProviderProbeResult {
   outputPreview: string;
 }
 
-function requireTextProviderConfig(
-  config: TextProviderConfig | null,
-  label: string,
-  requiredVariables: string[]
-): TextProviderConfig {
-  if (config) {
-    return config;
-  }
-
-  throw new Error(`${label} smoke requires ${requiredVariables.join(", ")}`);
+interface VideoConfigCheckResult {
+  provider: VideoProviderConfig["provider"];
+  status: "configured";
+  model: string;
+  baseURL: string;
 }
 
 async function probeTextProvider(
@@ -40,8 +36,8 @@ async function probeTextProvider(
     },
     config,
     {
-      temperature: Number(process.env.OPENAI_TEMPERATURE ?? 1),
-      topP: Number(process.env.OPENAI_TOP_P ?? 0.9)
+      temperature: 1,
+      topP: 0.9
     }
   );
 
@@ -60,27 +56,44 @@ async function probeTextProvider(
   };
 }
 
-const arkTextConfig = requireTextProviderConfig(
-  resolveArkTextProviderConfig(),
-  "Ark text provider",
-  ["ARK_API_KEY", "ARK_TEXT_ENDPOINT_ID"]
-);
-const fallbackTextConfig = requireTextProviderConfig(
-  resolveFallbackTextProviderConfig(),
-  "OpenAI fallback provider",
-  ["OPENAI_API_KEY", "OPENAI_MODEL"]
-);
+function requireProviderConfigs(): {
+  arkTextConfig: TextProviderConfig;
+  arkVideoConfig: VideoProviderConfig;
+} {
+  const arkTextConfig = resolveArkTextProviderConfig();
+  const arkVideoConfig = resolveArkVideoProviderConfig();
+  const missing: string[] = [];
 
-const [arkTextProbe, openaiFallbackProbe] = await Promise.all([
-  probeTextProvider(arkTextConfig),
-  probeTextProvider(fallbackTextConfig)
-]);
+  if (!arkTextConfig) {
+    missing.push("Ark text provider: ARK_API_KEY, ARK_TEXT_ENDPOINT_ID");
+  }
+  if (!arkVideoConfig) {
+    missing.push("Ark video provider: ARK_API_KEY, ARK_VIDEO_ENDPOINT_ID");
+  }
+  if (missing.length > 0) {
+    throw new Error(`real provider smoke requires ${missing.join("; ")}`);
+  }
+
+  return { arkTextConfig: arkTextConfig!, arkVideoConfig: arkVideoConfig! };
+}
+
+function summarizeVideoConfig(config: VideoProviderConfig): VideoConfigCheckResult {
+  return {
+    provider: config.provider,
+    status: "configured",
+    model: config.model,
+    baseURL: config.baseURL
+  };
+}
+
+const { arkTextConfig, arkVideoConfig } = requireProviderConfigs();
+const arkTextProbe = await probeTextProvider(arkTextConfig);
 
 console.log(
   JSON.stringify(
     {
       arkTextProbe,
-      openaiFallbackProbe
+      arkVideoConfig: summarizeVideoConfig(arkVideoConfig)
     },
     null,
     2
