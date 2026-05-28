@@ -1021,3 +1021,6 @@ button:disabled {
 .candidate-tile > video { width: 100%; aspect-ratio: 9/16; display: block; background: black; }
 .candidate-tile > button { display: block; width: 100%; padding: 6px; border: 0; border-top: 1px solid #e7e7eb; background: white; cursor: pointer; font-size: 12px; }
 .candidate-tile > button:disabled { color: #aaa; cursor: not-allowed; }
+
+/* ===== Review ===== */
+.review-video { width: 100%; max-width: 480px; aspect-ratio: 9/16; background: black; }
