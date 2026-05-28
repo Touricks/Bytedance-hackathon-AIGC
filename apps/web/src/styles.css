@@ -997,3 +997,15 @@ button:disabled {
 .step-card button { padding: 6px 12px; border: 1px solid #c8c8d0; background: white; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .step-card button[type="submit"] { background: #2c3aff; color: white; border-color: #2c3aff; }
 .step-card button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ===== Candidates grid ===== */
+.candidates-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+.candidate-tile { padding: 0; border: 2px solid transparent; border-radius: 8px; cursor: pointer; background: #f7f7fa; aspect-ratio: 9/16; overflow: hidden; }
+.candidate-tile:hover:not(:disabled) { border-color: #2c3aff; }
+.candidate-tile > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.candidate-tile--failed { background: #ffefef; }
+.candidate-tile__missing { display: grid; place-items: center; height: 100%; color: #b3434c; font-size: 12px; padding: 8px; text-align: center; }
+.progress-strip { height: 6px; background: #f0f0f3; border-radius: 999px; overflow: hidden; margin: 8px 0; }
+.progress-strip__fill { width: 30%; height: 100%; background: #2c3aff; animation: progress-pulse 1.5s ease-in-out infinite; }
+@keyframes progress-pulse { 0% { margin-left: 0; } 100% { margin-left: 70%; } }
+.step-card__meta { color: #888; font-size: 12px; }
