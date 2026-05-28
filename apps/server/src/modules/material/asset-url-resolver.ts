@@ -39,7 +39,7 @@ export function createAssetUrlResolver(deps: AssetUrlResolverDeps = { lookup: DE
     for (const id of assetIds) {
       const asset = await deps.lookup(id);
       if (!asset) {
-        logger.info("asset-url-resolver: unknown asset id", { id });
+        logger.warn("asset-url-resolver: unknown asset id", { id });
         continue;
       }
       if (asset.url.startsWith("https://") || asset.url.startsWith("http://")) {
@@ -52,11 +52,11 @@ export function createAssetUrlResolver(deps: AssetUrlResolverDeps = { lookup: DE
           const mime = asset.mime ?? "image/png";
           out.push(`data:${mime};base64,${bytes.toString("base64")}`);
         } catch (err) {
-          logger.info("asset-url-resolver: failed to read local file", { id, path: asset.localPath, err: String(err) });
+          logger.warn("asset-url-resolver: failed to read local file", { id, path: asset.localPath, err: String(err) });
         }
         continue;
       }
-      logger.info("asset-url-resolver: asset has no usable url", { id });
+      logger.warn("asset-url-resolver: asset has no usable url", { id });
     }
     return out;
   };
