@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useShotWorkflowStatus } from "../hooks/useShotWorkflowStatus.js";
 import { useImageBatch } from "../hooks/useImageBatch.js";
 import { selectImage } from "../../../lib/api/imageSelect.js";
+import { retryShot } from "../../../lib/api/shots.js";
 import { AssetStrip } from "./AssetStrip.js";
 import { navigateFocus } from "../WorkspaceLayout.js";
 
@@ -27,6 +28,19 @@ export function ImageCandidatesStep({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
       navigateFocus({ workspaceId, shotId, step: "video_script" });
+    },
+  });
+
+  const retry = useMutation({
+    mutationFn: () =>
+      retryShot(
+        shotId,
+        "image_batch",
+        `${workspaceId}:${shotId}:retry-image:${Date.now()}`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
+      qc.invalidateQueries({ queryKey: ["image-batch", shotId, batchId] });
     },
   });
 
@@ -78,6 +92,11 @@ export function ImageCandidatesStep({
         >
           ← 编辑 Prompt 重新生成
         </button>
+        {detail.status === "FAILED" ? (
+          <button onClick={() => retry.mutate()} disabled={retry.isPending}>
+            重试该批次
+          </button>
+        ) : null}
       </div>
     </div>
   );

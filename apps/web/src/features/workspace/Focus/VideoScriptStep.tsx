@@ -10,6 +10,7 @@ import { createVideoBatch } from "../../../lib/api/videoBatch.js";
 import { useConfigLimits } from "../hooks/useConfigLimits.js";
 import { AssetStrip } from "./AssetStrip.js";
 import { VersionChips } from "./VersionChips.js";
+import { StaleBanner } from "./StaleBanner.js";
 import { navigateFocus } from "../WorkspaceLayout.js";
 
 interface ScriptFormValues {
@@ -130,10 +131,15 @@ export function VideoScriptStep({
     );
   }
 
+  const showingIsStale = showing?.status === "STALE";
+
   return (
     <div className="step-card">
       <AssetStrip shotId={shotId} />
       <h2>视频剧本</h2>
+      {showingIsStale ? (
+        <StaleBanner message="基础版本已变化，请重新加载或基于当前选图重新生成。" />
+      ) : null}
       <VersionChips
         versions={list}
         activeId={showing?.id ?? null}

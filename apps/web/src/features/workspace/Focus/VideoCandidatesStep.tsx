@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useShotWorkflowStatus } from "../hooks/useShotWorkflowStatus.js";
 import { useVideoBatch } from "../hooks/useVideoBatch.js";
 import { selectVideo } from "../../../lib/api/videoSelect.js";
+import { retryShot } from "../../../lib/api/shots.js";
 import { AssetStrip } from "./AssetStrip.js";
 import { navigateFocus } from "../WorkspaceLayout.js";
 
@@ -30,6 +31,19 @@ export function VideoCandidatesStep({
     },
   });
 
+  const retry = useMutation({
+    mutationFn: () =>
+      retryShot(
+        shotId,
+        "video_batch",
+        `${workspaceId}:${shotId}:retry-video:${Date.now()}`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
+      qc.invalidateQueries({ queryKey: ["video-batch", shotId, batchId] });
+    },
+  });
+
   if (!batchId)
     return (
       <div className="step-card">尚未生成视频。请返回剧本步骤。</div>
@@ -48,6 +62,13 @@ export function VideoCandidatesStep({
       {inflight ? (
         <div className="progress-strip">
           <div className="progress-strip__fill" />
+        </div>
+      ) : null}
+      {d.status === "FAILED" ? (
+        <div className="step-card__actions">
+          <button onClick={() => retry.mutate()} disabled={retry.isPending}>
+            重试该批次
+          </button>
         </div>
       ) : null}
       <div className="candidates-grid candidates-grid--videos">
