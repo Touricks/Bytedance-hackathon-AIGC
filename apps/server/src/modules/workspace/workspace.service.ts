@@ -41,7 +41,6 @@ import { assertValidRasterImageBytes } from "../../common/image-validation.js";
 import { config } from "../../common/config.js";
 import { NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
-import { enqueueGenerationJob } from "../../jobs/queue.js";
 import {
   workspaceManifestSchema,
   type WorkspaceDirectoryRequest,
@@ -1590,45 +1589,6 @@ export const workspaceService = {
     });
 
     return { workspace: updatedWorkspace, artifact };
-  },
-
-  async startVideoGeneration(target: string | WorkspaceDirectoryRequest) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const briefArtifact = await db.getWorkspaceArtifact(workspace.id, "brief");
-    const shotPromptArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      "shotprompt",
-    );
-    const brief = productBriefArtifactSchema.parse(briefArtifact.data);
-    const shotPrompt = shotPromptArtifactSchema.parse(shotPromptArtifact.data);
-    const script = await createScriptBundleForShotPrompt({
-      localPath,
-      workspace,
-      brief,
-      shotPrompt,
-    });
-    const job = await db.createJob({
-      productId: script.productId,
-      scriptId: script.id,
-      payload: {
-        workspaceId: workspace.id,
-        shotprompt: shotPrompt,
-      },
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "video_generating",
-      currentJobId: job.id,
-    });
-    const manifest = toManifest({
-      workspaceId: updatedWorkspace.id,
-      currentScriptId: updatedWorkspace.currentScriptId,
-      currentJobId: updatedWorkspace.currentJobId,
-    });
-    await writeManifest(localPath, manifest);
-    await enqueueGenerationJob({ jobId: job.id, scriptId: script.id });
-
-    return { workspace: updatedWorkspace, manifest, job };
   },
 
   async routeFeedback(
