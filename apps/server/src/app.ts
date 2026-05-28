@@ -69,6 +69,16 @@ export async function buildServer(options: BuildServerOptions = {}) {
     runtime: config.runtime,
   }));
 
+  app.get("/api/config/limits", async () => ({
+    data: {
+      defaultImageBatchSize: config.defaultImageBatchSize,
+      maxImageBatchSize: config.maxImageBatchSize,
+      defaultVideoBatchSize: config.defaultVideoBatchSize,
+      maxVideoBatchSize: config.maxVideoBatchSize,
+      aspectRatios: ["9:16", "16:9", "1:1"],
+    },
+  }));
+
   app.get("/api/workspaces/:workspaceId/videos/*", async (request, reply) => {
     const params = request.params as { workspaceId: string; "*": string };
     return sendWorkspaceFile(
