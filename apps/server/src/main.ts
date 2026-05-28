@@ -7,6 +7,7 @@ import {
 } from "./modules/job/job.queue.js";
 import { processGenerateImages } from "./modules/generation/image.worker.js";
 import { processGenerateVideos } from "./modules/generation/video.worker.js";
+import { processComposeFinalVideo } from "./modules/generation/final-compose.worker.js";
 import { assertFfmpegAvailable } from "./modules/generation/ffmpeg.js";
 
 await assertFfmpegAvailable();
@@ -14,7 +15,7 @@ await assertFfmpegAvailable();
 registerGenerationV2Processor(async (data) => {
   if (data.kind === "generate_images") return processGenerateImages(data);
   if (data.kind === "generate_videos") return processGenerateVideos(data);
-  // compose_final_video added in Wave 5
+  if (data.kind === "compose_final_video") return processComposeFinalVideo(data);
 });
 startGenerationV2Worker();
 
