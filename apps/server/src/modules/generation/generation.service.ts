@@ -145,7 +145,78 @@ export const generationService = {
     };
   },
 
-  async createFinalCompose(_args: unknown): Promise<never> {
-    throw new HttpError(501, "NOT_IMPLEMENTED", "final compose coming in Wave 5");
+  async createFinalCompose(input: {
+    workspaceId: string;
+    outputAspectRatio: "9:16" | "16:9" | "1:1";
+    idempotencyKey: string;
+  }) {
+    const existing = await db.db2.getFinalVideoJobByIdempotencyKey(input.idempotencyKey);
+    if (existing) return { data: existing, deduped: true };
+    const shots = await db.db2.listShotsByWorkspace(input.workspaceId);
+    const missing = shots.filter((s) => !s.selectedVideoId).map((s) => s.id);
+    if (missing.length > 0) {
+      throw new HttpError(409, "MISSING_SELECTIONS", JSON.stringify(missing));
+    }
+    const orderedShots = [...shots].sort((a, b) => a.orderIndex - b.orderIndex);
+    const sourceShotVideoIds: string[] = [];
+    const sourceScriptIds: string[] = [];
+    for (const s of orderedShots) {
+      sourceShotVideoIds.push(s.selectedVideoId!);
+      const script = s.activeVideoScriptArtifactId;
+      if (!script) {
+        throw new HttpError(409, "STALE_SELECTIONS", `Shot ${s.id} has no active script`);
+      }
+      sourceScriptIds.push(script);
+    }
+    const fv = await db.db2.insertFinalVideoJob({
+      id: "fnl_" + nanoid(10),
+      workspaceId: input.workspaceId,
+      status: "PENDING",
+      sourceShotVideoIds,
+      sourceVideoScriptArtifactIds: sourceScriptIds,
+      localPath: null,
+      localUrl: null,
+      durationSec: null,
+      width: null,
+      height: null,
+      compiledManifest: {},
+      compiledManifestHash: null,
+      ffmpegLog: null,
+      errorMessage: null,
+      idempotencyKey: input.idempotencyKey,
+      completedAt: null,
+    });
+    const job = await jobRepository.insert({
+      id: "job_" + nanoid(10),
+      workspaceId: input.workspaceId,
+      shotId: null,
+      jobType: "compose_final_video",
+      status: "PENDING",
+      queueName: GENERATION_V2_QUEUE_NAME,
+      queueJobId: null,
+      relatedBatchType: "final_video_job",
+      relatedBatchId: fv.id,
+      payload: {},
+      progress: 0,
+      attemptCount: 0,
+      maxAttempts: 1,
+      errorMessage: null,
+      startedAt: null,
+      completedAt: null,
+    });
+    await enqueueGenerationV2({
+      kind: "compose_final_video",
+      jobId: job.id,
+      finalVideoJobId: fv.id,
+      workspaceId: input.workspaceId,
+      traceId: nanoid(),
+    });
+    return {
+      data: {
+        finalVideoJobId: fv.id,
+        jobId: job.id,
+        status: fv.status,
+      },
+    };
   },
 };
