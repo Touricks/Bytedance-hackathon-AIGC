@@ -21,3 +21,5 @@ export * from "./schemas/video-script.schema.js";
 export * from "./agents/runner.js";
 export * from "./agents/storyboard-image-prompt.agent.js";
 export * from "./agents/video-shot-script.agent.js";
+export * from "./workflows/storyboard-image-prompt.workflow.js";
+export * from "./workflows/video-shot-script.workflow.js";
