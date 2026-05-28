@@ -1584,6 +1584,11 @@ export const workspaceService = {
       status: "approved",
       data: approvedData,
     });
+    await seedShotsFromShotPrompt({
+      workspaceId: workspace.id,
+      scriptId: workspace.currentScriptId,
+      shotPrompt: approvedData,
+    });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
       status: "shotprompt_approved",
     });
@@ -1664,3 +1669,39 @@ export const workspaceService = {
     return { workspace: updatedWorkspace, routeArtifact, artifact, route, trace };
   },
 };
+
+async function seedShotsFromShotPrompt(input: {
+  workspaceId: string;
+  scriptId: string;
+  shotPrompt: ShotPromptArtifact;
+}) {
+  // Re-seeding wipes prior shots; first wave doesn't support edit/add yet.
+  const pool = db.db2.pool();
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("delete from storyboard_shots where workspace_id=$1", [input.workspaceId]);
+    for (const shot of input.shotPrompt.shots) {
+      await client.query(
+        `insert into storyboard_shots
+           (id, workspace_id, script_id, order_index, title, objective, default_duration_sec, status)
+         values ($1,$2,$3,$4,$5,$6,$7,'DRAFT')`,
+        [
+          `shot_${Math.random().toString(36).slice(2, 12)}`,
+          input.workspaceId,
+          input.scriptId,
+          shot.index,
+          shot.providerPrompt.slice(0, 80) || `Shot ${shot.index + 1}`,
+          shot.providerPrompt,
+          shot.endSec - shot.startSec,
+        ],
+      );
+    }
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
