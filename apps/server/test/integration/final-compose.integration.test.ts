@@ -50,7 +50,7 @@ describe("final compose @expensive", { skip: !RUN || !ALLOW }, () => {
 
   it("composes and produces a deterministic manifest hash across two runs", async () => {
     async function compose(label: string) {
-      const start = await api<{ data: { id: string } }>(
+      const start = await api<{ data: { finalVideoJobId: string } }>(
         `/api/workspaces/${ws.workspaceId}/final-videos`,
         {
           method: "POST",
@@ -64,7 +64,7 @@ describe("final compose @expensive", { skip: !RUN || !ALLOW }, () => {
         timeoutMs: 10 * 60_000,
         fetcher: () =>
           api<{ data: { status: string; compiledManifestHash: string | null; localUrl: string | null } }>(
-            `/api/final-videos/${start.data.id}`,
+            `/api/final-videos/${start.data.finalVideoJobId}`,
           ),
         isDone: (v) => ["SUCCEEDED", "FAILED"].includes(v.data.status),
       });

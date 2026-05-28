@@ -58,7 +58,7 @@ describe("final compose contract @expensive", { skip: !RUN || !ALLOW }, () => {
 
   it("emits no text/image/video provider_call events during compose", async () => {
     composeStartedAt = Date.now();
-    const start = await api<{ data: { id: string } }>(
+    const start = await api<{ data: { finalVideoJobId: string } }>(
       `/api/workspaces/${ws.workspaceId}/final-videos`,
       {
         method: "POST",
@@ -70,7 +70,7 @@ describe("final compose contract @expensive", { skip: !RUN || !ALLOW }, () => {
       label: "final compose",
       intervalMs: 4000,
       timeoutMs: 10 * 60_000,
-      fetcher: () => api<{ data: { status: string } }>(`/api/final-videos/${start.data.id}`),
+      fetcher: () => api<{ data: { status: string } }>(`/api/final-videos/${start.data.finalVideoJobId}`),
       isDone: (v) => ["SUCCEEDED", "FAILED"].includes(v.data.status),
     });
     composeFinishedAt = Date.now();
