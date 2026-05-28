@@ -1024,3 +1024,7 @@ button:disabled {
 
 /* ===== Review ===== */
 .review-video { width: 100%; max-width: 480px; aspect-ratio: 9/16; background: black; }
+
+/* ===== Final compose ===== */
+.download-link { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: #2c3aff; color: white; border-radius: 6px; text-decoration: none; margin: 8px 8px 8px 0; }
+.error-banner { padding: 8px 12px; background: #ffefef; border: 1px solid #f3a8a8; color: #8a1a1a; border-radius: 6px; }
