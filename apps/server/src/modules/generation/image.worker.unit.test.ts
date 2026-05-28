@@ -1,6 +1,10 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { processGenerateImages, __setImageProviderForTests } from "./image.worker.js";
+import {
+  processGenerateImages,
+  __setImageProviderForTests,
+  __setAssetUrlResolverForTests,
+} from "./image.worker.js";
 
 type ProviderCall = {
   args: unknown;
@@ -119,6 +123,7 @@ describe("processGenerateImages", () => {
     traceService.record = origRecord;
     jobRepository.update = origJobUpdate;
     __setImageProviderForTests(undefined);
+    __setAssetUrlResolverForTests(undefined);
   });
 
   it("creates candidates, updates batch to SUCCEEDED, transitions shot", async () => {
@@ -148,5 +153,32 @@ describe("processGenerateImages", () => {
     const ctx = await fakeDb.bootstrap("SUCCEEDED");
     await processGenerateImages(ctx.jobData, fakeDb.adapter as any);
     assert.equal(fakeProvider.calls.length, 0);
+  });
+
+  it("passes resolved reference image URLs to the provider", async () => {
+    const seenArgs: unknown[] = [];
+    const seenResolverIds: string[][] = [];
+    __setImageProviderForTests(async (args) => {
+      seenArgs.push(args);
+      return { provider: "ark-seedream", model: "test", candidates: [{ imageUrl: "u" }], candidateErrors: [] };
+    });
+    __setAssetUrlResolverForTests(async (ids) => {
+      seenResolverIds.push(ids);
+      return ["https://r/1.png", "https://r/2.png"];
+    });
+
+    const fakeDb = makeFakeDb();
+    const ctx = await fakeDb.bootstrap("PENDING");
+    await processGenerateImages(
+      { ...ctx.jobData, count: 1 },
+      {
+        ...fakeDb.adapter as any,
+        getImagePromptArtifact: async () => ({
+          id: "art-1", promptText: "p", negativePrompt: null, referenceAssetIds: ["a1", "a2"],
+        }),
+      } as any,
+    );
+    assert.deepEqual((seenArgs[0] as any).referenceImageUrls, ["https://r/1.png", "https://r/2.png"]);
+    assert.deepEqual(seenResolverIds[0], ["a1", "a2"]);
   });
 });
