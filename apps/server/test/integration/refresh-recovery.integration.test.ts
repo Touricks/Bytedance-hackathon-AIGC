@@ -1,29 +1,31 @@
-// @smoke — relies on a primed workspace fixture but does not invoke any
-// real provider; it only inspects the shot-workflow-status endpoint shape.
-import { describe, it } from "node:test";
+// @smoke — verifies shot-workflow-status carries enough state to resume polling after a refresh.
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
+import { seedWorkspace, type SeededWorkspace } from "../helpers/seed-workspace.js";
 
 const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
 
 describe("refresh recovery @smoke", { skip: !RUN }, () => {
-  it("shot-workflow-status carries enough state to resume polling", async () => {
-    const workspaceId = process.env.TEST_FIXTURE_WORKSPACE!;
-    assert.ok(workspaceId, "TEST_FIXTURE_WORKSPACE env required");
+  let ws: SeededWorkspace;
+  before(async () => { ws = await seedWorkspace({ label: `it-refresh-${Date.now()}` }); });
+  after(async () => { await ws?.cleanup(); });
+
+  it("shot-workflow-status returns one row per seeded shot with status + nextAction", async () => {
     const res = await api<{
       data: {
-        shots: Array<{
-          shotId: string;
-          status: string;
-          nextAction: string;
-          activeImageBatchId?: string;
-        }>;
+        workspaceId: string;
+        shots: Array<{ shotId: string; orderIndex: number; status: string; nextAction: string; activeImageBatchId?: string | null }>;
+        canComposeFinalVideo: boolean;
       };
-    }>(`/api/workspaces/${workspaceId}/shot-workflow-status`);
-    assert.ok(Array.isArray(res.data.shots));
+    }>(`/api/workspaces/${ws.workspaceId}/shot-workflow-status`);
+
+    assert.equal(res.data.workspaceId, ws.workspaceId);
+    assert.equal(res.data.shots.length, ws.shotIds.length);
     for (const s of res.data.shots) {
       assert.equal(typeof s.status, "string");
       assert.equal(typeof s.nextAction, "string");
     }
+    assert.equal(res.data.canComposeFinalVideo, false);
   });
 });
