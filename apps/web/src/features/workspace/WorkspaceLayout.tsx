@@ -9,6 +9,7 @@ import { getFocusStore } from "./state/focusStore.js";
 import { LeftRail } from "./LeftRail/LeftRail.js";
 import { AssetRail } from "./AssetRail/AssetRail.js";
 import { FocusRouter } from "./Focus/FocusRouter.js";
+import { TraceDrawer } from "./TraceDrawer/TraceDrawer.js";
 
 function useUrlState() {
   const [parsed, setParsed] = useState(() =>
@@ -69,7 +70,9 @@ export function WorkspaceLayout() {
         <AssetRail workspaceId={workspaceId} />
       </aside>
       {traceOpen ? (
-        <aside className="workspace-layout__trace">TraceDrawer (Wave H)</aside>
+        <aside className="workspace-layout__trace">
+          <TraceDrawer workspaceId={workspaceId} />
+        </aside>
       ) : null}
     </div>
   );

@@ -1028,3 +1028,15 @@ button:disabled {
 /* ===== Final compose ===== */
 .download-link { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: #2c3aff; color: white; border-radius: 6px; text-decoration: none; margin: 8px 8px 8px 0; }
 .error-banner { padding: 8px 12px; background: #ffefef; border: 1px solid #f3a8a8; color: #8a1a1a; border-radius: 6px; }
+
+/* ===== Trace drawer ===== */
+.trace-drawer { padding: 12px; height: 100%; display: flex; flex-direction: column; }
+.trace-drawer__filters select { padding: 4px 8px; border: 1px solid #c8c8d0; border-radius: 4px; font-size: 12px; }
+.trace-drawer__list { list-style: none; padding: 0; margin: 12px 0; flex: 1; overflow-y: auto; }
+.trace-row { padding: 8px 0; border-bottom: 1px solid #f0f0f3; font-size: 12px; }
+.trace-row__head { display: flex; gap: 8px; align-items: center; }
+.trace-row__type { padding: 1px 6px; background: #f0f0f3; border-radius: 999px; font-size: 11px; }
+.trace-row__name { flex: 1; font-weight: 600; }
+.trace-row__time { color: #888; font-size: 11px; }
+.trace-row__preview { background: #fafafd; padding: 6px; border-radius: 4px; font-size: 11px; overflow-x: auto; margin: 4px 0 0; white-space: pre-wrap; }
+.trace-drawer__more { margin-top: 8px; padding: 6px 12px; border: 1px solid #c8c8d0; border-radius: 6px; background: white; cursor: pointer; }
