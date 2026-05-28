@@ -6,10 +6,12 @@ import {
   startGenerationV2Worker,
 } from "./modules/job/job.queue.js";
 import { processGenerateImages } from "./modules/generation/image.worker.js";
+import { processGenerateVideos } from "./modules/generation/video.worker.js";
 
 registerGenerationV2Processor(async (data) => {
   if (data.kind === "generate_images") return processGenerateImages(data);
-  // generate_videos and compose_final_video added in Waves 4 and 5
+  if (data.kind === "generate_videos") return processGenerateVideos(data);
+  // compose_final_video added in Wave 5
 });
 startGenerationV2Worker();
 
