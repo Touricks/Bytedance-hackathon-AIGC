@@ -160,5 +160,21 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerGenerationController(app);
   await registerTraceController(app);
 
+  app.delete("/api/test-runs/:runId", async (req, reply) => {
+    if (
+      process.env.NODE_ENV !== "test" &&
+      process.env.ALLOW_TEST_CLEANUP !== "true"
+    ) {
+      return reply.status(403).send({ code: "DISABLED_IN_THIS_ENV" });
+    }
+    const params = req.params as { runId: string };
+    const pool = db.db2.pool();
+    // Wipe creative_workspace rows by id-prefix; cascade handles downstream.
+    await pool.query("delete from creative_workspace where id like $1", [
+      `%${params.runId}%`,
+    ]);
+    return { data: { ok: true } };
+  });
+
   return app;
 }
