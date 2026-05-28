@@ -7,6 +7,9 @@ import {
 } from "./modules/job/job.queue.js";
 import { processGenerateImages } from "./modules/generation/image.worker.js";
 import { processGenerateVideos } from "./modules/generation/video.worker.js";
+import { assertFfmpegAvailable } from "./modules/generation/ffmpeg.js";
+
+await assertFfmpegAvailable();
 
 registerGenerationV2Processor(async (data) => {
   if (data.kind === "generate_images") return processGenerateImages(data);
