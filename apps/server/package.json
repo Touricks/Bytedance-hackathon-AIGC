@@ -16,7 +16,8 @@
     "test:integration:provider": "RUN_REAL_PROVIDER_TESTS=true node --import tsx --test --test-concurrency=1 \"test/integration/**/*.integration.test.ts\"",
     "test:integration:expensive": "RUN_REAL_PROVIDER_TESTS=true ALLOW_EXPENSIVE_TESTS=true node --import tsx --test --test-concurrency=1 \"test/integration/**/*.integration.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --max-warnings=0"
+    "lint": "eslint src --max-warnings=0",
+    "smoke:providers": "tsx scripts/smoke-providers.ts"
   },
   "dependencies": {
     "@aigc-video/ai": "workspace:*",
