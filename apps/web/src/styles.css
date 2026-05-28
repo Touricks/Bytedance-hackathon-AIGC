@@ -985,3 +985,15 @@ button:disabled {
 .version-chip--active { border-color: #2c3aff; color: #2c3aff; font-weight: 600; }
 .stale-banner { padding: 8px 12px; background: #fff3e0; border: 1px solid #ffd098; color: #8a4400; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
 .focus-empty { display: grid; place-items: center; height: 100%; color: #888; }
+
+/* ===== Step cards / forms ===== */
+.step-card { background: white; border: 1px solid #e7e7eb; border-radius: 8px; padding: 20px; max-width: 760px; }
+.step-card h2 { margin-top: 0; }
+.step-card__actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+.step-card__count { display: flex; align-items: center; gap: 8px; }
+.step-card__count input[type="number"] { width: 64px; }
+.image-prompt-form label { display: block; margin: 12px 0 4px; font-size: 13px; color: #555; }
+.image-prompt-form textarea, .image-prompt-form input { width: 100%; font: inherit; padding: 8px; border: 1px solid #c8c8d0; border-radius: 6px; box-sizing: border-box; }
+.step-card button { padding: 6px 12px; border: 1px solid #c8c8d0; background: white; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.step-card button[type="submit"] { background: #2c3aff; color: white; border-color: #2c3aff; }
+.step-card button:disabled { opacity: 0.6; cursor: not-allowed; }
