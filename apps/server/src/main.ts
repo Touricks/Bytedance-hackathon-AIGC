@@ -4,6 +4,7 @@ import { buildServer } from "./app.js";
 import {
   registerGenerationV2Processor,
   startGenerationV2Worker,
+  recoverInflightGenerationJobs,
 } from "./modules/job/job.queue.js";
 import { processGenerateImages } from "./modules/generation/image.worker.js";
 import { processGenerateVideos } from "./modules/generation/video.worker.js";
@@ -21,6 +22,12 @@ startGenerationV2Worker();
 
 if (shouldStartApi()) {
   const app = await buildServer();
+  // Sweep any in-flight jobs left over from a previous boot.
+  try {
+    await recoverInflightGenerationJobs();
+  } catch (err) {
+    logger.error("recoverInflightGenerationJobs failed", { err });
+  }
   await app.listen({ port: config.port, host: "0.0.0.0" });
   logger.info(`API listening on http://localhost:${config.port}`);
 }
