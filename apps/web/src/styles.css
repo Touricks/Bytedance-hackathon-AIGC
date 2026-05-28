@@ -959,3 +959,19 @@ button:disabled {
 .final-compose-cta { padding: 12px; border-top: 1px solid #e7e7eb; margin-top: auto; }
 .final-compose-cta > button { width: 100%; padding: 10px; background: #2c3aff; color: white; border: 0; border-radius: 6px; cursor: pointer; }
 .final-compose-cta > button:disabled { background: #c9cbe7; cursor: not-allowed; }
+
+/* ===== AssetRail ===== */
+.asset-rail { padding: 12px; }
+.asset-rail h4 { margin: 12px 0 8px; font-size: 13px; color: #555; }
+.asset-rail__hint { color: #888; font-size: 12px; }
+.asset-rail__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.asset-tile { padding: 0; border: 1px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; background: #f7f7fa; }
+.asset-tile--selected { border-color: #2c3aff; box-shadow: 0 0 0 2px rgba(44, 58, 255, 0.18); }
+.asset-tile > img { width: 100%; height: 80px; object-fit: cover; display: block; }
+.asset-rail__refs { list-style: none; padding: 0; margin: 0; font-size: 12px; }
+.asset-rail__refs > li { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.asset-rail__role { color: #888; font-family: monospace; font-size: 11px; }
+.asset-rail__id { flex: 1; font-family: monospace; font-size: 11px; }
+.asset-rail__refs button { background: none; border: 1px solid #e7e7eb; border-radius: 4px; padding: 1px 6px; cursor: pointer; font-size: 11px; }
+.quick-upload { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px dashed #c8c8d0; border-radius: 6px; cursor: pointer; margin-top: 8px; font-size: 13px; }
+.quick-upload--busy { opacity: 0.5; }

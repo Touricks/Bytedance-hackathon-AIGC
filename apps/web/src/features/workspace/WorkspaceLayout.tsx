@@ -7,6 +7,7 @@ import {
 } from "./state/urlState.js";
 import { getFocusStore } from "./state/focusStore.js";
 import { LeftRail } from "./LeftRail/LeftRail.js";
+import { AssetRail } from "./AssetRail/AssetRail.js";
 
 function useUrlState() {
   const [parsed, setParsed] = useState(() =>
@@ -61,7 +62,9 @@ export function WorkspaceLayout() {
         <LeftRail workspaceId={workspaceId} />
       </aside>
       <main className="workspace-layout__focus">Focus panel (Waves E-G)</main>
-      <aside className="workspace-layout__asset-rail">AssetRail (Wave D)</aside>
+      <aside className="workspace-layout__asset-rail">
+        <AssetRail workspaceId={workspaceId} />
+      </aside>
       {traceOpen ? (
         <aside className="workspace-layout__trace">TraceDrawer (Wave H)</aside>
       ) : null}
