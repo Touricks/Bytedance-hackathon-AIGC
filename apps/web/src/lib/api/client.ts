@@ -183,12 +183,6 @@ export type WorkspaceStoryboardDetail =
 export type WorkspaceShotPromptDetail =
   WorkspaceArtifactDetail<ShotPromptArtifact>;
 
-export interface WorkspaceVideoDetail {
-  workspace: CreativeWorkspace;
-  manifest: WorkspaceManifest;
-  job: GenerationJob;
-}
-
 export interface WorkspaceFeedbackRouteDetail {
   workspace: CreativeWorkspace;
   routeArtifact: WorkspaceArtifact<unknown>;
@@ -292,16 +286,6 @@ export async function uploadProductImage(file: File): Promise<Asset> {
 
 export function toAbsoluteAssetUrl(url: string) {
   return url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
-}
-
-export async function getJobDetail(jobId: string): Promise<JobDetail> {
-  const response = await fetch(`${apiBaseUrl}/api/jobs/${jobId}`);
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  return (await response.json()) as JobDetail;
 }
 
 export async function initializeWorkspace(
@@ -443,14 +427,6 @@ export async function approveWorkspaceShotPrompt(
       data,
     },
   );
-}
-
-export async function startWorkspaceVideo(
-  workspaceId: string,
-): Promise<WorkspaceVideoDetail> {
-  return postJson<WorkspaceVideoDetail>("/api/workspaces/video/generate", {
-    workspaceId,
-  });
 }
 
 export async function routeWorkspaceFeedback(input: {
