@@ -937,3 +937,25 @@ button:disabled {
 .top-bar__sep { color: #999; }
 .top-bar__back, .top-bar__trace { background: none; border: 1px solid #e7e7eb; border-radius: 6px; padding: 4px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .top-bar__back:hover, .top-bar__trace:hover { background: #f4f6ff; }
+
+/* ===== LeftRail ===== */
+.left-rail { display: flex; flex-direction: column; height: 100%; }
+.left-rail__loading { padding: 12px; color: #888; }
+.shot-list { list-style: none; padding: 0; margin: 0; }
+.shot-list__row > button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; background: none; border: 0; border-bottom: 1px solid #f0f0f3; text-align: left; cursor: pointer; }
+.shot-list__row--active > button { background: #f4f6ff; font-weight: 600; }
+.shot-list__idx { width: 24px; height: 24px; border-radius: 50%; background: #e7e7eb; display: grid; place-items: center; font-size: 12px; }
+.shot-list__label { flex: 1; font-size: 13px; }
+.shot-list__icon--ok { color: #2bb673; }
+.shot-list__icon--busy { color: #f29c33; }
+.shot-list__icon--err { color: #d23b3b; }
+
+.step-ladder { list-style: none; padding: 12px; margin: 0; }
+.step-ladder__row { padding: 6px 0; }
+.step-ladder__row > button { background: none; border: 0; cursor: pointer; font-size: 13px; padding: 4px 0; }
+.step-ladder__row--locked > button { color: #bbb; cursor: not-allowed; }
+.step-ladder__row--active > button { font-weight: 700; }
+
+.final-compose-cta { padding: 12px; border-top: 1px solid #e7e7eb; margin-top: auto; }
+.final-compose-cta > button { width: 100%; padding: 10px; background: #2c3aff; color: white; border: 0; border-radius: 6px; cursor: pointer; }
+.final-compose-cta > button:disabled { background: #c9cbe7; cursor: not-allowed; }
