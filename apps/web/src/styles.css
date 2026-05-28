@@ -1014,3 +1014,10 @@ button:disabled {
 .video-script-form label { display: block; margin: 10px 0 4px; font-size: 13px; color: #555; }
 .video-script-form input, .video-script-form textarea { width: 100%; font: inherit; padding: 8px; border: 1px solid #c8c8d0; border-radius: 6px; box-sizing: border-box; }
 .step-card__count label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+
+/* ===== Video candidates ===== */
+.candidates-grid--videos { grid-template-columns: repeat(2, 1fr); }
+.candidates-grid--videos .candidate-tile { aspect-ratio: auto; display: flex; flex-direction: column; }
+.candidate-tile > video { width: 100%; aspect-ratio: 9/16; display: block; background: black; }
+.candidate-tile > button { display: block; width: 100%; padding: 6px; border: 0; border-top: 1px solid #e7e7eb; background: white; cursor: pointer; font-size: 12px; }
+.candidate-tile > button:disabled { color: #aaa; cursor: not-allowed; }
