@@ -123,6 +123,7 @@ describe("processGenerateImages", () => {
     traceService.record = origRecord;
     jobRepository.update = origJobUpdate;
     __setImageProviderForTests(undefined);
+    __setAssetUrlResolverForTests(undefined);
   });
 
   it("creates candidates, updates batch to SUCCEEDED, transitions shot", async () => {
@@ -156,11 +157,15 @@ describe("processGenerateImages", () => {
 
   it("passes resolved reference image URLs to the provider", async () => {
     const seenArgs: unknown[] = [];
+    const seenResolverIds: string[][] = [];
     __setImageProviderForTests(async (args) => {
       seenArgs.push(args);
       return { provider: "ark-seedream", model: "test", candidates: [{ imageUrl: "u" }], candidateErrors: [] };
     });
-    __setAssetUrlResolverForTests(async () => ["https://r/1.png", "https://r/2.png"]);
+    __setAssetUrlResolverForTests(async (ids) => {
+      seenResolverIds.push(ids);
+      return ["https://r/1.png", "https://r/2.png"];
+    });
 
     const fakeDb = makeFakeDb();
     const ctx = await fakeDb.bootstrap("PENDING");
@@ -174,6 +179,6 @@ describe("processGenerateImages", () => {
       } as any,
     );
     assert.deepEqual((seenArgs[0] as any).referenceImageUrls, ["https://r/1.png", "https://r/2.png"]);
-    __setAssetUrlResolverForTests(undefined);
+    assert.deepEqual(seenResolverIds[0], ["a1", "a2"]);
   });
 });

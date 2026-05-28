@@ -59,11 +59,10 @@ export async function processGenerateImages(
 
   const artifact = await adapter.getImagePromptArtifact(data.imagePromptArtifactId);
 
-  const resolver = resolveAssetUrlsOverride ?? resolveAssetUrls;
-  const referenceImageUrls = await resolver(artifact.referenceAssetIds);
-
   let result: ArkImageResult;
   try {
+    const resolver = resolveAssetUrlsOverride ?? resolveAssetUrls;
+    const referenceImageUrls = await resolver(artifact.referenceAssetIds);
     result = await (providerOverride ?? defaultProvider)({
       prompt: artifact.promptText,
       negativePrompt: artifact.negativePrompt ?? undefined,
