@@ -7,6 +7,7 @@ import type { GenerateImagesJobData } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { traceService } from "../trace/trace.service.js";
 import { jobRepository } from "../job/job.repository.js";
+import { resolveAssetUrls } from "../material/asset-url-resolver.js";
 
 type Adapter = typeof db.db2;
 
@@ -21,6 +22,11 @@ type Provider = (args: {
 let providerOverride: Provider | undefined;
 export function __setImageProviderForTests(p: Provider | undefined) {
   providerOverride = p;
+}
+
+let resolveAssetUrlsOverride: ((ids: string[]) => Promise<string[]>) | undefined;
+export function __setAssetUrlResolverForTests(fn: ((ids: string[]) => Promise<string[]>) | undefined) {
+  resolveAssetUrlsOverride = fn;
 }
 
 async function defaultProvider(args: Parameters<Provider>[0]): Promise<ArkImageResult> {
@@ -53,12 +59,15 @@ export async function processGenerateImages(
 
   const artifact = await adapter.getImagePromptArtifact(data.imagePromptArtifactId);
 
+  const resolver = resolveAssetUrlsOverride ?? resolveAssetUrls;
+  const referenceImageUrls = await resolver(artifact.referenceAssetIds);
+
   let result: ArkImageResult;
   try {
     result = await (providerOverride ?? defaultProvider)({
       prompt: artifact.promptText,
       negativePrompt: artifact.negativePrompt ?? undefined,
-      referenceImageUrls: [], // P0: no URL resolution layer; Wave 7 adds the asset service hook
+      referenceImageUrls,
       count: data.count,
       aspectRatio: data.aspectRatio,
     });
