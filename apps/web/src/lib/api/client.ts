@@ -243,6 +243,71 @@ function looksLikeZodIssueJson(value: string) {
   }
 }
 
+// ----- v2 envelope -----
+export interface WorkflowEnvelope<T> {
+  data: T;
+  shotStatus?: string;
+  nextAction?: string;
+  warnings?: string[];
+  traceId?: string;
+}
+
+export type ShotStatus =
+  | "DRAFT"
+  | "IMAGE_PROMPT_PROPOSING"
+  | "IMAGE_PROMPT_READY"
+  | "IMAGE_PROMPT_EDITED"
+  | "IMAGE_GENERATING"
+  | "IMAGE_CANDIDATES_READY"
+  | "IMAGE_SELECTED"
+  | "VIDEO_SCRIPT_PROPOSING"
+  | "VIDEO_SCRIPT_READY"
+  | "VIDEO_SCRIPT_EDITED"
+  | "VIDEO_GENERATING"
+  | "VIDEO_CANDIDATES_READY"
+  | "VIDEO_SELECTED"
+  | "FAILED";
+
+export type NextAction =
+  | "GENERATE_IMAGE_PROMPT"
+  | "EDIT_IMAGE_PROMPT"
+  | "GENERATE_IMAGES"
+  | "POLL_IMAGE_BATCH"
+  | "SELECT_IMAGE"
+  | "GENERATE_VIDEO_SCRIPT"
+  | "EDIT_VIDEO_SCRIPT"
+  | "GENERATE_VIDEOS"
+  | "POLL_VIDEO_BATCH"
+  | "SELECT_VIDEO"
+  | "READY_FOR_FINAL_COMPOSE"
+  | "RETRY"
+  | "NONE";
+
+export type AspectRatio = "9:16" | "16:9" | "1:1";
+
+export { apiBaseUrl };
+
+export async function fetchJson<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new Error(
+      `${init?.method ?? "GET"} ${path} failed: ${response.status} ${text}`,
+    );
+  }
+  return body as T;
+}
+
 async function postJson<TResponse>(
   path: string,
   body: unknown,
