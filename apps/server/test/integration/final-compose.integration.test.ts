@@ -1,58 +1,79 @@
-// @expensive — requires a fully primed workspace with selected videos per shot
-// AND a worker running ffmpeg. Gated by ALLOW_EXPENSIVE_TESTS=true.
-import { describe, it } from "node:test";
+// @expensive — runs image + video for every shot, then composes. Can take 20–40 min for a 4-shot workspace.
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
 import { pollUntil } from "../helpers/poll.js";
+import { seedWorkspace, seedShotWithSelectedImage, type SeededWorkspace } from "../helpers/seed-workspace.js";
 
-const RUN =
-  process.env.RUN_REAL_PROVIDER_TESTS === "true" &&
-  process.env.ALLOW_EXPENSIVE_TESTS === "true";
+const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
+const ALLOW = process.env.ALLOW_EXPENSIVE_TESTS === "true";
 
-describe("final compose @expensive", { skip: !RUN }, () => {
-  it("composes and produces deterministic manifest hash across two runs", async () => {
-    const workspaceId = process.env.TEST_FIXTURE_WORKSPACE!;
-    assert.ok(workspaceId, "TEST_FIXTURE_WORKSPACE env required");
+describe("final compose @expensive", { skip: !RUN || !ALLOW }, () => {
+  let ws: SeededWorkspace;
 
-    const r1 = await api<{ data: { finalVideoJobId: string } }>(
-      `/api/workspaces/${workspaceId}/final-videos`,
-      {
+  before(async () => {
+    ws = await seedWorkspace({ label: `it-final-${Date.now()}` });
+    // Per-shot: image-select, then video-script + video-batch + select
+    for (let i = 0; i < ws.shotIds.length; i++) {
+      const ctx = await seedShotWithSelectedImage(ws, i);
+      const script = await api<{ data: { id: string } }>(
+        `/api/workspaces/${ws.workspaceId}/shots/${ctx.shotId}/video-scripts/propose`,
+        { method: "POST", body: JSON.stringify({ durationSec: 4, useNeighborFrames: true }) },
+      );
+      const batch = await api<{ data: { batchId: string } }>(
+        `/api/shots/${ctx.shotId}/video-batches`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": `it-final-${ctx.shotId}-${Date.now()}` },
+          body: JSON.stringify({ videoScriptArtifactId: script.data.id, count: 1, aspectRatio: "9:16" }),
+        },
+      );
+      const done = await pollUntil({
+        label: `video batch shot ${i}`,
+        intervalMs: 8000,
+        timeoutMs: 15 * 60_000,
+        fetcher: () =>
+          api<{ data: { status: string; candidates: Array<{ id: string; videoUrl: string; status: string }> } }>(
+            `/api/shots/${ctx.shotId}/video-batches/${batch.data.batchId}`,
+          ),
+        isDone: (v) => ["SUCCEEDED", "PARTIAL", "FAILED"].includes(v.data.status),
+      });
+      const pick = done.data.candidates.find((c) => c.status === "SUCCEEDED" && c.videoUrl);
+      assert.ok(pick, `shot ${i} produced no video`);
+      await api(`/api/shots/${ctx.shotId}/selected-video`, {
         method: "POST",
-        headers: { "Idempotency-Key": `run-1-${Date.now()}` },
-        body: JSON.stringify({}),
-      },
-    );
-    const done1 = await pollUntil({
-      label: "final compose 1",
-      intervalMs: 5000,
-      timeoutMs: 10 * 60_000,
-      fetcher: () =>
-        api<{
-          data: { status: string; compiledManifestHash: string | null };
-        }>(`/api/final-videos/${r1.data.finalVideoJobId}`),
-      isDone: (v) => ["SUCCEEDED", "FAILED"].includes(v.data.status),
-    });
-    assert.equal(done1.data.status, "SUCCEEDED");
-    assert.match(done1.data.compiledManifestHash ?? "", /^sha256:/);
+        body: JSON.stringify({ videoCandidateId: pick!.id, videoGenerationBatchId: batch.data.batchId }),
+      });
+    }
+  });
+  after(async () => { await ws?.cleanup(); });
 
-    const r2 = await api<{ data: { finalVideoJobId: string } }>(
-      `/api/workspaces/${workspaceId}/final-videos`,
-      {
-        method: "POST",
-        headers: { "Idempotency-Key": `run-2-${Date.now()}` },
-        body: JSON.stringify({}),
-      },
-    );
-    const done2 = await pollUntil({
-      label: "final compose 2",
-      intervalMs: 5000,
-      timeoutMs: 10 * 60_000,
-      fetcher: () =>
-        api<{
-          data: { status: string; compiledManifestHash: string | null };
-        }>(`/api/final-videos/${r2.data.finalVideoJobId}`),
-      isDone: (v) => ["SUCCEEDED", "FAILED"].includes(v.data.status),
-    });
-    assert.equal(done2.data.compiledManifestHash, done1.data.compiledManifestHash);
+  it("composes and produces a deterministic manifest hash across two runs", async () => {
+    async function compose(label: string) {
+      const start = await api<{ data: { id: string } }>(
+        `/api/workspaces/${ws.workspaceId}/final-videos`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": `it-${label}-${Date.now()}` },
+          body: JSON.stringify({ outputAspectRatio: "9:16" }),
+        },
+      );
+      const done = await pollUntil({
+        label,
+        intervalMs: 4000,
+        timeoutMs: 10 * 60_000,
+        fetcher: () =>
+          api<{ data: { status: string; compiledManifestHash: string | null; localUrl: string | null } }>(
+            `/api/final-videos/${start.data.id}`,
+          ),
+        isDone: (v) => ["SUCCEEDED", "FAILED"].includes(v.data.status),
+      });
+      assert.equal(done.data.status, "SUCCEEDED");
+      assert.ok(done.data.compiledManifestHash?.startsWith("sha256:"));
+      return done.data;
+    }
+    const r1 = await compose("run-1");
+    const r2 = await compose("run-2");
+    assert.equal(r2.compiledManifestHash, r1.compiledManifestHash, "manifest hash should be deterministic");
   });
 });
