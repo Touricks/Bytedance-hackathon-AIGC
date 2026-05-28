@@ -16,6 +16,7 @@ export * from "./trace/trace-log.js";
 export * from "./probes/to-text.js";
 export * from "./probes/image-to-video.js";
 export * from "./providers/ark-image.provider.js";
+export * from "./providers/provider-config.js";
 export * from "./schemas/image-prompt.schema.js";
 export * from "./schemas/video-script.schema.js";
 export * from "./agents/runner.js";
