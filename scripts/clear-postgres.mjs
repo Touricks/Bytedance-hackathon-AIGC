@@ -7,19 +7,29 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 const requireFromServer = createRequire(
-  new URL("../apps/server/package.json", import.meta.url),
+  new URL("../apps/server/package.json", import.meta.url)
 );
 const { Client } = requireFromServer("pg");
 
 const tables = [
-  "workspace_video_archive",
+  "trace_events",
+  "final_video_jobs",
+  "generation_jobs",
+  "selected_shot_videos",
+  "video_candidates",
+  "video_generation_batches",
+  "video_script_artifacts",
+  "selected_shot_images",
+  "image_candidates",
+  "image_generation_batches",
+  "image_prompt_artifacts",
+  "shot_asset_refs",
+  "storyboard_shots",
   "workspace_artifact",
-  "storyboard_shot",
-  "generation_job",
   "script",
   "creative_workspace",
   "product",
-  "asset",
+  "asset"
 ];
 
 function parseDotEnvLine(line) {
@@ -56,10 +66,7 @@ function loadRepoEnv() {
   }
 
   return Object.fromEntries(
-    readFileSync(envPath, "utf8")
-      .split(/\r?\n/)
-      .map(parseDotEnvLine)
-      .filter(Boolean),
+    readFileSync(envPath, "utf8").split(/\r?\n/).map(parseDotEnvLine).filter(Boolean)
   );
 }
 
@@ -68,7 +75,7 @@ function getDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL || repoEnv.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error(
-      "DATABASE_URL is required. Set it in the environment or repo root .env.",
+      "DATABASE_URL is required. Set it in the environment or repo root .env."
     );
   }
   return databaseUrl;
@@ -81,12 +88,8 @@ function quoteIdentifier(identifier) {
 function formatDatabaseTarget(databaseUrl) {
   try {
     const parsed = new URL(databaseUrl);
-    const username = parsed.username
-      ? decodeURIComponent(parsed.username)
-      : "";
-    const auth = username
-      ? `${username}${parsed.password ? ":<redacted>" : ""}@`
-      : "";
+    const username = parsed.username ? decodeURIComponent(parsed.username) : "";
+    const auth = username ? `${username}${parsed.password ? ":<redacted>" : ""}@` : "";
     return `${parsed.protocol}//${auth}${parsed.host}${parsed.pathname}${parsed.search}`;
   } catch {
     return "<unparseable DATABASE_URL>";
@@ -104,7 +107,7 @@ function usage() {
     "",
     "Options:",
     "  --yes   Execute the TRUNCATE. Without this flag the script is dry-run only.",
-    "  --help  Show this help text.",
+    "  --help  Show this help text."
   ].join("\n");
 }
 
@@ -118,7 +121,7 @@ function parseArgs(argv) {
 
   return {
     yes: args.includes("--yes"),
-    help: args.includes("--help"),
+    help: args.includes("--help")
   };
 }
 
@@ -129,7 +132,7 @@ async function getExistingTables(client) {
      where table_schema = 'public'
        and table_type = 'BASE TABLE'
        and table_name = any($1::text[])`,
-    [tables],
+    [tables]
   );
 
   return new Set(result.rows.map((row) => row.table_name));
@@ -139,7 +142,7 @@ async function countRows(client) {
   const counts = {};
   for (const table of tables) {
     const result = await client.query(
-      `select count(*)::integer as count from ${quoteIdentifier(table)}`,
+      `select count(*)::integer as count from ${quoteIdentifier(table)}`
     );
     counts[table] = result.rows[0].count;
   }
@@ -173,8 +176,8 @@ async function main() {
       throw new Error(
         [
           `Missing expected table(s): ${missingTables.join(", ")}`,
-          "Initialize the database schema first, for example by starting the server once.",
-        ].join("\n"),
+          "Initialize the database schema first, for example by starting the server once."
+        ].join("\n")
       );
     }
 
@@ -191,7 +194,7 @@ async function main() {
     try {
       await client.query(
         `truncate table ${tables.map(quoteIdentifier).join(", ")}
-         restart identity cascade`,
+         restart identity cascade`
       );
       await client.query("commit");
     } catch (error) {
