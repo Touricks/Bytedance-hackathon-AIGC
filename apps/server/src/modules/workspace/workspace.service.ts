@@ -674,7 +674,7 @@ async function getExistingScript(scriptId: string) {
   }
 }
 
-async function createScriptBundleForShotPrompt(input: {
+async function _createScriptBundleForShotPrompt(input: {
   localPath: string;
   workspace: CreativeWorkspace;
   brief: ProductBriefArtifact;

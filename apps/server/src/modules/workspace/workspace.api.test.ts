@@ -206,7 +206,7 @@ async function startArkJsonServer(responses: unknown[]) {
   };
 }
 
-async function startArkVideoServer() {
+async function _startArkVideoServer() {
   const bodies: unknown[] = [];
   const server: Server = createServer(async (request, response) => {
     let body = "";
@@ -289,7 +289,7 @@ function setRealArkTextEnv(url: string) {
   };
 }
 
-function setRealArkVideoEnv(url: string) {
+function _setRealArkVideoEnv(url: string) {
   const previousArkBaseUrl = process.env.ARK_BASE_URL;
   const previousArkKey = process.env.ARK_API_KEY;
   const previousArkVideoEndpoint = process.env.ARK_VIDEO_ENDPOINT_ID;
@@ -511,7 +511,7 @@ describe("workspace API", () => {
     return directory;
   }
 
-  async function waitForCompletedJob(jobId: string) {
+  async function _waitForCompletedJob(jobId: string) {
     let detail;
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const detailResponse = await app.inject({
@@ -528,7 +528,7 @@ describe("workspace API", () => {
     assert.fail(`Timed out waiting for workspace job ${jobId}`);
   }
 
-  async function waitForTerminalJob(jobId: string) {
+  async function _waitForTerminalJob(jobId: string) {
     let detail;
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const detailResponse = await app.inject({

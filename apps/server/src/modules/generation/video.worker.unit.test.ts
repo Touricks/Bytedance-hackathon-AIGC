@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { processGenerateVideos, __setVideoProviderForTests } from "./video.worker.js";
