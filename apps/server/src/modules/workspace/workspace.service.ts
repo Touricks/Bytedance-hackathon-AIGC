@@ -309,6 +309,9 @@ function toProductBrief(input: {
     bannedExpressions: [],
     landingInfo: null,
     assumptions: ["Generated from approved material intake."],
+    angleType: "problem_solution",
+    emotionalTrigger: "让目标人群感受到商品带来的便捷与价值",
+    conversionStyle: "soft_cta",
   });
 }
 

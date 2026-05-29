@@ -140,6 +140,26 @@ export function buildProductBriefResponseFormat(
         bannedExpressions: arrayOf(plainString),
         landingInfo: nullableString(),
         assumptions: arrayOf(plainString),
+        angleType: {
+          type: "string",
+          enum: [
+            "problem_solution",
+            "before_after",
+            "lifestyle_upgrade",
+            "trust_proof",
+            "budget_value",
+          ],
+        },
+        emotionalTrigger: nonEmptyString,
+        conversionStyle: {
+          type: "string",
+          enum: [
+            "soft_cta",
+            "direct_cta",
+            "personal_recommendation",
+            "problem_triggered_cta",
+          ],
+        },
       },
       [
         "product",
@@ -152,6 +172,9 @@ export function buildProductBriefResponseFormat(
         "bannedExpressions",
         "landingInfo",
         "assumptions",
+        "angleType",
+        "emotionalTrigger",
+        "conversionStyle",
       ],
     ),
   });
@@ -198,6 +221,50 @@ export function buildStoryboardResponseFormat(input: {
         assumptions: arrayOf(plainString),
       },
       ["narrative", "totalDurationSec", "shots", "assumptions"],
+    ),
+  });
+}
+
+export function buildStoryboardVariantsResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  const shotSchema = strictObject(
+    {
+      index: integer,
+      purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+      durationSec: positiveInteger,
+      scene: nonEmptyString,
+      visualDirection: nonEmptyString,
+      productAssetRef: refSchema(refs),
+      voiceover: nonEmptyString,
+      transition: nonEmptyString,
+    },
+    ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"],
+  );
+  const variantSchema = strictObject(
+    {
+      variantLabel: nonEmptyString,
+      templateStyle: { type: "string", enum: ["种草", "开箱", "lifestyle", "卖点"] },
+      angleType: {
+        type: "string",
+        enum: ["problem_solution", "before_after", "lifestyle_upgrade", "trust_proof", "budget_value"],
+      },
+      narrative: nonEmptyString,
+      totalDurationSec: positiveInteger,
+      shots: arrayOf(shotSchema, { minItems: 1 }),
+      sellingReason: nonEmptyString,
+    },
+    ["variantLabel", "templateStyle", "angleType", "narrative", "totalDurationSec", "shots", "sellingReason"],
+  );
+  return responseFormat({
+    name: "storyboard_variants_v1",
+    description: "一次生成 2-3 套不同风格的分镜候选，供用户选择。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      { variants: arrayOf(variantSchema, { minItems: 2, maxItems: 3 }) },
+      ["variants"],
     ),
   });
 }
@@ -259,6 +326,31 @@ export function buildShotPromptResponseFormat(input: {
         "tts",
         "assumptions",
       ],
+    ),
+  });
+}
+
+export function buildRegenerateShotResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  return responseFormat({
+    name: "regenerate_shot_v1",
+    description: "重新生成单个分镜 shot，结构与 storyboard shot 一致。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        index: integer,
+        purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+        durationSec: positiveInteger,
+        scene: nonEmptyString,
+        visualDirection: nonEmptyString,
+        productAssetRef: refSchema(refs),
+        voiceover: nonEmptyString,
+        transition: nonEmptyString,
+      },
+      ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"],
     ),
   });
 }

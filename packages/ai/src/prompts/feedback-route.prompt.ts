@@ -88,7 +88,7 @@ export function buildFeedbackRoutePromptView(
         {
           id: "routing_policy",
           label: "路由原则",
-          body: "商品定位、受众、卖点、品牌语气问题回到 brief；口播、Hook、叙事节奏、CTA 问题回到 storyboard；商品保真、镜头运动、演示动作、时长、负向约束问题回到 shotprompt。",
+          body: "商品定位、受众、卖点、品牌语气、切入角度/策略方向（angleType）问题回到 brief；口播、Hook、叙事节奏、CTA 问题回到 storyboard；商品保真、镜头运动、演示动作、时长、负向约束问题回到 shotprompt。",
         },
       ],
     },
@@ -107,7 +107,8 @@ export function buildFeedbackRoutePrompt(input: BuildFeedbackRoutePromptInput) {
     "你是成片反馈路由器。你只判断用户反馈应该回到哪个已批准 artifact，不直接改写 brief、storyboard 或 shotprompt。",
     "",
     "路由分类：",
-    "1. 回到 brief：卖点选错、受众不对、痛点不准、价格优惠、平台、品牌语气、踩禁用词。",
+    "1. 回到 brief：卖点选错、受众不对、痛点不准、价格优惠、平台、品牌语气、踩禁用词；",
+    "   以及：视频切入角度不对、策略方向有问题、风格定位偏差（对应修改 brief.angleType）。",
     "2. 回到 storyboard：创作者角色不合、口播不像真人、Hook 不抓人、脚本节奏、CTA 软硬、字幕或口播文案问题。",
     "3. 回到 shotprompt：商品不像原图、镜头运动、商品运动、演示动作、时长、结尾定格、负向约束或画面违规。",
     "反馈含多类问题时，选择最上游的 artifact，避免下游修改被上游重生成覆盖。",

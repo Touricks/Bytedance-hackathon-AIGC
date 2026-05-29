@@ -65,6 +65,20 @@ export const productBriefArtifactSchema = z.object({
   bannedExpressions: z.array(z.string()),
   landingInfo: z.string().nullable(),
   assumptions: z.array(z.string()),
+  angleType: z.enum([
+    "problem_solution",
+    "before_after",
+    "lifestyle_upgrade",
+    "trust_proof",
+    "budget_value",
+  ]).optional(),
+  emotionalTrigger: z.string().min(1).optional(),
+  conversionStyle: z.enum([
+    "soft_cta",
+    "direct_cta",
+    "personal_recommendation",
+    "problem_triggered_cta",
+  ]).optional(),
 });
 
 export const storyboardShotArtifactSchema = z.object({
@@ -84,6 +98,29 @@ export const storyboardArtifactSchema = z.object({
   shots: z.array(storyboardShotArtifactSchema).min(1),
   assumptions: z.array(z.string()),
 });
+
+export const storyboardVariantSchema = z.object({
+  variantLabel: z.string().min(1),
+  templateStyle: z.enum(["种草", "开箱", "lifestyle", "卖点"]),
+  angleType: z.enum([
+    "problem_solution",
+    "before_after",
+    "lifestyle_upgrade",
+    "trust_proof",
+    "budget_value",
+  ]),
+  narrative: z.string().min(1),
+  totalDurationSec: z.number().int().positive(),
+  shots: z.array(storyboardShotArtifactSchema).min(1),
+  sellingReason: z.string().min(1),
+});
+
+export const storyboardVariantsArtifactSchema = z.object({
+  variants: z.array(storyboardVariantSchema).min(2).max(3),
+});
+
+export type StoryboardVariant = z.infer<typeof storyboardVariantSchema>;
+export type StoryboardVariantsArtifact = z.infer<typeof storyboardVariantsArtifactSchema>;
 
 export const shotPromptShotArtifactSchema = z.object({
   index: z.number().int().nonnegative(),

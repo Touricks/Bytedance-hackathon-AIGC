@@ -31,7 +31,10 @@ const providerBrief = {
   bannedExpressions: [],
   landingInfo: null,
   assumptions: ["Capacity is not specified by the source material."],
-};
+  angleType: "problem_solution",
+  emotionalTrigger: "上班族想要快速健康早餐的迫切感",
+  conversionStyle: "soft_cta",
+} as const;
 
 const providerStoryboard = {
   narrative:

@@ -10,6 +10,7 @@ export type TracePipeline =
   | "feedback"
   | "shotprompt"
   | "storyboard"
+  | "storyboard_variants"
   | "one_click_video"
   | "probe_to_text"
   | "probe_image_to_video";
