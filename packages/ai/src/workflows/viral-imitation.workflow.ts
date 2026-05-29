@@ -1,7 +1,5 @@
 import {
   storyboardArtifactSchema,
-  type MaterialIntakeArtifact,
-  type ProductBriefArtifact,
   type StoryboardArtifact,
 } from "@aigc-video/shared";
 import {
