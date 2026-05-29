@@ -144,7 +144,11 @@ export const config = {
     process.env.WORKSPACE_DIR ?? path.join("storage", "workspaces"),
     envFileRoot
   ),
-  uploadUrlPrefix
+  uploadUrlPrefix,
+  defaultImageBatchSize: Number(process.env.DEFAULT_IMAGE_BATCH_SIZE ?? 3),
+  maxImageBatchSize: Number(process.env.MAX_IMAGE_BATCH_SIZE ?? 6),
+  defaultVideoBatchSize: Number(process.env.DEFAULT_VIDEO_BATCH_SIZE ?? 5),
+  maxVideoBatchSize: Number(process.env.MAX_VIDEO_BATCH_SIZE ?? 10)
 };
 
 export function shouldStartApi(): boolean {

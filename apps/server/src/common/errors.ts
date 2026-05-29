@@ -5,6 +5,17 @@ export class NotFoundError extends Error {
   }
 }
 
+export class HttpError extends Error {
+  public readonly statusCode: number;
+  public readonly code: string;
+  constructor(statusCode: number, code: string, message?: string) {
+    super(message ?? code);
+    this.name = "HttpError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
 interface ScriptTraceError extends Error {
   scriptId?: string;
 }
@@ -12,8 +23,12 @@ interface ScriptTraceError extends Error {
 export function toHttpError(error: unknown): {
   statusCode: number;
   message: string;
+  code?: string;
   scriptId?: string;
 } {
+  if (error instanceof HttpError) {
+    return { statusCode: error.statusCode, message: error.message, code: error.code };
+  }
   if (error instanceof NotFoundError) {
     return { statusCode: 404, message: error.message };
   }

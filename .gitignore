@@ -12,6 +12,11 @@ apps/server/tmp/
 tmp/
 logs/
 storage/
+apps/web/test-results/
+apps/web/playwright-report/
+.claude/
+.claire/
+.codex/
 
 # Keep the PRD locally only; it includes private challenge resource credentials.
 docs/prd.pdf

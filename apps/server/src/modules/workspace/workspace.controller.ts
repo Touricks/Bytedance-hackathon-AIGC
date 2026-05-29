@@ -200,16 +200,6 @@ export async function registerWorkspaceController(
     }
   );
 
-  app.post("/api/workspaces/video/generate", async (request, reply) => {
-    try {
-      const body = workspaceDirectoryRequestSchema.parse(request.body);
-      return await workspaceService.startVideoGeneration(body);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
   app.post("/api/workspaces/feedback/route", async (request, reply) => {
     try {
       const body = feedbackRouteRequestSchema.parse(request.body);

@@ -1,15 +1,31 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./routes/App.js";
+import { WorkspaceLayout } from "./features/workspace/WorkspaceLayout.js";
 import "./styles.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
+});
+
+function Root() {
+  const [pathname, setPathname] = useState(window.location.pathname);
+  useEffect(() => {
+    const onPop = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  if (pathname.startsWith("/workspaces/")) {
+    return <WorkspaceLayout />;
+  }
+  return <App />;
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <Root />
     </QueryClientProvider>
-  </StrictMode>
+  </StrictMode>,
 );

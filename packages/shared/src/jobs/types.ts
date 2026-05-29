@@ -6,3 +6,47 @@ export interface GenerateVideoJobPayload {
   jobId: string;
   scriptId: string;
 }
+
+export const GENERATION_V2_QUEUE_NAME = "generation_v2";
+
+export type GenerationV2JobName =
+  | "generate_images"
+  | "generate_videos"
+  | "compose_final_video";
+
+export interface GenerateImagesJobData {
+  kind: "generate_images";
+  jobId: string;
+  batchId: string;
+  shotId: string;
+  workspaceId: string;
+  imagePromptArtifactId: string;
+  count: number;
+  aspectRatio: "9:16" | "16:9" | "1:1";
+  traceId: string;
+}
+
+export interface GenerateVideosJobData {
+  kind: "generate_videos";
+  jobId: string;
+  batchId: string;
+  shotId: string;
+  workspaceId: string;
+  videoScriptArtifactId: string;
+  count: number;
+  aspectRatio: "9:16" | "16:9" | "1:1";
+  traceId: string;
+}
+
+export interface ComposeFinalVideoJobData {
+  kind: "compose_final_video";
+  jobId: string;
+  finalVideoJobId: string;
+  workspaceId: string;
+  traceId: string;
+}
+
+export type GenerationV2JobData =
+  | GenerateImagesJobData
+  | GenerateVideosJobData
+  | ComposeFinalVideoJobData;

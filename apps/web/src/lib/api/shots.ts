@@ -1,0 +1,66 @@
+import {
+  fetchJson,
+  type WorkflowEnvelope,
+  type ShotStatus,
+  type NextAction,
+} from "./client.js";
+
+export interface ShotRow {
+  id: string;
+  workspaceId: string;
+  orderIndex: number;
+  title: string;
+  objective: string | null;
+  defaultDurationSec: number | null;
+  status: ShotStatus;
+  nextAction: NextAction;
+  activeImagePromptArtifactId: string | null;
+  selectedImageId: string | null;
+  activeVideoScriptArtifactId: string | null;
+  selectedVideoId: string | null;
+}
+
+export interface WorkflowStatus {
+  workspaceId: string;
+  shots: Array<{
+    shotId: string;
+    orderIndex: number;
+    status: ShotStatus;
+    nextAction: NextAction;
+    activeImagePromptArtifactId: string | null;
+    selectedImageId: string | null;
+    activeVideoScriptArtifactId: string | null;
+    selectedVideoId: string | null;
+    activeImageBatchId?: string | null;
+    activeVideoBatchId?: string | null;
+  }>;
+  canComposeFinalVideo: boolean;
+}
+
+export function listShots(workspaceId: string) {
+  return fetchJson<{ data: ShotRow[] }>(
+    `/api/workspaces/${workspaceId}/shots`,
+  );
+}
+
+export function getShot(shotId: string) {
+  return fetchJson<{ data: ShotRow }>(`/api/shots/${shotId}`);
+}
+
+export function getWorkflowStatus(workspaceId: string) {
+  return fetchJson<{ data: WorkflowStatus }>(
+    `/api/workspaces/${workspaceId}/shot-workflow-status`,
+  );
+}
+
+export function retryShot(
+  shotId: string,
+  what: "image_batch" | "video_batch",
+  idempotencyKey: string,
+) {
+  return fetchJson<WorkflowEnvelope<unknown>>(`/api/shots/${shotId}/retry`, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ what }),
+  });
+}

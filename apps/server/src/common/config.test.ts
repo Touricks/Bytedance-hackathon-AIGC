@@ -286,6 +286,46 @@ describe("server config", () => {
     }
   });
 
+  it("batch sizing config exposes default and max image/video batch sizes", () => {
+    const result = spawnSync(
+      tsxBin,
+      [
+        "--eval",
+        `import(${JSON.stringify(configModuleUrl)})
+          .then(({ config }) => {
+            console.log(JSON.stringify({
+              defaultImageBatchSize: config.defaultImageBatchSize,
+              maxImageBatchSize: config.maxImageBatchSize,
+              defaultVideoBatchSize: config.defaultVideoBatchSize,
+              maxVideoBatchSize: config.maxVideoBatchSize
+            }));
+          })
+          .catch((error) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
+          });`
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...withoutDatabaseEnv(),
+          AIGC_VIDEO_SKIP_ENV_FILE: "true",
+          DATABASE_URL: "postgres://env-user:env-pass@localhost:5432/env_db"
+        },
+        encoding: "utf8"
+      }
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const out = JSON.parse(result.stdout);
+    assert.equal(typeof out.defaultImageBatchSize, "number");
+    assert.equal(typeof out.maxImageBatchSize, "number");
+    assert.equal(typeof out.defaultVideoBatchSize, "number");
+    assert.equal(typeof out.maxVideoBatchSize, "number");
+    assert.ok(out.maxImageBatchSize >= out.defaultImageBatchSize);
+    assert.ok(out.maxVideoBatchSize >= out.defaultVideoBatchSize);
+  });
+
   it("loads and normalizes the upload URL prefix separately from UPLOAD_DIR", () => {
     const fixtureDir = path.join(
       tmpdir(),

@@ -41,7 +41,6 @@ import { assertValidRasterImageBytes } from "../../common/image-validation.js";
 import { config } from "../../common/config.js";
 import { NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
-import { enqueueGenerationJob } from "../../jobs/queue.js";
 import {
   workspaceManifestSchema,
   type WorkspaceDirectoryRequest,
@@ -1588,50 +1587,16 @@ export const workspaceService = {
       status: "approved",
       data: approvedData,
     });
+    await seedShotsFromShotPrompt({
+      workspaceId: workspace.id,
+      scriptId: workspace.currentScriptId,
+      shotPrompt: approvedData,
+    });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
       status: "shotprompt_approved",
     });
 
     return { workspace: updatedWorkspace, artifact };
-  },
-
-  async startVideoGeneration(target: string | WorkspaceDirectoryRequest) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const briefArtifact = await db.getWorkspaceArtifact(workspace.id, "brief");
-    const shotPromptArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      "shotprompt",
-    );
-    const brief = productBriefArtifactSchema.parse(briefArtifact.data);
-    const shotPrompt = shotPromptArtifactSchema.parse(shotPromptArtifact.data);
-    const script = await createScriptBundleForShotPrompt({
-      localPath,
-      workspace,
-      brief,
-      shotPrompt,
-    });
-    const job = await db.createJob({
-      productId: script.productId,
-      scriptId: script.id,
-      payload: {
-        workspaceId: workspace.id,
-        shotprompt: shotPrompt,
-      },
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "video_generating",
-      currentJobId: job.id,
-    });
-    const manifest = toManifest({
-      workspaceId: updatedWorkspace.id,
-      currentScriptId: updatedWorkspace.currentScriptId,
-      currentJobId: updatedWorkspace.currentJobId,
-    });
-    await writeManifest(localPath, manifest);
-    await enqueueGenerationJob({ jobId: job.id, scriptId: script.id });
-
-    return { workspace: updatedWorkspace, manifest, job };
   },
 
   async routeFeedback(
@@ -1707,3 +1672,39 @@ export const workspaceService = {
     return { workspace: updatedWorkspace, routeArtifact, artifact, route, trace };
   },
 };
+
+async function seedShotsFromShotPrompt(input: {
+  workspaceId: string;
+  scriptId: string;
+  shotPrompt: ShotPromptArtifact;
+}) {
+  // Re-seeding wipes prior shots; first wave doesn't support edit/add yet.
+  const pool = db.db2.pool();
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("delete from storyboard_shots where workspace_id=$1", [input.workspaceId]);
+    for (const shot of input.shotPrompt.shots) {
+      await client.query(
+        `insert into storyboard_shots
+           (id, workspace_id, script_id, order_index, title, objective, default_duration_sec, status)
+         values ($1,$2,$3,$4,$5,$6,$7,'DRAFT')`,
+        [
+          `shot_${Math.random().toString(36).slice(2, 12)}`,
+          input.workspaceId,
+          input.scriptId,
+          shot.index,
+          shot.providerPrompt.slice(0, 80) || `Shot ${shot.index + 1}`,
+          shot.providerPrompt,
+          shot.endSec - shot.startSec,
+        ],
+      );
+    }
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

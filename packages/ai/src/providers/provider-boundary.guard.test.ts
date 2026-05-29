@@ -47,7 +47,8 @@ describe("provider boundary guardrails", () => {
     ).flat();
     const approvedFiles = new Set([
       path.join(repoRoot, "packages/ai/src/providers/ark-text.provider.ts"),
-      path.join(repoRoot, "packages/ai/src/providers/seedance-video.provider.ts")
+      path.join(repoRoot, "packages/ai/src/providers/seedance-video.provider.ts"),
+      path.join(repoRoot, "packages/ai/src/providers/ark-image.provider.ts")
     ]);
     const directProviderPatterns = [
       /from\s+["']openai["']/,

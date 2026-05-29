@@ -7,12 +7,14 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { config } from "./common/config.js";
 import { db } from "./db/client.js";
-import { registerCreationController } from "./modules/creation/creation.controller.js";
 import { registerMaterialController } from "./modules/material/material.controller.js";
 import { registerPipelineController } from "./modules/pipeline/pipeline.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
 import { registerWorkspaceController } from "./modules/workspace/workspace.controller.js";
 import { maxWorkspaceMaterialBytes } from "./modules/workspace/workspace.service.js";
+import { registerShotController } from "./modules/shot/shot.controller.js";
+import { registerGenerationController } from "./modules/generation/generation.controller.js";
+import { registerTraceController } from "./modules/trace/trace.routes.js";
 import type { WorkspaceDirectorySelectResponse } from "./modules/workspace/workdir-picker.js";
 
 interface BuildServerOptions {
@@ -65,6 +67,16 @@ export async function buildServer(options: BuildServerOptions = {}) {
   app.get("/api/health", async () => ({
     ok: true,
     runtime: config.runtime,
+  }));
+
+  app.get("/api/config/limits", async () => ({
+    data: {
+      defaultImageBatchSize: config.defaultImageBatchSize,
+      maxImageBatchSize: config.maxImageBatchSize,
+      defaultVideoBatchSize: config.defaultVideoBatchSize,
+      maxVideoBatchSize: config.maxVideoBatchSize,
+      aspectRatios: ["9:16", "16:9", "1:1"],
+    },
   }));
 
   app.get("/api/workspaces/:workspaceId/videos/*", async (request, reply) => {
@@ -144,7 +156,25 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerWorkspaceController(app, {
     selectWorkspaceDirectory: options.selectWorkspaceDirectory,
   });
-  await registerCreationController(app);
+  await registerShotController(app);
+  await registerGenerationController(app);
+  await registerTraceController(app);
+
+  app.delete("/api/test-runs/:runId", async (req, reply) => {
+    if (
+      process.env.NODE_ENV !== "test" &&
+      process.env.ALLOW_TEST_CLEANUP !== "true"
+    ) {
+      return reply.status(403).send({ code: "DISABLED_IN_THIS_ENV" });
+    }
+    const params = req.params as { runId: string };
+    const pool = db.db2.pool();
+    // Wipe creative_workspace rows by id-prefix; cascade handles downstream.
+    await pool.query("delete from creative_workspace where id like $1", [
+      `%${params.runId}%`,
+    ]);
+    return { data: { ok: true } };
+  });
 
   return app;
 }
