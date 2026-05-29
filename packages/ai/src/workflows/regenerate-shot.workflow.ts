@@ -3,7 +3,6 @@ import {
   type MaterialIntakeArtifact,
   type ProductBriefArtifact,
   type StoryboardArtifact,
-  type StoryboardArtifact as StoryboardShotArtifact,
 } from "@aigc-video/shared";
 import {
   buildRegenerateShotPrompt,
