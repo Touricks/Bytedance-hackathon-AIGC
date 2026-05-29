@@ -355,6 +355,42 @@ export function buildRegenerateShotResponseFormat(input: {
   });
 }
 
+export function buildViralImitationResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  const shotSchema = strictObject(
+    {
+      index: integer,
+      purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+      durationSec: positiveInteger,
+      scene: nonEmptyString,
+      visualDirection: nonEmptyString,
+      productAssetRef: refSchema(refs),
+      voiceover: nonEmptyString,
+      transition: nonEmptyString,
+    },
+    ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"],
+  );
+  return responseFormat({
+    name: "viral_imitation_v1",
+    description: "基于爆款模板库自动选模板并生成 UGC 分镜脚本。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        viralTemplateUsed: nonEmptyString,
+        matchReason: nonEmptyString,
+        narrative: nonEmptyString,
+        totalDurationSec: positiveInteger,
+        shots: arrayOf(shotSchema, { minItems: 6, maxItems: 6 }),
+        assumptions: arrayOf(plainString),
+      },
+      ["viralTemplateUsed", "matchReason", "narrative", "totalDurationSec", "shots", "assumptions"],
+    ),
+  });
+}
+
 export function buildFeedbackRouteResponseFormat(
   schemaVersion: string,
 ): ArkJsonSchemaResponseFormat {
