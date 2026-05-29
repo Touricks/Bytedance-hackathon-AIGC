@@ -2,10 +2,10 @@ import { z } from "zod";
 
 export const StoryboardImagePromptOutputSchema = z.object({
   promptText: z.string().min(20),
-  negativePrompt: z.string().optional(),
-  visualStyle: z.string().optional(),
-  composition: z.string().optional(),
-  lighting: z.string().optional(),
+  negativePrompt: z.string().nullable().optional(),
+  visualStyle: z.string().nullable().optional(),
+  composition: z.string().nullable().optional(),
+  lighting: z.string().nullable().optional(),
   productVisibilityRule: z.string().min(1),
   referenceImageUsage: z
     .array(
