@@ -48,5 +48,5 @@ When context is compacted or a new agent joins, use these files to regain the pr
 
 ### User preference
 
-- 当用户提到后端架构更新时，同时检查后端开发计划（backend-development-plan.md）以及契约文档(openapi.yaml),测试文档(postman-test-plan.md)并更新
+- 当用户提到后端架构更新时，同时检查接口文档（interface.md）以及契约文档(openapi.yaml),测试文档(postman.json) 并更新
 - 更新时，不需要考虑向后兼容

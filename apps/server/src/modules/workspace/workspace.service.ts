@@ -38,7 +38,10 @@ import {
   type FeedbackRouteArtifact,
   type CreativeWorkspace,
 } from "@aigc-video/shared";
-import { assertValidRasterImageBytes } from "../../common/image-validation.js";
+import {
+  assertImageDimensionsWithinPolicy,
+  assertValidRasterImageBytes,
+} from "../../common/image-validation.js";
 import { config } from "../../common/config.js";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
@@ -625,6 +628,12 @@ async function productBriefImageInput(
   const bytes = await readFile(
     path.join(workspaceMaterialsPath(localPath), primaryImage.ref),
   );
+  assertImageDimensionsWithinPolicy(
+    bytes,
+    primaryImage.mime,
+    undefined,
+    primaryImage.ref,
+  );
   return {
     url: `data:${primaryImage.mime};base64,${bytes.toString("base64")}`,
     mode: "data_url" as const,
@@ -645,6 +654,7 @@ async function materialIntakeImageInputs(
       const bytes = await readFile(
         path.join(workspaceMaterialsPath(localPath), asset.ref),
       );
+      assertImageDimensionsWithinPolicy(bytes, asset.mime, undefined, asset.ref);
       return {
         ref: asset.ref,
         url: `data:${asset.mime};base64,${bytes.toString("base64")}`,
@@ -1106,7 +1116,7 @@ function applySelectedMaterialRefs(
   };
 }
 
-async function copySelectedLegacyRootMaterials(input: {
+export async function copySelectedLegacyRootMaterials(input: {
   directory: string;
   selectedMaterialRefs?: string[];
 }) {
@@ -1119,11 +1129,6 @@ async function copySelectedLegacyRootMaterials(input: {
 
   for (const ref of input.selectedMaterialRefs) {
     const filename = safeWorkspaceFilename(ref);
-
-    const destination = path.join(materialDirectory, filename);
-    if (await fileExists(destination)) {
-      continue;
-    }
 
     try {
       workspaceMaterialMime(filename);
@@ -1139,6 +1144,8 @@ async function copySelectedLegacyRootMaterials(input: {
 
     const source = path.join(input.directory, filename);
     if (!(await fileExists(source))) {
+      // Nothing to import from the bound directory for this ref; any already
+      // managed (e.g. uploaded) file of the same name is left untouched.
       continue;
     }
 
@@ -1148,6 +1155,24 @@ async function copySelectedLegacyRootMaterials(input: {
     }
     if (sourceStats.size > maxWorkspaceMaterialBytes) {
       throw new Error("Material file exceeds 50MB limit");
+    }
+
+    const destination = path.join(materialDirectory, filename);
+    if (await fileExists(destination)) {
+      const destinationStats = await stat(destination);
+      if (destinationStats.size === sourceStats.size) {
+        const [sourceBytes, destinationBytes] = await Promise.all([
+          readFile(source),
+          readFile(destination),
+        ]);
+        if (sourceBytes.equals(destinationBytes)) {
+          // Already imported: keep the copy idempotent.
+          continue;
+        }
+      }
+      // A stale or differing file (e.g. an old placeholder) is squatting the
+      // managed name. The user explicitly selected the bound-directory file,
+      // so that selection must win — overwrite the squatter.
     }
 
     await copyFile(source, destination);
