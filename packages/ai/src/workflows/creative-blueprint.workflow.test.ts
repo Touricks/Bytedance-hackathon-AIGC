@@ -265,6 +265,7 @@ describe("generateCreativeBlueprintWithArk", () => {
             env: {
               MODEL_MODE: "real",
               ARK_API_KEY: "real-ark-key",
+              ARK_BASE_URL: "https://ark.example/api/v3",
               ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint"
             }
           }
@@ -316,9 +317,11 @@ describe("generateCreativeBlueprintWithArk", () => {
   it("fails loudly in real-provider mode when text model credentials are missing", async () => {
     const originalMode = process.env.MODEL_MODE;
     const originalArkApiKey = process.env.ARK_API_KEY;
+    const originalArkBaseUrl = process.env.ARK_BASE_URL;
     const originalArkModel = process.env.ARK_TEXT_ENDPOINT_ID;
     process.env.MODEL_MODE = "real";
     delete process.env.ARK_API_KEY;
+    delete process.env.ARK_BASE_URL;
     delete process.env.ARK_TEXT_ENDPOINT_ID;
 
     try {
@@ -343,6 +346,11 @@ describe("generateCreativeBlueprintWithArk", () => {
         delete process.env.ARK_API_KEY;
       } else {
         process.env.ARK_API_KEY = originalArkApiKey;
+      }
+      if (originalArkBaseUrl === undefined) {
+        delete process.env.ARK_BASE_URL;
+      } else {
+        process.env.ARK_BASE_URL = originalArkBaseUrl;
       }
       if (originalArkModel === undefined) {
         delete process.env.ARK_TEXT_ENDPOINT_ID;
@@ -413,6 +421,7 @@ describe("generateCreativeBlueprintWithArk", () => {
             env: {
               MODEL_MODE: "real",
               ARK_API_KEY: "bad-ark-key",
+              ARK_BASE_URL: "https://ark.example/api/v3",
               ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint"
             }
           }

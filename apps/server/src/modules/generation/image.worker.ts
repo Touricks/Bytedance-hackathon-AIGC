@@ -8,6 +8,10 @@ import { db } from "../../db/client.js";
 import { traceService } from "../trace/trace.service.js";
 import { jobRepository } from "../job/job.repository.js";
 import { resolveAssetUrls } from "../material/asset-url-resolver.js";
+import {
+  persistGeneratedAsset,
+  type GeneratedAssetPersister,
+} from "./generated-asset-storage.js";
 
 type Adapter = typeof db.db2;
 
@@ -27,6 +31,13 @@ export function __setImageProviderForTests(p: Provider | undefined) {
 let resolveAssetUrlsOverride: ((ids: string[]) => Promise<string[]>) | undefined;
 export function __setAssetUrlResolverForTests(fn: ((ids: string[]) => Promise<string[]>) | undefined) {
   resolveAssetUrlsOverride = fn;
+}
+
+let generatedAssetPersisterOverride: GeneratedAssetPersister | undefined;
+export function __setGeneratedAssetPersisterForTests(
+  fn: GeneratedAssetPersister | undefined,
+) {
+  generatedAssetPersisterOverride = fn;
 }
 
 async function defaultProvider(args: Parameters<Provider>[0]): Promise<ArkImageResult> {
@@ -93,18 +104,29 @@ export async function processGenerateImages(
   }
 
   for (const c of result.candidates) {
+    const candidateId = "imc_" + Math.random().toString(36).slice(2, 12);
+    const persisted = await (generatedAssetPersisterOverride ?? persistGeneratedAsset)({
+      workspaceId: batch.workspaceId,
+      sourceUrl: c.imageUrl,
+      kind: "image",
+      batchId: batch.id,
+      candidateId,
+    });
     await adapter.insertImageCandidate({
-      id: "imc_" + Math.random().toString(36).slice(2, 12),
+      id: candidateId,
       batchId: batch.id,
       shotId: batch.shotId,
       workspaceId: batch.workspaceId,
-      imageUrl: c.imageUrl,
-      objectKey: c.objectKey ?? null,
+      imageUrl: persisted.stableUrl,
+      objectKey: persisted.objectKey ?? c.objectKey ?? null,
       width: null,
       height: null,
       seed: c.seed ?? null,
       provider: result.provider,
-      providerResponse: c,
+      providerResponse: {
+        ...c,
+        providerTemporaryUrl: persisted.providerTemporaryUrl,
+      },
       status: "SUCCEEDED",
       errorMessage: null,
     });

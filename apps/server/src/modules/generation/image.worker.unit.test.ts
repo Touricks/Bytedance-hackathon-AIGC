@@ -4,6 +4,7 @@ import {
   processGenerateImages,
   __setImageProviderForTests,
   __setAssetUrlResolverForTests,
+  __setGeneratedAssetPersisterForTests,
 } from "./image.worker.js";
 
 type ProviderCall = {
@@ -124,6 +125,7 @@ describe("processGenerateImages", () => {
     jobRepository.update = origJobUpdate;
     __setImageProviderForTests(undefined);
     __setAssetUrlResolverForTests(undefined);
+    __setGeneratedAssetPersisterForTests(undefined);
   });
 
   it("creates candidates, updates batch to SUCCEEDED, transitions shot", async () => {
@@ -133,6 +135,11 @@ describe("processGenerateImages", () => {
       candidates: [{ imageUrl: "u1" }, { imageUrl: "u2" }, { imageUrl: "u3" }],
     });
     __setImageProviderForTests(fakeProvider.fn);
+    __setGeneratedAssetPersisterForTests(async (input) => ({
+      stableUrl: `/api/workspaces/${input.workspaceId}/materials/generated-images/${input.candidateId}.png`,
+      objectKey: `materials/generated-images/${input.candidateId}.png`,
+      providerTemporaryUrl: input.sourceUrl,
+    }));
 
     const fakeDb = makeFakeDb();
     const ctx = await fakeDb.bootstrap("PENDING");
@@ -149,6 +156,11 @@ describe("processGenerateImages", () => {
       candidates: [],
     });
     __setImageProviderForTests(fakeProvider.fn);
+    __setGeneratedAssetPersisterForTests(async (input) => ({
+      stableUrl: input.sourceUrl,
+      objectKey: null,
+      providerTemporaryUrl: null,
+    }));
     const fakeDb = makeFakeDb();
     const ctx = await fakeDb.bootstrap("SUCCEEDED");
     await processGenerateImages(ctx.jobData, fakeDb.adapter as any);
@@ -162,6 +174,11 @@ describe("processGenerateImages", () => {
       seenArgs.push(args);
       return { provider: "ark-seedream", model: "test", candidates: [{ imageUrl: "u" }], candidateErrors: [] };
     });
+    __setGeneratedAssetPersisterForTests(async (input) => ({
+      stableUrl: input.sourceUrl,
+      objectKey: null,
+      providerTemporaryUrl: null,
+    }));
     __setAssetUrlResolverForTests(async (ids) => {
       seenResolverIds.push(ids);
       return ["https://r/1.png", "https://r/2.png"];

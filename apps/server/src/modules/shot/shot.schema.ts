@@ -4,6 +4,7 @@ export const aspectRatioSchema = z.enum(["9:16", "16:9", "1:1"]);
 
 export const proposeImagePromptRequest = z.object({
   referenceAssetIds: z.array(z.string()).default([]),
+  userDirection: z.string().optional(),
   userHint: z.string().optional(),
   stylePresetId: z.string().optional(),
 });
@@ -21,13 +22,29 @@ export const createImageBatchRequest = z.object({
 });
 
 export const selectImageRequest = z.object({
-  imageCandidateId: z.string(),
-  imageGenerationBatchId: z.string(),
+  candidateId: z.string().optional(),
+  imageCandidateId: z.string().optional(),
+  imageGenerationBatchId: z.string().optional(),
+}).transform((value, ctx) => {
+  const imageCandidateId = value.candidateId ?? value.imageCandidateId;
+  if (!imageCandidateId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "candidateId is required",
+      path: ["candidateId"],
+    });
+    return z.NEVER;
+  }
+  return {
+    imageCandidateId,
+    imageGenerationBatchId: value.imageGenerationBatchId,
+  };
 });
 
 export const proposeVideoScriptRequest = z.object({
-  durationSec: z.number().int().min(1).max(8),
+  durationSec: z.number().int().min(1).max(8).optional(),
   useNeighborFrames: z.boolean().default(true),
+  userDirection: z.string().optional(),
   userHint: z.string().optional(),
 });
 
@@ -45,8 +62,23 @@ export const createVideoBatchRequest = z.object({
 });
 
 export const selectVideoRequest = z.object({
-  videoCandidateId: z.string(),
-  videoGenerationBatchId: z.string(),
+  candidateId: z.string().optional(),
+  videoCandidateId: z.string().optional(),
+  videoGenerationBatchId: z.string().optional(),
+}).transform((value, ctx) => {
+  const videoCandidateId = value.candidateId ?? value.videoCandidateId;
+  if (!videoCandidateId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "candidateId is required",
+      path: ["candidateId"],
+    });
+    return z.NEVER;
+  }
+  return {
+    videoCandidateId,
+    videoGenerationBatchId: value.videoGenerationBatchId,
+  };
 });
 
 export const retryRequest = z.object({

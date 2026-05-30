@@ -150,7 +150,7 @@ RUN_REAL_PROVIDER_E2E=true PLAYWRIGHT_BASE_URL=http://127.0.0.1:5173 \
 V2 demo 素材：
 
 - 测试用商品图：`apps/server/test/helpers/fixtures/red-apple.png`
-- workspace 落盘根目录：`WORKSPACE_DIR`（默认 `storage/workspaces`）
+- workspace 存储目录：通过 `POST /api/workspaces/:workspaceId/storage/bind` 绑定本地绝对路径；不再读取 `WORKSPACE_DIR`
 - final compose 输出：`<workspace>/.daireel/final/<finalVideoJobId>/final.mp4`
 
 ## Worktree 环境准备

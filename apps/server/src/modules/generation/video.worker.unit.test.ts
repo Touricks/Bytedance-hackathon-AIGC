@@ -1,6 +1,10 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { processGenerateVideos, __setVideoProviderForTests } from "./video.worker.js";
+import {
+  processGenerateVideos,
+  __setGeneratedAssetPersisterForTests,
+  __setVideoProviderForTests,
+} from "./video.worker.js";
 import { traceService } from "../trace/trace.service.js";
 import { jobRepository } from "../job/job.repository.js";
 
@@ -29,11 +33,18 @@ function makeFakeDb() {
       durationSec: 4,
       providerPrompt: "p",
       basedOnImageCandidateId: "imc-1",
+      basedOnNextImageCandidateId: "imc-2",
     }),
-    getImageCandidate: async () => ({
-      id: "imc-1",
-      imageUrl: "https://cdn.example/img-1.png",
-    }),
+    getImageCandidate: async (id: string) =>
+      id === "imc-2"
+        ? {
+            id: "imc-2",
+            imageUrl: "https://cdn.example/img-2.png",
+          }
+        : {
+            id: "imc-1",
+            imageUrl: "https://cdn.example/img-1.png",
+          },
     insertVideoCandidate: async (input: any) => {
       videoCandidates.push(input);
       return { ...input, id: "vcd-" + videoCandidates.length, createdAt: new Date().toISOString() };
@@ -83,6 +94,7 @@ describe("processGenerateVideos", () => {
     traceService.record = origRecord;
     jobRepository.update = origJobUpdate;
     __setVideoProviderForTests(undefined);
+    __setGeneratedAssetPersisterForTests(undefined);
   });
 
   it("creates candidates, marks SUCCEEDED on all-fulfilled, transitions shot to VIDEO_CANDIDATES_READY", async () => {
@@ -93,6 +105,11 @@ describe("processGenerateVideos", () => {
       prompt: "p",
     });
     __setVideoProviderForTests(fake.fn);
+    __setGeneratedAssetPersisterForTests(async (input) => ({
+      stableUrl: `/api/workspaces/${input.workspaceId}/videos/${input.candidateId}.mp4`,
+      objectKey: `videos/${input.candidateId}.mp4`,
+      providerTemporaryUrl: input.sourceUrl,
+    }));
 
     const fakeDb = makeFakeDb();
     const ctx = await fakeDb.bootstrap("PENDING");
@@ -100,6 +117,7 @@ describe("processGenerateVideos", () => {
     assert.equal(fakeDb.batches.get(ctx.batchId)?.status, "SUCCEEDED");
     assert.equal(fakeDb.videoCandidates.length, 2);
     assert.equal(fakeDb.shotPatches.at(-1)?.status, "VIDEO_CANDIDATES_READY");
+    assert.equal(fake.calls[0]?.lastFrameUrl, "https://cdn.example/img-2.png");
   });
 
   it("returns early if batch is not PENDING (idempotent)", async () => {
@@ -110,6 +128,11 @@ describe("processGenerateVideos", () => {
       prompt: "p",
     });
     __setVideoProviderForTests(fake.fn);
+    __setGeneratedAssetPersisterForTests(async (input) => ({
+      stableUrl: input.sourceUrl,
+      objectKey: null,
+      providerTemporaryUrl: null,
+    }));
     const fakeDb = makeFakeDb();
     const ctx = await fakeDb.bootstrap("SUCCEEDED");
     await processGenerateVideos(ctx.jobData, fakeDb.adapter as any);

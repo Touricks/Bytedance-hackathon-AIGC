@@ -186,10 +186,54 @@ describe("generateVideoWithSeedance", () => {
       baseURL: "https://ark.example/api/v3",
       prompt: "Create a vertical ecommerce product showcase video",
       imageUrl: "data:image/png;base64,cHJvZHVjdA==",
+      lastFrameUrl: null,
       duration: 12,
       ratio: "9:16",
       generateAudio: true
     });
+  });
+
+  it("sends an optional Seedance last_frame image", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+
+    await generateVideoWithSeedance(
+      {
+        imageUrl: "https://cdn.example/start.png",
+        lastFrameUrl: "https://cdn.example/end.png",
+        prompt: "生成首尾帧一致的商品过渡视频",
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint",
+        },
+        fetch: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return new Response(
+            JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
+            { status: 200 },
+          );
+        },
+      },
+    );
+
+    assert.deepEqual(requestBody?.content, [
+      {
+        type: "text",
+        text: "生成首尾帧一致的商品过渡视频",
+      },
+      {
+        type: "image_url",
+        image_url: { url: "https://cdn.example/start.png" },
+        role: "first_frame",
+      },
+      {
+        type: "image_url",
+        image_url: { url: "https://cdn.example/end.png" },
+        role: "last_frame",
+      },
+    ]);
   });
 
   it("polls Ark video tasks when the create response returns a task id", async () => {

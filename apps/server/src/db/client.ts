@@ -21,8 +21,8 @@ type CreateScriptInput = Omit<Script, "id" | "createdAt"> & Partial<Pick<Script,
 type CreateShotInput = Omit<StoryboardShot, "id" | "scriptId">;
 type CreateWorkspaceInput = Omit<
   CreativeWorkspace,
-  "createdAt" | "updatedAt" | "lastSeenAt"
->;
+  "createdAt" | "updatedAt" | "lastSeenAt" | "localPath"
+> & { localPath?: string | null };
 type UpdateWorkspaceInput = Partial<
   Pick<CreativeWorkspace, "currentScriptId" | "currentJobId" | "status" | "traceFile">
 >;
@@ -245,6 +245,22 @@ export interface TraceEventRow {
   createdAt: string;
 }
 
+export interface WorkspaceStorageBindingRow {
+  id: string;
+  workspaceId: string;
+  kind: "LOCAL" | "S3";
+  status: "ACTIVE" | "ARCHIVED";
+  localPath: string | null;
+  localPathNormalized: string | null;
+  s3Bucket: string | null;
+  s3Prefix: string | null;
+  s3Region: string | null;
+  s3Endpoint: string | null;
+  metadata: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── v2 adapter interface ─────────────────────────────────────────────────────
 
 export interface Db2Adapter {
@@ -361,6 +377,21 @@ interface DbAdapter {
   listWorkspaces(limit?: number): Promise<CreativeWorkspace[]>;
   getWorkspace(workspaceId: string): Promise<CreativeWorkspace>;
   findWorkspaceByLocalPath(localPath: string): Promise<CreativeWorkspace | null>;
+  getActiveWorkspaceStorage(
+    workspaceId: string
+  ): Promise<WorkspaceStorageBindingRow | null>;
+  bindWorkspaceLocalStorage(input: {
+    workspaceId: string;
+    localPath: string;
+    localPathNormalized: string;
+  }): Promise<WorkspaceStorageBindingRow>;
+  bindWorkspaceS3Storage(input: {
+    workspaceId: string;
+    bucket: string;
+    prefix: string;
+    region?: string | null;
+    endpoint?: string | null;
+  }): Promise<WorkspaceStorageBindingRow>;
   touchWorkspace(workspaceId: string): Promise<CreativeWorkspace>;
   updateWorkspace(
     workspaceId: string,
@@ -450,7 +481,7 @@ function toGenerationJob(row: Record<string, unknown>): GenerationJob {
 function toWorkspace(row: Record<string, unknown>): CreativeWorkspace {
   return {
     id: String(row.id),
-    localPath: String(row.local_path),
+    localPath: typeof row.local_path === "string" ? row.local_path : "",
     currentScriptId: String(row.current_script_id),
     currentJobId: typeof row.current_job_id === "string" ? row.current_job_id : undefined,
     status: row.status as CreativeWorkspace["status"],
@@ -458,6 +489,30 @@ function toWorkspace(row: Record<string, unknown>): CreativeWorkspace {
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
     lastSeenAt: toIsoString(row.last_seen_at)
+  };
+}
+
+function toWorkspaceStorageBinding(
+  row: Record<string, unknown>
+): WorkspaceStorageBindingRow {
+  return {
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    kind: row.kind as WorkspaceStorageBindingRow["kind"],
+    status: row.status as WorkspaceStorageBindingRow["status"],
+    localPath: typeof row.local_path === "string" ? row.local_path : null,
+    localPathNormalized:
+      typeof row.local_path_normalized === "string"
+        ? row.local_path_normalized
+        : null,
+    s3Bucket: typeof row.s3_bucket === "string" ? row.s3_bucket : null,
+    s3Prefix: typeof row.s3_prefix === "string" ? row.s3_prefix : null,
+    s3Region: typeof row.s3_region === "string" ? row.s3_region : null,
+    s3Endpoint: typeof row.s3_endpoint === "string" ? row.s3_endpoint : null,
+    metadata:
+      row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
   };
 }
 
@@ -571,24 +626,25 @@ class PostgresDbAdapter implements DbAdapter {
       `insert into creative_workspace
          (id, local_path, current_script_id, current_job_id, status, trace_file)
        values ($1, $2, $3, $4, $5, $6)
-       on conflict (local_path) do update
-       set current_script_id = creative_workspace.current_script_id,
-           current_job_id = creative_workspace.current_job_id,
-           status = creative_workspace.status,
-           trace_file = excluded.trace_file,
-           updated_at = now(),
-           last_seen_at = now()
        returning *`,
       [
         input.id,
-        input.localPath,
+        input.localPath ?? null,
         input.currentScriptId,
         input.currentJobId ?? null,
         input.status,
         input.traceFile
       ]
     );
-    return firstRow(result.rows, "CreativeWorkspace", toWorkspace);
+    const workspace = firstRow(result.rows, "CreativeWorkspace", toWorkspace);
+    if (input.localPath) {
+      await this.bindWorkspaceLocalStorage({
+        workspaceId: workspace.id,
+        localPath: input.localPath,
+        localPathNormalized: input.localPath,
+      });
+    }
+    return workspace;
   }
 
   async listWorkspaces(limit = 50): Promise<CreativeWorkspace[]> {
@@ -612,11 +668,134 @@ class PostgresDbAdapter implements DbAdapter {
 
   async findWorkspaceByLocalPath(localPath: string): Promise<CreativeWorkspace | null> {
     const result = await this.getPool().query(
-      "select * from creative_workspace where local_path = $1",
+      `select cw.*
+       from creative_workspace cw
+       join workspace_storage_bindings wsb
+         on wsb.workspace_id = cw.id
+        and wsb.status = 'ACTIVE'
+        and wsb.kind = 'LOCAL'
+       where wsb.local_path_normalized = $1
+       limit 1`,
       [localPath]
     );
     const row = result.rows[0];
     return row ? toWorkspace(row) : null;
+  }
+
+  async getActiveWorkspaceStorage(
+    workspaceId: string
+  ): Promise<WorkspaceStorageBindingRow | null> {
+    const result = await this.getPool().query(
+      `select *
+       from workspace_storage_bindings
+       where workspace_id = $1 and status = 'ACTIVE'
+       limit 1`,
+      [workspaceId]
+    );
+    const row = result.rows[0];
+    return row ? toWorkspaceStorageBinding(row) : null;
+  }
+
+  async bindWorkspaceLocalStorage(input: {
+    workspaceId: string;
+    localPath: string;
+    localPathNormalized: string;
+  }): Promise<WorkspaceStorageBindingRow> {
+    await this.getWorkspace(input.workspaceId);
+    const existing = await this.getActiveWorkspaceStorage(input.workspaceId);
+    if (existing) {
+      if (
+        existing.kind === "LOCAL" &&
+        existing.localPathNormalized === input.localPathNormalized
+      ) {
+        return existing;
+      }
+      throw new Error("WORKSPACE_STORAGE_ALREADY_BOUND");
+    }
+
+    try {
+      const result = await this.getPool().query(
+        `insert into workspace_storage_bindings
+           (id, workspace_id, kind, status, local_path, local_path_normalized)
+         values ($1, $2, 'LOCAL', 'ACTIVE', $3, $4)
+         returning *`,
+        [nanoid(), input.workspaceId, input.localPath, input.localPathNormalized]
+      );
+      await this.getPool().query(
+        `update creative_workspace
+         set local_path = $2, updated_at = now(), last_seen_at = now()
+         where id = $1`,
+        [input.workspaceId, input.localPath]
+      );
+      return firstRow(
+        result.rows,
+        "WorkspaceStorageBinding",
+        toWorkspaceStorageBinding
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "23505"
+      ) {
+        throw new Error("STORAGE_ALREADY_BOUND");
+      }
+      throw error;
+    }
+  }
+
+  async bindWorkspaceS3Storage(input: {
+    workspaceId: string;
+    bucket: string;
+    prefix: string;
+    region?: string | null;
+    endpoint?: string | null;
+  }): Promise<WorkspaceStorageBindingRow> {
+    await this.getWorkspace(input.workspaceId);
+    const existing = await this.getActiveWorkspaceStorage(input.workspaceId);
+    if (existing) {
+      if (
+        existing.kind === "S3" &&
+        existing.s3Bucket === input.bucket &&
+        existing.s3Prefix === input.prefix
+      ) {
+        return existing;
+      }
+      throw new Error("WORKSPACE_STORAGE_ALREADY_BOUND");
+    }
+
+    try {
+      const result = await this.getPool().query(
+        `insert into workspace_storage_bindings
+           (id, workspace_id, kind, status, s3_bucket, s3_prefix, s3_region, s3_endpoint)
+         values ($1, $2, 'S3', 'ACTIVE', $3, $4, $5, $6)
+         returning *`,
+        [
+          nanoid(),
+          input.workspaceId,
+          input.bucket,
+          input.prefix,
+          input.region ?? null,
+          input.endpoint ?? null,
+        ]
+      );
+      return firstRow(
+        result.rows,
+        "WorkspaceStorageBinding",
+        toWorkspaceStorageBinding
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "23505"
+      ) {
+        throw new Error("STORAGE_ALREADY_BOUND");
+      }
+      throw error;
+    }
   }
 
   async touchWorkspace(workspaceId: string): Promise<CreativeWorkspace> {
@@ -2094,6 +2273,9 @@ export const db: DbAdapter & { db2: Db2Adapter } = {
   listWorkspaces: (limit) => getV1().listWorkspaces(limit),
   getWorkspace: (workspaceId) => getV1().getWorkspace(workspaceId),
   findWorkspaceByLocalPath: (localPath) => getV1().findWorkspaceByLocalPath(localPath),
+  getActiveWorkspaceStorage: (workspaceId) => getV1().getActiveWorkspaceStorage(workspaceId),
+  bindWorkspaceLocalStorage: (input) => getV1().bindWorkspaceLocalStorage(input),
+  bindWorkspaceS3Storage: (input) => getV1().bindWorkspaceS3Storage(input),
   touchWorkspace: (workspaceId) => getV1().touchWorkspace(workspaceId),
   updateWorkspace: (workspaceId, patch) => getV1().updateWorkspace(workspaceId, patch),
   upsertWorkspaceArtifact: (input) => getV1().upsertWorkspaceArtifact(input),

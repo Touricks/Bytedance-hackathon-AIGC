@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  DEFAULT_ARK_BASE_URL,
   resolveArkTextProviderConfig,
   resolveArkVideoProviderConfig
 } from "./provider-config.js";
@@ -10,6 +9,7 @@ describe("provider config", () => {
   it("resolves Ark text provider config", () => {
     const env = {
       ARK_API_KEY: "ark-key",
+      ARK_BASE_URL: "https://ark.example/api/v3",
       ARK_TEXT_ENDPOINT_ID: "ark-text-endpoint"
     };
 
@@ -17,7 +17,7 @@ describe("provider config", () => {
       provider: "ark",
       apiKey: "ark-key",
       model: "ark-text-endpoint",
-      baseURL: DEFAULT_ARK_BASE_URL
+      baseURL: "https://ark.example/api/v3"
     });
   });
 
@@ -28,6 +28,7 @@ describe("provider config", () => {
   it("resolves Ark video without standalone Seedance credentials", () => {
     const env = {
       ARK_API_KEY: "ark-key",
+      ARK_BASE_URL: "https://ark.example/api/v3",
       ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
     };
 
@@ -35,7 +36,7 @@ describe("provider config", () => {
       provider: "seedance",
       apiKey: "ark-key",
       model: "ark-video-endpoint",
-      baseURL: DEFAULT_ARK_BASE_URL
+      baseURL: "https://ark.example/api/v3"
     });
   });
 });

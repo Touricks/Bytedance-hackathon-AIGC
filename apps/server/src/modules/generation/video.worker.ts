@@ -7,11 +7,16 @@ import type { GenerateVideosJobData } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
 import { traceService } from "../trace/trace.service.js";
+import {
+  persistGeneratedAsset,
+  type GeneratedAssetPersister,
+} from "./generated-asset-storage.js";
 
 type Adapter = typeof db.db2;
 
 type Provider = (args: {
   imageUrl: string;
+  lastFrameUrl?: string | null;
   prompt: string;
   durationSec: number;
   aspectRatio: "9:16" | "16:9" | "1:1";
@@ -23,12 +28,20 @@ export function __setVideoProviderForTests(p: Provider | undefined) {
   providerOverride = p;
 }
 
+let generatedAssetPersisterOverride: GeneratedAssetPersister | undefined;
+export function __setGeneratedAssetPersisterForTests(
+  fn: GeneratedAssetPersister | undefined,
+) {
+  generatedAssetPersisterOverride = fn;
+}
+
 async function defaultProvider(args: Parameters<Provider>[0]): Promise<SeedanceVideoResult> {
   const cfg = resolveVideoProviderConfig();
   if (!cfg) throw new Error("VIDEO provider not configured");
   return generateVideoWithSeedance(
     {
       imageUrl: args.imageUrl,
+      lastFrameUrl: args.lastFrameUrl ?? undefined,
       prompt: args.prompt,
       durationSec: args.durationSec,
       aspectRatio: args.aspectRatio,
@@ -67,11 +80,18 @@ export async function processGenerateVideos(
   }
   const startImage = await adapter.getImageCandidate(script.basedOnImageCandidateId);
   if (!startImage.imageUrl) throw new Error("MISSING_START_IMAGE_URL");
+  const endImage = script.basedOnNextImageCandidateId
+    ? await adapter.getImageCandidate(script.basedOnNextImageCandidateId)
+    : null;
+  if (script.basedOnNextImageCandidateId && !endImage?.imageUrl) {
+    throw new Error("MISSING_LAST_FRAME_URL");
+  }
 
   const provider = providerOverride ?? defaultProvider;
   const tasks = Array.from({ length: data.count }, () =>
     provider({
       imageUrl: startImage.imageUrl!,
+      lastFrameUrl: endImage?.imageUrl ?? null,
       prompt: script.providerPrompt,
       durationSec: script.durationSec,
       aspectRatio: data.aspectRatio,
@@ -85,19 +105,30 @@ export async function processGenerateVideos(
   for (const r of results) {
     if (r.status === "fulfilled") {
       succeeded++;
+      const candidateId = "vcd_" + Math.random().toString(36).slice(2, 12);
+      const persisted = await (generatedAssetPersisterOverride ?? persistGeneratedAsset)({
+        workspaceId: batch.workspaceId,
+        sourceUrl: r.value.videoUrl,
+        kind: "video",
+        batchId: batch.id,
+        candidateId,
+      });
       await adapter.insertVideoCandidate({
-        id: "vcd_" + Math.random().toString(36).slice(2, 12),
+        id: candidateId,
         batchId: batch.id,
         shotId: batch.shotId,
         workspaceId: batch.workspaceId,
-        videoUrl: r.value.videoUrl,
-        objectKey: null,
+        videoUrl: persisted.stableUrl,
+        objectKey: persisted.objectKey,
         thumbnailUrl: null,
         durationSec: script.durationSec,
         width: null,
         height: null,
         provider: r.value.provider,
-        providerResponse: r.value,
+        providerResponse: {
+          ...r.value,
+          providerTemporaryUrl: persisted.providerTemporaryUrl,
+        },
         status: "SUCCEEDED",
         errorMessage: null,
       });

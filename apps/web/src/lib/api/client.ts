@@ -12,12 +12,27 @@ import type {
 
 const env = (
   import.meta as ImportMeta & {
-    env?: Partial<Record<"VITE_API_BASE_URL" | "PUBLIC_API_BASE_URL", string>>;
+    env?: Partial<
+      Record<"VITE_API_BASE_URL" | "PUBLIC_API_BASE_URL" | "SERVER_PORT", string>
+    >;
   }
 ).env;
 
-const apiBaseUrl =
-  env?.VITE_API_BASE_URL ?? env?.PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+function resolveApiBaseUrl(
+  baseUrl: string,
+  serverPort = "3000",
+) {
+  const parsed = new URL(baseUrl);
+  if (!parsed.port && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)) {
+    parsed.port = serverPort;
+  }
+  return parsed.toString().replace(/\/$/, "");
+}
+
+const apiBaseUrl = resolveApiBaseUrl(
+  env?.VITE_API_BASE_URL ?? env?.PUBLIC_API_BASE_URL ?? "http://localhost",
+  env?.SERVER_PORT ?? "3000",
+);
 
 export interface JobDetail {
   job: GenerationJob;

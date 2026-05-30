@@ -9,6 +9,7 @@ import {
   shotPromptApprovalRequestSchema,
   shotPromptCompileRequestSchema,
   storyboardApprovalRequestSchema,
+  workspaceStorageBindRequestSchema,
   workspaceMaterialUploadRequestSchema,
   workspaceDirectoryRequestSchema
 } from "./workspace.schema.js";
@@ -70,6 +71,33 @@ export async function registerWorkspaceController(
       return reply.status(httpError.statusCode).send(httpError);
     }
   });
+
+  app.get("/api/workspaces/:workspaceId/storage", async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.getWorkspaceStorage(params.workspaceId);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(
+    "/api/workspaces/:workspaceId/storage/bind",
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = workspaceStorageBindRequestSchema.parse(request.body);
+        return await workspaceService.bindWorkspaceStorage(
+          params.workspaceId,
+          body,
+        );
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
 
   app.post("/api/workspaces", async (request, reply) => {
     try {

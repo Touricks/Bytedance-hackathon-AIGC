@@ -5,6 +5,7 @@ import type { ComposeFinalVideoJobData } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
 import { traceService } from "../trace/trace.service.js";
+import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
 import { ffprobe, runFfmpeg } from "./ffmpeg.js";
 
 function sha256(s: string) {
@@ -35,11 +36,7 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
       candidates.push(cand);
     }
     // Order is already the persisted source_shot_video_ids order (set at creation time).
-    const wsRow = await db.db2
-      .pool()
-      .query("select local_path from creative_workspace where id=$1", [job.workspaceId]);
-    const wsLocalPath = wsRow.rows[0]?.local_path;
-    if (!wsLocalPath) throw new Error("workspace local path missing");
+    const wsLocalPath = await resolveWorkspaceStorageLocalPath(job.workspaceId);
 
     const workDir = path.join(wsLocalPath, ".daireel", "final", job.id);
     const inputDir = path.join(workDir, "in");

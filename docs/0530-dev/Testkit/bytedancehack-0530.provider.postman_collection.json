@@ -1,0 +1,1480 @@
+{
+  "info": {
+    "name": "Bytedancehack 0530 Provider Acceptance (.env Model API)",
+    "description": "Provider acceptance collection. Requires backend started from .env with MODEL_MODE=real and valid TEXT_*, IMAGE_*, VIDEO_* config. If USE_REDIS_QUEUE=true, Redis and the generation worker must be running. This collection spends model quota and polls image/video batches until terminal status.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"response is not 5xx\", function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});",
+          "const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "if (contentType.includes(\"application/json\")) {",
+          "  pm.response.json();",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "workspaceName",
+      "value": "0530-postman-demo"
+    },
+    {
+      "key": "workspaceDirectory",
+      "value": "/Users/carrick/TestWorkspace/Project-AIGC/IntegrationTest_v0/onePicture/"
+    },
+    {
+      "key": "workspaceId",
+      "value": ""
+    },
+    {
+      "key": "scriptId",
+      "value": ""
+    },
+    {
+      "key": "materialRef",
+      "value": "display_1.png"
+    },
+    {
+      "key": "materialAssetId",
+      "value": ""
+    },
+    {
+      "key": "materialFileBase64",
+      "value": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    },
+    {
+      "key": "briefArtifactId",
+      "value": ""
+    },
+    {
+      "key": "storyboardArtifactId",
+      "value": ""
+    },
+    {
+      "key": "shotPromptArtifactId",
+      "value": ""
+    },
+    {
+      "key": "shotId",
+      "value": ""
+    },
+    {
+      "key": "imagePromptArtifactId",
+      "value": ""
+    },
+    {
+      "key": "imageBatchId",
+      "value": ""
+    },
+    {
+      "key": "imageCandidateId",
+      "value": ""
+    },
+    {
+      "key": "videoScriptArtifactId",
+      "value": ""
+    },
+    {
+      "key": "videoBatchId",
+      "value": ""
+    },
+    {
+      "key": "videoCandidateId",
+      "value": ""
+    },
+    {
+      "key": "finalVideoJobId",
+      "value": ""
+    },
+    {
+      "key": "campaignPublicationId",
+      "value": ""
+    },
+    {
+      "key": "campaignPlatform",
+      "value": "douyin"
+    },
+    {
+      "key": "campaignChannelName",
+      "value": "creator-alpha"
+    },
+    {
+      "key": "campaignKolName",
+      "value": "Ava"
+    },
+    {
+      "key": "campaignPublishUrl",
+      "value": "https://example.com/campaign/post-001"
+    },
+    {
+      "key": "imagePollAttempts",
+      "value": "0"
+    },
+    {
+      "key": "videoPollAttempts",
+      "value": "0"
+    },
+    {
+      "key": "pollMaxAttempts",
+      "value": "80"
+    },
+    {
+      "key": "pollIntervalMs",
+      "value": "3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"health ok\", function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.runtime).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Config Limits",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/config/limits"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"generation limits exist\", function () {",
+                  "  pm.expect(data.defaultImageBatchSize).to.be.a(\"number\");",
+                  "  pm.expect(data.defaultVideoBatchSize).to.be.a(\"number\");",
+                  "  pm.expect(data.aspectRatios).to.include(\"9:16\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Workspace Setup",
+      "item": [
+        {
+          "name": "Create Logical Workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{workspaceName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"workspace created unbound\", function () {",
+                  "  pm.expect(json.workspace.id).to.be.a(\"string\");",
+                  "  pm.expect(json.workspace.currentScriptId).to.be.a(\"string\");",
+                  "  pm.expect(json.storage.bound).to.eql(false);",
+                  "});",
+                  "pm.collectionVariables.set(\"workspaceId\", json.workspace.id);",
+                  "pm.collectionVariables.set(\"scriptId\", json.workspace.currentScriptId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Workspace Status Before Storage Binding",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"unbound workspace asks for storage binding\", function () {",
+                  "  pm.expect(json.storage.bound).to.eql(false);",
+                  "  pm.expect(json.nextAction).to.eql(\"BIND_STORAGE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bind Local Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storage/bind",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"local\",\n  \"localPath\": \"{{workspaceDirectory}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const storage = pm.response.json().data.storage;",
+                  "pm.test(\"storage bound\", function () {",
+                  "  pm.expect(storage.bound).to.eql(true);",
+                  "  pm.expect(storage.kind).to.eql(\"local\");",
+                  "  const expected = pm.collectionVariables.get(\"workspaceDirectory\").replace(/\\/+$/, \"\");",
+                  "  pm.expect(storage.localPath.replace(/\\/+$/, \"\")).to.eql(expected);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Workspace Storage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storage"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const storage = pm.response.json().data.storage;",
+                  "pm.test(\"storage is readable\", function () {",
+                  "  pm.expect(storage.bound).to.eql(true);",
+                  "  pm.expect(storage.kind).to.eql(\"local\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Fixed Material",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/materials",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"filename\": \"{{materialRef}}\",\n  \"dataBase64\": \"{{materialFileBase64}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"material uploaded without provider\", function () {",
+                  "  pm.expect(json.material.assetId).to.be.a(\"string\");",
+                  "  pm.expect(json.material.url).to.include(\"/api/workspaces/\" + pm.collectionVariables.get(\"workspaceId\") + \"/materials/\");",
+                  "});",
+                  "pm.collectionVariables.set(\"materialRef\", json.material.ref);",
+                  "pm.collectionVariables.set(\"materialAssetId\", json.material.assetId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Workspace Status With Material",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"bound workspace reports material library\", function () {",
+                  "  pm.expect(json.storage.bound).to.eql(true);",
+                  "  pm.expect(json.materialLibrary.assets).to.be.an(\"array\");",
+                  "  pm.expect(json.materialLibrary.assets.map((a) => a.ref)).to.include(pm.collectionVariables.get(\"materialRef\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Artifact Pipeline (Provider)",
+      "item": [
+        {
+          "name": "Material Intake (Real Text/Image Context)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/material-intake",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"selectedMaterialRefs\": [\"{{materialRef}}\"],\n  \"prompt\": \"请基于上传素材制作一个短视频广告。\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"material intake completed\", function () {",
+                  "  pm.expect(json.artifact.id).to.be.a(\"string\");",
+                  "  pm.expect(json.artifact.type).to.eql(\"assets\");",
+                  "  pm.expect(json.artifact.data.assets).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Brief Propose (Real Text)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/brief/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"brief proposed\", function () {",
+                  "  pm.expect(json.artifact.id).to.be.a(\"string\");",
+                  "  pm.expect(json.artifact.type).to.eql(\"brief\");",
+                  "});",
+                  "pm.collectionVariables.set(\"briefArtifactId\", json.artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Brief Approve Fixed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/artifacts/brief/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"artifactId\": \"{{briefArtifactId}}\",\n  \"data\": {\n    \"product\": {\n      \"name\": \"Postman Demo Product\",\n      \"category\": \"demo\",\n      \"keyFacts\": [\"portable\", \"clean visual identity\"],\n      \"assets\": [{ \"ref\": \"{{materialRef}}\", \"useAs\": \"primary\" }]\n    },\n    \"audience\": {\n      \"who\": \"busy creators\",\n      \"painOrDesire\": \"needs quick demos\"\n    },\n    \"coreSellingPoint\": \"快速生成短视频广告\",\n    \"proof\": [\"素材展示了产品外观\"],\n    \"offer\": null,\n    \"platform\": \"Seedance\",\n    \"brandTone\": \"clean premium ecommerce\",\n    \"bannedExpressions\": [],\n    \"landingInfo\": null,\n    \"assumptions\": []\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"brief approved\", function () {",
+                  "  pm.expect(json.artifact.type).to.eql(\"brief\");",
+                  "  pm.expect(json.artifact.status).to.eql(\"approved\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Storyboard Propose (Real Text)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/storyboard/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"storyboard proposed\", function () {",
+                  "  pm.expect(json.artifact.id).to.be.a(\"string\");",
+                  "  pm.expect(json.artifact.type).to.eql(\"storyboard\");",
+                  "});",
+                  "pm.collectionVariables.set(\"storyboardArtifactId\", json.artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Storyboard Approve Fixed One-Shot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/artifacts/storyboard/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"artifactId\": \"{{storyboardArtifactId}}\",\n  \"data\": {\n    \"narrative\": \"产品从痛点到解决方案的短视频。\",\n    \"totalDurationSec\": 4,\n    \"shots\": [\n      {\n        \"index\": 0,\n        \"purpose\": \"hook\",\n        \"durationSec\": 4,\n        \"scene\": \"桌面产品开场\",\n        \"visualDirection\": \"稳定展示产品外观，突出真实质感。\",\n        \"productAssetRef\": \"{{materialRef}}\",\n        \"voiceover\": \"快速生成一条商品广告。\",\n        \"transition\": \"clean cut\"\n      }\n    ],\n    \"assumptions\": []\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"storyboard approved\", function () {",
+                  "  pm.expect(json.artifact.type).to.eql(\"storyboard\");",
+                  "  pm.expect(json.artifact.status).to.eql(\"approved\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shotprompt Compile (Real Text)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/shotprompt/compile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"aspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"shotprompt compile returns provider prompts\", function () {",
+                  "  pm.expect(json.artifact.id).to.be.a(\"string\");",
+                  "  pm.expect(json.artifact.type).to.eql(\"shotprompt\");",
+                  "  pm.expect(json.artifact.data.shots).to.be.an(\"array\").that.is.not.empty;",
+                  "});",
+                  "pm.collectionVariables.set(\"shotPromptArtifactId\", json.artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Fixed Shotprompt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/artifacts/shotprompt/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"data\": {\n    \"targetProvider\": \"seedance\",\n    \"durationSec\": 4,\n    \"aspectRatio\": \"9:16\",\n    \"prompt\": \"保持产品外观一致，生成一个四秒广告镜头。\",\n    \"negativePrompt\": \"不要水印，不要乱码字幕，不要改变商品外观。\",\n    \"shots\": [\n      {\n        \"index\": 0,\n        \"startSec\": 0,\n        \"endSec\": 4,\n        \"providerPrompt\": \"桌面产品开场，稳定展示产品外观，保持真实质感和干净背景。\",\n        \"referenceAssetRefs\": [\"{{materialRef}}\"],\n        \"voiceover\": \"快速生成一条商品广告。\"\n      }\n    ],\n    \"tts\": {\n      \"enabled\": true,\n      \"source\": \"shots.voiceover\",\n      \"voiceover\": \"快速生成一条商品广告。\"\n    },\n    \"assumptions\": [\"Postman smoke 使用固定 shotprompt，避免调用文本模型。\"]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"fixed shotprompt approved\", function () {",
+                  "  pm.expect(json.artifact.id).to.be.a(\"string\");",
+                  "  pm.expect(json.artifact.type).to.eql(\"shotprompt\");",
+                  "  pm.expect(json.artifact.status).to.eql(\"approved\");",
+                  "});",
+                  "pm.collectionVariables.set(\"shotPromptArtifactId\", json.artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Shots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"shots seeded from shotprompt\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data[0].id).to.be.a(\"string\");",
+                  "  pm.expect(data[0].nextAction).to.be.a(\"string\");",
+                  "  pm.expect(data[0].referenceAssetRefs).to.include(pm.collectionVariables.get(\"materialRef\"));",
+                  "});",
+                  "pm.collectionVariables.set(\"shotId\", data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shot Workflow Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-workflow-status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"workflow status contains seeded shot\", function () {",
+                  "  pm.expect(data.workspaceId).to.eql(pm.collectionVariables.get(\"workspaceId\"));",
+                  "  pm.expect(data.shots).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data.canComposeFinalVideo).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Shot Workflow (Provider)",
+      "item": [
+        {
+          "name": "Propose Image Prompt (Real Text)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-prompts/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userDirection\": \"保持商品外观稳定，突出真实质感。\",\n  \"referenceAssetIds\": [\"{{materialAssetId}}\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"image prompt proposed\", function () {",
+                  "  pm.expect(json.data.id).to.be.a(\"string\");",
+                  "  pm.expect(json.data.promptText).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(json.context).to.exist;",
+                  "});",
+                  "pm.collectionVariables.set(\"imagePromptArtifactId\", json.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Image Batch (Real Image)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-image-{{$timestamp}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/shots/{{shotId}}/image-batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imagePromptArtifactId\": \"{{imagePromptArtifactId}}\",\n  \"count\": 1,\n  \"aspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"image batch queued\", function () {",
+                  "  pm.expect(data.batchId).to.be.a(\"string\");",
+                  "  pm.expect(data.status).to.eql(\"PENDING\");",
+                  "});",
+                  "pm.collectionVariables.set(\"imageBatchId\", data.batchId);",
+                  "pm.collectionVariables.set(\"imagePollAttempts\", \"0\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Image Batch (Poll)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/shots/{{shotId}}/image-batches/{{imageBatchId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "const data = json.data;",
+                  "const status = data.status;",
+                  "const max = Number(pm.collectionVariables.get(\"pollMaxAttempts\") || 80);",
+                  "const attempts = Number(pm.collectionVariables.get(\"imagePollAttempts\") || 0);",
+                  "const intervalMs = Number(pm.collectionVariables.get(\"pollIntervalMs\") || 3000);",
+                  "const workspaceId = pm.collectionVariables.get(\"workspaceId\");",
+                  "pm.test(\"image batch has status\", function () {",
+                  "  pm.expect(status).to.be.oneOf([\"PENDING\", \"RUNNING\", \"SUCCEEDED\", \"PARTIAL\", \"FAILED\"]);",
+                  "});",
+                  "if ([\"PENDING\", \"RUNNING\"].includes(status)) {",
+                  "  if (attempts >= max) {",
+                  "    pm.expect.fail(\"image batch polling exceeded \" + max + \" attempts\");",
+                  "  }",
+                  "  pm.collectionVariables.set(\"imagePollAttempts\", String(attempts + 1));",
+                  "  if (intervalMs > 0) setTimeout(function () {}, intervalMs);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else if (status === \"FAILED\") {",
+                  "  pm.expect.fail(\"image batch failed: \" + JSON.stringify(data));",
+                  "} else {",
+                  "  const pick = (data.candidates || []).find((c) => c.status === \"SUCCEEDED\" && c.imageUrl);",
+                  "  pm.test(\"image candidate has stable workspace URL\", function () {",
+                  "    pm.expect(pick, \"succeeded image candidate\").to.exist;",
+                  "    pm.expect(pick.imageUrl).to.include(\"/api/workspaces/\" + workspaceId + \"/\");",
+                  "  });",
+                  "  pm.collectionVariables.set(\"imageCandidateId\", pick.id);",
+                  "  pm.collectionVariables.set(\"imagePollAttempts\", \"0\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Image Rounds",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-rounds"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"image rounds include generated batch\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data[0].batch.id).to.eql(pm.collectionVariables.get(\"imageBatchId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Select Image Candidate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-candidates/select",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidateId\": \"{{imageCandidateId}}\",\n  \"imageGenerationBatchId\": \"{{imageBatchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"image selected\", function () {",
+                  "  pm.expect(json.shotStatus).to.eql(\"IMAGE_SELECTED\");",
+                  "  pm.expect(json.allShotsImageSelected).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Propose Video Script (Real Text)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-scripts/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"durationSec\": 4,\n  \"useNeighborFrames\": true,\n  \"userDirection\": \"镜头缓慢推进，保持商品外观一致。\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"video script proposed\", function () {",
+                  "  pm.expect(json.data.id).to.be.a(\"string\");",
+                  "  pm.expect(json.data.providerPrompt).to.be.a(\"string\").and.not.empty;",
+                  "});",
+                  "pm.collectionVariables.set(\"videoScriptArtifactId\", json.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Video Batch (Real Video)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-video-{{$timestamp}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/shots/{{shotId}}/video-batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"videoScriptArtifactId\": \"{{videoScriptArtifactId}}\",\n  \"count\": 1,\n  \"aspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"video batch queued\", function () {",
+                  "  pm.expect(data.batchId).to.be.a(\"string\");",
+                  "  pm.expect(data.status).to.eql(\"PENDING\");",
+                  "});",
+                  "pm.collectionVariables.set(\"videoBatchId\", data.batchId);",
+                  "pm.collectionVariables.set(\"videoPollAttempts\", \"0\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Video Batch (Poll)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/shots/{{shotId}}/video-batches/{{videoBatchId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "const data = json.data;",
+                  "const status = data.status;",
+                  "const max = Number(pm.collectionVariables.get(\"pollMaxAttempts\") || 80);",
+                  "const attempts = Number(pm.collectionVariables.get(\"videoPollAttempts\") || 0);",
+                  "const intervalMs = Number(pm.collectionVariables.get(\"pollIntervalMs\") || 3000);",
+                  "const workspaceId = pm.collectionVariables.get(\"workspaceId\");",
+                  "pm.test(\"video batch has status\", function () {",
+                  "  pm.expect(status).to.be.oneOf([\"PENDING\", \"RUNNING\", \"SUCCEEDED\", \"PARTIAL\", \"FAILED\"]);",
+                  "});",
+                  "if ([\"PENDING\", \"RUNNING\"].includes(status)) {",
+                  "  if (attempts >= max) {",
+                  "    pm.expect.fail(\"video batch polling exceeded \" + max + \" attempts\");",
+                  "  }",
+                  "  pm.collectionVariables.set(\"videoPollAttempts\", String(attempts + 1));",
+                  "  if (intervalMs > 0) setTimeout(function () {}, intervalMs);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else if (status === \"FAILED\") {",
+                  "  pm.expect.fail(\"video batch failed: \" + JSON.stringify(data));",
+                  "} else {",
+                  "  const pick = (data.candidates || []).find((c) => c.status === \"SUCCEEDED\" && c.videoUrl);",
+                  "  pm.test(\"video candidate has stable workspace URL\", function () {",
+                  "    pm.expect(pick, \"succeeded video candidate\").to.exist;",
+                  "    pm.expect(pick.videoUrl).to.include(\"/api/workspaces/\" + workspaceId + \"/\");",
+                  "  });",
+                  "  pm.collectionVariables.set(\"videoCandidateId\", pick.id);",
+                  "  pm.collectionVariables.set(\"videoPollAttempts\", \"0\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Video Rounds",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-rounds"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"video rounds include generated batch\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data[0].batch.id).to.eql(pm.collectionVariables.get(\"videoBatchId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Select Video Candidate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-candidates/select",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidateId\": \"{{videoCandidateId}}\",\n  \"videoGenerationBatchId\": \"{{videoBatchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"video selected\", function () {",
+                  "  pm.expect(json.shotStatus).to.eql(\"VIDEO_SELECTED\");",
+                  "  pm.expect(json.allShotsVideoSelected).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shot Workflow Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-workflow-status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"workflow status contains seeded shot\", function () {",
+                  "  pm.expect(data.workspaceId).to.eql(pm.collectionVariables.get(\"workspaceId\"));",
+                  "  pm.expect(data.shots).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data.canComposeFinalVideo).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Final Video",
+      "item": [
+        {
+          "name": "Create Final Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-final-{{$timestamp}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/final-videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outputAspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"final video job queued\", function () {",
+                  "  pm.expect(data.finalVideoJobId).to.be.a(\"string\");",
+                  "  pm.expect(data.status).to.eql(\"PENDING\");",
+                  "});",
+                  "pm.collectionVariables.set(\"finalVideoJobId\", data.finalVideoJobId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Final Video",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/final-videos/{{finalVideoJobId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"final video job readable\", function () {",
+                  "  pm.expect(data.id).to.eql(pm.collectionVariables.get(\"finalVideoJobId\"));",
+                  "  pm.expect(data.workspaceId).to.eql(pm.collectionVariables.get(\"workspaceId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Final Videos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/final-videos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"final video appears in list\", function () {",
+                  "  pm.expect(data.map((v) => v.id)).to.include(pm.collectionVariables.get(\"finalVideoJobId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Campaign / KOL",
+      "item": [
+        {
+          "name": "Create Campaign Publication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"{{campaignPlatform}}\",\n  \"channelName\": \"{{campaignChannelName}}\",\n  \"kolName\": \"{{campaignKolName}}\",\n  \"publishUrl\": \"{{campaignPublishUrl}}\",\n  \"status\": \"published\",\n  \"notes\": \"Postman smoke publication record.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication created\", function () {",
+                  "  pm.expect(data.id).to.be.a(\"string\");",
+                  "  pm.expect(data.platform).to.eql(pm.collectionVariables.get(\"campaignPlatform\"));",
+                  "  pm.expect(data.channelName).to.eql(pm.collectionVariables.get(\"campaignChannelName\"));",
+                  "  pm.expect(data.latestMetrics).to.eql(null);",
+                  "});",
+                  "pm.collectionVariables.set(\"campaignPublicationId\", data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Campaign Publications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication appears in list\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\");",
+                  "  pm.expect(data.map((p) => p.id)).to.include(pm.collectionVariables.get(\"campaignPublicationId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Campaign Publication",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications/{{campaignPublicationId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication belongs to workspace\", function () {",
+                  "  pm.expect(data.id).to.eql(pm.collectionVariables.get(\"campaignPublicationId\"));",
+                  "  pm.expect(data.workspaceId).to.eql(pm.collectionVariables.get(\"workspaceId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record Campaign Metrics",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications/{{campaignPublicationId}}/metrics",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"impressions\": 1200,\n  \"clicks\": 150,\n  \"conversions\": 12,\n  \"spendCents\": 3456,\n  \"source\": \"postman\",\n  \"metadata\": { \"scenario\": \"0530-smoke\" }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"ctr computed\", function () {",
+                  "  pm.expect(data.impressions).to.eql(1200);",
+                  "  pm.expect(data.clicks).to.eql(150);",
+                  "  pm.expect(data.ctr).to.eql(0.125);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Campaign Publications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication appears in list\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\");",
+                  "  pm.expect(data.map((p) => p.id)).to.include(pm.collectionVariables.get(\"campaignPublicationId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Regression Negative",
+      "item": [
+        {
+          "name": "Workspace Storage Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/not-found/storage"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"missing workspace returns 404\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Image Batch Missing Idempotency",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/shots/{{shotId}}/image-batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imagePromptArtifactId\": \"missing-image-prompt-artifact\",\n  \"count\": 1,\n  \"aspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 idempotency required\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(400);",
+                  "  pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_REQUIRED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

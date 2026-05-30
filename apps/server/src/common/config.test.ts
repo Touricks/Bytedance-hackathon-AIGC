@@ -55,8 +55,7 @@ describe("server config", () => {
           .then(({ config }) => {
             console.log(JSON.stringify({
               uploadDir: config.uploadDir ?? null,
-              uploadUrlPrefix: config.uploadUrlPrefix ?? null,
-              workspaceDir: config.workspaceDir
+              uploadUrlPrefix: config.uploadUrlPrefix ?? null
             }));
           })
           .catch((error) => {
@@ -78,8 +77,7 @@ describe("server config", () => {
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
       uploadDir: null,
-      uploadUrlPrefix: null,
-      workspaceDir: path.resolve(process.cwd(), "storage", "workspaces")
+      uploadUrlPrefix: null
     });
   });
 

@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
+import type { PoolClient } from "pg";
 import {
   buildMaterialIntakePromptView,
   buildProductBriefPromptView,
@@ -39,8 +40,9 @@ import {
 } from "@aigc-video/shared";
 import { assertValidRasterImageBytes } from "../../common/image-validation.js";
 import { config } from "../../common/config.js";
-import { NotFoundError } from "../../common/errors.js";
+import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
+import type { WorkspaceStorageBindingRow } from "../../db/client.js";
 import {
   workspaceManifestSchema,
   type WorkspaceDirectoryRequest,
@@ -68,6 +70,28 @@ const mimeByExtension: Record<string, string> = {
 
 function normalizeWorkspacePath(directory: string) {
   return path.resolve(directory);
+}
+
+function storageBindingView(binding: WorkspaceStorageBindingRow | null) {
+  if (!binding) {
+    return { bound: false };
+  }
+  return {
+    bound: true,
+    id: binding.id,
+    kind: binding.kind === "LOCAL" ? "local" : "s3",
+    localPath: binding.localPath,
+    s3: binding.kind === "S3"
+      ? {
+          bucket: binding.s3Bucket,
+          prefix: binding.s3Prefix,
+          region: binding.s3Region,
+          endpoint: binding.s3Endpoint,
+        }
+      : null,
+    createdAt: binding.createdAt,
+    updatedAt: binding.updatedAt,
+  };
 }
 
 function workspaceMaterialsPath(directory: string) {
@@ -184,7 +208,22 @@ async function resolveWorkspaceLocalPath(
 
   if (target.workspaceId) {
     const workspace = await db.getWorkspace(target.workspaceId);
-    const localPath = normalizeWorkspacePath(workspace.localPath);
+    const binding = await db.getActiveWorkspaceStorage(workspace.id);
+    if (!binding) {
+      throw new HttpError(
+        409,
+        "STORAGE_NOT_BOUND",
+        "Workspace storage is not bound",
+      );
+    }
+    if (binding.kind !== "LOCAL" || !binding.localPath) {
+      throw new HttpError(
+        409,
+        "STORAGE_NOT_LOCAL",
+        "Only local workspace storage is supported for this operation",
+      );
+    }
+    const localPath = normalizeWorkspacePath(binding.localPath);
     const manifest = await readManifest(localPath);
     if (manifest.workspaceId !== workspace.id) {
       throw new Error(
@@ -204,6 +243,10 @@ async function resolveWorkspaceLocalPath(
   throw new Error("workspaceId or directory is required");
 }
 
+export async function resolveWorkspaceStorageLocalPath(workspaceId: string) {
+  return resolveWorkspaceLocalPath({ workspaceId });
+}
+
 function sha256(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -216,6 +259,16 @@ function classifyKind(mime: string): MaterialAsset["kind"] {
     return "video";
   }
   return "text";
+}
+
+function assetTypeForMaterialKind(kind: MaterialAsset["kind"]) {
+  if (kind === "image") {
+    return "product_image" as const;
+  }
+  if (kind === "video") {
+    return "generated_clip" as const;
+  }
+  return "subtitle" as const;
 }
 
 function defaultRole(kind: MaterialAsset["kind"], hasPrimaryImage: boolean) {
@@ -627,6 +680,77 @@ function workspaceAssetUrl(workspaceId: string, ref: string) {
   return `/api/workspaces/${workspaceId}/materials/${encodeURIComponent(ref)}`;
 }
 
+function workspaceMaterialMetadata(input: {
+  workspaceId: string;
+  ref: string;
+  storagePath: string;
+  mime: string;
+  bytes: number;
+  digest: string;
+}) {
+  return {
+    workspaceId: input.workspaceId,
+    ref: input.ref,
+    storagePath: input.storagePath,
+    contentType: input.mime,
+    mimeType: input.mime,
+    sizeBytes: input.bytes,
+    sha256: input.digest,
+  };
+}
+
+async function ensureWorkspaceMaterialAsset(input: {
+  client: PoolClient;
+  workspaceId: string;
+  localPath: string;
+  ref: string;
+}) {
+  const url = workspaceAssetUrl(input.workspaceId, input.ref);
+  const existing = await input.client.query(
+    `select id
+     from asset
+     where source = 'upload'
+       and (
+         (metadata->>'workspaceId' = $1 and metadata->>'ref' = $2)
+         or url = $3
+       )
+     order by created_at desc
+     limit 1`,
+    [input.workspaceId, input.ref, url],
+  );
+  if (existing.rows[0]?.id) {
+    return String(existing.rows[0].id);
+  }
+
+  const filename = safeWorkspaceFilename(input.ref);
+  const mime = workspaceMaterialMime(filename);
+  const storagePath = path.join(workspaceMaterialsPath(input.localPath), filename);
+  const fileStats = await stat(storagePath);
+  const bytes = await readFile(storagePath);
+  const kind = classifyKind(mime);
+  const assetId = nanoid();
+  await input.client.query(
+    `insert into asset (id, type, url, source, metadata)
+     values ($1, $2, $3, 'upload', $4)`,
+    [
+      assetId,
+      assetTypeForMaterialKind(kind),
+      url,
+      JSON.stringify(
+        workspaceMaterialMetadata({
+          workspaceId: input.workspaceId,
+          ref: filename,
+          storagePath,
+          mime,
+          bytes: fileStats.size,
+          digest: sha256(bytes),
+        }),
+      ),
+    ],
+  );
+  return assetId;
+}
+
 function workspaceShotPurpose(index: number, shotCount: number) {
   if (index === 0) {
     return "hook" as const;
@@ -756,7 +880,7 @@ function promptViewProvider(): "ark" | "deterministic" {
 
 function promptViewModel() {
   return runtimeMode() === "real"
-    ? process.env.ARK_TEXT_ENDPOINT_ID
+    ? process.env.TEXT_ENDPOINT_ID ?? process.env.AI_TEXT_ENDPOINT_ID ?? process.env.ARK_TEXT_ENDPOINT_ID
     : undefined;
 }
 
@@ -1167,48 +1291,118 @@ async function hydrateWorkspaceArtifacts(workspaceId: string) {
 
 export const workspaceService = {
   async createManagedWorkspace(name?: string) {
-    await mkdir(config.workspaceDir, { recursive: true });
-    const directory = path.join(
-      config.workspaceDir,
-      `${managedWorkspaceName(name)}-${nanoid()}`,
-    );
-    await mkdir(directory, { recursive: true });
-    return this.initialize(directory);
+    const workspace = await db.createWorkspace({
+      id: nanoid(),
+      localPath: null,
+      currentScriptId: nanoid(),
+      status: "draft",
+      traceFile: workspaceTraceFile,
+    });
+    return {
+      workspace,
+      manifest: toManifest({
+        workspaceId: workspace.id,
+        currentScriptId: workspace.currentScriptId,
+        currentJobId: workspace.currentJobId,
+      }),
+      storage: storageBindingView(null),
+      ...(name ? { name: name.trim() } : {}),
+    };
   },
 
   async listManagedWorkspaces() {
-    const workspaceRoot = path.resolve(config.workspaceDir);
     const workspaces = await db.listWorkspaces();
-    const managed = [];
-    for (const workspace of workspaces) {
-      if (
-        !isInsideDirectory(path.resolve(workspace.localPath), workspaceRoot)
-      ) {
-        continue;
-      }
-
-      try {
-        await readManifest(workspace.localPath);
-        managed.push(workspace);
-      } catch {
-        // Workspace rows can outlive local directories during tests or manual cleanup.
-      }
-    }
-
     return {
-      workspaceRoot: config.workspaceDir,
-      workspaces: managed,
+      workspaces: await Promise.all(
+        workspaces.map(async (workspace) => ({
+          ...workspace,
+          storage: storageBindingView(
+            await db.getActiveWorkspaceStorage(workspace.id),
+          ),
+        })),
+      ),
     };
   },
 
   async getWorkspaceDirectory(workspaceId: string) {
     const workspace = await db.getWorkspace(workspaceId);
+    const localPath = await resolveWorkspaceStorageLocalPath(workspace.id);
     return {
       data: {
         workspaceId: workspace.id,
-        directory: workspace.localPath,
+        directory: localPath,
       },
     };
+  },
+
+  async getWorkspaceStorage(workspaceId: string) {
+    await db.getWorkspace(workspaceId);
+    return {
+      data: {
+        workspaceId,
+        storage: storageBindingView(
+          await db.getActiveWorkspaceStorage(workspaceId),
+        ),
+      },
+    };
+  },
+
+  async bindWorkspaceStorage(
+    workspaceId: string,
+    input:
+      | { kind: "local"; localPath: string }
+      | {
+          kind: "s3";
+          bucket: string;
+          prefix: string;
+          region?: string;
+          endpoint?: string;
+        },
+  ) {
+    const workspace = await db.getWorkspace(workspaceId);
+    try {
+      const binding =
+        input.kind === "local"
+          ? await db.bindWorkspaceLocalStorage({
+              workspaceId: workspace.id,
+              localPath: normalizeWorkspacePath(input.localPath),
+              localPathNormalized: normalizeWorkspacePath(input.localPath),
+            })
+          : await db.bindWorkspaceS3Storage({
+              workspaceId: workspace.id,
+              bucket: input.bucket,
+              prefix: input.prefix,
+              region: input.region,
+              endpoint: input.endpoint,
+            });
+      if (binding.kind === "LOCAL" && binding.localPath) {
+        await mkdir(binding.localPath, { recursive: true });
+        await writeManifest(
+          binding.localPath,
+          toManifest({
+            workspaceId: workspace.id,
+            currentScriptId: workspace.currentScriptId,
+            currentJobId: workspace.currentJobId,
+          }),
+        );
+      }
+      return {
+        data: {
+          workspaceId: workspace.id,
+          storage: storageBindingView(binding),
+        },
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === "WORKSPACE_STORAGE_ALREADY_BOUND") {
+          throw new HttpError(409, error.message, error.message);
+        }
+        if (error.message === "STORAGE_ALREADY_BOUND") {
+          throw new HttpError(409, error.message, error.message);
+        }
+      }
+      throw error;
+    }
   },
 
   async initialize(directory: string) {
@@ -1224,6 +1418,11 @@ export const workspaceService = {
         traceFile: workspaceTraceFile,
       }));
     const touched = existing ? await db.touchWorkspace(existing.id) : workspace;
+    await db.bindWorkspaceLocalStorage({
+      workspaceId: touched.id,
+      localPath,
+      localPathNormalized: localPath,
+    });
     const manifest = toManifest({
       workspaceId: touched.id,
       currentScriptId: touched.currentScriptId,
@@ -1231,7 +1430,11 @@ export const workspaceService = {
     });
     await writeManifest(localPath, manifest);
 
-    return { workspace: touched, manifest };
+    return {
+      workspace: await db.getWorkspace(touched.id),
+      manifest,
+      storage: storageBindingView(await db.getActiveWorkspaceStorage(touched.id)),
+    };
   },
 
   async uploadMaterial(input: {
@@ -1240,37 +1443,83 @@ export const workspaceService = {
     bytes: Uint8Array;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
+    const localPath = await resolveWorkspaceStorageLocalPath(workspace.id);
     const requestedFilename = safeWorkspaceFilename(input.filename);
-    workspaceMaterialMime(requestedFilename);
+    const requestedMime = workspaceMaterialMime(requestedFilename);
     if (input.bytes.byteLength > maxWorkspaceMaterialBytes) {
       throw new Error("Material file exceeds 50MB limit");
     }
     const bytes = Buffer.from(input.bytes);
 
-    const materialDirectory = workspaceMaterialsPath(workspace.localPath);
+    const materialDirectory = workspaceMaterialsPath(localPath);
     await mkdir(materialDirectory, { recursive: true });
     const filename = await uniqueWorkspaceMaterialFilename(
       materialDirectory,
       requestedFilename,
     );
-    await writeFile(path.join(materialDirectory, filename), bytes);
+    const storagePath = path.join(materialDirectory, filename);
+    await writeFile(storagePath, bytes);
+    const mime = workspaceMaterialMime(filename) ?? requestedMime;
+    const digest = sha256(bytes);
+    const kind = classifyKind(mime);
+    const asset = await db.createAsset({
+      type: assetTypeForMaterialKind(kind),
+      url: workspaceAssetUrl(workspace.id, filename),
+      source: "upload",
+      metadata: workspaceMaterialMetadata({
+        workspaceId: workspace.id,
+        ref: filename,
+        storagePath,
+        mime,
+        bytes: bytes.byteLength,
+        digest,
+      }),
+    });
     const touched = await db.touchWorkspace(workspace.id);
 
     return {
       workspace: touched,
       material: {
+        assetId: asset.id,
         ref: filename,
         bytes: bytes.byteLength,
+        mime,
+        sha256: digest,
         url: workspaceAssetUrl(workspace.id, filename),
       },
     };
   },
 
   async status(target: string | WorkspaceDirectoryRequest) {
+    if (typeof target !== "string" && target.workspaceId && !target.directory) {
+      const workspace = await refreshWorkspaceForCurrentJob(
+        await db.touchWorkspace(target.workspaceId),
+      );
+      const binding = await db.getActiveWorkspaceStorage(workspace.id);
+      if (!binding) {
+        return {
+          workspace,
+          manifest: toManifest({
+            workspaceId: workspace.id,
+            currentScriptId: workspace.currentScriptId,
+            currentJobId: workspace.currentJobId,
+          }),
+          storage: storageBindingView(null),
+          nextAction: "BIND_STORAGE",
+          materialLibrary: {
+            scannedAt: new Date().toISOString(),
+            assets: [],
+            rejected: [],
+          },
+          artifacts: await hydrateWorkspaceArtifacts(workspace.id),
+        };
+      }
+    }
     const localPath = await resolveWorkspaceLocalPath(target);
     const manifest = await readManifest(localPath);
     const touched = await db.touchWorkspace(manifest.workspaceId);
     const workspace = await refreshWorkspaceForCurrentJob(touched);
+    const binding = await db.getActiveWorkspaceStorage(workspace.id);
     const current = toManifest({
       workspaceId: workspace.id,
       currentScriptId: workspace.currentScriptId,
@@ -1284,6 +1533,7 @@ export const workspaceService = {
     return {
       workspace,
       manifest: current,
+      storage: storageBindingView(binding),
       nextAction: nextActionFor(workspace),
       materialLibrary: await collectWorkspaceMaterialLibrary(localPath),
       artifacts: await hydrateWorkspaceArtifacts(workspace.id),
@@ -1597,6 +1847,7 @@ export const workspaceService = {
     await seedShotsFromShotPrompt({
       workspaceId: workspace.id,
       scriptId: workspace.currentScriptId,
+      localPath,
       shotPrompt: approvedData,
     });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
@@ -1683,6 +1934,7 @@ export const workspaceService = {
 async function seedShotsFromShotPrompt(input: {
   workspaceId: string;
   scriptId: string;
+  localPath: string;
   shotPrompt: ShotPromptArtifact;
 }) {
   // Re-seeding wipes prior shots; first wave doesn't support edit/add yet.
@@ -1692,10 +1944,11 @@ async function seedShotsFromShotPrompt(input: {
     await client.query("begin");
     await client.query("delete from storyboard_shots where workspace_id=$1", [input.workspaceId]);
     for (const shot of input.shotPrompt.shots) {
-      await client.query(
+      const inserted = await client.query(
         `insert into storyboard_shots
            (id, workspace_id, script_id, order_index, title, objective, default_duration_sec, status)
-         values ($1,$2,$3,$4,$5,$6,$7,'DRAFT')`,
+         values ($1,$2,$3,$4,$5,$6,$7,'DRAFT')
+         returning id`,
         [
           `shot_${Math.random().toString(36).slice(2, 12)}`,
           input.workspaceId,
@@ -1706,6 +1959,31 @@ async function seedShotsFromShotPrompt(input: {
           shot.endSec - shot.startSec,
         ],
       );
+      const shotId = String(inserted.rows[0]?.id);
+      const uniqueRefs = [...new Set(shot.referenceAssetRefs)];
+      for (const [position, ref] of uniqueRefs.entries()) {
+        const assetId = await ensureWorkspaceMaterialAsset({
+          client,
+          workspaceId: input.workspaceId,
+          localPath: input.localPath,
+          ref,
+        });
+        await client.query(
+          `insert into shot_asset_refs (id, shot_id, asset_id, role, weight, position)
+           values ($1, $2, $3, $4, $5, $6)
+           on conflict (shot_id, asset_id, role) do update
+           set weight = excluded.weight,
+               position = excluded.position`,
+          [
+            `sar_${Math.random().toString(36).slice(2, 12)}`,
+            shotId,
+            assetId,
+            position === 0 ? "product_identity" : "reference",
+            position === 0 ? 1 : 0.8,
+            position,
+          ],
+        );
+      }
     }
     await client.query("commit");
   } catch (err) {

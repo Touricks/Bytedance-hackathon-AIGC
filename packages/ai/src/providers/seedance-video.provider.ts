@@ -6,6 +6,7 @@ import type { FileTraceLogger } from "../trace/trace-log.js";
 
 export interface SeedanceVideoRequest {
   imageUrl: string;
+  lastFrameUrl?: string | null;
   prompt: string;
   durationSec?: number;
   aspectRatio?: "9:16" | "16:9" | "1:1";
@@ -309,7 +310,7 @@ export async function generateVideoWithSeedance(
 
   if (!config) {
     throw new Error(
-      "Seedance video export requires Ark video config: ARK_API_KEY and ARK_VIDEO_ENDPOINT_ID"
+      "Seedance video export requires Ark video config: ARK_API_KEY, ARK_BASE_URL, and ARK_VIDEO_ENDPOINT_ID"
     );
   }
 
@@ -328,11 +329,36 @@ export async function generateVideoWithSeedance(
       baseURL: config.baseURL,
       prompt: request.prompt,
       imageUrl: request.imageUrl,
+      lastFrameUrl: request.lastFrameUrl ?? null,
       duration,
       ratio,
       generateAudio
     }
   });
+  const content = [
+    {
+      type: "text",
+      text: request.prompt
+    },
+    {
+      type: "image_url",
+      image_url: {
+        url: request.imageUrl
+      },
+      role: "first_frame"
+    },
+    ...(request.lastFrameUrl
+      ? [
+          {
+            type: "image_url",
+            image_url: {
+              url: request.lastFrameUrl
+            },
+            role: "last_frame"
+          }
+        ]
+      : [])
+  ];
   const response = await fetchImpl(
     joinArkPath(config.baseURL, "contents/generations/tasks"),
     {
@@ -343,19 +369,7 @@ export async function generateVideoWithSeedance(
       },
       body: JSON.stringify({
         model: config.model,
-        content: [
-          {
-            type: "text",
-            text: request.prompt
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: request.imageUrl
-            },
-            role: "first_frame"
-          }
-        ],
+        content,
         duration,
         ratio,
         generate_audio: generateAudio

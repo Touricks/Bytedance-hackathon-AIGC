@@ -161,7 +161,7 @@ export async function generateStoryboardWithArk(
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
     const message =
-      "real-provider mode requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID";
+      "real-provider mode requires Ark text config: ARK_API_KEY, ARK_BASE_URL, and ARK_TEXT_ENDPOINT_ID";
     await options.traceLogger?.append({
       kind: "storyboard.failed",
       pipeline: "storyboard",

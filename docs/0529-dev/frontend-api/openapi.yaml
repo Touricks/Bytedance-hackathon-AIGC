@@ -1310,7 +1310,7 @@ paths:
       tags:
         - Test Utilities
       summary: Delete test-run data
-      description: Only enabled when `NODE_ENV=test` or `ALLOW_TEST_CLEANUP=true`.
+      description: Only enabled when `ALLOW_TEST_CLEANUP=true`.
       operationId: deleteTestRun
       parameters:
         - name: runId

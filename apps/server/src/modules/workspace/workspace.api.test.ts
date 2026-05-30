@@ -6,6 +6,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
 import {
   maxWorkspaceMaterialBytes,
@@ -389,6 +390,32 @@ describe("workspace API", () => {
     return dir;
   }
 
+  async function createLogicalWorkspaceWithLocalStorage(name: string) {
+    const directory = await createWorkspaceDir();
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name },
+    });
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const created = createResponse.json();
+    assert.equal(created.storage.bound, false);
+
+    const bindResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${created.workspace.id}/storage/bind`,
+      payload: { kind: "local", localPath: directory },
+    });
+    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    assert.equal(bindResponse.json().data.storage.bound, true);
+
+    return {
+      ...created,
+      workspace: { ...created.workspace, localPath: directory },
+      storage: bindResponse.json().data.storage,
+    };
+  }
+
   async function writeWorkspaceMaterial(
     directory: string,
     filename: string,
@@ -625,17 +652,71 @@ describe("workspace API", () => {
     assert.match(directoryResponse.json().message, /CreativeWorkspace not found/);
   });
 
-  it("creates and serves a Fastify-managed workspace without a client path", async () => {
+  it("keeps logical workspace creation separate from storage binding", async () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/workspaces",
-      payload: { name: "Desk Demo" },
+      payload: { name: "Unbound Workspace" },
     });
 
     assert.equal(createResponse.statusCode, 200, createResponse.body);
     const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
-    assert.match(path.basename(created.workspace.localPath), /^desk-demo-/);
+    assert.equal(created.workspace.localPath, "");
+    assert.equal(created.storage.bound, false);
+
+    const statusBeforeBind = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/status",
+      payload: { workspaceId: created.workspace.id },
+    });
+    assert.equal(statusBeforeBind.statusCode, 200, statusBeforeBind.body);
+    assert.equal(statusBeforeBind.json().nextAction, "BIND_STORAGE");
+
+    const uploadBeforeBind = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/materials",
+      payload: {
+        workspaceId: created.workspace.id,
+        filename: "notes.txt",
+        dataBase64: Buffer.from("notes").toString("base64"),
+      },
+    });
+    assert.equal(uploadBeforeBind.statusCode, 409, uploadBeforeBind.body);
+    assert.equal(uploadBeforeBind.json().code, "STORAGE_NOT_BOUND");
+
+    const directory = await createWorkspaceDir();
+    const bindResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${created.workspace.id}/storage/bind`,
+      payload: { kind: "local", localPath: directory },
+    });
+    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    assert.equal(bindResponse.json().data.storage.bound, true);
+    assert.equal(bindResponse.json().data.storage.localPath, directory);
+
+    const getStorageResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${created.workspace.id}/storage`,
+    });
+    assert.equal(getStorageResponse.statusCode, 200, getStorageResponse.body);
+    assert.equal(getStorageResponse.json().data.storage.localPath, directory);
+
+    const secondWorkspace = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "Duplicate Storage Target" },
+    });
+    const duplicateBind = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${secondWorkspace.json().workspace.id}/storage/bind`,
+      payload: { kind: "local", localPath: directory },
+    });
+    assert.equal(duplicateBind.statusCode, 409, duplicateBind.body);
+    assert.equal(duplicateBind.json().code, "STORAGE_ALREADY_BOUND");
+  });
+
+  it("creates a logical workspace, binds storage, and serves uploaded materials", async () => {
+    const created = await createLogicalWorkspaceWithLocalStorage("Desk Demo");
     assert.equal(created.workspace.status, "draft");
 
     const uploadResponse = await app.inject({
@@ -650,10 +731,21 @@ describe("workspace API", () => {
 
     assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
     const uploaded = uploadResponse.json();
+    assert.ok(uploaded.material.assetId);
     assert.equal(uploaded.material.ref, "notes.txt");
+    assert.equal(uploaded.material.mime, "text/plain");
     assert.equal(
       uploaded.material.url,
       `/api/workspaces/${created.workspace.id}/materials/notes.txt`,
+    );
+    const uploadedAsset = await db.getAsset(uploaded.material.assetId);
+    const uploadedAssetMetadata = uploadedAsset.metadata as Record<string, unknown>;
+    assert.equal(uploadedAsset.url, uploaded.material.url);
+    assert.equal(uploadedAssetMetadata.ref, "notes.txt");
+    assert.equal(
+      typeof uploadedAssetMetadata.storagePath === "string" &&
+        uploadedAssetMetadata.storagePath.endsWith("notes.txt"),
+      true,
     );
 
     const servedResponse = await app.inject({
@@ -681,7 +773,7 @@ describe("workspace API", () => {
       method: "POST",
       url: "/api/workspaces/material-intake",
       payload: {
-        directory: created.workspace.localPath,
+        workspaceId: created.workspace.id,
         prompt: "Make a quick UGC demo",
       },
     });
@@ -695,15 +787,8 @@ describe("workspace API", () => {
   });
 
   it("uploads workspace materials as multipart into the managed materials directory", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Multipart Materials" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
+    const created =
+      await createLogicalWorkspaceWithLocalStorage("Multipart Materials");
 
     const boundary = "----daireel-material-boundary";
     const payload = [
@@ -786,15 +871,8 @@ describe("workspace API", () => {
   });
 
   it("validates multipart workspace material uploads and dedupes same-name files", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Upload Validation" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
+    const created =
+      await createLogicalWorkspaceWithLocalStorage("Upload Validation");
 
     const imageResponse = await uploadWorkspaceMaterialMultipart({
       workspaceId: created.workspace.id,
@@ -865,15 +943,8 @@ describe("workspace API", () => {
   });
 
   it("runs workspace operations from workspaceId without a client directory path", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Project Workspace" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
+    const created =
+      await createLogicalWorkspaceWithLocalStorage("Project Workspace");
 
     const uploadResponse = await app.inject({
       method: "POST",
@@ -919,15 +990,8 @@ describe("workspace API", () => {
   });
 
   it("rejects workspaceId resume when the local scriptId does not match Postgres", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Forged Manifest" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
+    const created =
+      await createLogicalWorkspaceWithLocalStorage("Forged Manifest");
 
     await writeFile(
       path.join(created.workspace.localPath, ".daireel", "workspace.json"),
@@ -1823,6 +1887,20 @@ describe("workspace API", () => {
       approved.artifact.data.negativePrompt,
       "blur, distorted hands, unreadable text",
     );
+    const seededShots = await db.db2.listShotsByWorkspace(approved.workspace.id);
+    assert.equal(seededShots.length, 4);
+    const shotRefs = await db.db2.pool().query(
+      `select sar.role, sar.position, a.id as asset_id, a.metadata
+       from shot_asset_refs sar
+       join asset a on a.id = sar.asset_id
+       where sar.shot_id = $1
+       order by sar.position asc`,
+      [seededShots[0]!.id],
+    );
+    assert.equal(shotRefs.rows.length, 1);
+    assert.equal(shotRefs.rows[0].role, "product_identity");
+    assert.equal(shotRefs.rows[0].position, 0);
+    assert.equal(shotRefs.rows[0].metadata.ref, "product.png");
   });
 
   it("hydrates persisted workspace artifacts in status for historical directories", async () => {

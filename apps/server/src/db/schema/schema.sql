@@ -10,6 +10,8 @@ do $$ begin create type batch_status as enum ('PENDING','RUNNING','SUCCEEDED','P
 do $$ begin create type candidate_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','REJECTED'); exception when duplicate_object then null; end $$;
 do $$ begin create type job_status_v2 as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','RETRYING','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type final_video_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
+do $$ begin create type workspace_storage_kind as enum ('LOCAL','S3'); exception when duplicate_object then null; end $$;
+do $$ begin create type workspace_storage_status as enum ('ACTIVE','ARCHIVED'); exception when duplicate_object then null; end $$;
 
 -- Preserved upstream tables (unchanged)
 create table if not exists product (
@@ -30,7 +32,7 @@ create table if not exists asset (
 );
 create table if not exists creative_workspace (
   id text primary key,
-  local_path text not null unique,
+  local_path text,
   current_script_id text not null,
   current_job_id text,
   status text not null,
@@ -39,6 +41,56 @@ create table if not exists creative_workspace (
   updated_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
+alter table if exists creative_workspace alter column local_path drop not null;
+alter table if exists creative_workspace drop constraint if exists creative_workspace_local_path_key;
+create table if not exists workspace_storage_bindings (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  kind workspace_storage_kind not null,
+  status workspace_storage_status not null default 'ACTIVE',
+  local_path text,
+  local_path_normalized text,
+  s3_bucket text,
+  s3_prefix text,
+  s3_region text,
+  s3_endpoint text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint workspace_storage_local_target check (
+    kind <> 'LOCAL' or local_path_normalized is not null
+  ),
+  constraint workspace_storage_s3_target check (
+    kind <> 'S3' or (s3_bucket is not null and s3_prefix is not null)
+  )
+);
+create unique index if not exists idx_workspace_storage_active_workspace
+  on workspace_storage_bindings(workspace_id)
+  where status = 'ACTIVE';
+create unique index if not exists idx_workspace_storage_active_local
+  on workspace_storage_bindings(local_path_normalized)
+  where status = 'ACTIVE' and kind = 'LOCAL';
+create unique index if not exists idx_workspace_storage_active_s3
+  on workspace_storage_bindings(s3_bucket, s3_prefix)
+  where status = 'ACTIVE' and kind = 'S3';
+insert into workspace_storage_bindings (
+  id,
+  workspace_id,
+  kind,
+  status,
+  local_path,
+  local_path_normalized
+)
+select
+  'wsb_' || replace(id, 'ws_', ''),
+  id,
+  'LOCAL'::workspace_storage_kind,
+  'ACTIVE'::workspace_storage_status,
+  local_path,
+  local_path
+from creative_workspace
+where local_path is not null
+on conflict do nothing;
 create table if not exists workspace_artifact (
   id text primary key,
   workspace_id text not null references creative_workspace(id),
@@ -99,9 +151,12 @@ create table if not exists shot_asset_refs (
   asset_id text not null references asset(id),
   role text not null,
   weight numeric(4,2) not null default 1.0,
+  position int not null default 0,
   created_at timestamptz not null default now(),
   unique (shot_id, asset_id, role)
 );
+alter table if exists shot_asset_refs
+  add column if not exists position int not null default 0;
 
 create table if not exists image_prompt_artifacts (
   id text primary key,
@@ -292,3 +347,34 @@ create table if not exists final_video_jobs (
   updated_at timestamptz not null default now(),
   completed_at timestamptz
 );
+
+create table if not exists campaign_publications (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  final_video_job_id text references final_video_jobs(id) on delete set null,
+  platform text not null,
+  channel_name text not null,
+  kol_name text,
+  publish_url text,
+  status text not null default 'planned',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_campaign_publications_workspace
+  on campaign_publications(workspace_id, created_at desc);
+
+create table if not exists campaign_publication_metrics (
+  id text primary key,
+  publication_id text not null references campaign_publications(id) on delete cascade,
+  impressions int not null default 0,
+  clicks int not null default 0,
+  conversions int not null default 0,
+  spend_cents int not null default 0,
+  captured_at timestamptz not null default now(),
+  source text not null default 'manual',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_campaign_metrics_publication
+  on campaign_publication_metrics(publication_id, captured_at desc);

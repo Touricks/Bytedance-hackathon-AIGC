@@ -1,0 +1,852 @@
+{
+  "info": {
+    "name": "Bytedancehack 0530 Local Smoke (No Model API)",
+    "description": "No-model Postman smoke. Requires only a running backend, Postgres, and a local storage directory. It does not call material/brief/storyboard/shotprompt propose, image/video prompt propose, image/video generation, or final compose success paths. It uploads a tiny PNG as {{materialRef}} and directly approves a fixed shotprompt to seed shots.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"response is not 5xx\", function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});",
+          "const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "if (contentType.includes(\"application/json\")) {",
+          "  pm.response.json();",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "workspaceName",
+      "value": "0530-postman-demo"
+    },
+    {
+      "key": "workspaceDirectory",
+      "value": "/Users/carrick/TestWorkspace/Project-AIGC/IntegrationTest_v0/onePicture/"
+    },
+    {
+      "key": "workspaceId",
+      "value": ""
+    },
+    {
+      "key": "scriptId",
+      "value": ""
+    },
+    {
+      "key": "unboundWorkspaceId",
+      "value": ""
+    },
+    {
+      "key": "materialRef",
+      "value": "display_1.png"
+    },
+    {
+      "key": "materialAssetId",
+      "value": ""
+    },
+    {
+      "key": "materialFileBase64",
+      "value": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    },
+    {
+      "key": "shotPromptArtifactId",
+      "value": ""
+    },
+    {
+      "key": "shotId",
+      "value": ""
+    },
+    {
+      "key": "campaignPublicationId",
+      "value": ""
+    },
+    {
+      "key": "campaignPlatform",
+      "value": "douyin"
+    },
+    {
+      "key": "campaignChannelName",
+      "value": "creator-alpha"
+    },
+    {
+      "key": "campaignKolName",
+      "value": "Ava"
+    },
+    {
+      "key": "campaignPublishUrl",
+      "value": "https://example.com/campaign/post-001"
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"health ok\", function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.runtime).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Config Limits",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/config/limits"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"generation limits exist\", function () {",
+                  "  pm.expect(data.defaultImageBatchSize).to.be.a(\"number\");",
+                  "  pm.expect(data.defaultVideoBatchSize).to.be.a(\"number\");",
+                  "  pm.expect(data.aspectRatios).to.include(\"9:16\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Workspace Local Contract",
+      "item": [
+        {
+          "name": "Create Logical Workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{workspaceName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"workspace created unbound\", function () {",
+                  "  pm.expect(json.workspace.id).to.be.a(\"string\");",
+                  "  pm.expect(json.workspace.currentScriptId).to.be.a(\"string\");",
+                  "  pm.expect(json.storage.bound).to.eql(false);",
+                  "});",
+                  "pm.collectionVariables.set(\"workspaceId\", json.workspace.id);",
+                  "pm.collectionVariables.set(\"scriptId\", json.workspace.currentScriptId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Workspace Status Before Storage Binding",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"unbound workspace asks for storage binding\", function () {",
+                  "  pm.expect(json.storage.bound).to.eql(false);",
+                  "  pm.expect(json.nextAction).to.eql(\"BIND_STORAGE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bind Local Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storage/bind",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"local\",\n  \"localPath\": \"{{workspaceDirectory}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const storage = pm.response.json().data.storage;",
+                  "pm.test(\"storage bound\", function () {",
+                  "  pm.expect(storage.bound).to.eql(true);",
+                  "  pm.expect(storage.kind).to.eql(\"local\");",
+                  "  const expected = pm.collectionVariables.get(\"workspaceDirectory\").replace(/\\/+$/, \"\");",
+                  "  pm.expect(storage.localPath.replace(/\\/+$/, \"\")).to.eql(expected);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Workspace Storage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storage"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const storage = pm.response.json().data.storage;",
+                  "pm.test(\"storage is readable\", function () {",
+                  "  pm.expect(storage.bound).to.eql(true);",
+                  "  pm.expect(storage.kind).to.eql(\"local\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Fixed Material",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/materials",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"filename\": \"{{materialRef}}\",\n  \"dataBase64\": \"{{materialFileBase64}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"material uploaded without provider\", function () {",
+                  "  pm.expect(json.material.assetId).to.be.a(\"string\");",
+                  "  pm.expect(json.material.url).to.include(\"/api/workspaces/\" + pm.collectionVariables.get(\"workspaceId\") + \"/materials/\");",
+                  "});",
+                  "pm.collectionVariables.set(\"materialRef\", json.material.ref);",
+                  "pm.collectionVariables.set(\"materialAssetId\", json.material.assetId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Workspace Status With Material",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"bound workspace reports material library\", function () {",
+                  "  pm.expect(json.storage.bound).to.eql(true);",
+                  "  pm.expect(json.materialLibrary.assets).to.be.an(\"array\");",
+                  "  pm.expect(json.materialLibrary.assets.map((a) => a.ref)).to.include(pm.collectionVariables.get(\"materialRef\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Shot Contract Without Models",
+      "item": [
+        {
+          "name": "Approve Fixed Shotprompt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/artifacts/shotprompt/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspaceId}}\",\n  \"data\": {\n    \"targetProvider\": \"seedance\",\n    \"durationSec\": 4,\n    \"aspectRatio\": \"9:16\",\n    \"prompt\": \"保持产品外观一致，生成一个四秒广告镜头。\",\n    \"negativePrompt\": \"不要水印，不要乱码字幕，不要改变商品外观。\",\n    \"shots\": [\n      {\n        \"index\": 0,\n        \"startSec\": 0,\n        \"endSec\": 4,\n        \"providerPrompt\": \"桌面产品开场，稳定展示产品外观，保持真实质感和干净背景。\",\n        \"referenceAssetRefs\": [\"{{materialRef}}\"],\n        \"voiceover\": \"快速生成一条商品广告。\"\n      }\n    ],\n    \"tts\": {\n      \"enabled\": true,\n      \"source\": \"shots.voiceover\",\n      \"voiceover\": \"快速生成一条商品广告。\"\n    },\n    \"assumptions\": [\"Postman smoke 使用固定 shotprompt，避免调用文本模型。\"]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"fixed shotprompt approved\", function () {",
+                  "  pm.expect(json.artifact.id).to.be.a(\"string\");",
+                  "  pm.expect(json.artifact.type).to.eql(\"shotprompt\");",
+                  "  pm.expect(json.artifact.status).to.eql(\"approved\");",
+                  "});",
+                  "pm.collectionVariables.set(\"shotPromptArtifactId\", json.artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Shots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"shots seeded from shotprompt\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data[0].id).to.be.a(\"string\");",
+                  "  pm.expect(data[0].nextAction).to.be.a(\"string\");",
+                  "  pm.expect(data[0].referenceAssetRefs).to.include(pm.collectionVariables.get(\"materialRef\"));",
+                  "});",
+                  "pm.collectionVariables.set(\"shotId\", data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shot Workflow Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-workflow-status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"workflow status contains seeded shot\", function () {",
+                  "  pm.expect(data.workspaceId).to.eql(pm.collectionVariables.get(\"workspaceId\"));",
+                  "  pm.expect(data.shots).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(data.canComposeFinalVideo).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Image Rounds Empty",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-rounds"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"image rounds are empty before prompt generation\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\");",
+                  "  pm.expect(data.length).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Video Rounds Empty",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-rounds"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"video rounds are empty before script generation\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\");",
+                  "  pm.expect(data.length).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Campaign / KOL",
+      "item": [
+        {
+          "name": "Create Campaign Publication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"{{campaignPlatform}}\",\n  \"channelName\": \"{{campaignChannelName}}\",\n  \"kolName\": \"{{campaignKolName}}\",\n  \"publishUrl\": \"{{campaignPublishUrl}}\",\n  \"status\": \"published\",\n  \"notes\": \"Postman smoke publication record.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication created\", function () {",
+                  "  pm.expect(data.id).to.be.a(\"string\");",
+                  "  pm.expect(data.platform).to.eql(pm.collectionVariables.get(\"campaignPlatform\"));",
+                  "  pm.expect(data.channelName).to.eql(pm.collectionVariables.get(\"campaignChannelName\"));",
+                  "  pm.expect(data.latestMetrics).to.eql(null);",
+                  "});",
+                  "pm.collectionVariables.set(\"campaignPublicationId\", data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Campaign Publications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication appears in list\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\");",
+                  "  pm.expect(data.map((p) => p.id)).to.include(pm.collectionVariables.get(\"campaignPublicationId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Campaign Publication",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications/{{campaignPublicationId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication belongs to workspace\", function () {",
+                  "  pm.expect(data.id).to.eql(pm.collectionVariables.get(\"campaignPublicationId\"));",
+                  "  pm.expect(data.workspaceId).to.eql(pm.collectionVariables.get(\"workspaceId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record Campaign Metrics",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications/{{campaignPublicationId}}/metrics",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"impressions\": 1200,\n  \"clicks\": 150,\n  \"conversions\": 12,\n  \"spendCents\": 3456,\n  \"source\": \"postman\",\n  \"metadata\": { \"scenario\": \"0530-smoke\" }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"ctr computed\", function () {",
+                  "  pm.expect(data.impressions).to.eql(1200);",
+                  "  pm.expect(data.clicks).to.eql(150);",
+                  "  pm.expect(data.ctr).to.eql(0.125);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Campaign Publications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/campaign-publications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const data = pm.response.json().data;",
+                  "pm.test(\"campaign publication appears in list\", function () {",
+                  "  pm.expect(data).to.be.an(\"array\");",
+                  "  pm.expect(data.map((p) => p.id)).to.include(pm.collectionVariables.get(\"campaignPublicationId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Regression Negative",
+      "item": [
+        {
+          "name": "Create Unbound Workspace For Negative",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{workspaceName}}-negative\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const json = pm.response.json();",
+                  "pm.test(\"negative workspace is unbound\", function () {",
+                  "  pm.expect(json.storage.bound).to.eql(false);",
+                  "});",
+                  "pm.collectionVariables.set(\"unboundWorkspaceId\", json.workspace.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Before Storage Binding",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/materials",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{unboundWorkspaceId}}\",\n  \"filename\": \"negative.png\",\n  \"dataBase64\": \"{{materialFileBase64}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"upload requires storage binding\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(409);",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.code || json.message).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Workspace Storage Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/not-found/storage"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"missing workspace returns 404\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Image Batch Missing Idempotency",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/shots/{{shotId}}/image-batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imagePromptArtifactId\": \"missing-image-prompt-artifact\",\n  \"count\": 1,\n  \"aspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 idempotency required\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(400);",
+                  "  pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_REQUIRED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Final Video Missing Selections",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-final-negative-{{$timestamp}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/final-videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outputAspectRatio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"final compose requires selected videos\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(409);",
+                  "  pm.expect(pm.response.json().code).to.eql(\"MISSING_SELECTIONS\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

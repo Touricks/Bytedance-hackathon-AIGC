@@ -2,8 +2,6 @@ import { loadWorkspaceEnv } from "../env.js";
 
 loadWorkspaceEnv();
 
-export const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
-
 export type ProviderEnv = Record<string, string | undefined>;
 
 export interface TaskProviderConfig {
@@ -33,8 +31,8 @@ export function resolveTextProviderConfig(
 ): TaskProviderConfig | null {
   const apiKey = overrides.apiKey ?? pickFirst(env, ["TEXT_API_KEY", "AI_TEXT_API_KEY", "ARK_API_KEY"]);
   const endpointId = overrides.endpointId ?? pickFirst(env, ["TEXT_ENDPOINT_ID", "AI_TEXT_ENDPOINT_ID", "ARK_TEXT_ENDPOINT_ID"]);
-  if (!apiKey || !endpointId) return null;
-  const baseURL = overrides.baseURL ?? pickFirst(env, ["TEXT_BASE_URL", "AI_TEXT_BASE_URL", "ARK_BASE_URL"]) ?? DEFAULT_ARK_BASE_URL;
+  const baseURL = overrides.baseURL ?? pickFirst(env, ["TEXT_BASE_URL", "AI_TEXT_BASE_URL", "ARK_BASE_URL"]);
+  if (!apiKey || !endpointId || !baseURL) return null;
   return { task: "text", provider: "ark", apiKey, baseURL, endpointId };
 }
 
@@ -44,8 +42,8 @@ export function resolveImageProviderConfig(
 ): TaskProviderConfig | null {
   const apiKey = overrides.apiKey ?? pickFirst(env, ["IMAGE_API_KEY", "AI_IMAGE_API_KEY"]);
   const endpointId = overrides.endpointId ?? pickFirst(env, ["IMAGE_ENDPOINT_ID", "AI_IMAGE_ENDPOINT_ID"]);
-  if (!apiKey || !endpointId) return null;
-  const baseURL = overrides.baseURL ?? pickFirst(env, ["IMAGE_BASE_URL", "AI_IMAGE_BASE_URL"]) ?? DEFAULT_ARK_BASE_URL;
+  const baseURL = overrides.baseURL ?? pickFirst(env, ["IMAGE_BASE_URL", "AI_IMAGE_BASE_URL"]);
+  if (!apiKey || !endpointId || !baseURL) return null;
   return { task: "image", provider: "ark-seedream", apiKey, baseURL, endpointId };
 }
 
@@ -55,8 +53,8 @@ export function resolveVideoProviderConfig(
 ): TaskProviderConfig | null {
   const apiKey = overrides.apiKey ?? pickFirst(env, ["VIDEO_API_KEY", "AI_VIDEO_API_KEY", "ARK_API_KEY"]);
   const endpointId = overrides.endpointId ?? pickFirst(env, ["VIDEO_ENDPOINT_ID", "AI_VIDEO_ENDPOINT_ID", "ARK_VIDEO_ENDPOINT_ID"]);
-  if (!apiKey || !endpointId) return null;
-  const baseURL = overrides.baseURL ?? pickFirst(env, ["VIDEO_BASE_URL", "AI_VIDEO_BASE_URL", "ARK_BASE_URL"]) ?? DEFAULT_ARK_BASE_URL;
+  const baseURL = overrides.baseURL ?? pickFirst(env, ["VIDEO_BASE_URL", "AI_VIDEO_BASE_URL", "ARK_BASE_URL"]);
+  if (!apiKey || !endpointId || !baseURL) return null;
   return { task: "video", provider: "seedance", apiKey, baseURL, endpointId };
 }
 

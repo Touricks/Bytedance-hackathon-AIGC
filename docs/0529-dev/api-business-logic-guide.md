@@ -366,7 +366,7 @@ user_action
 
 | Method | Path | 业务用途 | 启用条件 |
 |---|---|---|---|
-| `DELETE` | `/api/test-runs/:runId` | 按 workspace id 前缀清理测试数据 | `NODE_ENV=test` 或 `ALLOW_TEST_CLEANUP=true` |
+| `DELETE` | `/api/test-runs/:runId` | 按 workspace id 前缀清理测试数据 | `ALLOW_TEST_CLEANUP=true` |
 
 该接口依赖数据库级 cascade 删除关联数据，不应在生产环境开启。
 

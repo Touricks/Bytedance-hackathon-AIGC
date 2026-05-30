@@ -65,10 +65,10 @@ function requireProviderConfigs(): {
   const missing: string[] = [];
 
   if (!arkTextConfig) {
-    missing.push("Ark text provider: ARK_API_KEY, ARK_TEXT_ENDPOINT_ID");
+    missing.push("Ark text provider: ARK_API_KEY, ARK_BASE_URL, ARK_TEXT_ENDPOINT_ID");
   }
   if (!arkVideoConfig) {
-    missing.push("Ark video provider: ARK_API_KEY, ARK_VIDEO_ENDPOINT_ID");
+    missing.push("Ark video provider: ARK_API_KEY, ARK_BASE_URL, ARK_VIDEO_ENDPOINT_ID");
   }
   if (missing.length > 0) {
     throw new Error(`real provider smoke requires ${missing.join("; ")}`);

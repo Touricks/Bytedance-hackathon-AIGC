@@ -453,7 +453,7 @@ export async function generateCreativeBlueprintWithArk(
   if (!arkProvider) {
     if (isRealProviderMode(env)) {
       throw new Error(
-        "real-provider mode requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID"
+        "real-provider mode requires Ark text config: ARK_API_KEY, ARK_BASE_URL, and ARK_TEXT_ENDPOINT_ID"
       );
     }
 

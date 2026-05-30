@@ -39,6 +39,13 @@ describe("resolveTextProviderConfig", () => {
   it("returns null when required keys missing", () => {
     assert.equal(resolveTextProviderConfig({ ARK_API_KEY: "k" }), null);
     assert.equal(resolveTextProviderConfig({ ARK_TEXT_ENDPOINT_ID: "e" }), null);
+    assert.equal(
+      resolveTextProviderConfig({
+        ARK_API_KEY: "k",
+        ARK_TEXT_ENDPOINT_ID: "e",
+      }),
+      null,
+    );
   });
 });
 
@@ -54,13 +61,14 @@ describe("resolveImageProviderConfig", () => {
     assert.deepEqual(
       resolveImageProviderConfig({
         IMAGE_API_KEY: "ik",
+        IMAGE_BASE_URL: "https://image.example/api/v3",
         IMAGE_ENDPOINT_ID: "ie",
       }),
       {
         task: "image",
         provider: "ark-seedream",
         apiKey: "ik",
-        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        baseURL: "https://image.example/api/v3",
         endpointId: "ie",
       },
     );
@@ -71,6 +79,7 @@ describe("resolveVideoProviderConfig", () => {
   it("falls back to ARK_VIDEO_ENDPOINT_ID", () => {
     const cfg = resolveVideoProviderConfig({
       ARK_API_KEY: "ak",
+      ARK_BASE_URL: "https://ark.example/v1",
       ARK_VIDEO_ENDPOINT_ID: "vid",
     });
     assert.equal(cfg?.endpointId, "vid");

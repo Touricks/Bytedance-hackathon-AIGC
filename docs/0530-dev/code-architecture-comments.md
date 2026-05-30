@@ -17,7 +17,9 @@
 |---|---|---|
 | `apps/server/src/app.ts` | `sendWorkspaceFile` / static routes | 说明 workspace file route 是稳定读取路径，必须把目标文件限制在 `.daireel/materials` 或 `.daireel/videos` 内，避免 path traversal。 |
 | `apps/server/src/modules/workspace/workspace.controller.ts` | route 注册顶部 | 说明 workspace controller 只负责 workspace 级 artifact pipeline；per-shot workflow 放在 shot controller，避免两条状态机混在同一 controller。 |
-| `apps/server/src/modules/workspace/workspace.service.ts` | `resolveWorkspaceLocalPath` | 说明通过 `workspaceId` 恢复目录时要校验 manifest，防止 DB 指向目录与本地 `.daireel/workspace.json` 漂移。 |
+| `apps/server/src/modules/workspace/workspace.service.ts` | `bindWorkspaceStorage` / `resolveWorkspaceStorageLocalPath` | 说明 workspace 是逻辑会话，local/S3 是一对一 storage binding；所有文件读写必须先解析 active binding，未绑定时返回 `BIND_STORAGE`/`STORAGE_NOT_BOUND`。 |
+| `workspace.service.ts` | `initialize` 兼容入口 | 说明 `/api/workspaces/init` 只是本地测试兼容路径，目标合同应使用 create logical workspace -> bind storage。 |
+| `apps/server/src/db/schema/schema.sql` | `workspace_storage_bindings` 约束 | 说明 partial unique index 是 storage 迁移护栏：一个 workspace 只能有一个 active binding，同一个 storage target 只能属于一个 workspace。 |
 | `workspace.service.ts` | material intake 文件扫描/上传路径 | 说明 agent 只能看到后端校验后的素材清单；文件名、mime、sha256 由后端生成，不能让模型编造。 |
 | `workspace.service.ts` | brief/storyboard propose | 说明 Ark text 只产出待用户确认的 artifact 草稿，不能直接推进下游 provider 调用。 |
 | `workspace.service.ts` | shotprompt compile/approve | 说明 approved shotprompt 是 shot workflow 的种子；approve 必须在事务中写入 artifact 并 seed `storyboard_shots`。 |
@@ -65,6 +67,14 @@
 // Idempotency-Key is the public dedupe boundary for provider jobs. If the user
 // double-clicks generate, return the existing batch/job instead of enqueueing a
 // second provider call.
+```
+
+### storage binding
+
+```ts
+// Workspace ids are logical session ids. File-system paths and future S3 roots
+// live in the active storage binding; downstream stages must fail closed when
+// no binding exists instead of creating an implicit managed directory.
 ```
 
 ## 不建议写的注释

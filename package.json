@@ -9,6 +9,8 @@
     "dev:real": "MODEL_MODE=real turbo dev",
     "build": "turbo build",
     "db:clear": "node scripts/clear-postgres.mjs",
+    "redis:clear": "node scripts/clear-redis.mjs",
+    "reset:dev": "node scripts/reset-dev-session.mjs",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "format": "prettier --write .",

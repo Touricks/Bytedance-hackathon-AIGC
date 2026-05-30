@@ -26,6 +26,24 @@ export const managedWorkspaceCreateRequestSchema = z.object({
   name: z.string().min(1).max(80).optional(),
 });
 
+export const workspaceStorageBindRequestSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("local"),
+    localPath: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("s3"),
+    bucket: z.string().min(1),
+    prefix: z.string().min(1),
+    region: z.string().min(1).optional(),
+    endpoint: z.string().min(1).optional(),
+  }),
+]);
+
+export type WorkspaceStorageBindRequest = z.infer<
+  typeof workspaceStorageBindRequestSchema
+>;
+
 export const workspaceMaterialUploadRequestSchema = z.object({
   workspaceId: z.string().min(1),
   filename: z.string().min(1).max(180),

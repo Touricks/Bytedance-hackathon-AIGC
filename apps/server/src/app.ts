@@ -11,9 +11,13 @@ import { registerMaterialController } from "./modules/material/material.controll
 import { registerPipelineController } from "./modules/pipeline/pipeline.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
 import { registerWorkspaceController } from "./modules/workspace/workspace.controller.js";
-import { maxWorkspaceMaterialBytes } from "./modules/workspace/workspace.service.js";
+import {
+  maxWorkspaceMaterialBytes,
+  resolveWorkspaceStorageLocalPath,
+} from "./modules/workspace/workspace.service.js";
 import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
+import { registerCampaignController } from "./modules/campaign/campaign.controller.js";
 import { registerTraceController } from "./modules/trace/trace.routes.js";
 import type { WorkspaceDirectorySelectResponse } from "./modules/workspace/workdir-picker.js";
 
@@ -37,8 +41,8 @@ async function sendWorkspaceFile(
   invalidPathMessage: string,
   reply: FastifyReply,
 ) {
-  const workspace = await db.getWorkspace(workspaceId);
-  const root = path.resolve(workspace.localPath, ".daireel", directoryName);
+  const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(workspaceId);
+  const root = path.resolve(workspaceLocalPath, ".daireel", directoryName);
   const filePath = path.resolve(root, relativePath);
 
   if (!isInsideDirectory(filePath, root)) {
@@ -158,13 +162,11 @@ export async function buildServer(options: BuildServerOptions = {}) {
   });
   await registerShotController(app);
   await registerGenerationController(app);
+  await registerCampaignController(app);
   await registerTraceController(app);
 
   app.delete("/api/test-runs/:runId", async (req, reply) => {
-    if (
-      process.env.NODE_ENV !== "test" &&
-      process.env.ALLOW_TEST_CLEANUP !== "true"
-    ) {
+    if (process.env.ALLOW_TEST_CLEANUP !== "true") {
       return reply.status(403).send({ code: "DISABLED_IN_THIS_ENV" });
     }
     const params = req.params as { runId: string };

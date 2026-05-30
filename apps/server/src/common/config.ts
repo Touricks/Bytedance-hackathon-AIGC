@@ -133,17 +133,12 @@ const uploadUrlPrefix = legacyUploadUrlPrefix
   : undefined;
 
 export const config = {
-  nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.SERVER_PORT ?? 3000),
   databaseUrl,
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   useRedisQueue: process.env.USE_REDIS_QUEUE === "true",
   runtime: process.env.SERVER_RUNTIME ?? "all",
   uploadDir,
-  workspaceDir: resolveWorkspacePath(
-    process.env.WORKSPACE_DIR ?? path.join("storage", "workspaces"),
-    envFileRoot
-  ),
   uploadUrlPrefix,
   defaultImageBatchSize: Number(process.env.DEFAULT_IMAGE_BATCH_SIZE ?? 3),
   maxImageBatchSize: Number(process.env.MAX_IMAGE_BATCH_SIZE ?? 6),

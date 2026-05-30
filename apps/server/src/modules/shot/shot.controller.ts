@@ -15,17 +15,12 @@ import {
   selectVideoRequest,
 } from "./shot.schema.js";
 
-function notImplemented(reply: any) {
-  return reply.status(501).send({ code: "NOT_IMPLEMENTED" });
-}
-
 export async function registerShotController(app: FastifyInstance) {
   app.get("/api/workspaces/:workspaceId/shots", async (req, reply) => {
     try {
       return await shotWorkflowService.listShots((req.params as any).workspaceId);
     } catch (e) {
       const err = toHttpError(e);
-      if (err.message === "NOT_IMPLEMENTED") return notImplemented(reply);
       return reply.status(err.statusCode).send(err);
     }
   });
@@ -35,7 +30,6 @@ export async function registerShotController(app: FastifyInstance) {
       return await shotWorkflowService.getShot((req.params as any).shotId);
     } catch (e) {
       const err = toHttpError(e);
-      if (err.message === "NOT_IMPLEMENTED") return notImplemented(reply);
       return reply.status(err.statusCode).send(err);
     }
   });
@@ -45,7 +39,6 @@ export async function registerShotController(app: FastifyInstance) {
       return await shotWorkflowService.workflowStatus((req.params as any).workspaceId);
     } catch (e) {
       const err = toHttpError(e);
-      if (err.message === "NOT_IMPLEMENTED") return notImplemented(reply);
       return reply.status(err.statusCode).send(err);
     }
   });
@@ -61,7 +54,7 @@ export async function registerShotController(app: FastifyInstance) {
           workspaceId: params.workspaceId,
           shotId: params.shotId,
           referenceAssetIds: body.referenceAssetIds,
-          userHint: body.userHint,
+          userHint: body.userDirection ?? body.userHint,
           stylePresetId: body.stylePresetId,
         });
       } catch (e) {
@@ -122,8 +115,6 @@ export async function registerShotController(app: FastifyInstance) {
     }
   });
 
-  app.get("/api/shots/:shotId/image-batches", async (_req, reply) => notImplemented(reply));
-
   app.get("/api/shots/:shotId/image-batches/:batchId", async (req, reply) => {
     try {
       const params = req.params as { shotId: string; batchId: string };
@@ -152,6 +143,41 @@ export async function registerShotController(app: FastifyInstance) {
     }
   });
 
+  app.get(
+    "/api/workspaces/:workspaceId/shots/:shotId/image-rounds",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        return await shotWorkflowService.listImageRounds({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = selectImageRequest.parse(req.body);
+        return await shotWorkflowService.selectImage({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+          imageCandidateId: body.imageCandidateId,
+          imageGenerationBatchId: body.imageGenerationBatchId,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
   app.get("/api/shots/:shotId/selected-image", async (req, reply) => {
     try {
       const params = req.params as { shotId: string };
@@ -177,7 +203,7 @@ export async function registerShotController(app: FastifyInstance) {
           shotId: params.shotId,
           durationSec: body.durationSec,
           useNeighborFrames: body.useNeighborFrames,
-          userHint: body.userHint,
+          userHint: body.userDirection ?? body.userHint,
         });
       } catch (e) {
         const err = toHttpError(e);
@@ -238,8 +264,6 @@ export async function registerShotController(app: FastifyInstance) {
     }
   });
 
-  app.get("/api/shots/:shotId/video-batches", async (_req, reply) => notImplemented(reply));
-
   app.get("/api/shots/:shotId/video-batches/:batchId", async (req, reply) => {
     try {
       const params = req.params as { shotId: string; batchId: string };
@@ -267,6 +291,41 @@ export async function registerShotController(app: FastifyInstance) {
       return reply.status(err.statusCode).send(err);
     }
   });
+
+  app.get(
+    "/api/workspaces/:workspaceId/shots/:shotId/video-rounds",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        return await shotWorkflowService.listVideoRounds({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = selectVideoRequest.parse(req.body);
+        return await shotWorkflowService.selectVideo({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+          videoCandidateId: body.videoCandidateId,
+          videoGenerationBatchId: body.videoGenerationBatchId,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
 
   app.get("/api/shots/:shotId/selected-video", async (req, reply) => {
     try {

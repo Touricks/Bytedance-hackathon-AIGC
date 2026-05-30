@@ -12,18 +12,22 @@ info:
       compiled deterministically for downstream provider calls.
     - Workspace-scoped shot routes are the preferred 0530 frontend contract.
       Existing /api/shots/{shotId} routes may remain as compatibility paths.
+    - Workspace is a logical DB record. Local directory and future S3 location
+      are modeled as a one-to-one storage binding.
 servers:
   - url: http://localhost:3000
     description: Local development server
 tags:
   - name: System
   - name: Workspace
+  - name: Storage
   - name: Materials
   - name: Artifacts
   - name: Shots
   - name: Image Workflow
   - name: Video Workflow
   - name: Final Video
+  - name: Campaign
   - name: Trace
 
 paths:
@@ -60,19 +64,17 @@ paths:
   /api/workspaces:
     get:
       tags: [Workspace]
-      summary: List managed workspaces.
+      summary: List logical workspaces.
       operationId: listWorkspaces
       responses:
         "200":
-          description: Managed workspaces.
+          description: Logical workspaces with storage binding summaries.
           content:
             application/json:
               schema:
                 type: object
-                required: [workspaceRoot, workspaces]
+                required: [workspaces]
                 properties:
-                  workspaceRoot:
-                    type: string
                   workspaces:
                     type: array
                     items:
@@ -81,7 +83,8 @@ paths:
           $ref: "#/components/responses/Error"
     post:
       tags: [Workspace]
-      summary: Create a managed workspace.
+      summary: Create a logical workspace.
+      description: Creates a workspace id and script context only. Bind local or S3 storage through /api/workspaces/{workspaceId}/storage/bind before uploading materials or starting artifact workflows.
       operationId: createWorkspace
       requestBody:
         required: false
@@ -91,7 +94,7 @@ paths:
               $ref: "#/components/schemas/CreateWorkspaceRequest"
       responses:
         "200":
-          description: Workspace and manifest.
+          description: Workspace, manifest, and unbound storage summary.
           content:
             application/json:
               schema:
@@ -99,16 +102,16 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
-  /api/workspaces/{workspaceId}/directory:
+  /api/workspaces/{workspaceId}/storage:
     get:
-      tags: [Workspace]
-      summary: Get local directory for a workspace.
-      operationId: getWorkspaceDirectory
+      tags: [Storage]
+      summary: Get workspace storage binding.
+      operationId: getWorkspaceStorage
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       responses:
         "200":
-          description: Workspace local path.
+          description: Active workspace storage binding, or an unbound state.
           content:
             application/json:
               schema:
@@ -117,13 +120,49 @@ paths:
                 properties:
                   data:
                     type: object
-                    required: [workspaceId, directory]
+                    required: [workspaceId, storage]
                     properties:
                       workspaceId:
                         type: string
-                      directory:
-                        type: string
+                      storage:
+                        $ref: "#/components/schemas/WorkspaceStorage"
         "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/storage/bind:
+    post:
+      tags: [Storage]
+      summary: Bind local or S3 storage to a workspace.
+      description: A workspace can have only one active binding. The same localPath or S3 bucket+prefix cannot be bound to another workspace.
+      operationId: bindWorkspaceStorage
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceStorageBindRequest"
+      responses:
+        "200":
+          description: Bound storage.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [workspaceId, storage]
+                    properties:
+                      workspaceId:
+                        type: string
+                      storage:
+                        $ref: "#/components/schemas/WorkspaceStorage"
+        "409":
           $ref: "#/components/responses/Error"
         default:
           $ref: "#/components/responses/Error"
@@ -132,6 +171,7 @@ paths:
     post:
       tags: [Workspace]
       summary: Get workspace pipeline status.
+      description: If a logical workspace has no active storage binding, nextAction is BIND_STORAGE and downstream material/artifact/shot routes should not proceed.
       operationId: getWorkspaceStatus
       requestBody:
         required: true
@@ -154,6 +194,7 @@ paths:
     post:
       tags: [Materials]
       summary: Upload a material into the workspace.
+      description: Requires an active local workspace storage binding. The response includes assetId so downstream shot_asset_refs and provider reference-image resolution can use the same stable identifier.
       operationId: uploadWorkspaceMaterial
       requestBody:
         required: true
@@ -845,6 +886,94 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/workspaces/{workspaceId}/campaign-publications:
+    post:
+      tags: [Campaign]
+      summary: Create a reserved KOL/channel publication record.
+      description: P2 reserved API. It stores publication/channel metadata and does not call external campaign platforms.
+      operationId: createCampaignPublication
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignPublicationRequest"
+      responses:
+        "200":
+          description: Created publication.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignPublicationResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      tags: [Campaign]
+      summary: List KOL/channel publication records for a workspace.
+      operationId: listCampaignPublications
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Campaign publications.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CampaignPublication"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/campaign-publications/{publicationId}:
+    get:
+      tags: [Campaign]
+      summary: Get one KOL/channel publication record.
+      operationId: getCampaignPublication
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
+      responses:
+        "200":
+          description: Campaign publication.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignPublicationResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/campaign-publications/{publicationId}/metrics:
+    post:
+      tags: [Campaign]
+      summary: Record manual exposure/click metrics for a publication.
+      description: P2 reserved API for manually ingested campaign metrics.
+      operationId: recordCampaignPublicationMetrics
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordCampaignMetricsRequest"
+      responses:
+        "200":
+          description: Created metrics snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignMetricsResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
 components:
   parameters:
     WorkspaceId:
@@ -867,6 +996,12 @@ components:
         type: string
     FinalVideoJobId:
       name: finalVideoJobId
+      in: path
+      required: true
+      schema:
+        type: string
+    PublicationId:
+      name: publicationId
       in: path
       required: true
       schema:
@@ -955,12 +1090,13 @@ components:
 
     Workspace:
       type: object
-      required: [id, localPath, currentScriptId, status]
+      required: [id, currentScriptId, status]
       properties:
         id:
           type: string
         localPath:
           type: string
+          description: Legacy compatibility field. Empty until local storage is bound.
         currentScriptId:
           type: string
         currentJobId:
@@ -973,6 +1109,65 @@ components:
           type: string
         updatedAt:
           type: string
+        storage:
+          $ref: "#/components/schemas/WorkspaceStorage"
+
+    WorkspaceStorage:
+      type: object
+      required: [bound]
+      properties:
+        bound:
+          type: boolean
+        id:
+          type: [string, "null"]
+        kind:
+          type: [string, "null"]
+          enum: [local, s3, null]
+        localPath:
+          type: [string, "null"]
+        s3:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [bucket, prefix]
+              properties:
+                bucket:
+                  type: string
+                prefix:
+                  type: string
+                region:
+                  type: [string, "null"]
+                endpoint:
+                  type: [string, "null"]
+        createdAt:
+          type: [string, "null"]
+        updatedAt:
+          type: [string, "null"]
+
+    WorkspaceStorageBindRequest:
+      oneOf:
+        - type: object
+          required: [kind, localPath]
+          properties:
+            kind:
+              type: string
+              const: local
+            localPath:
+              type: string
+        - type: object
+          required: [kind, bucket, prefix]
+          properties:
+            kind:
+              type: string
+              const: s3
+            bucket:
+              type: string
+            prefix:
+              type: string
+            region:
+              type: string
+            endpoint:
+              type: string
 
     WorkspaceManifest:
       type: object
@@ -992,12 +1187,14 @@ components:
 
     WorkspaceInitializeResponse:
       type: object
-      required: [workspace, manifest]
+      required: [workspace, manifest, storage]
       properties:
         workspace:
           $ref: "#/components/schemas/Workspace"
         manifest:
           $ref: "#/components/schemas/WorkspaceManifest"
+        storage:
+          $ref: "#/components/schemas/WorkspaceStorage"
 
     UploadMaterialJsonRequest:
       type: object
@@ -1014,8 +1211,11 @@ components:
 
     MaterialUploadResult:
       type: object
-      required: [ref, bytes, url]
+      required: [assetId, ref, bytes, url]
       properties:
+        assetId:
+          type: string
+          description: Persistent asset row id used by downstream shot_asset_refs.
         ref:
           type: string
         bytes:
@@ -1495,3 +1695,152 @@ components:
           type: [integer, "null"]
         errorMessage:
           type: [string, "null"]
+
+    CampaignPublicationStatus:
+      type: string
+      enum: [planned, published, failed, archived]
+
+    CreateCampaignPublicationRequest:
+      type: object
+      required: [platform, channelName]
+      properties:
+        finalVideoJobId:
+          type: string
+          description: Optional final video job this publication is based on. Must belong to the same workspace.
+        platform:
+          type: string
+          minLength: 1
+          examples: [douyin, tiktok, xiaohongshu]
+        channelName:
+          type: string
+          minLength: 1
+          description: KOL/channel identifier used by campaign ops.
+        kolName:
+          type: string
+        publishUrl:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/CampaignPublicationStatus"
+        notes:
+          type: string
+
+    RecordCampaignMetricsRequest:
+      type: object
+      properties:
+        impressions:
+          type: integer
+          minimum: 0
+          default: 0
+        clicks:
+          type: integer
+          minimum: 0
+          default: 0
+        conversions:
+          type: integer
+          minimum: 0
+          default: 0
+        spendCents:
+          type: integer
+          minimum: 0
+          default: 0
+        capturedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          default: manual
+        metadata:
+          type: object
+          additionalProperties: true
+
+    CampaignMetrics:
+      type: object
+      required: [id, publicationId, impressions, clicks, conversions, spendCents, ctr, capturedAt, source, metadata, createdAt]
+      properties:
+        id:
+          type: string
+        publicationId:
+          type: string
+        impressions:
+          type: integer
+        clicks:
+          type: integer
+        conversions:
+          type: integer
+        spendCents:
+          type: integer
+        ctr:
+          type: [number, "null"]
+          description: clicks / impressions; null when impressions is zero.
+        capturedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CampaignPublication:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - finalVideoJobId
+        - platform
+        - channelName
+        - kolName
+        - publishUrl
+        - status
+        - notes
+        - latestMetrics
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        finalVideoJobId:
+          type: [string, "null"]
+        platform:
+          type: string
+        channelName:
+          type: string
+        kolName:
+          type: [string, "null"]
+        publishUrl:
+          type: [string, "null"]
+          format: uri
+        status:
+          $ref: "#/components/schemas/CampaignPublicationStatus"
+        notes:
+          type: [string, "null"]
+        latestMetrics:
+          oneOf:
+            - $ref: "#/components/schemas/CampaignMetrics"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CampaignPublicationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CampaignPublication"
+
+    CampaignMetricsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CampaignMetrics"

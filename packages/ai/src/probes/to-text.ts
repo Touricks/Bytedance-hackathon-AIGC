@@ -59,7 +59,7 @@ async function callConfiguredArkTextModel(
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
     throw new Error(
-      "to-text probe requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID"
+      "to-text probe requires Ark text config: ARK_API_KEY, ARK_BASE_URL, and ARK_TEXT_ENDPOINT_ID"
     );
   }
 
