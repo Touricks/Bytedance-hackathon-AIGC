@@ -18,6 +18,16 @@ Before a new-version test run, use `pnpm db:clear -- --yes` to clear Postgres bu
 
 The cleanup script only clears Postgres. It does not delete workspace `.daireel/trace/events.jsonl`, deprecated repo-local `storage/trace`, `storage/uploads`, Redis, or MinIO content. If you reuse the same workspace directory and need trace isolation, create a fresh workspace or handle that workspace trace file explicitly.
 
+### Codex worktree creation
+
+When creating a new Codex worktree, create a fresh branch from the local `main` branch instead of checking out `main` directly. Use `dev_{timestamp}` as the branch name format, for example `dev_20260530143000`.
+
+Use the local `main` ref as the source of truth for the new worktree, not `origin/main`, so the new worktree is a copy of the current local main state:
+
+```sh
+git worktree add -b dev_$(date +%Y%m%d%H%M%S) <worktree-path> main
+```
+
 ### Release worktree hygiene
 
 When a release commit is tagged and pushed from a Codex worktree, leave the worktree detached after the tag operation so the user can check out the same version in the project root under `/Users/carrick/ResearchWorkspace/Bytedancehack`.

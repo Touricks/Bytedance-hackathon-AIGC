@@ -1201,6 +1201,16 @@ export const workspaceService = {
     };
   },
 
+  async getWorkspaceDirectory(workspaceId: string) {
+    const workspace = await db.getWorkspace(workspaceId);
+    return {
+      data: {
+        workspaceId: workspace.id,
+        directory: workspace.localPath,
+      },
+    };
+  },
+
   async initialize(directory: string) {
     const localPath = normalizeWorkspacePath(directory);
     const existing = await db.findWorkspaceByLocalPath(localPath);

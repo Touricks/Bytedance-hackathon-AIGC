@@ -14,7 +14,7 @@ Replace the current one-shot final-video pipeline with a per-shot workflow that 
 1. Per-shot image prompt → N candidate images → user select.
 2. Per-shot video script (based on the selected image and neighbor frames) → M candidate videos → user select.
 3. User edits to prompts and scripts at any step, with stale propagation downstream.
-4. Configurable batch counts (default 3 images, 5 videos) per request, with server-enforced caps.
+4. Configurable batch counts (default 3 images, 2 videos) per request, with server-enforced caps.
 5. Configurable per-task model providers — text, image, and video each have their own independent API key, base URL, and endpoint id.
 6. Final video compose by deterministic ffmpeg concat over the selected shot videos, with a hashable manifest of source artifacts.
 7. Focus-mode frontend: one step in view at a time, with persistent awareness of available assets and overall progress.

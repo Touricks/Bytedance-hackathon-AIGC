@@ -589,6 +589,42 @@ describe("workspace API", () => {
     assert.equal(hydrated.manifest.workspaceId, created.workspace.id);
   });
 
+  it("returns a workspace directory by workspaceId", async () => {
+    const directory = await createWorkspaceDir();
+
+    const initResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/init",
+      payload: { directory },
+    });
+
+    assert.equal(initResponse.statusCode, 200, initResponse.body);
+    const created = initResponse.json();
+
+    const directoryResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${created.workspace.id}/directory`,
+    });
+
+    assert.equal(directoryResponse.statusCode, 200, directoryResponse.body);
+    assert.deepEqual(directoryResponse.json(), {
+      data: {
+        workspaceId: created.workspace.id,
+        directory,
+      },
+    });
+  });
+
+  it("returns 404 when querying a missing workspace directory", async () => {
+    const directoryResponse = await app.inject({
+      method: "GET",
+      url: "/api/workspaces/missing-workspace-id/directory",
+    });
+
+    assert.equal(directoryResponse.statusCode, 404, directoryResponse.body);
+    assert.match(directoryResponse.json().message, /CreativeWorkspace not found/);
+  });
+
   it("creates and serves a Fastify-managed workspace without a client path", async () => {
     const createResponse = await app.inject({
       method: "POST",

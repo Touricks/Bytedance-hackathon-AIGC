@@ -261,6 +261,26 @@
           }
         },
         {
+          "name": "Get Workspace Directory",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.workspaceId) pm.collectionVariables.set('workspaceId', json.data.workspaceId);",
+                  "if (json.data && json.data.directory) pm.collectionVariables.set('workspaceDirectory', json.data.directory);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/directory"
+          }
+        },
+        {
           "name": "Upload Workspace Material - Base64",
           "event": [
             {

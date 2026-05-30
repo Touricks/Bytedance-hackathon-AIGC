@@ -76,9 +76,21 @@ Workspace 是当前业务流的根实体。它绑定本地目录、manifest、�
 |---|---|---|---|
 | `GET` | `/api/workspaces` | 列出托管目录下的 workspace | 无 |
 | `POST` | `/api/workspaces` | 创建托管 workspace | `{ "name": "demo" }`，`name` 可选 |
+| `GET` | `/api/workspaces/:workspaceId/directory` | 查询 workspaceId 对应的本地工作目录 | 无 |
 | `POST` | `/api/workspaces/directory/select` | 通过本机能力选择目录 | `{}` |
 | `POST` | `/api/workspaces/init` | 通过本地目录初始化或重新绑定 workspace | `{ "directory": "/path/to/workspace" }` |
 | `POST` | `/api/workspaces/status` | 查询 workspace 当前状态、下一步、素材库、artifacts | `{ "workspaceId": "..." }` 或 `{ "directory": "..." }` |
+
+`GET /api/workspaces/:workspaceId/directory` 返回：
+
+```json
+{
+  "data": {
+    "workspaceId": "workspace-id",
+    "directory": "/absolute/local/workspace/path"
+  }
+}
+```
 
 `status` 的业务价值最高，它会返回：
 
@@ -387,4 +399,3 @@ user_action
 13. `POST /api/workspaces/:workspaceId/final-videos`
 14. `GET /api/final-videos/:finalVideoJobId`
 15. `GET /api/workspaces/:workspaceId/final-videos/:finalVideoJobId/file`
-

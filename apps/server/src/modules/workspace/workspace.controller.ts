@@ -61,6 +61,16 @@ export async function registerWorkspaceController(
     }
   });
 
+  app.get("/api/workspaces/:workspaceId/directory", async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.getWorkspaceDirectory(params.workspaceId);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
   app.post("/api/workspaces", async (request, reply) => {
     try {
       const body = managedWorkspaceCreateRequestSchema.parse(request.body);
