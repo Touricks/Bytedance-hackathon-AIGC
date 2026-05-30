@@ -75,35 +75,100 @@ workspace 选择/恢复
 - Postgres 是业务事实源；`trace_events` 表是可查询 trace 来源；workspace `.daireel/trace/events.jsonl` 是本地调试 trace。repo-local `storage/trace` 已 deprecated。
 - final compose 阶段必须配置 ffmpeg 与 Ark video provider；缺少任一启动即失败，不返回 fallback 视频。
 
-## 本地开发
+## 本地开发 Quickstart
 
-安装依赖：
+### 1. 准备依赖
+
+需要本机已安装：
+
+- Node.js 22+（当前本地验证使用 Node 25）
+- pnpm 9.x（仓库声明 `pnpm@9.15.4`）
+- Docker Desktop 或兼容 Docker Compose
+- ffmpeg（final compose 启动时会检查）
+
+安装 JS 依赖：
 
 ```bash
 pnpm install
 ```
 
-复制环境变量：
-
-```bash
-cp .env.example .env
-```
-
-`DATABASE_URL` 是必填项；`MODEL_MODE=real` 时还需要齐全的 `TEXT_* / IMAGE_* / VIDEO_*`（参见 [`.env.example`](./.env.example)）。如果缺失，应用启动时直接失败。
-
-启动基础设施：
+启动基础设施（Postgres、Redis、MinIO）：
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-启动应用：
+### 2. 配置 `.env`
+
+复制模板：
+
+```bash
+cp .env.example .env
+```
+
+新用户至少检查这些字段：
+
+| 字段 | 默认/示例 | 说明 |
+|---|---|---|
+| `WEB_PORT` | `5173` | Vite 前端端口。 |
+| `SERVER_PORT` | `3000` | Fastify 后端端口。 |
+| `PUBLIC_API_BASE_URL` | `http://localhost` | 前端 API base host；本地 localhost 会自动拼 `SERVER_PORT`。 |
+| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/aigc_video` | Postgres 业务事实源，必须可连接。 |
+| `REDIS_URL` | `redis://localhost:6379` | BullMQ 队列 Redis。 |
+| `USE_REDIS_QUEUE` | `true` | 开启 Redis 队列；本地真实链路推荐保持开启。 |
+| `MODEL_MODE` | `real` | `real` 会调用真实模型；`mock` 仅用于本地/单测 fixture。 |
+| `TEXT_API_KEY` / `TEXT_BASE_URL` / `TEXT_ENDPOINT_ID` | Ark OpenAPI | 文本 provider，brief/storyboard/shotprompt/image prompt/video script 会用。 |
+| `IMAGE_API_KEY` / `IMAGE_BASE_URL` / `IMAGE_ENDPOINT_ID` | Ark OpenAPI | 图片 provider，image batch 会用。 |
+| `VIDEO_API_KEY` / `VIDEO_BASE_URL` / `VIDEO_ENDPOINT_ID` | Ark OpenAPI | Seedance video provider，video batch 会用。 |
+| `DEFAULT_*_BATCH_SIZE` / `MAX_*_BATCH_SIZE` | 见模板 | 每个 shot 的默认/最大候选数。 |
+
+S3/MinIO 字段目前是可选实验配置；当前本地 workspace 主路径通过 `POST /api/workspaces/:workspaceId/storage/bind` 绑定本地绝对目录。
+
+如果只跑无模型 Postman smoke，可以不填模型 key，但不要调用 provider collection。真实 provider、`pnpm dev` 的完整演示链路需要 `.env` 中三组模型字段齐全。
+
+### 3. 启动服务
 
 ```bash
 pnpm dev
 ```
 
-默认 web 走 `WEB_PORT=5173`，server 走 `SERVER_PORT=3000`，前端通过 `PUBLIC_API_BASE_URL` 指向 server。
+默认地址：
+
+- Web: `http://localhost:5173`
+- API: `http://localhost:3000`
+- Health check: `http://localhost:3000/api/health`
+
+也可以显式选择模式：
+
+```bash
+pnpm dev:real
+pnpm dev:mock
+```
+
+### 4. 重置数据库和队列
+
+新一轮 Postman / 集成测试前，推荐一键重置：
+
+```bash
+pnpm reset:dev -- --yes
+```
+
+这个命令会停止当前 `SERVER_PORT` / `WEB_PORT` 监听进程，清空 Postgres business tables，清空 Redis BullMQ `generation` / `generation_v2` 队列 key，然后重新启动 `pnpm dev`。
+
+只清空、不重启服务：
+
+```bash
+pnpm reset:dev -- --yes --no-dev
+```
+
+也可以单独执行：
+
+```bash
+pnpm db:clear -- --yes
+pnpm redis:clear -- --yes
+```
+
+重置脚本不会删除 workspace `.daireel/trace/events.jsonl`、deprecated repo-local `storage/trace` / `storage/uploads` 或 MinIO 内容。
 
 常用验证：
 
