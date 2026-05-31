@@ -124,8 +124,8 @@ pnpm dev
 | 3 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | `200`；轮询到 `SUCCEEDED`；断言 `succeededCount === requestedCount`、`failedCount === 0`、succeeded 候选数等于 `requestedCount`，再回填 `imageCandidateId`。`PARTIAL`/`FAILED` 视为测试失败。 |
 | 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | `200`；返回 `allShotsImageSelected`；不再要求非 workspace-scoped 兼容路径。 |
 | 5 | 对所有 shot 重复 2-4 | shot N>=1 必须在前一 shot 已选图后才能 propose；最后一张图选择后 `allShotsImageSelected === true`。 |
-| 6 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | 所有图已选后才 `200`；只传 `{ userDirection? }`；回填 `videoScriptArtifactId`、内部 `videoBatchId`、第一个 succeeded `videoCandidateId`；响应包含 `candidates[]`、`frames`、`traceId`。 |
-| 7 | `GET /api/workspaces/:workspaceId/shots/:shotId/video-rounds` | `200`；轮次包含上一步 `videoBatchId`、候选视频和首/末帧 URL。 |
+| 6 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | 所有图已选后才 `200`；只传 `{ userDirection? }`；回填 `videoScriptArtifactId`、内部 `videoBatchId`；响应包含 `candidates[]`、`frames`、`traceId`。 |
+| 7 | `GET /api/workspaces/:workspaceId/shots/:shotId/video-rounds` | `200`；轮询到 `SUCCEEDED`；轮次包含上一步 `videoBatchId`、候选视频和首/末帧 URL；回填第一个 succeeded `videoCandidateId`。 |
 | 8 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | `200`；最后一个 shot 后 `allShotsVideoSelected === true`。 |
 
 ### 5. Final Video
