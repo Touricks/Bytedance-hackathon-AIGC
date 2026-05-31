@@ -105,13 +105,13 @@ server  ──────────────►  shared,  ai
                                          │   true 时退化为         │  │  /feedback)、         │
                                          │   setTimeout 内联执行)  │  │  agent(image-prompt / │
                                          └──────────┬────────────┘  │  video-script)         │
-                                                    │ 三类 job        └──────────────────────┘
+                                                    │ 多类 job        └──────────────────────┘
                           ┌─────────────────────────┼─────────────────────────┐
                           ▼                          ▼                         ▼
-                generate_images           generate_videos           compose_final_video
-                image.worker.ts           video.worker.ts           final-compose.worker.ts
-                → generateImagesWithArk    → generateVideoWithSeedance → ffmpeg concat
-                  (Seedream 同步)            (异步 task + 轮询)            → final.mp4
+                generate_image_candidate   generate_videos*          compose_final_video
+                image.worker.ts            video.worker.ts           final-compose.worker.ts
+                → generateImagesWithArk     → generateVideoWithSeedance → ffmpeg concat
+                  (每 candidate 一张图)        (retry/恢复路径使用)           → final.mp4
                           │                          │                         │
                           └──────────────┬───────────┴─────────────────────────┘
                                          ▼
@@ -119,8 +119,9 @@ server  ──────────────►  shared,  ai
 ```
 
 进程模式由 `SERVER_RUNTIME` 控制：`all`（默认，API+Worker 同进程）/ `api`（仅 API）/ `worker`（仅消费）。
-- 启动时 `main.ts` 先 `assertFfmpegAvailable()`，注册 `generation_v2` 单一 processor（按 `data.kind` 分派到三个 worker），再 `startGenerationV2Worker()`。
+- 启动时 `main.ts` 先 `assertFfmpegAvailable()`，注册 `generation_v2` 单一 processor（按 `data.kind` 分派到对应 worker/processor），再 `startGenerationV2Worker()`。
 - API 模式额外执行 `recoverInflightGenerationJobs()`：把 `generation_jobs` 中 PENDING/RUNNING 且 `queue_job_id` 为空的任务重新入队，并把 RUNNING 的 batch 重置为 PENDING。Worker 幂等：batch 非 PENDING 时直接返回。
+- 当前主路径里 `image-prompts/propose` 会为每个图片候选创建一个 `generate_image_candidate` job；`video-scripts/propose` 会创建 video batch 并在请求内直接等待 `runVideoGenerationBatch()` 完成。`generate_videos` 仍用于 `/api/shots/:shotId/retry` 和启动恢复等批次重跑路径。
 
 ---
 
@@ -130,7 +131,7 @@ server  ──────────────►  shared,  ai
 
 - **构建管线（V1 builder，仍在用）**：`workspace` 模块的线性状态机（`draft → materials_ready → brief_proposed/approved → storyboard_proposed/approved → shotprompt_proposed/approved`）。每一步在 `MODEL_MODE==="real"` 时调用 Ark 文本 provider，否则走 `packages/shared` / `packages/ai` 的确定性 builder，把结果 upsert 进 `workspace_artifact`（按 `(workspace_id, artifact_type)` 唯一）。
 - **桥接点**：`shotprompt/approve` 触发 `seedShotsFromShotPrompt()`——在事务里清空并按 `ShotPromptArtifact.shots[]` 重建 `storyboard_shots` + `shot_asset_refs`，由此进入 V2。
-- **逐分镜管线（V2 per-shot，主线）**：每个 shot 独立走「图像提示 artifact → 图像 batch/候选 → 选图 → 视频脚本 artifact → 视频 batch/候选 → 选视频」的状态机（见 `shot.state.ts` 的 `ShotStatus` 枚举），全部 shot 选定后允许 `final-videos` 拼接成片。
+- **逐分镜管线（V2 per-shot，主线）**：每个 shot 独立走「图像提示 artifact → 图像 batch/候选 → 选图 → 视频脚本 artifact → 视频 batch/候选 → 选视频」的状态机（见 `shot.state.ts` 的 `ShotStatus` 枚举），全部 shot 选定后允许 `final-videos` 拼接成片。公开 API 当前把 batch 创建封装在 `image-prompts/propose` / `video-scripts/propose` 内部；`/api/shots/:shotId/retry` 才暴露带 `Idempotency-Key` 的批次重跑入口。
 - `db.initialize()` 每次启动都 `drop` 掉 V1 遗留表 `storyboard_shot` / `generation_job` / `workspace_video_archive`，仅保留共享表 `product` / `asset` / `creative_workspace` / `script` / `workspace_artifact` 与全部 V2 复数表。
 
 详见 [`erd.md`](./erd.md)。
@@ -142,7 +143,7 @@ server  ──────────────►  shared,  ai
 - **按任务键分流的 Provider 配置**（`providers/provider-config.ts`）：`resolveTextProviderConfig` / `resolveImageProviderConfig` / `resolveVideoProviderConfig`，各自从 `TEXT_* / IMAGE_* / VIDEO_*`（并向 `AI_*_` 与 `ARK_*` 回退）读取 `apiKey / endpointId / baseURL`，缺失则返回 `null`，对应 worker 抛 `<task> provider not configured`。`isRealProviderMode()` ⇔ `MODEL_MODE==="real"`。
 - **文本**：`ark-text.provider.ts` — OpenAI 兼容 Chat Completions（用 `openai` SDK），支持 `json_schema` 响应格式。
 - **图像**：`ark-image.provider.ts` — Seedream 同步 `POST images/generations`；`count>1` 用 `sequential_image_generation`；支持参考图（图生图）；宽高比→尺寸映射（9:16→1600×2848、16:9→2848×1600、1:1→2048×2048）。
-- **视频**：`seedance-video.provider.ts` — 异步 `POST contents/generations/tasks` + 轮询 `GET .../tasks/{id}`（默认 10s × 20 次）；用 `first_frame`/`last_frame` 角色拼 `content[]`；`durationSec` 限 4–12。
+- **视频**：`seedance-video.provider.ts` — 异步 `POST contents/generations/tasks` + 轮询 `GET .../tasks/{id}`（默认 10s × 20 次）；用 `first_frame`/`last_frame` 角色拼 `content[]`；单个 Seedance clip 的 `durationSec` 硬限 4–12 秒。批准 shotprompt 时没有数据库层时长校验，所以上游 storyboard/shotprompt 必须保证每个 shot span 至少 4 秒，否则会在 provider 调用前失败。
 - **Agent**（`@openai/agents` v0.0.5）：`storyboard-image-prompt.agent.ts`、`video-shot-script.agent.ts`，分别绑定 zod `outputType` 与 `prompts/*/v1.system.md`。mock 模式返回确定性、schema 合法的对象。
 - **契约登记**：`contracts/pipeline.contracts.ts` 的 `getPipelineContracts()` 暴露每个步骤（material_intake / product_brief / storyboard / shotprompt / feedback_route / video_export）的 provider、prompt builder、输入输出 JSON schema、目标 artifact，可经 `AIGC_VIDEO_PIPELINE_CONTRACT_OVERRIDES` 覆盖。由 `GET /api/pipeline/contracts` 暴露。
 
@@ -168,10 +169,10 @@ server  ──────────────►  shared,  ai
 2. **上传素材** — `POST /api/workspaces/materials`（multipart 或 base64）→ `.daireel/materials/`，登记 `asset` 行。
 3. **构建管线** — `material-intake` → `brief/propose`+`brief/approve` → `storyboard/propose`+`storyboard/approve` → `shotprompt/compile`+`shotprompt/approve`。real 模式调 Ark 文本，否则确定性 builder，结果进 `workspace_artifact`。
 4. **播种分镜** — shotprompt 批准触发 `seedShotsFromShotPrompt()`，生成 `storyboard_shots`（每分镜一行 DRAFT）。
-5. **逐分镜图像** — `image-prompts/propose`（agent）→ `image_prompt_artifacts`（ACTIVE）；`POST .../image-batches`（须带 `Idempotency-Key`）→ 写 `image_generation_batches`+`generation_jobs`，shot→`IMAGE_GENERATING`，入队 `generate_images`。
-6. **图像 worker** — `generateImagesWithArk` → `image_candidates`，batch→SUCCEEDED/PARTIAL/FAILED，shot→`IMAGE_CANDIDATES_READY`。前端轮询 batch。
+5. **逐分镜图像** — `image-prompts/propose`（agent）→ `image_prompt_artifacts`（ACTIVE）→ 内部写 `image_generation_batches` + 每候选一条 `image_candidates`/`generation_jobs(generate_image_candidate)`，shot→`IMAGE_GENERATING`。幂等键由服务端按 artifact/trace 合成，公开调用方不传。
+6. **图像 worker** — 每个 `generate_image_candidate` 调一次 `generateImagesWithArk(count=1)`，成功后落盘稳定 URL 并更新候选；batch 聚合为 SUCCEEDED/PARTIAL/FAILED，shot→`IMAGE_CANDIDATES_READY`。前端轮询 image rounds。
 7. **选图** — `.../image-candidates/select` → `selected_shot_images`，shot→`IMAGE_SELECTED`。
-8. **逐分镜视频** — `video-scripts/propose`（agent，须所有 shot 已选图）→ `video_script_artifacts`（关联选中图 + 邻帧）；`POST .../video-batches` → `generate_videos` → `generateVideoWithSeedance` → `video_candidates`，shot→`VIDEO_CANDIDATES_READY`。
+8. **逐分镜视频** — `video-scripts/propose`（agent，须所有 shot 已选图）→ `video_script_artifacts`（关联选中图 + 下一 shot 选中图作为 last frame）→ 内部写 `video_generation_batches` 并直接执行 `runVideoGenerationBatch()` → `generateVideoWithSeedance` → `video_candidates`，shot→`VIDEO_CANDIDATES_READY` 或 FAILED。retry/恢复路径可重新入队 `generate_videos`。
 9. **选视频** — `.../video-candidates/select` → `selected_shot_videos`，shot→`VIDEO_SELECTED`。全部选定后 `shot-workflow-status.canComposeFinalVideo=true`。
 10. **成片合成** — `POST /api/workspaces/:id/final-videos`（须 `Idempotency-Key`）→ `final_video_jobs`（有序 `source_shot_video_ids`）入队 `compose_final_video`；worker 下载各候选视频→ffmpeg concat（libx264/aac/+faststart）→ `final.mp4`，写 manifest+hash，`local_url=/api/workspaces/{ws}/final-videos/{id}/file`。
 11. **发布与指标**（可选） — `campaign-publications` 登记渠道/KOL 发布，`.../metrics` 回收曝光/点击/转化/花费并算 CTR。
@@ -182,7 +183,8 @@ server  ──────────────►  shared,  ai
 
 - **路由前缀**：所有业务路由硬编码 `/api`，**URL 无版本号**（“v2” 仅体现在内部命名与表名）。
 - **响应包络**：多数返回 `{ data: ... }`，但**不一致**（部分 handler 返回裸对象）。`interface.md` / `openapi.yaml` 按各 handler 实际形态标注。
-- **幂等**：`POST .../image-batches`、`.../video-batches`、`.../retry`、`.../final-videos` **必须带请求头 `Idempotency-Key`**，缺失返回 400 `IDEMPOTENCY_KEY_REQUIRED`。
+- **幂等**：公开路由中 `POST /api/shots/:shotId/retry` 与 `POST /api/workspaces/:workspaceId/final-videos` **必须带请求头 `Idempotency-Key`**，缺失返回 400 `IDEMPOTENCY_KEY_REQUIRED`。image/video batch 创建由 propose 路由内部触发，服务端自行生成幂等键；底层 `generationService.createImageBatch/createVideoBatch/createFinalCompose` 均以 `idempotency_key` 唯一约束去重。
+- **真实 provider 限制**：Seedance 单 clip 必须 4–12 秒；Ark/Seedance 账号有 TPM/RPM 限流，真实验收脚本会退避重试文本端 throttle，并将并行视频候选数控制为每 shot 1 个，以验证 4-shot 稳定性而不把候选放大成账户限流问题。
 - **鉴权**：**全站无鉴权**（hackathon 单租户）。
 - **宽高比枚举**：固定 `["9:16","16:9","1:1"]`，默认 `9:16`。
 - **错误**：`common/errors.ts` 的 `toHttpError` 把 `HttpError`→其状态码、`NotFoundError`→404、普通 `Error`→400，其余→500；不少 handler 直接抛错走 Fastify 默认 500。

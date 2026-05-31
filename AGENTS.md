@@ -32,6 +32,38 @@ pnpm reset:dev -- --yes --no-dev
 
 The reset does not delete workspace `.daireel/trace/events.jsonl`, deprecated repo-local `storage/trace`, `storage/uploads`, or MinIO content.
 
+### Realitest parallel acceptance
+
+Use the normal smoke first when only validating provider credentials and the single-shot main path:
+
+```sh
+pnpm realitest
+```
+
+Use the multishot parallel acceptance when validating multi-shot image/video generation stability:
+
+```sh
+pnpm realitest:parallel
+```
+
+`pnpm realitest:parallel` resets dev state, removes the target workspace `.daireel/`, starts `pnpm dev`, approves a fixed 4-shot storyboard, compiles/approves a 4-shot shotprompt, then asserts all 4 shots finish image/video selection and final compose uses 4 selected videos.
+
+If the compile output is unstable, keep the compile check but approve a fixed 4-shot shotprompt with:
+
+```sh
+REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed pnpm realitest:parallel
+```
+
+### Trace extraction
+
+To return the raw trace events from the one-picture integration test workspace, use:
+
+```sh
+node scripts/extract-one-picture-events.mjs
+```
+
+The script reads `integrationTest_v0/onePicture/.daireel/trace/events.jsonl` and writes its contents to stdout.
+
 ### Codex worktree creation
 
 When creating a new Codex worktree, create a fresh branch from the local `main` branch instead of checking out `main` directly. Use `dev_{timestamp}` as the branch name format, for example `dev_20260530143000`.

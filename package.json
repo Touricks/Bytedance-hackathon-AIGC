@@ -12,6 +12,7 @@
     "redis:clear": "node scripts/clear-redis.mjs",
     "reset:dev": "node scripts/reset-dev-session.mjs",
     "realitest": "node scripts/run-realitest.mjs",
+    "realitest:parallel": "node scripts/run-realitest-parallel.mjs",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "format": "prettier --write .",

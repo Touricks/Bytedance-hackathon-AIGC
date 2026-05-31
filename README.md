@@ -167,7 +167,11 @@ pnpm --filter @aigc-video/ai test
 pnpm --filter @aigc-video/server test
 pnpm --filter @aigc-video/web test
 pnpm build
+pnpm realitest
+pnpm realitest:parallel
 ```
+
+`pnpm realitest` 是低成本 single-shot provider smoke，适合确认真实 provider credentials、素材绑定、单 shot image/video/final/campaign 主链路。`pnpm realitest:parallel` 使用固定 4-shot storyboard 做多 shot 并行验收，会并发触发 4 个 video shot 生成，并检查 review、trace、DB batch 与 final compose 输入数量。
 
 Provider 联通验证（需要 `.env` 中三组 provider key）：
 

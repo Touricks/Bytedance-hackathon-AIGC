@@ -21,7 +21,7 @@ function usage() {
     "  node scripts/run-realitest.mjs",
     "",
     "Resets dev state, removes the target workspace .daireel/ directory,",
-    "starts pnpm dev, waits for /api/health, then runs the provider Newman collection.",
+    "starts pnpm dev, waits for /api/health, then runs the single-shot provider Newman smoke.",
   ].join("\n");
 }
 

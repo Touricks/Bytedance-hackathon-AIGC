@@ -275,7 +275,7 @@ erDiagram
         text id PK
         text workspace_id FK
         text shot_id FK "SET NULL"
-        text job_type "generate_images/generate_videos/compose_final_video"
+        text job_type "generate_image_candidate/generate_images/generate_videos/compose_final_video"
         enum status "job_status_v2"
         text queue_name
         text queue_job_id "BullMQ id"
@@ -382,7 +382,7 @@ erDiagram
 - `storyboard_shots` — 单个分镜，`shot_status` 状态机；`(workspace_id, order_index)` 唯一保证顺序；冗余指针 `active_image_prompt_artifact_id` / `selected_image_id` / `active_video_script_artifact_id` / `selected_video_id` 便于快速读取当前态。
 - `shot_asset_refs` — shot↔asset 的 N:M（role/weight/position），`(shot_id, asset_id, role)` 唯一。
 - `image_prompt_artifacts` / `video_script_artifacts` — **版本化 artifact**：每次 propose/patch 新增一版（`(shot_id, version)` 唯一），旧版置 STALE，`base_artifact_id` 自引用记派生链。视频脚本通过 `based_on_image_candidate_id`(+ prev/next 邻帧) 锚定所选图像候选。
-- `image_generation_batches` / `video_generation_batches` — 一次批量生成请求；`idempotency_key` 唯一（对应请求头）；`requested/succeeded/failed_count` 计数；`provider` 固定 `ark-seedream` / `seedance`。
+- `image_generation_batches` / `video_generation_batches` — 一次批量生成请求；`idempotency_key` 唯一（propose 内部合成或 retry/final 公开请求头）；`requested/succeeded/failed_count` 计数；`provider` 固定 `ark-seedream` / `seedance`。
 - `image_candidates` / `video_candidates` — 批次内单个产物；`object_key` 为 S3 预留；`provider_response` 存原始响应。
 - `selected_shot_images` / `selected_shot_videos` — 每分镜选定结果，`shot_id` 唯一（1:1）。
 
@@ -414,17 +414,18 @@ erDiagram
 - **Redis 仅作队列，无应用缓存**（无 `GET/SET`/TTL 业务缓存）。持久作业状态镜像在 Postgres `generation_jobs`。
 - **队列**：
   - `generation`（`GENERATION_QUEUE_NAME`）— V1 遗留，仅常量，无活跃 worker。
-  - `generation_v2`（`GENERATION_V2_QUEUE_NAME`）— **当前队列**，单队列三类 job（job name = `data.kind`）：
+  - `generation_v2`（`GENERATION_V2_QUEUE_NAME`）— **当前队列**，单队列多类 job（job name = `data.kind`）：
 
     | kind | payload |
     |---|---|
-    | `generate_images` | `{ jobId, batchId, shotId, workspaceId, imagePromptArtifactId, count, aspectRatio, traceId }` |
-    | `generate_videos` | `{ jobId, batchId, shotId, workspaceId, videoScriptArtifactId, count, aspectRatio, traceId }` |
+    | `generate_image_candidate` | `{ jobId, batchId, candidateId, candidateIndex, shotId, workspaceId, imagePromptArtifactId, aspectRatio, referenceImageUrls?, traceId }` |
+    | `generate_images` | `{ jobId, batchId, shotId, workspaceId, imagePromptArtifactId, count, aspectRatio, traceId }`；旧批量图片恢复路径保留 |
+    | `generate_videos` | `{ jobId, batchId, shotId, workspaceId, videoScriptArtifactId, count, aspectRatio, traceId }`；当前主路径的视频 propose 直接执行，retry/恢复路径使用 |
     | `compose_final_video` | `{ jobId, finalVideoJobId, workspaceId, traceId }` |
 
 - **Key 形态**：BullMQ 默认 `bull:<queue>:*`（清理脚本扫 `bull:generation:*` 与 `bull:generation_v2:*`）。
 - **并发**：`max(1, maxImageBatchSize + maxVideoBatchSize)`（默认 6+10=16）。
-- **重试/恢复**：`generation_jobs.max_attempts`（images/videos=3，compose=1）记在 DB；BullMQ 自身 `attempts` 未显式接入，重试实际靠 `/retry` 端点与启动时 `recoverInflightGenerationJobs()`（重置 RUNNING batch→PENDING 并重新入队，worker 幂等）。
+- **重试/恢复**：`generation_jobs.max_attempts`（image/video candidates=3，compose=1）记在 DB；BullMQ `attempts=3`、指数退避 5s。公开重跑靠 `/api/shots/:shotId/retry`；启动时 `recoverInflightGenerationJobs()` 会重置 RUNNING batch/candidate→PENDING 并重新入队，worker 幂等。
 - **无显式 TTL**，沿用 BullMQ 默认。
 
 ---

@@ -7,6 +7,8 @@ info:
     全部路由前缀 /api，URL 无版本号，全站无鉴权（单租户）。
     标有 Idempotency-Key 头的 POST 必须携带该头，否则 400 IDEMPOTENCY_KEY_REQUIRED。
     宽高比枚举固定 9:16 | 16:9 | 1:1，默认 9:16。响应包络不一致：多数为 { data: ... }，部分裸对象或文件流。
+    V2 主链路中 image/video batch 由 propose 路由内部创建；公开幂等入口是 retry 和 final compose。
+    Seedance 单个视频候选 durationSec 必须为 4-12 秒，批量大小由 /api/config/limits 返回的 DEFAULT/MAX_*_BATCH_SIZE 控制。
     业务语义见 docs/interface.md，架构见 docs/arc_v2.md，数据模型见 docs/erd.md。
 servers:
   - url: http://localhost:3000
@@ -84,6 +86,12 @@ components:
       in: query
       required: false
       schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 公开幂等 POST 必填；缺失返回 400 IDEMPOTENCY_KEY_REQUIRED。
+      schema: { type: string }
   headers:
     IdempotencyKeyResponse:
       description: 回显幂等键
@@ -153,7 +161,9 @@ components:
           properties:
             defaultImageBatchSize: { type: integer }
             maxImageBatchSize: { type: integer }
-            defaultVideoBatchSize: { type: integer }
+            defaultVideoBatchSize:
+              type: integer
+              description: video-scripts/propose 与 retry 的默认候选数；真实并行验收通常覆盖为 1 以避开 Seedance RPM。
             maxVideoBatchSize: { type: integer }
             aspectRatios:
               type: array
@@ -187,12 +197,88 @@ components:
         orderIndex: { type: integer }
         title: { type: string }
         objective: { type: string, nullable: true }
+        defaultDurationSec:
+          type: integer
+          nullable: true
+          description: 从 approved shotprompt 的 endSec-startSec 得出；真实 Seedance 视频候选需要 4-12 秒。
         status: { $ref: '#/components/schemas/ShotStatus' }
         nextAction: { $ref: '#/components/schemas/NextAction' }
         activeImagePromptArtifactId: { type: string, nullable: true }
         selectedImageId: { type: string, nullable: true }
         activeVideoScriptArtifactId: { type: string, nullable: true }
         selectedVideoId: { type: string, nullable: true }
+        lastError: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GenerationBatch:
+      type: object
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        shotId: { type: string }
+        status: { $ref: '#/components/schemas/BatchStatus' }
+        requestedCount: { type: integer }
+        succeededCount: { type: integer }
+        failedCount: { type: integer }
+        provider: { type: string }
+        aspectRatio: { $ref: '#/components/schemas/AspectRatio' }
+        providerRequest: { type: object }
+        errorMessage: { type: string, nullable: true }
+        idempotencyKey: { type: string, nullable: true }
+    ImageCandidate:
+      type: object
+      properties:
+        id: { type: string }
+        batchId: { type: string }
+        workspaceId: { type: string }
+        shotId: { type: string }
+        imageUrl: { type: string, nullable: true, description: workspace-scoped stable URL when SUCCEEDED }
+        objectKey: { type: string, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        provider: { type: string }
+        providerResponse: { type: object }
+        status: { $ref: '#/components/schemas/CandidateStatus' }
+        errorMessage: { type: string, nullable: true }
+    VideoCandidate:
+      type: object
+      properties:
+        id: { type: string }
+        batchId: { type: string }
+        workspaceId: { type: string }
+        shotId: { type: string }
+        videoUrl: { type: string, nullable: true, description: workspace-scoped stable URL when SUCCEEDED }
+        objectKey: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        durationSec: { type: integer, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        provider: { type: string }
+        providerResponse: { type: object }
+        status: { $ref: '#/components/schemas/CandidateStatus' }
+        errorMessage: { type: string, nullable: true }
+    FinalVideoJob:
+      type: object
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        status: { $ref: '#/components/schemas/FinalVideoStatus' }
+        sourceShotVideoIds:
+          type: array
+          items: { type: string }
+          description: 按 shot.orderIndex 排序的 selected video candidate ids。
+        sourceVideoScriptArtifactIds:
+          type: array
+          items: { type: string }
+        localPath: { type: string, nullable: true }
+        localUrl: { type: string, nullable: true }
+        durationSec: { type: integer, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        compiledManifest: { type: object }
+        compiledManifestHash: { type: string, nullable: true }
+        ffmpegLog: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
 
   responses:
     BadRequest:
@@ -238,6 +324,40 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConfigLimits' }
+  /api/workspaces/{workspaceId}/materials/{wildcard}:
+    get:
+      tags: [Material]
+      summary: 读取工作区素材或生成图文件
+      description: >
+        从 LOCAL storage 的 `<workspace>/.daireel/materials/` 下安全读取文件。
+        生成图稳定 URL 形如 `/api/workspaces/{workspaceId}/materials/generated-images/<file>`。
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/Wildcard' }
+      responses:
+        '200':
+          description: 文件字节流
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/workspaces/{workspaceId}/videos/{wildcard}:
+    get:
+      tags: [Generation]
+      summary: 读取工作区生成视频文件
+      description: 从 LOCAL storage 的 `<workspace>/.daireel/videos/` 下安全读取文件。
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/Wildcard' }
+      responses:
+        '200':
+          description: 视频字节流
+          content:
+            video/mp4:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/pipeline/contracts:
     get:
       tags: [Platform]
@@ -599,7 +719,11 @@ paths:
   /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/propose:
     post:
       tags: [Shot]
-      summary: 提议图像提示并直出候选图 → shot=IMAGE_CANDIDATES_READY
+      summary: 提议图像提示并创建候选图 batch → shot=IMAGE_GENERATING
+      description: >
+        创建 ACTIVE image_prompt_artifact，并按 defaultImageBatchSize 创建 image_generation_batch、
+        image_candidates 和 generation_jobs(generate_image_candidate)。公开调用方不传 Idempotency-Key；
+        服务端使用 artifact/trace 合成内部幂等键。后续通过 image-rounds 轮询 batch 结果。
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { $ref: '#/components/parameters/ShotId' }
@@ -619,19 +743,15 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/Envelope' }
+                  data: { type: object, description: ImagePromptArtifact }
                   artifact: { type: object }
-                  batch: { type: object }
+                  batch: { $ref: '#/components/schemas/GenerationBatch' }
                   candidates:
                     type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: string }
-                        imageUrl: { type: string, nullable: true }
-                        status: { $ref: '#/components/schemas/CandidateStatus' }
-                  shotStatus: { type: string, enum: [IMAGE_CANDIDATES_READY, FAILED] }
-                  nextAction: { type: string }
+                    items: { $ref: '#/components/schemas/ImageCandidate' }
+                  usage: { type: object, nullable: true }
+                  shotStatus: { type: string, enum: [IMAGE_GENERATING, FAILED] }
+                  nextAction: { $ref: '#/components/schemas/NextAction' }
                   traceId: { type: string }
                   context: { type: object }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -675,6 +795,11 @@ paths:
     post:
       tags: [Shot]
       summary: 提议视频脚本并直出候选视频（需全部 shot 已选图）→ shot=VIDEO_CANDIDATES_READY
+      description: >
+        所有 shot 都完成 image selection 后才允许调用。接口创建 ACTIVE video_script_artifact，
+        基于当前 shot 选中图和下一 shot 选中图（last frame）创建 video_generation_batch 并等待
+        Seedance batch 完成后返回。durationSec 来自 storyboard_shots.default_duration_sec；
+        真实 Seedance provider 要求单个候选视频为 4-12 秒。
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { $ref: '#/components/parameters/ShotId' }
@@ -696,17 +821,12 @@ paths:
                 properties:
                   data: { type: object }
                   artifact: { type: object }
-                  batch: { type: object }
+                  batch: { $ref: '#/components/schemas/GenerationBatch' }
                   candidates:
                     type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: string }
-                        videoUrl: { type: string, nullable: true }
-                        status: { $ref: '#/components/schemas/CandidateStatus' }
+                    items: { $ref: '#/components/schemas/VideoCandidate' }
                   shotStatus: { type: string, enum: [VIDEO_CANDIDATES_READY, FAILED] }
-                  nextAction: { type: string }
+                  nextAction: { $ref: '#/components/schemas/NextAction' }
                   traceId: { type: string }
                   context: { type: object }
                   frames: { type: object }
@@ -753,10 +873,7 @@ paths:
       summary: 重跑图像/视频批次（需 Idempotency-Key）
       parameters:
         - { $ref: '#/components/parameters/ShotId' }
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema: { type: string }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
       requestBody:
         required: true
         content:
@@ -778,16 +895,29 @@ paths:
       summary: 最近 50 条成片作业
       parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
       responses:
-        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        status: { $ref: '#/components/schemas/FinalVideoStatus' }
+                        createdAt: { type: string, format: date-time }
+                        updatedAt: { type: string, format: date-time }
+                        completedAt: { type: string, format: date-time, nullable: true }
     post:
       tags: [Generation]
       summary: 创建成片合成（需 Idempotency-Key）
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema: { type: string }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
       requestBody:
         content:
           application/json:
@@ -815,11 +945,7 @@ paths:
                 type: object
                 properties:
                   data:
-                    type: object
-                    properties:
-                      id: { type: string }
-                      status: { $ref: '#/components/schemas/FinalVideoStatus' }
-                      localUrl: { type: string, nullable: true }
+                    $ref: '#/components/schemas/FinalVideoJob'
         '404': { $ref: '#/components/responses/NotFound' }
   /api/workspaces/{workspaceId}/final-videos/{finalVideoJobId}/file:
     get:

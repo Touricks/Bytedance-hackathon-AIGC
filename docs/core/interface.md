@@ -7,7 +7,9 @@
 > - 校验：每个 handler 内 Zod `schema.parse()`；错误经 `toHttpError` 映射（`NotFoundError`→404，普通 `Error`→400，其余→500）。
 > - 响应包络**不一致**：多数 `{ data: ... }`，部分裸对象 / 文件流——下表「响应」列按实际形态标注。
 > - **幂等头**：标 🔑 的 POST **必须**带请求头 `Idempotency-Key`，缺失→400 `IDEMPOTENCY_KEY_REQUIRED`。
+> - **公开幂等边界**：当前公开 API 只有 `/api/shots/:shotId/retry` 与 `/api/workspaces/:workspaceId/final-videos` 要求调用方传幂等头；图像/视频 batch 由 propose 路由内部创建，服务端自行合成或省略幂等键。
 > - 宽高比枚举固定 `9:16 | 16:9 | 1:1`，默认 `9:16`。
+> - 真实 provider 限制：Seedance 单个视频候选 `durationSec` 必须为 4–12 秒；Ark/Seedance 账号存在 TPM/RPM 限流，验收环境会用退避重试和每 shot 1 个视频候选降低限流干扰。
 > - ⚠️ `nextAction` 提示里出现的 `/api/workspaces/video/generate`、`/api/jobs/:id` 为 V1 残留，**代码未实现**，不计入本表与 OpenAPI。
 
 ---
@@ -17,7 +19,7 @@
 | 方法 | 路径 | 业务逻辑 | 响应 |
 |---|---|---|---|
 | GET | `/api/health` | 健康检查，回当前 `runtime`（all/api/worker）。 | `{ ok, runtime }` |
-| GET | `/api/config/limits` | 返回批量大小上下限与可选宽高比，供前端约束输入：`defaultImageBatchSize/maxImageBatchSize/defaultVideoBatchSize/maxVideoBatchSize` + `aspectRatios`。 | `{ data: {...} }` |
+| GET | `/api/config/limits` | 返回批量大小上下限与可选宽高比，供前端约束输入：`defaultImageBatchSize/maxImageBatchSize/defaultVideoBatchSize/maxVideoBatchSize` + `aspectRatios`。`defaultVideoBatchSize` 影响 video propose/retry 的默认候选数；真实并行验收通常覆盖为 1 以避开 Seedance RPM。 | `{ data: {...} }` |
 | GET | `/api/pipeline/contracts` | 返回构建管线契约元数据（各步骤 id、provider、prompt builder、激活 prompt 版本、输入输出 schema）。来自 `@aigc-video/ai` 的 `getPipelineContracts()`，不读 DB。 | 契约对象 |
 | DELETE | `/api/test-runs/:runId` | **测试清理专用**，仅 `ALLOW_TEST_CLEANUP==="true"` 时启用（否则 403 `DISABLED_IN_THIS_ENV`）。删 `creative_workspace.id like %runId%` 的工作区（级联）。 | `{ data: { deleted } }` |
 
@@ -53,14 +55,14 @@
 | POST | `/api/workspaces/storyboard/propose` | 生成故事板：读 brief+assets，real→`generateStoryboardWithArk` 否则 `toStoryboard`。upsert `storyboard`(proposed)，status→`storyboard_proposed`。 | `{ …dir }` |
 | POST | `/api/workspaces/artifacts/storyboard/approve` | upsert `storyboard`(approved)，status→`storyboard_approved`。 | `{ …dir, data: StoryboardArtifact }` |
 | POST | `/api/workspaces/shotprompt/compile` | 编译分镜提示：读 brief+assets+storyboard，real→`generateShotPromptWithArk` 否则 `compileShotPrompt`。upsert `shotprompt`(proposed)，status→`shotprompt_proposed`。 | `{ …dir, aspectRatio? }` |
-| POST | `/api/workspaces/artifacts/shotprompt/approve` | upsert `shotprompt`(approved) → **`seedShotsFromShotPrompt`**：事务内清空并按 shotprompt 重建 `storyboard_shots`（每分镜一行 DRAFT）+ `shot_asset_refs`。**这是进入逐分镜管线的桥接点**。status→`shotprompt_approved`。 | `{ …dir, data: ShotPromptArtifact }` |
+| POST | `/api/workspaces/artifacts/shotprompt/approve` | upsert `shotprompt`(approved) → **`seedShotsFromShotPrompt`**：事务内清空并按 shotprompt 重建 `storyboard_shots`（每分镜一行 DRAFT，`defaultDurationSec=endSec-startSec`）+ `shot_asset_refs`。**这是进入逐分镜管线的桥接点**。status→`shotprompt_approved`。真实 Seedance 候选视频要求单镜时长 4–12 秒，当前批准接口不做数据库层时长兜底，所以上游 shotprompt 应保证每个 shot span 至少 4 秒。 | `{ …dir, data: ShotPromptArtifact }` |
 | POST | `/api/workspaces/feedback/route` | 反馈路由：解析自然语言反馈，real→`generateFeedbackRouteWithArk` 否则关键词正则路由到 brief/storyboard/shotprompt；写 `feedbackRoute` artifact 并重新 propose 目标 artifact，工作区状态回退到对应 `*_proposed`。 | `{ …dir, feedback, jobId? }` |
 
 ---
 
 ## 3. 分镜 Shot（逐分镜管线 V2）
 
-每个 shot 走 `shot_status` 状态机。`/api/shots/...` 为 shot 维度；`/api/workspaces/:workspaceId/shots/:shotId/...` 为工作区维度变体（功能等价，便于前端按工作区调用）。
+每个 shot 走 `shot_status` 状态机。`/api/shots/...` 为 shot 维度；`/api/workspaces/:workspaceId/shots/:shotId/...` 为工作区维度变体（功能等价，便于前端按工作区调用）。`storyboard_shots.default_duration_sec` 来自 approved shotprompt 的 `endSec-startSec`，视频链路会把它传入脚本/候选生成。
 
 ### 3.1 查询
 
@@ -74,7 +76,7 @@
 
 | 方法 | 路径 | 业务逻辑 | 请求要点 |
 |---|---|---|---|
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | 跑 `runStoryboardImagePromptAgent`（聚合 brief/素材/shotprompt/前序选图），写新 ACTIVE `image_prompt_artifacts` 版本（原子置旧版 STALE），内部调用 Ark Seedream 生成默认数量候选，写 `image_generation_batches` + `image_candidates`，shot→`IMAGE_CANDIDATES_READY`，记 `agent_run` trace。shot 0 用主商品素材做 `image_ref`；shot N>=1 缺前一镜 selected image 返回 400 `NO_SCENE_ANCHOR`。 | `{ userDirection? }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | 跑 `runStoryboardImagePromptAgent`（聚合 brief/素材/shotprompt/前序选图），写新 ACTIVE `image_prompt_artifacts` 版本（原子置旧版 STALE），再按 `defaultImageBatchSize` 内部创建 `image_generation_batches` + `image_candidates`，每个候选对应一条 `generation_jobs(generate_image_candidate)` 并入队 `generation_v2`。返回时 shot→`IMAGE_GENERATING`，前端通过 `image-rounds` 轮询 batch/candidate；worker 聚合完成后 shot→`IMAGE_CANDIDATES_READY` 或 `FAILED`。shot 0 用主商品素材做 `image_ref`；shot N>=1 缺前一镜 selected image 返回 400 `NO_SCENE_ANCHOR`。 | `{ userDirection? }` |
 | GET | `/api/shots/:shotId/image-prompts` | 列出该 shot 全部图像提示 artifact。 | — |
 | GET | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds` | 按 prompt 版本聚合的「轮次」：artifact+batch+候选+选定+上下文。 | — |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | 选定候选图：校验属于该 workspace/shot、SUCCEEDED、来自当前激活轮次（否则 409 `STALE_CANDIDATE`），upsert `selected_shot_images`，shot→`IMAGE_SELECTED`。select 本身不触发 stale。 | `{ candidateId \| imageCandidateId, imageGenerationBatchId? }` |
@@ -83,7 +85,7 @@
 
 | 方法 | 路径 | 业务逻辑 | 请求要点 |
 |---|---|---|---|
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | 跑 `runVideoShotScriptAgent`：要求全部 shot 已选图（否则 400 `IMAGE_SELECTION_INCOMPLETE`）；后端注入当前 selected image 作为 `first_frame_url`、下一镜 selected image 作为 `last_frame_url`（最后一镜为 null），duration 直接来自 storyboard/default shot 的 1–8 秒；写 ACTIVE `video_script_artifacts`，内部调用 Seedance 生成默认数量候选，shot→`VIDEO_CANDIDATES_READY`。 | `{ userDirection? }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | 跑 `runVideoShotScriptAgent`：要求全部 shot 已选图（否则 400 `IMAGE_SELECTION_INCOMPLETE`）；后端注入当前 selected image 作为 `first_frame_url`、下一镜 selected image 作为 `last_frame_url`（最后一镜为 null），duration 来自 `storyboard_shots.default_duration_sec`。写 ACTIVE `video_script_artifacts` 后按 `defaultVideoBatchSize` 内部创建 `video_generation_batches`，并在请求内直接等待 `runVideoGenerationBatch()` 调 Seedance 生成候选；完成后 shot→`VIDEO_CANDIDATES_READY`，批次失败则 shot→`FAILED`。真实 Seedance 要求每个候选视频 4–12 秒，parallel acceptance 为避免 RPM 通常把默认视频候选数设为 1。 | `{ userDirection? }` |
 | GET | `/api/shots/:shotId/video-scripts` | 列出该 shot 全部视频脚本 artifact。 | — |
 | GET | `/api/workspaces/:workspaceId/shots/:shotId/video-rounds` | 按脚本版本聚合的轮次 + 首/末帧 URL。 | — |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | 选定候选视频：校验属于该 workspace/shot、SUCCEEDED、来自当前激活轮次，upsert `selected_shot_videos`，shot→`VIDEO_SELECTED`；响应 duration 读取 storyboard/default shot duration。select 本身不触发 stale。 | `{ candidateId \| videoCandidateId, videoGenerationBatchId? }` |
@@ -92,7 +94,7 @@
 
 | 方法 | 路径 | 业务逻辑 | 请求要点 |
 |---|---|---|---|
-| POST 🔑 | `/api/shots/:shotId/retry` | 对当前激活 artifact 重跑图像或视频批次（aspectRatio 硬编码 `9:16`）；无激活 prompt/script→409。 | `{ what: "image_batch" \| "video_batch" }` |
+| POST 🔑 | `/api/shots/:shotId/retry` | 对当前激活 artifact 重跑图像或视频批次（aspectRatio 硬编码 `9:16`）；无激活 prompt/script→409。图像重试复用公开 `Idempotency-Key` 创建 batch，并为每个候选入队 `generate_image_candidate`；视频重试创建 batch 并入队 `generate_videos`（主线 video propose 则在请求内直接执行）。 | `{ what: "image_batch" \| "video_batch" }` |
 
 ---
 
@@ -154,6 +156,7 @@
 | HTTP | code | 触发 |
 |---|---|---|
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | 🔑 接口缺 `Idempotency-Key` 头 |
+| 400 | `NO_SCENE_ANCHOR` | shot N 图像 propose 时缺少前一镜 selected image，或 shot 0 缺少可用商品/场景锚点 |
 | 400 | `IMAGE_SELECTION_INCOMPLETE` | 提议视频脚本时仍有 shot 未选图 |
 | 403 | `DISABLED_IN_THIS_ENV` | `DELETE /api/test-runs/:runId` 未开 `ALLOW_TEST_CLEANUP` |
 | 404 | `NO_SELECTED_IMAGE` / `NO_SELECTED_VIDEO` / `NOT_READY` | 资源未就绪 |

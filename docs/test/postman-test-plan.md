@@ -15,13 +15,21 @@ Postman 用于验证后端公开契约和真实服务联调，不替代 Node tes
 
 ## 运行前准备
 
-推荐直接运行：
+推荐直接运行低成本真实 provider smoke：
 
 ```bash
 pnpm realitest
 ```
 
-该脚本会先执行 `pnpm reset:dev -- --yes --no-dev` 清理 Postgres / Redis 并停止旧 dev listener，再删除 `workspaceDirectory/.daireel/`，随后启动 `pnpm dev`，等待 `/api/health` 就绪后运行 provider Newman collection。
+该脚本会先执行 `pnpm reset:dev -- --yes --no-dev` 清理 Postgres / Redis 并停止旧 dev listener，再删除 `workspaceDirectory/.daireel/`，随后启动 `pnpm dev`，等待 `/api/health` 就绪后运行 provider Newman collection。它当前固定 approve one-shot shotprompt，只证明单 shot 真实图片、视频、final compose、Campaign 主链路能跑通，不承担多 shot 并行稳定性验收。
+
+多 shot 并行验收使用：
+
+```bash
+pnpm realitest:parallel
+```
+
+该脚本使用固定 4-shot approved storyboard（每个 shot 4 秒，总 16 秒），调用 `shotprompt/compile` 基于该 storyboard 编译 shotprompt，并默认 approve compile 结果。若需要彻底固定 approved shotprompt，可设置 `REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed`，但 compile 步骤仍会运行并校验它确实基于 4-shot storyboard。
 
 如需手动拆分执行：
 
@@ -53,7 +61,7 @@ pnpm dev
 | `workspaceId` | 空 | 创建后自动回填 |
 | `materialRef` | `display_1.png` | onePicture 场景内已有素材 ref |
 | `materialFileBase64` | collection 内置 1x1 PNG | local-smoke/provider setup 都会先上传为 `materialRef` |
-| `shotId` | 空 | approve shotprompt 后自动回填 |
+| `shotId` | 空 | single-shot smoke approve shotprompt 后自动回填 |
 | `imagePromptArtifactId` | 空 | image prompt propose 后自动回填 |
 | `imageBatchId` | 空 | image batch 创建后自动回填 |
 | `imageCandidateId` | 空 | image batch 查询后自动回填 |
@@ -113,7 +121,30 @@ pnpm dev
 | 4 | `POST /api/workspaces/storyboard/propose` | `200`；`shots.length >= 1`；`totalDurationSec` 等于 shots 时长和。 |
 | 5 | `POST /api/workspaces/artifacts/storyboard/approve` | `200`。 |
 | 6 | `POST /api/workspaces/shotprompt/compile` | `200`；每个 `shots[].providerPrompt` 为中文且非空。 |
-| 7 | `POST /api/workspaces/artifacts/shotprompt/approve` | `200`；使用固定 one-shot payload seed 出 `storyboard_shots`，便于 Postman 单 shot 走完整 image/video/final 链路。 |
+| 7 | `POST /api/workspaces/artifacts/shotprompt/approve` | `200`；`pnpm realitest` 使用固定 one-shot payload seed 出 `storyboard_shots`，便于 Postman 单 shot 走完整 image/video/final 链路。 |
+
+### 3C. Parallel Provider Acceptance
+
+`pnpm realitest:parallel` 不使用 Newman collection；它由 `scripts/run-realitest-parallel.mjs` 直接驱动 API，避免 Postman/Newman 对动态多 shot 和并发请求的限制。
+
+固定数据：
+
+| Artifact | 策略 |
+|---|---|
+| brief | fixed approved brief |
+| storyboard | fixed approved storyboard，4 个 shot，每个 4s，总 16s |
+| shotprompt | 先调用 `POST /api/workspaces/shotprompt/compile`；默认 approve compile 结果，可用 `REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed` approve 固定 4-shot shotprompt |
+| video batch | 默认通过 `DEFAULT_VIDEO_BATCH_SIZE=1` 跑每 shot 1 个候选，避免 4-shot 并发验收一次触发过多 Seedance RPM；可用 `REALITEST_PARALLEL_VIDEO_BATCH_SIZE` 覆盖 |
+
+关键断言：
+
+| 阶段 | 断言 |
+|---|---|
+| shots | `GET /api/workspaces/:workspaceId/shots` 返回 `shots.length === 4`。 |
+| image | 每个 shot 都产生 image prompt artifact、image batch、image candidates；batch `SUCCEEDED` 且 `failedCount === 0`；candidate URL 是 `/api/workspaces/:workspaceId/...` stable URL；每个 shot 完成 image selection。 |
+| video | 全部 image selection 完成后，对 4 个 shot 使用 `Promise.allSettled` 并发发起 video script/candidate 生成；每个 shot 都产生 video script artifact、video batch、video candidates；batch `SUCCEEDED` 且 `failedCount === 0`；candidate URL 是 workspace stable URL；每个 shot 完成 video selection。 |
+| final compose | 创建 final job 后轮询到 `SUCCEEDED`；`sourceShotVideoIds.length === 4`，即 final compose 输入包含 4 个 selected videos。 |
+| audit gate | `.daireel/review/storyboard.approved.json` 至少 4 shot；trace 文件不能出现 `provider.failed` / `batch.failed`；DB trace 不能出现 failed event；DB 中 image/video batch 覆盖全部 shot；DB final compose 输入数等于 selected video shot 数。 |
 
 ### 4. Shot Workflow
 
