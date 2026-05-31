@@ -7,26 +7,14 @@ ByteDance Hackathon AIGC 电商带货视频项目。当前仓库的 active 实�
 1. [CONTEXT.md](./CONTEXT.md)
    领域词汇表。先确认"商品素材""商品 brief""UGC 分镜""shotprompt""image batch""video batch""final compose"等词的含义。
 
-2. [docs/architecture.md](./docs/architecture.md)
-   架构入口，指向当前 V2 架构、数据模型、spec 与历史 arc。
+2. [docs/archived/](./docs/archived/)
+   历史 arc / 讨论 / bug 记录。
 
-3. [docs/arc_v6.md](./docs/arc_v6.md)
-   **当前 V2 架构事实源**：apps/server 模块拓扑、`shot` / `artifact` / `generation` / `job` / `trace` 模块、provider 三独立 triplet、final-compose 边界、idempotency 与恢复路径。
+3. [docs/core/](./docs/core/)
+   核心架构文件
 
-4. [docs/erd.md](./docs/erd.md)
-   V2 Postgres 数据模型：`storyboard_shots`、`image_prompt_artifacts`、`image_generation_batches`、`image_candidates`、`selected_shot_images`、`video_script_artifacts`、`video_generation_batches`、`video_candidates`、`selected_shot_videos`、`generation_jobs`、`trace_events`、`final_video_jobs`。
-
-5. [docs/0528-agent-arc/spec/2026-05-28-storyboard-image-video-pipeline-design-r2.md](./docs/0528-agent-arc/spec/2026-05-28-storyboard-image-video-pipeline-design-r2.md)
-   驱动 V2 实现的 spec（包含 r2 §10 测试策略、§12 acceptance checklist 和 §12.1 upstream blocker 记录）。
-
-6. [docs/0528-agent-arc/plans/2026-05-28-pipeline-gap-closure-plan.md](./docs/0528-agent-arc/plans/2026-05-28-pipeline-gap-closure-plan.md)
-   Provider smoke + asset URL resolver + 集成测试 fixture 的 gap-closure 计划（已并入 main）。
-
-7. [docs/prd_safe.pdf](./docs/prd_safe.pdf)
-   原始安全版 PRD。
-
-8. [docs/archived/](./docs/archived/)
-   历史 arc / 讨论 / bug 记录。当前 V1 架构快照保存在 `archived/history_arc_design/arc_v5.md`。
+3. [docs/test/](./docs/test/)
+   核心测试文件
 
 ## V2 主链路范围
 
