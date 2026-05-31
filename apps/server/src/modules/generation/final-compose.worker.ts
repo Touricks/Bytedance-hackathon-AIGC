@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComposeFinalVideoJobData } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
@@ -17,6 +17,31 @@ async function downloadTo(url: string, outPath: string) {
   if (!res.ok) throw new Error(`download failed ${res.status}: ${url}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await writeFile(outPath, buf);
+}
+
+async function copyOrDownloadTo(input: {
+  workspaceId: string;
+  workspaceLocalPath: string;
+  url: string;
+  outPath: string;
+}) {
+  const workspaceVideoPrefix = `/api/workspaces/${input.workspaceId}/videos/`;
+  if (input.url.startsWith(workspaceVideoPrefix)) {
+    const relativeName = decodeURIComponent(input.url.slice(workspaceVideoPrefix.length));
+    const sourcePath = path.resolve(
+      input.workspaceLocalPath,
+      ".daireel",
+      "videos",
+      relativeName,
+    );
+    const videoRoot = path.resolve(input.workspaceLocalPath, ".daireel", "videos");
+    if (!sourcePath.startsWith(videoRoot + path.sep)) {
+      throw new Error(`Invalid workspace video URL: ${input.url}`);
+    }
+    await copyFile(sourcePath, input.outPath);
+    return;
+  }
+  await downloadTo(input.url, input.outPath);
 }
 
 export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
@@ -47,7 +72,12 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
       const cand = candidates[i];
       if (!cand?.videoUrl) throw new Error(`Missing videoUrl on candidate index ${i}`);
       const local = path.join(inputDir, `shot-${i + 1}.mp4`);
-      await downloadTo(cand.videoUrl, local);
+      await copyOrDownloadTo({
+        workspaceId: job.workspaceId,
+        workspaceLocalPath: wsLocalPath,
+        url: cand.videoUrl,
+        outPath: local,
+      });
       inputs.push(local);
     }
     const listFile = path.join(workDir, "concat.txt");

@@ -2,7 +2,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
-import { pollUntil } from "../helpers/poll.js";
 import { seedWorkspace, seedShotWithSelectedImage, type SeededWorkspace } from "../helpers/seed-workspace.js";
 
 const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
@@ -19,40 +18,24 @@ describe("video flow @expensive", { skip: !RUN || !ALLOW }, () => {
   after(async () => { await ws?.cleanup(); });
 
   it("propose script -> generate 2 candidates -> select first", async () => {
-    const script = await api<{ data: { id: string; durationSec: number } }>(
+    const script = await api<{
+      data: { id: string; durationSec: number };
+      batch: { id: string; status: string; succeededCount: number };
+      candidates: Array<{ id: string; videoUrl: string; status: string }>;
+    }>(
       `/api/workspaces/${ws.workspaceId}/shots/${ctx.shotId}/video-scripts/propose`,
-      { method: "POST", body: JSON.stringify({ durationSec: 4, useNeighborFrames: true }) },
+      { method: "POST", body: JSON.stringify({}) },
     );
     assert.equal(script.data.durationSec, 4);
+    assert.notEqual(script.batch.status, "FAILED");
+    assert.ok(script.batch.succeededCount >= 1);
 
-    const batch = await api<{ data: { batchId: string } }>(
-      `/api/shots/${ctx.shotId}/video-batches`,
-      {
-        method: "POST",
-        headers: { "Idempotency-Key": `it-vid-${ctx.shotId}-${Date.now()}` },
-        body: JSON.stringify({ videoScriptArtifactId: script.data.id, count: 2, aspectRatio: "9:16" }),
-      },
-    );
-
-    const final = await pollUntil({
-      label: "video batch",
-      intervalMs: 8000,
-      timeoutMs: 15 * 60_000,
-      fetcher: () =>
-        api<{ data: { status: string; succeededCount: number; candidates: Array<{ id: string; videoUrl: string; status: string }> } }>(
-          `/api/shots/${ctx.shotId}/video-batches/${batch.data.batchId}`,
-        ),
-      isDone: (v) => ["SUCCEEDED", "PARTIAL", "FAILED"].includes(v.data.status),
-    });
-    assert.notEqual(final.data.status, "FAILED");
-    assert.ok(final.data.succeededCount >= 1);
-
-    const pick = final.data.candidates.find((c) => c.status === "SUCCEEDED" && c.videoUrl);
+    const pick = script.candidates.find((c) => c.status === "SUCCEEDED" && c.videoUrl);
     assert.ok(pick && /^https?:\/\//.test(pick.videoUrl));
 
     const sel = await api<{ shotStatus: string }>(
-      `/api/shots/${ctx.shotId}/selected-video`,
-      { method: "POST", body: JSON.stringify({ videoCandidateId: pick!.id, videoGenerationBatchId: batch.data.batchId }) },
+      `/api/workspaces/${ws.workspaceId}/shots/${ctx.shotId}/video-candidates/select`,
+      { method: "POST", body: JSON.stringify({ videoCandidateId: pick!.id, videoGenerationBatchId: script.batch.id }) },
     );
     assert.equal(sel.shotStatus, "VIDEO_SELECTED");
   });

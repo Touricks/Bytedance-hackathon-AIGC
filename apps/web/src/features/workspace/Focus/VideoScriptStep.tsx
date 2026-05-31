@@ -1,25 +1,10 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  listVideoScripts,
-  patchVideoScript,
-  proposeVideoScript,
-} from "../../../lib/api/videoScript.js";
-import { createVideoBatch } from "../../../lib/api/videoBatch.js";
-import { useConfigLimits } from "../hooks/useConfigLimits.js";
+import { listVideoScripts, proposeVideoScript } from "../../../lib/api/videoScript.js";
 import { AssetStrip } from "./AssetStrip.js";
 import { VersionChips } from "./VersionChips.js";
 import { StaleBanner } from "./StaleBanner.js";
 import { navigateFocus } from "../WorkspaceLayout.js";
-
-interface ScriptFormValues {
-  durationSec: number;
-  cameraMotion: string;
-  subjectMotion: string;
-  providerPrompt: string;
-  voiceover: string;
-}
 
 function readScriptString(
   scriptJson: Record<string, unknown> | undefined,
@@ -38,7 +23,7 @@ export function VideoScriptStep({
   shotId: string;
 }) {
   const qc = useQueryClient();
-  const limits = useConfigLimits();
+  const [userDirection, setUserDirection] = useState("");
   const versions = useQuery({
     queryKey: ["video-scripts", shotId],
     queryFn: () => listVideoScripts(shotId),
@@ -49,71 +34,16 @@ export function VideoScriptStep({
     active?.id ?? null,
   );
   const showing = list.find((v) => v.id === (selectedId ?? active?.id));
-  const { register, handleSubmit, reset } = useForm<ScriptFormValues>({
-    values: showing
-      ? {
-          durationSec: showing.durationSec,
-          cameraMotion: readScriptString(showing.scriptJson, "cameraMotion"),
-          subjectMotion: readScriptString(showing.scriptJson, "subjectMotion"),
-          providerPrompt: showing.providerPrompt,
-          voiceover: readScriptString(showing.scriptJson, "voiceover"),
-        }
-      : {
-          durationSec: 4,
-          cameraMotion: "",
-          subjectMotion: "",
-          providerPrompt: "",
-          voiceover: "",
-        },
-  });
 
   const propose = useMutation({
-    mutationFn: (durationSec: number) =>
+    mutationFn: () =>
       proposeVideoScript(workspaceId, shotId, {
-        durationSec,
-        useNeighborFrames: true,
+        userDirection: userDirection.trim() || undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["video-scripts", shotId] });
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
-    },
-  });
-
-  const patch = useMutation({
-    mutationFn: (body: ScriptFormValues) =>
-      patchVideoScript(shotId, active!.id, {
-        baseVersion: active!.version,
-        durationSec: body.durationSec,
-        providerPrompt: body.providerPrompt,
-        scriptJson: {
-          ...(showing?.scriptJson ?? {}),
-          cameraMotion: body.cameraMotion,
-          subjectMotion: body.subjectMotion,
-          voiceover: body.voiceover,
-        },
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["video-scripts", shotId] });
-      qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
-    },
-  });
-
-  const [count, setCount] = useState(limits.defaultVideoBatchSize);
-  const startBatch = useMutation({
-    mutationFn: () => {
-      const key = `${workspaceId}:${shotId}:video-batch:${active!.id}:${Date.now()}`;
-      return createVideoBatch(
-        shotId,
-        {
-          videoScriptArtifactId: active!.id,
-          count,
-          aspectRatio: "9:16",
-        },
-        key,
-      );
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
+      qc.invalidateQueries({ queryKey: ["video-rounds", workspaceId, shotId] });
       navigateFocus({ workspaceId, shotId, step: "video_candidates" });
     },
   });
@@ -124,8 +54,17 @@ export function VideoScriptStep({
         <AssetStrip shotId={shotId} />
         <h2>视频剧本</h2>
         <p>当前分镜还没有视频剧本。</p>
-        <button onClick={() => propose.mutate(4)}>
-          生成初始剧本（4 秒）
+        <label>
+          调整方向
+          <textarea
+            rows={3}
+            value={userDirection}
+            onChange={(event) => setUserDirection(event.target.value)}
+            placeholder="可选：描述本轮视频候选要强化或修正的方向"
+          />
+        </label>
+        <button onClick={() => propose.mutate()} disabled={propose.isPending}>
+          生成视频候选
         </button>
       </div>
     );
@@ -145,78 +84,57 @@ export function VideoScriptStep({
         activeId={showing?.id ?? null}
         onPick={(v) => {
           setSelectedId(v.id);
-          reset({
-            durationSec: v.durationSec,
-            cameraMotion: readScriptString(v.scriptJson, "cameraMotion"),
-            subjectMotion: readScriptString(v.scriptJson, "subjectMotion"),
-            providerPrompt: v.providerPrompt,
-            voiceover: readScriptString(v.scriptJson, "voiceover"),
-          });
         }}
       />
-      <form
-        className="video-script-form"
-        onSubmit={handleSubmit((body) => patch.mutate(body))}
-      >
+      <div className="video-script-form">
+        <label>
+          调整方向
+          <textarea
+            rows={3}
+            value={userDirection}
+            onChange={(event) => setUserDirection(event.target.value)}
+            placeholder="可选：描述本轮视频候选要强化或修正的方向"
+          />
+        </label>
         <label>
           时长(秒)
-          <input
-            type="number"
-            min={1}
-            max={8}
-            {...register("durationSec", {
-              valueAsNumber: true,
-              required: true,
-            })}
-          />
+          <input readOnly value={showing?.durationSec ?? ""} />
         </label>
         <label>
           镜头运动
-          <input {...register("cameraMotion", { required: true })} />
+          <input
+            readOnly
+            value={readScriptString(showing?.scriptJson, "cameraMotion")}
+          />
         </label>
         <label>
           主体运动
-          <input {...register("subjectMotion", { required: true })} />
+          <input
+            readOnly
+            value={readScriptString(showing?.scriptJson, "subjectMotion")}
+          />
         </label>
         <label>
           解说
-          <input {...register("voiceover")} />
+          <input
+            readOnly
+            value={readScriptString(showing?.scriptJson, "voiceover")}
+          />
         </label>
         <label>
           Provider Prompt
-          <textarea
-            rows={6}
-            {...register("providerPrompt", {
-              required: true,
-              minLength: 30,
-            })}
-          />
+          <textarea rows={6} readOnly value={showing?.providerPrompt ?? ""} />
         </label>
         <div className="step-card__actions">
-          <button type="submit" disabled={patch.isPending}>
-            保存为新版本
+          <button
+            type="button"
+            onClick={() => propose.mutate()}
+            disabled={propose.isPending}
+          >
+            生成视频候选
           </button>
-          <div className="step-card__count">
-            <label>
-              数量
-              <input
-                type="number"
-                min={1}
-                max={limits.maxVideoBatchSize}
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => startBatch.mutate()}
-              disabled={startBatch.isPending}
-            >
-              生成 {count} 个视频
-            </button>
-          </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

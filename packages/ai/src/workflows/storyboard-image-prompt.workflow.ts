@@ -4,8 +4,23 @@ import { buildStoryboardImagePromptAgent, STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSI
 import { buildRunner, runAgent, type RunnerContext } from "../agents/runner.js";
 
 export interface ImagePromptAgentInput {
+  workspaceId?: string;
+  shotId?: string;
+  userDirection?: string;
+  number?: number;
+  image_ref?: string;
+  materialIntake?: unknown;
+  previousImagePromptText?: string;
   productBrief: unknown;
-  shot: { index: number; objective: string; sceneDescription?: string; defaultDurationSec?: number };
+  shot: {
+    index: number;
+    objective: string;
+    sceneDescription?: string;
+    defaultDurationSec?: number;
+    productAssetRef?: string;
+    referenceAssetRefs?: string[];
+    providerPromptFromShotPrompt?: string;
+  };
   referenceAssets: Array<{ id: string; role: string; summary: string }>;
   userHint?: string;
   stylePresetId?: string;
@@ -21,16 +36,29 @@ export async function runStoryboardImagePromptAgent(input: {
   context: RunnerContext;
 }): Promise<ImagePromptAgentResult> {
   if (!isRealProviderMode()) {
+    const referenceImageUsage = [
+      ...input.payload.referenceAssets.map((a) => ({
+        assetId: a.id,
+        usage: "product_identity" as const,
+        instruction: "Use as primary product reference",
+      })),
+      ...(input.payload.image_ref && input.payload.shot.index > 0
+        ? [
+            {
+              assetId: input.payload.image_ref,
+              usage: "scene_reference" as const,
+              instruction: "Preserve scene, lighting, and composition continuity from image_ref",
+            },
+          ]
+        : []),
+    ];
     return {
       templateVersion: STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSION,
       output: StoryboardImagePromptOutputSchema.parse({
         promptText: `MOCK image prompt for shot ${input.payload.shot.index}: ${input.payload.shot.objective}`,
-        productVisibilityRule: "hero",
-        referenceImageUsage: input.payload.referenceAssets.map((a) => ({
-          assetId: a.id,
-          usage: "product_identity",
-          instruction: "Use as primary product reference",
-        })),
+        negativePrompt: "商品变形、文字模糊、场景突变",
+        productVisibilityRule: "hero product clearly visible",
+        referenceImageUsage,
         qualityChecklist: ["mock", "deterministic"],
       }),
     };

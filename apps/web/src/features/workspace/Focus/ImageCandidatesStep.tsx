@@ -17,11 +17,11 @@ export function ImageCandidatesStep({
   const status = useShotWorkflowStatus(workspaceId);
   const shot = status.data?.data.shots.find((s) => s.shotId === shotId);
   const batchId = shot?.activeImageBatchId ?? null;
-  const batch = useImageBatch(shotId, batchId);
+  const batch = useImageBatch(workspaceId, shotId, batchId);
 
   const select = useMutation({
     mutationFn: (candId: string) =>
-      selectImage(shotId, {
+      selectImage(workspaceId, shotId, {
         imageCandidateId: candId,
         imageGenerationBatchId: batchId!,
       }),
@@ -40,7 +40,7 @@ export function ImageCandidatesStep({
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
-      qc.invalidateQueries({ queryKey: ["image-batch", shotId, batchId] });
+      qc.invalidateQueries({ queryKey: ["image-rounds", workspaceId, shotId, batchId] });
     },
   });
 
@@ -92,7 +92,7 @@ export function ImageCandidatesStep({
         >
           ← 编辑 Prompt 重新生成
         </button>
-        {detail.status === "FAILED" ? (
+        {detail.status === "FAILED" || detail.status === "PARTIAL" ? (
           <button onClick={() => retry.mutate()} disabled={retry.isPending}>
             重试该批次
           </button>

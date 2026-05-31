@@ -37,6 +37,7 @@ export interface ArkImageCandidate {
 export interface ArkImageResult {
   provider: "ark-seedream";
   model: string;
+  created?: number;
   candidates: ArkImageCandidate[];
   /** Per-item errors when the provider returned data[] entries that failed. */
   candidateErrors: Array<{ index: number; code?: string; message?: string }>;
@@ -236,6 +237,7 @@ export async function generateImagesWithArk(
   return {
     provider: "ark-seedream",
     model: cfg.endpointId,
+    ...(payload.created !== undefined ? { created: payload.created } : {}),
     candidates,
     candidateErrors,
     ...(payload.usage

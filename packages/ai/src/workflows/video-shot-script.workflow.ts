@@ -4,8 +4,21 @@ import { buildVideoShotScriptAgent, VIDEO_SHOT_SCRIPT_TEMPLATE_VERSION } from ".
 import { buildRunner, runAgent, type RunnerContext } from "../agents/runner.js";
 
 export interface VideoScriptAgentInput {
+  workspaceId?: string;
+  shotId?: string;
+  userDirection?: string;
+  number?: number;
+  first_frame_url?: string;
+  last_frame_url?: string | null;
+  previousVideoScript?: unknown;
   productBrief: unknown;
-  shot: { index: number; objective: string; sceneDescription?: string };
+  shot: {
+    index: number;
+    objective: string;
+    sceneDescription?: string;
+    voiceover?: string;
+    providerPromptFromShotPrompt?: string;
+  };
   selectedImage: { id: string; summary: string; url: string };
   neighborImages: { prev?: { id: string; summary: string; url: string }; next?: { id: string; summary: string; url: string } };
   durationSec: number;
@@ -33,6 +46,8 @@ export async function runVideoShotScriptAgent(input: {
         subjectMotion: "mock motion",
         productVisibility: "hero",
         sceneConsistency: "consistent mock lighting",
+        voiceover: input.payload.shot.voiceover ?? null,
+        negativePrompt: "商品变形、相机抖动、不自然运动",
         providerPrompt: `MOCK video prompt for shot ${input.payload.shot.index} (${input.payload.durationSec}s push-in on hero product)`,
         riskNotes: [],
       }),

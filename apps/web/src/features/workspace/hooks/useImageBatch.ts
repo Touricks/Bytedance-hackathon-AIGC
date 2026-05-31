@@ -4,12 +4,16 @@ import { useVisibilityActive } from "./useVisibilityActive.js";
 
 const TERMINAL = new Set(["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"]);
 
-export function useImageBatch(shotId: string | null, batchId: string | null) {
+export function useImageBatch(
+  workspaceId: string | null,
+  shotId: string | null,
+  batchId: string | null,
+) {
   const visible = useVisibilityActive();
   return useQuery({
-    queryKey: ["image-batch", shotId, batchId],
-    queryFn: () => getImageBatch(shotId!, batchId!),
-    enabled: Boolean(shotId && batchId),
+    queryKey: ["image-rounds", workspaceId, shotId, batchId],
+    queryFn: () => getImageBatch(workspaceId!, shotId!, batchId!),
+    enabled: Boolean(workspaceId && shotId && batchId),
     refetchInterval: (q) => {
       const data = q.state.data?.data;
       if (!visible) return false;

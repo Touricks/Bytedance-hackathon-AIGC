@@ -1,14 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import {
-  listImagePrompts,
-  patchImagePrompt,
-  proposeImagePrompt,
-} from "../../../lib/api/imagePrompt.js";
-import { createImageBatch } from "../../../lib/api/imageBatch.js";
-import { useConfigLimits } from "../hooks/useConfigLimits.js";
-import { useShotAssetRefs } from "../hooks/useShotAssetRefs.js";
+import { listImagePrompts, proposeImagePrompt } from "../../../lib/api/imagePrompt.js";
 import { AssetStrip } from "./AssetStrip.js";
 import { VersionChips } from "./VersionChips.js";
 import { navigateFocus } from "../WorkspaceLayout.js";
@@ -21,9 +13,7 @@ export function ImagePromptStep({
   shotId: string;
 }) {
   const qc = useQueryClient();
-  const limits = useConfigLimits();
-  const { refs } = useShotAssetRefs(shotId);
-  const refIds = refs.map((r) => r.assetId);
+  const [userDirection, setUserDirection] = useState("");
 
   const versions = useQuery({
     queryKey: ["image-prompts", shotId],
@@ -37,58 +27,15 @@ export function ImagePromptStep({
   const showing =
     list.find((v) => v.id === (selectedId ?? active?.id)) ?? null;
 
-  const { register, handleSubmit, reset } = useForm<{
-    promptText: string;
-    negativePrompt: string;
-  }>({
-    defaultValues: {
-      promptText: showing?.promptText ?? "",
-      negativePrompt: showing?.negativePrompt ?? "",
-    },
-    values: {
-      promptText: showing?.promptText ?? "",
-      negativePrompt: showing?.negativePrompt ?? "",
-    },
-  });
-
   const propose = useMutation({
     mutationFn: () =>
-      proposeImagePrompt(workspaceId, shotId, { referenceAssetIds: refIds }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["image-prompts", shotId] });
-      qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
-    },
-  });
-
-  const patch = useMutation({
-    mutationFn: (body: { promptText: string; negativePrompt: string }) =>
-      patchImagePrompt(shotId, active!.id, {
-        promptText: body.promptText,
-        negativePrompt: body.negativePrompt,
-        referenceAssetIds: refIds,
+      proposeImagePrompt(workspaceId, shotId, {
+        userDirection: userDirection.trim() || undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["image-prompts", shotId] });
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
-    },
-  });
-
-  const [count, setCount] = useState(limits.defaultImageBatchSize);
-  const startBatch = useMutation({
-    mutationFn: () => {
-      const key = `${workspaceId}:${shotId}:image-batch:${active!.id}:${Date.now()}`;
-      return createImageBatch(
-        shotId,
-        {
-          imagePromptArtifactId: active!.id,
-          count,
-          aspectRatio: "9:16",
-        },
-        key,
-      );
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
+      qc.invalidateQueries({ queryKey: ["image-rounds", workspaceId, shotId] });
       navigateFocus({ workspaceId, shotId, step: "image_candidates" });
     },
   });
@@ -99,7 +46,16 @@ export function ImagePromptStep({
         <AssetStrip shotId={shotId} />
         <h2>分镜图 Prompt</h2>
         <p>当前分镜还没有图 prompt。</p>
-        <button onClick={() => propose.mutate()}>生成初始 Prompt</button>
+        <label>
+          调整方向
+          <textarea
+            rows={3}
+            value={userDirection}
+            onChange={(event) => setUserDirection(event.target.value)}
+            placeholder="可选：描述本轮图像候选要强化或修正的方向"
+          />
+        </label>
+        <button onClick={() => propose.mutate()}>生成图片候选</button>
       </div>
     );
   }
@@ -116,49 +72,36 @@ export function ImagePromptStep({
         activeId={showing?.id ?? null}
         onPick={(v) => {
           setSelectedId(v.id);
-          reset({
-            promptText: v.promptText,
-            negativePrompt: v.negativePrompt ?? "",
-          });
         }}
       />
-      <form
-        className="image-prompt-form"
-        onSubmit={handleSubmit((body) => patch.mutate(body))}
-      >
+      <div className="image-prompt-form">
+        <label>
+          调整方向
+          <textarea
+            rows={3}
+            value={userDirection}
+            onChange={(event) => setUserDirection(event.target.value)}
+            placeholder="可选：描述本轮图像候选要强化或修正的方向"
+          />
+        </label>
         <label>
           Prompt
-          <textarea rows={8} {...register("promptText", { required: true })} />
+          <textarea rows={8} readOnly value={showing?.promptText ?? ""} />
         </label>
         <label>
           Negative Prompt
-          <input {...register("negativePrompt")} />
+          <input readOnly value={showing?.negativePrompt ?? ""} />
         </label>
         <div className="step-card__actions">
-          <button type="submit" disabled={patch.isPending}>
-            保存为新版本
+          <button
+            type="button"
+            disabled={propose.isPending}
+            onClick={() => propose.mutate()}
+          >
+            生成图片候选
           </button>
-          <div className="step-card__count">
-            <label>
-              数量
-              <input
-                type="number"
-                min={1}
-                max={limits.maxImageBatchSize}
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
-              />
-            </label>
-            <button
-              type="button"
-              disabled={!active || startBatch.isPending}
-              onClick={() => startBatch.mutate()}
-            >
-              生成 {count} 张图
-            </button>
-          </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

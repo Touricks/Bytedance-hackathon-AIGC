@@ -15,8 +15,8 @@ export function ReviewStep({
   const shot = status.data?.data.shots.find((s) => s.shotId === shotId);
   const batchId = shot?.activeVideoBatchId ?? null;
   const batch = useQuery({
-    queryKey: ["video-batch", shotId, batchId],
-    queryFn: () => getVideoBatch(shotId, batchId!),
+    queryKey: ["video-rounds", workspaceId, shotId, batchId],
+    queryFn: () => getVideoBatch(workspaceId, shotId, batchId!),
     enabled: Boolean(batchId),
   });
   const selectedId = shot?.selectedVideoId;

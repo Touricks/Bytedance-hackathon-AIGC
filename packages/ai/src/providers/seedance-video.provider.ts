@@ -18,6 +18,8 @@ export interface SeedanceVideoResult {
   provider: "mock" | "seedance";
   model: string;
   prompt: string;
+  taskId?: string;
+  createdAt?: number;
 }
 
 interface SeedanceProviderOptions {
@@ -450,6 +452,8 @@ export async function generateVideoWithSeedance(
     videoUrl,
     provider: "seedance",
     model: config.model,
-    prompt: request.prompt
+    prompt: request.prompt,
+    ...(taskId ? { taskId } : {}),
+    createdAt: Math.floor(Date.now() / 1000)
   };
 }

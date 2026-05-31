@@ -17,11 +17,11 @@ export function VideoCandidatesStep({
   const status = useShotWorkflowStatus(workspaceId);
   const shot = status.data?.data.shots.find((s) => s.shotId === shotId);
   const batchId = shot?.activeVideoBatchId ?? null;
-  const batch = useVideoBatch(shotId, batchId);
+  const batch = useVideoBatch(workspaceId, shotId, batchId);
 
   const select = useMutation({
     mutationFn: (candId: string) =>
-      selectVideo(shotId, {
+      selectVideo(workspaceId, shotId, {
         videoCandidateId: candId,
         videoGenerationBatchId: batchId!,
       }),
@@ -40,7 +40,7 @@ export function VideoCandidatesStep({
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] });
-      qc.invalidateQueries({ queryKey: ["video-batch", shotId, batchId] });
+      qc.invalidateQueries({ queryKey: ["video-rounds", workspaceId, shotId, batchId] });
     },
   });
 

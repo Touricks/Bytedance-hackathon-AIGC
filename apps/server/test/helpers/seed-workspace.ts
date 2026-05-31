@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { api } from "./api-client.js";
-import { pollUntil } from "./poll.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -158,17 +157,8 @@ function extractShotsArray(resp: unknown): ShotRow[] {
 
 interface ImagePromptProposeResponse {
   data: { id: string };
-}
-
-interface ImageBatchCreateResponse {
-  data: { batchId: string };
-}
-
-interface ImageBatchStatusResponse {
-  data: {
-    status: string;
-    candidates: Array<{ id: string; imageUrl: string; status: string }>;
-  };
+  batch: { id: string };
+  candidates: Array<{ id: string; imageUrl: string; status: string }>;
 }
 
 export async function seedShotWithSelectedImage(
@@ -187,40 +177,16 @@ export async function seedShotWithSelectedImage(
     `/api/workspaces/${ws.workspaceId}/shots/${shotId}/image-prompts/propose`,
     {
       method: "POST",
-      body: JSON.stringify({ referenceAssetIds: ws.materialAssetIds }),
+      body: JSON.stringify({}),
     },
   );
-
-  const batch = await api<ImageBatchCreateResponse>(
-    `/api/shots/${shotId}/image-batches`,
-    {
-      method: "POST",
-      headers: { "Idempotency-Key": `seed-${shotId}-${Date.now()}` },
-      body: JSON.stringify({
-        imagePromptArtifactId: proposal.data.id,
-        count: 2,
-        aspectRatio: "9:16",
-      }),
-    },
-  );
-  const batchId = batch.data.batchId;
-
-  const final = await pollUntil<ImageBatchStatusResponse>({
-    label: `image batch ${batchId}`,
-    intervalMs: 3000,
-    timeoutMs: 4 * 60_000,
-    fetcher: () =>
-      api<ImageBatchStatusResponse>(
-        `/api/shots/${shotId}/image-batches/${batchId}`,
-      ),
-    isDone: (v) => ["SUCCEEDED", "PARTIAL", "FAILED"].includes(v.data.status),
-  });
-  const pick = final.data.candidates.find(
+  const batchId = proposal.batch.id;
+  const pick = proposal.candidates.find(
     (c) => c.status === "SUCCEEDED" && c.imageUrl,
   );
   if (!pick) throw new Error(`no usable candidate in batch ${batchId}`);
 
-  await api(`/api/shots/${shotId}/selected-image`, {
+  await api(`/api/workspaces/${ws.workspaceId}/shots/${shotId}/image-candidates/select`, {
     method: "POST",
     body: JSON.stringify({
       imageCandidateId: pick.id,

@@ -432,6 +432,18 @@ describe("workspace API", () => {
     return open(path.join(materialDirectory, filename), "w");
   }
 
+  async function readReviewSnapshot(
+    directory: string,
+    filename: string,
+  ): Promise<Record<string, unknown>> {
+    return JSON.parse(
+      await readFile(
+        path.join(directory, ".daireel", "review", filename),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+  }
+
   async function uploadWorkspaceMaterialMultipart(input: {
     workspaceId: string;
     filename: string;
@@ -870,7 +882,7 @@ describe("workspace API", () => {
     );
   });
 
-  it("validates multipart workspace material uploads and dedupes same-name files", async () => {
+  it("validates multipart workspace material uploads and overwrites same-name files", async () => {
     const created =
       await createLogicalWorkspaceWithLocalStorage("Upload Validation");
 
@@ -883,14 +895,39 @@ describe("workspace API", () => {
     assert.equal(imageResponse.statusCode, 200, imageResponse.body);
     assert.equal(imageResponse.json().material.ref, "product.png");
 
-    const duplicateResponse = await uploadWorkspaceMaterialMultipart({
+    const firstTextResponse = await uploadWorkspaceMaterialMultipart({
       workspaceId: created.workspace.id,
-      filename: "product.png",
-      content: transparentPngBytes,
-      contentType: "image/png",
+      filename: "notes.txt",
+      content: "first notes",
+      contentType: "text/plain",
     });
-    assert.equal(duplicateResponse.statusCode, 200, duplicateResponse.body);
-    assert.equal(duplicateResponse.json().material.ref, "product-1.png");
+    assert.equal(firstTextResponse.statusCode, 200, firstTextResponse.body);
+    assert.equal(firstTextResponse.json().material.ref, "notes.txt");
+
+    const overwrittenTextResponse = await uploadWorkspaceMaterialMultipart({
+      workspaceId: created.workspace.id,
+      filename: "notes.txt",
+      content: "replacement notes",
+      contentType: "text/plain",
+    });
+    assert.equal(
+      overwrittenTextResponse.statusCode,
+      200,
+      overwrittenTextResponse.body,
+    );
+    assert.equal(overwrittenTextResponse.json().material.ref, "notes.txt");
+    assert.equal(
+      await readFile(
+        path.join(
+          created.workspace.localPath,
+          ".daireel",
+          "materials",
+          "notes.txt",
+        ),
+        "utf8",
+      ),
+      "replacement notes",
+    );
 
     const videoResponse = await uploadWorkspaceMaterialMultipart({
       workspaceId: created.workspace.id,
@@ -1481,6 +1518,18 @@ describe("workspace API", () => {
     assert.equal(proposed.artifact.data.coreSellingPoint, "USB-C charging");
     assert.equal(proposed.form.artifactType, "brief");
     assert.equal(proposed.promptView.nl.title, "商品简报提示词");
+    const proposedSnapshot = await readReviewSnapshot(
+      directory,
+      "product-brief.proposed.json",
+    );
+    assert.equal(proposedSnapshot.artifact, "product-brief");
+    assert.equal(proposedSnapshot.status, "proposed");
+    assert.equal(proposedSnapshot.schemaVersion, "product-brief.v1");
+    assert.equal(proposedSnapshot.workspaceId, proposed.workspace.id);
+    assert.equal(
+      (proposedSnapshot.data as { coreSellingPoint: string }).coreSellingPoint,
+      "USB-C charging",
+    );
     assert.deepEqual(
       proposed.form.fields.map((field: { path: string }) => field.path),
       [
@@ -1516,6 +1565,15 @@ describe("workspace API", () => {
     assert.equal(approved.workspace.status, "brief_approved");
     assert.equal(approved.artifact.status, "approved");
     assert.equal(approved.artifact.data.coreSellingPoint, "easy cleaning");
+    const approvedSnapshot = await readReviewSnapshot(
+      directory,
+      "product-brief.approved.json",
+    );
+    assert.equal(approvedSnapshot.status, "approved");
+    assert.equal(
+      (approvedSnapshot.data as { coreSellingPoint: string }).coreSellingPoint,
+      "easy cleaning",
+    );
   });
 
   it("uses the runtime product brief builder in real provider mode", async () => {
@@ -1692,6 +1750,19 @@ describe("workspace API", () => {
       voiceover: "Meet Portable Mini Blender.",
       transition: "cut",
     });
+    const proposedSnapshot = await readReviewSnapshot(
+      directory,
+      "storyboard.proposed.json",
+    );
+    assert.equal(proposedSnapshot.artifact, "storyboard");
+    assert.equal(proposedSnapshot.status, "proposed");
+    assert.equal(proposedSnapshot.schemaVersion, "ugc-storyboard.v1");
+    assert.equal(proposedSnapshot.workspaceId, proposed.workspace.id);
+    assert.equal(
+      (proposedSnapshot.data as { shots: Array<{ visualDirection: string }> })
+        .shots[0]!.visualDirection,
+      "Show product.png as the primary product asset with clean premium ecommerce styling.",
+    );
     assert.equal(proposed.form.artifactType, "storyboard");
     assert.equal(proposed.promptView.nl.title, "口播分镜提示词");
     assert.deepEqual(
@@ -1734,6 +1805,16 @@ describe("workspace API", () => {
     assert.equal(approved.artifact.status, "approved");
     assert.equal(
       approved.artifact.data.shots[0].visualDirection,
+      "Open with a fast desk setup reveal.",
+    );
+    const approvedSnapshot = await readReviewSnapshot(
+      directory,
+      "storyboard.approved.json",
+    );
+    assert.equal(approvedSnapshot.status, "approved");
+    assert.equal(
+      (approvedSnapshot.data as { shots: Array<{ visualDirection: string }> })
+        .shots[0]!.visualDirection,
       "Open with a fast desk setup reveal.",
     );
   });

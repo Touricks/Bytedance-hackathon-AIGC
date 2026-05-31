@@ -11,7 +11,7 @@
     "db:clear": "node scripts/clear-postgres.mjs",
     "redis:clear": "node scripts/clear-redis.mjs",
     "reset:dev": "node scripts/reset-dev-session.mjs",
-    "realitest": "newman run docs/test/provider.json -e docs/test/provider.env.json --timeout-request 900000 --reporters cli",
+    "realitest": "node scripts/run-realitest.mjs",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "format": "prettier --write .",

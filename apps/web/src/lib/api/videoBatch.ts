@@ -1,8 +1,5 @@
-import {
-  fetchJson,
-  type WorkflowEnvelope,
-  type AspectRatio,
-} from "./client.js";
+import { fetchJson, type WorkflowEnvelope } from "./client.js";
+import type { VideoScriptArtifact } from "./videoScript.js";
 
 export interface VideoCandidate {
   id: string;
@@ -14,6 +11,7 @@ export interface VideoCandidate {
 }
 
 export interface VideoBatchDetail {
+  id: string;
   batchId: string;
   status:
     | "PENDING"
@@ -28,27 +26,60 @@ export interface VideoBatchDetail {
   candidates: VideoCandidate[];
 }
 
-export function createVideoBatch(
-  shotId: string,
-  body: {
-    videoScriptArtifactId: string;
-    count?: number;
-    aspectRatio: AspectRatio;
-  },
-  idempotencyKey: string,
-) {
-  return fetchJson<WorkflowEnvelope<{ batchId: string; jobId: string }>>(
-    `/api/shots/${shotId}/video-batches`,
-    {
-      method: "POST",
-      headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify(body),
-    },
+interface VideoBatchRow extends Omit<VideoBatchDetail, "batchId" | "candidates"> {
+  workspaceId: string;
+  shotId: string;
+  videoScriptArtifactId: string;
+  provider: string;
+  aspectRatio: string;
+  providerRequest: unknown;
+  errorMessage: string | null;
+  idempotencyKey: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VideoRound {
+  artifact: VideoScriptArtifact;
+  batch: VideoBatchRow | null;
+  candidates: VideoCandidate[];
+  selection: {
+    shotId: string;
+    selectedCandidateId: string;
+    selectedVideoUrl: string;
+    duration: number;
+    allShotsVideoSelected: boolean;
+  } | null;
+  frames: {
+    firstFrameUrl: string | null;
+    lastFrameUrl: string | null;
+    firstFrameCandidateId: string | null;
+    lastFrameCandidateId: string | null;
+  };
+  context: unknown;
+}
+
+export function listVideoRounds(workspaceId: string, shotId: string) {
+  return fetchJson<{ data: VideoRound[] }>(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/video-rounds`,
   );
 }
 
-export function getVideoBatch(shotId: string, batchId: string) {
-  return fetchJson<WorkflowEnvelope<VideoBatchDetail>>(
-    `/api/shots/${shotId}/video-batches/${batchId}`,
-  );
+export async function getVideoBatch(
+  workspaceId: string,
+  shotId: string,
+  batchId: string,
+): Promise<WorkflowEnvelope<VideoBatchDetail>> {
+  const rounds = await listVideoRounds(workspaceId, shotId);
+  const round = rounds.data.find((item) => item.batch?.id === batchId);
+  if (!round?.batch) {
+    throw new Error(`Video round ${batchId} was not found`);
+  }
+  return {
+    data: {
+      ...round.batch,
+      batchId: round.batch.id,
+      candidates: round.candidates,
+    },
+  };
 }

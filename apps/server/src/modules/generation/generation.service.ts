@@ -14,10 +14,13 @@ export const generationService = {
     count?: number;
     aspectRatio: "9:16" | "16:9" | "1:1";
     idempotencyKey: string;
+    providerRequest?: Record<string, unknown>;
+    referenceImageUrls?: string[];
   }) {
     const existing = await db.db2.getImageBatchByIdempotencyKey(input.idempotencyKey);
     if (existing) {
-      return { data: existing, deduped: true };
+      const candidates = await db.db2.listImageCandidatesByBatch(existing.id);
+      return { data: existing, candidates, deduped: true };
     }
     const count = shotWorkflowService.resolveBatchCount("image", input.count);
     const batch = await db.db2.insertImageBatch({
@@ -31,47 +34,88 @@ export const generationService = {
       failedCount: 0,
       provider: "ark-seedream",
       aspectRatio: input.aspectRatio,
-      providerRequest: {},
+      providerRequest: input.providerRequest ?? {},
       errorMessage: null,
       idempotencyKey: input.idempotencyKey,
     });
-    const job = await jobRepository.insert({
-      id: "job_" + nanoid(10),
-      workspaceId: input.workspaceId,
-      shotId: input.shotId,
-      jobType: "generate_images",
-      status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
-      queueJobId: null,
-      relatedBatchType: "image_generation_batch",
-      relatedBatchId: batch.id,
-      payload: {},
-      progress: 0,
-      attemptCount: 0,
-      maxAttempts: 3,
-      errorMessage: null,
-      startedAt: null,
-      completedAt: null,
-    });
+    const candidates = [];
+    const jobIds = [];
+    const queueJobIds = [];
+    for (let candidateIndex = 0; candidateIndex < count; candidateIndex += 1) {
+      const candidate = await db.db2.insertImageCandidate({
+        id: "imc_" + nanoid(10),
+        batchId: batch.id,
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        imageUrl: null,
+        objectKey: null,
+        width: null,
+        height: null,
+        seed: null,
+        provider: "ark-seedream",
+        providerResponse: { candidateIndex },
+        status: "PENDING",
+        errorMessage: null,
+      });
+      candidates.push(candidate);
+      const payload = {
+        batchId: batch.id,
+        candidateId: candidate.id,
+        candidateIndex,
+        shotId: input.shotId,
+        workspaceId: input.workspaceId,
+        imagePromptArtifactId: input.imagePromptArtifactId,
+        aspectRatio: input.aspectRatio,
+        referenceImageUrls: input.referenceImageUrls ?? [],
+      };
+      const job = await jobRepository.insert({
+        id: "job_" + nanoid(10),
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        jobType: "generate_image_candidate",
+        status: "PENDING",
+        queueName: GENERATION_V2_QUEUE_NAME,
+        queueJobId: null,
+        relatedBatchType: "image_candidate",
+        relatedBatchId: candidate.id,
+        payload,
+        progress: 0,
+        attemptCount: 0,
+        maxAttempts: 3,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+      });
+      const queueJobId = await enqueueGenerationV2({
+        kind: "generate_image_candidate",
+        jobId: job.id,
+        batchId: batch.id,
+        candidateId: candidate.id,
+        candidateIndex,
+        shotId: input.shotId,
+        workspaceId: input.workspaceId,
+        imagePromptArtifactId: input.imagePromptArtifactId,
+        aspectRatio: input.aspectRatio,
+        referenceImageUrls: input.referenceImageUrls,
+        traceId: nanoid(),
+      });
+      jobIds.push(job.id);
+      if (queueJobId) {
+        queueJobIds.push(queueJobId);
+        await jobRepository.update(job.id, { queueJobId });
+      }
+    }
     await db.db2.updateShot(input.shotId, { status: "IMAGE_GENERATING" });
-    await enqueueGenerationV2({
-      kind: "generate_images",
-      jobId: job.id,
-      batchId: batch.id,
-      shotId: input.shotId,
-      workspaceId: input.workspaceId,
-      imagePromptArtifactId: input.imagePromptArtifactId,
-      count,
-      aspectRatio: input.aspectRatio,
-      traceId: nanoid(),
-    });
     return {
       data: {
         batchId: batch.id,
-        jobId: job.id,
+        jobIds,
+        queueJobIds,
         status: batch.status,
         requestedCount: count,
       },
+      batch,
+      candidates,
     };
   },
 

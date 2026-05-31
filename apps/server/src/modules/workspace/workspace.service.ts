@@ -55,6 +55,7 @@ import {
 const workspaceManifestRelativePath = path.join(".daireel", "workspace.json");
 const workspaceTraceFile = ".daireel/trace/events.jsonl" as const;
 const workspaceMaterialsRelativePath = path.join(".daireel", "materials");
+const workspaceReviewRelativePath = path.join(".daireel", "review");
 export const maxWorkspaceMaterialBytes = 50 * 1024 * 1024;
 
 const mimeByExtension: Record<string, string> = {
@@ -154,23 +155,6 @@ async function fileExists(filePath: string) {
   }
 }
 
-async function uniqueWorkspaceMaterialFilename(
-  directory: string,
-  filename: string,
-) {
-  const ext = path.extname(filename);
-  const name = filename.slice(0, filename.length - ext.length);
-  let candidate = filename;
-  let index = 1;
-
-  while (await fileExists(path.join(directory, candidate))) {
-    candidate = `${name}-${index}${ext}`;
-    index += 1;
-  }
-
-  return candidate;
-}
-
 function manifestPath(directory: string) {
   return path.join(directory, workspaceManifestRelativePath);
 }
@@ -194,6 +178,38 @@ async function writeManifest(directory: string, manifest: WorkspaceManifest) {
   await writeFile(
     manifestPath(directory),
     `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+}
+
+async function writeReviewSnapshot(input: {
+  localPath: string;
+  workspace: CreativeWorkspace;
+  artifact: "product-brief" | "storyboard";
+  status: "proposed" | "approved";
+  schemaVersion: string;
+  data: ProductBriefArtifact | StoryboardArtifact;
+}) {
+  const reviewPath = path.join(
+    input.localPath,
+    workspaceReviewRelativePath,
+    `${input.artifact}.${input.status}.json`,
+  );
+  await mkdir(path.dirname(reviewPath), { recursive: true });
+  await writeFile(
+    reviewPath,
+    `${JSON.stringify(
+      {
+        artifact: input.artifact,
+        status: input.status,
+        schemaVersion: input.schemaVersion,
+        workspaceId: input.workspace.id,
+        scriptId: input.workspace.currentScriptId,
+        writtenAt: new Date().toISOString(),
+        data: input.data,
+      },
+      null,
+      2,
+    )}\n`,
   );
 }
 
@@ -1478,13 +1494,10 @@ export const workspaceService = {
 
     const materialDirectory = workspaceMaterialsPath(localPath);
     await mkdir(materialDirectory, { recursive: true });
-    const filename = await uniqueWorkspaceMaterialFilename(
-      materialDirectory,
-      requestedFilename,
-    );
+    const filename = requestedFilename;
     const storagePath = path.join(materialDirectory, filename);
     await writeFile(storagePath, bytes);
-    const mime = workspaceMaterialMime(filename) ?? requestedMime;
+    const mime = requestedMime;
     const digest = sha256(bytes);
     const kind = classifyKind(mime);
     const asset = await db.createAsset({
@@ -1682,6 +1695,14 @@ export const workspaceService = {
       status: "proposed",
       data,
     });
+    await writeReviewSnapshot({
+      localPath,
+      workspace,
+      artifact: "product-brief",
+      status: "proposed",
+      schemaVersion: "product-brief.v1",
+      data,
+    });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
       status: "brief_proposed",
     });
@@ -1707,6 +1728,14 @@ export const workspaceService = {
       scriptId: workspace.currentScriptId,
       type: "brief",
       status: "approved",
+      data: approvedData,
+    });
+    await writeReviewSnapshot({
+      localPath,
+      workspace,
+      artifact: "product-brief",
+      status: "approved",
+      schemaVersion: "product-brief.v1",
       data: approvedData,
     });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
@@ -1756,6 +1785,14 @@ export const workspaceService = {
       status: "proposed",
       data,
     });
+    await writeReviewSnapshot({
+      localPath,
+      workspace,
+      artifact: "storyboard",
+      status: "proposed",
+      schemaVersion: "ugc-storyboard.v1",
+      data,
+    });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {
       status: "storyboard_proposed",
     });
@@ -1781,6 +1818,14 @@ export const workspaceService = {
       scriptId: workspace.currentScriptId,
       type: "storyboard",
       status: "approved",
+      data: approvedData,
+    });
+    await writeReviewSnapshot({
+      localPath,
+      workspace,
+      artifact: "storyboard",
+      status: "approved",
+      schemaVersion: "ugc-storyboard.v1",
       data: approvedData,
     });
     const updatedWorkspace = await db.updateWorkspace(workspace.id, {

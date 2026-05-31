@@ -1,4 +1,5 @@
 import { fetchJson, type WorkflowEnvelope } from "./client.js";
+import type { ImageBatchDetail, ImageCandidate } from "./imageBatch.js";
 
 export interface ImagePromptArtifact {
   id: string;
@@ -16,29 +17,21 @@ export function proposeImagePrompt(
   workspaceId: string,
   shotId: string,
   body: {
-    referenceAssetIds: string[];
-    userHint?: string;
-    stylePresetId?: string;
+    userDirection?: string;
   },
 ) {
-  return fetchJson<WorkflowEnvelope<ImagePromptArtifact>>(
+  return fetchJson<
+    WorkflowEnvelope<ImagePromptArtifact> & {
+      artifact: ImagePromptArtifact;
+      batch: ImageBatchDetail;
+      candidates: ImageCandidate[];
+      created?: number;
+      usage?: unknown;
+      context?: unknown;
+    }
+  >(
     `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`,
     { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
-export function patchImagePrompt(
-  shotId: string,
-  artifactId: string,
-  body: {
-    promptText: string;
-    negativePrompt?: string;
-    referenceAssetIds: string[];
-  },
-) {
-  return fetchJson<WorkflowEnvelope<ImagePromptArtifact>>(
-    `/api/shots/${shotId}/image-prompts/${artifactId}`,
-    { method: "PATCH", body: JSON.stringify(body) },
   );
 }
 

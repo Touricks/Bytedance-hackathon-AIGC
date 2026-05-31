@@ -14,13 +14,15 @@ This repo uses a single-context domain layout rooted at `CONTEXT.md`. See `docs/
 
 ### Storage cleanup
 
-Before a new-version test run, prefer the one-shot reset:
+Before a new version test run, prefer the one-shot reset:
 
 ```sh
 pnpm reset:dev -- --yes
 ```
 
 It stops current `SERVER_PORT` / `WEB_PORT` listeners, clears Postgres business tables, clears BullMQ `generation` / `generation_v2` Redis queues, then starts `pnpm dev`.
+
+IMPORTANT: This do not delete workspace file in test folder. ({testDir}/.daireel/), which may cause some problems when implementing second tests. Delete them by yourself when needed.
 
 For cleanup without restarting dev:
 
@@ -44,9 +46,7 @@ git worktree add -b dev_$(date +%Y%m%d%H%M%S) <worktree-path> main
 When context is compacted or a new agent joins, use these files to regain the project center before making backend or provider changes:
 
 - `docs/reference/`: authoritative model/provider API references and examples. Use this for Ark text/image and Seedance video request/response shapes before changing provider calls.
-- `docs/0530-dev/`: current backend development plan and target API contract. Treat `backend-development-plan.md`, `openapi.yaml`, `postman-test-plan.md`, and the handoff doc as the active implementation guide.
-- `docs/0528-agent-arc/spec/r2.md`: latest per-shot storyboard -> image -> video architecture review. Use it to understand already-found backend gaps and provider/test corrections.
-- `docs/0529-dev/`: product, prompt, frontend, backend, and test API documentation from the previous design pass. Use it as supporting context, not as the newest source of truth when it conflicts with `docs/0530-dev/`.
+- `docs/core/`: current target API contract. 
 - `CONTEXT.md`: canonical domain language. Use these terms in new docs, issues, comments, and API explanations.
 
 ### User preference

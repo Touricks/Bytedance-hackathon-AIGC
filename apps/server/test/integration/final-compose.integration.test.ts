@@ -13,36 +13,21 @@ describe("final compose @expensive", { skip: !RUN || !ALLOW }, () => {
 
   before(async () => {
     ws = await seedWorkspace({ label: `it-final-${Date.now()}` });
-    // Per-shot: image-select, then video-script + video-batch + select
+    // Per-shot: image-select, then video-script propose directly returns candidates.
     for (let i = 0; i < ws.shotIds.length; i++) {
       const ctx = await seedShotWithSelectedImage(ws, i);
-      const script = await api<{ data: { id: string } }>(
+      const script = await api<{
+        batch: { id: string };
+        candidates: Array<{ id: string; videoUrl: string; status: string }>;
+      }>(
         `/api/workspaces/${ws.workspaceId}/shots/${ctx.shotId}/video-scripts/propose`,
-        { method: "POST", body: JSON.stringify({ durationSec: 4, useNeighborFrames: true }) },
-      );
-      const batch = await api<{ data: { batchId: string } }>(
-        `/api/shots/${ctx.shotId}/video-batches`,
-        {
-          method: "POST",
-          headers: { "Idempotency-Key": `it-final-${ctx.shotId}-${Date.now()}` },
-          body: JSON.stringify({ videoScriptArtifactId: script.data.id, count: 1, aspectRatio: "9:16" }),
-        },
-      );
-      const done = await pollUntil({
-        label: `video batch shot ${i}`,
-        intervalMs: 8000,
-        timeoutMs: 15 * 60_000,
-        fetcher: () =>
-          api<{ data: { status: string; candidates: Array<{ id: string; videoUrl: string; status: string }> } }>(
-            `/api/shots/${ctx.shotId}/video-batches/${batch.data.batchId}`,
-          ),
-        isDone: (v) => ["SUCCEEDED", "PARTIAL", "FAILED"].includes(v.data.status),
+        { method: "POST", body: JSON.stringify({}) },
       });
-      const pick = done.data.candidates.find((c) => c.status === "SUCCEEDED" && c.videoUrl);
+      const pick = script.candidates.find((c) => c.status === "SUCCEEDED" && c.videoUrl);
       assert.ok(pick, `shot ${i} produced no video`);
-      await api(`/api/shots/${ctx.shotId}/selected-video`, {
+      await api(`/api/workspaces/${ws.workspaceId}/shots/${ctx.shotId}/video-candidates/select`, {
         method: "POST",
-        body: JSON.stringify({ videoCandidateId: pick!.id, videoGenerationBatchId: batch.data.batchId }),
+        body: JSON.stringify({ videoCandidateId: pick!.id, videoGenerationBatchId: script.batch.id }),
       });
     }
   });

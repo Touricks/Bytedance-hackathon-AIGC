@@ -296,6 +296,10 @@ export interface Db2Adapter {
   insertImageCandidate(
     input: Omit<ImageCandidateRow, "createdAt">
   ): Promise<ImageCandidateRow>;
+  updateImageCandidate(
+    id: string,
+    patch: Partial<ImageCandidateRow>
+  ): Promise<ImageCandidateRow>;
   listImageCandidatesByBatch(batchId: string): Promise<ImageCandidateRow[]>;
   getImageCandidate(id: string): Promise<ImageCandidateRow>;
   // Selected images
@@ -1717,6 +1721,40 @@ class PostgresDb2Adapter implements Db2Adapter {
         input.status,
         input.errorMessage ?? null
       ]
+    );
+    return firstRow(result.rows, "ImageCandidate", toImageCandidateRow);
+  }
+
+  async updateImageCandidate(
+    id: string,
+    patch: Partial<ImageCandidateRow>
+  ): Promise<ImageCandidateRow> {
+    const colMap: Record<string, string> = {
+      imageUrl: "image_url",
+      objectKey: "object_key",
+      width: "width",
+      height: "height",
+      seed: "seed",
+      provider: "provider",
+      providerResponse: "provider_response",
+      status: "status",
+      errorMessage: "error_message"
+    };
+    const keys = Object.keys(patch).filter((k) => k in colMap);
+    if (keys.length === 0) {
+      return this.getImageCandidate(id);
+    }
+    const setClauses = keys.map((k, i) => `${colMap[k]} = $${i + 2}`);
+    const values = keys.map((k) => {
+      const v = (patch as Record<string, unknown>)[k];
+      return k === "providerResponse" ? jsonbParam(v) : v;
+    });
+    const result = await this._pool.query(
+      `update image_candidates
+       set ${setClauses.join(", ")}
+       where id = $1
+       returning *`,
+      [id, ...values]
     );
     return firstRow(result.rows, "ImageCandidate", toImageCandidateRow);
   }

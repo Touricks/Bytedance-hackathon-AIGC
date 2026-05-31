@@ -1,0 +1,1758 @@
+openapi: 3.1.0
+info:
+  title: Bytedancehack Backend API
+  version: 0.2.0-0530
+  description: |
+    0530 target backend contract derived from docs/0529-dev/product-api and
+    docs/0529-dev/prompt-api.
+
+    Design notes:
+    - Prompt-facing provider text must be assembled in Chinese.
+    - LLM providers may draft editable artifacts only. Approved artifacts are
+      compiled deterministically for downstream provider calls.
+    - Workspace-scoped shot routes are the preferred 0530 frontend contract.
+      Existing /api/shots/{shotId} routes may remain as compatibility paths.
+    - Workspace is a logical DB record. Local directory and future S3 location
+      are modeled as a one-to-one storage binding.
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+tags:
+  - name: System
+  - name: Workspace
+  - name: Storage
+  - name: Materials
+  - name: Artifacts
+  - name: Shots
+  - name: Image Workflow
+  - name: Video Workflow
+  - name: Final Video
+  - name: Campaign
+  - name: Trace
+
+paths:
+  /api/health:
+    get:
+      tags: [System]
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/config/limits:
+    get:
+      tags: [System]
+      summary: Get configured generation limits.
+      operationId: getConfigLimits
+      responses:
+        "200":
+          description: Batch size limits and supported aspect ratios.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ConfigLimits"
+
+  /api/workspaces:
+    get:
+      tags: [Workspace]
+      summary: List logical workspaces.
+      operationId: listWorkspaces
+      responses:
+        "200":
+          description: Logical workspaces with storage binding summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspaces]
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workspace"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Workspace]
+      summary: Create a logical workspace.
+      description: Creates a workspace id and script context only. Bind local or S3 storage through /api/workspaces/{workspaceId}/storage/bind before uploading materials or starting artifact workflows.
+      operationId: createWorkspace
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceRequest"
+      responses:
+        "200":
+          description: Workspace, manifest, and unbound storage summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceInitializeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/storage:
+    get:
+      tags: [Storage]
+      summary: Get workspace storage binding.
+      operationId: getWorkspaceStorage
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Active workspace storage binding, or an unbound state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [workspaceId, storage]
+                    properties:
+                      workspaceId:
+                        type: string
+                      storage:
+                        $ref: "#/components/schemas/WorkspaceStorage"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/storage/bind:
+    post:
+      tags: [Storage]
+      summary: Bind local or S3 storage to a workspace.
+      description: A workspace can have only one active binding. The same localPath or S3 bucket+prefix cannot be bound to another workspace.
+      operationId: bindWorkspaceStorage
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceStorageBindRequest"
+      responses:
+        "200":
+          description: Bound storage.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [workspaceId, storage]
+                    properties:
+                      workspaceId:
+                        type: string
+                      storage:
+                        $ref: "#/components/schemas/WorkspaceStorage"
+        "409":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/status:
+    post:
+      tags: [Workspace]
+      summary: Get workspace pipeline status.
+      description: If a logical workspace has no active storage binding, nextAction is BIND_STORAGE and downstream material/artifact/shot routes should not proceed.
+      operationId: getWorkspaceStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceTargetRequest"
+      responses:
+        "200":
+          description: Workspace status, materials, artifacts, and next action.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/materials:
+    post:
+      tags: [Materials]
+      summary: Upload a material into the workspace.
+      description: Requires an active local workspace storage binding. The response includes assetId so downstream shot_asset_refs and provider reference-image resolution can use the same stable identifier.
+      operationId: uploadWorkspaceMaterial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadMaterialJsonRequest"
+          multipart/form-data:
+            schema:
+              type: object
+              required: [workspaceId, file]
+              properties:
+                workspaceId:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Uploaded material.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspace, material]
+                properties:
+                  workspace:
+                    $ref: "#/components/schemas/Workspace"
+                  material:
+                    $ref: "#/components/schemas/MaterialUploadResult"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/material-intake:
+    post:
+      tags: [Artifacts]
+      summary: Propose material intake artifact.
+      operationId: proposeMaterialIntake
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  properties:
+                    prompt:
+                      type: string
+                    selectedMaterialRefs:
+                      type: array
+                      items:
+                        type: string
+      responses:
+        "200":
+          description: Material intake artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArtifactResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/brief/propose:
+    post:
+      tags: [Artifacts]
+      summary: Propose product brief artifact.
+      operationId: proposeBrief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  properties:
+                    userDirection:
+                      type: string
+                    title:
+                      type: string
+                    sellingPoints:
+                      type: string
+                    audience:
+                      type: string
+                    stylePreference:
+                      type: string
+      responses:
+        "200":
+          description: Product brief artifact draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArtifactResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/artifacts/brief/approve:
+    post:
+      tags: [Artifacts]
+      summary: Approve product brief artifact.
+      operationId: approveBrief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  required: [data]
+                  properties:
+                    data:
+                      $ref: "#/components/schemas/ProductBriefArtifact"
+      responses:
+        "200":
+          description: Approved brief artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArtifactResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/storyboard/propose:
+    post:
+      tags: [Artifacts]
+      summary: Propose storyboard artifact.
+      operationId: proposeStoryboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  properties:
+                    userDirection:
+                      type: string
+      responses:
+        "200":
+          description: Storyboard artifact draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArtifactResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/artifacts/storyboard/approve:
+    post:
+      tags: [Artifacts]
+      summary: Approve storyboard artifact.
+      operationId: approveStoryboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  required: [data]
+                  properties:
+                    data:
+                      $ref: "#/components/schemas/StoryboardArtifact"
+      responses:
+        "200":
+          description: Approved storyboard artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArtifactResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/shotprompt/compile:
+    post:
+      tags: [Artifacts]
+      summary: Compile approved storyboard into shot prompt artifact.
+      description: Deterministic target for approved storyboard. A compatibility name is compile; product docs may call this propose.
+      operationId: compileShotPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  properties:
+                    aspectRatio:
+                      $ref: "#/components/schemas/AspectRatio"
+                    userDirection:
+                      type: string
+      responses:
+        "200":
+          description: Shot prompt artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceArtifactResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/artifacts/shotprompt/approve:
+    post:
+      tags: [Artifacts]
+      summary: Approve shot prompt and seed storyboard shots.
+      operationId: approveShotPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WorkspaceTargetRequest"
+                - type: object
+                  required: [data]
+                  properties:
+                    data:
+                      $ref: "#/components/schemas/ShotPromptArtifact"
+      responses:
+        "200":
+          description: Approved shot prompt and seeded shots.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots:
+    get:
+      tags: [Shots]
+      summary: List shots for a workspace.
+      operationId: listWorkspaceShots
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Ordered shots.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Shot"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shot-workflow-status:
+    get:
+      tags: [Shots]
+      summary: Get shot workflow status for all shots.
+      operationId: getShotWorkflowStatus
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Shot status summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShotWorkflowStatusResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/propose:
+    post:
+      tags: [Image Workflow]
+      summary: Propose image prompt and enqueue image candidates for a shot.
+      description: Backend injects material refs, number, and image_ref. Shot 0 uses the primary product image; shot N requires the previous shot selected image. The response includes one queued candidate slot per requested image; each slot is fulfilled by a Redis-managed single-image provider job. Clients may only provide userDirection.
+      operationId: proposeShotImagePrompt
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                userDirection:
+                  type: string
+      responses:
+        "200":
+          description: Image prompt artifact plus queued image candidates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageProposeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-rounds:
+    get:
+      tags: [Image Workflow]
+      summary: List image prompt rounds and candidates for a shot.
+      operationId: listShotImageRounds
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200":
+          description: Image rounds.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ImageRound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-candidates/select:
+    post:
+      tags: [Image Workflow]
+      summary: Select one image candidate as the shot key frame.
+      description: Workspace-scoped selection route. Select does not stale downstream artifacts.
+      operationId: selectShotImageCandidate
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateId]
+              properties:
+                candidateId:
+                  type: string
+      responses:
+        "200":
+          description: Selected image state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageSelectionResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-scripts/propose:
+    post:
+      tags: [Video Workflow]
+      summary: Propose video script and generate video candidates for a shot.
+      description: All shots must be image-selected before video generation is unlocked. Backend injects first_frame_url, last_frame_url, number, and storyboard duration; clients may only provide userDirection.
+      operationId: proposeShotVideoScript
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                userDirection:
+                  type: string
+      responses:
+        "200":
+          description: Video script artifact plus generated video candidates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoProposeResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-rounds:
+    get:
+      tags: [Video Workflow]
+      summary: List video script rounds and candidates for a shot.
+      operationId: listShotVideoRounds
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200":
+          description: Video rounds.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VideoRound"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-candidates/select:
+    post:
+      tags: [Video Workflow]
+      summary: Select one video candidate for final composition.
+      description: Workspace-scoped selection route. Select does not stale downstream artifacts.
+      operationId: selectShotVideoCandidate
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateId]
+              properties:
+                candidateId:
+                  type: string
+      responses:
+        "200":
+          description: Selected video state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoSelectionResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/final-videos:
+    post:
+      tags: [Final Video]
+      summary: Create final video compose job.
+      operationId: createFinalVideo
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outputAspectRatio:
+                  $ref: "#/components/schemas/AspectRatio"
+      responses:
+        "200":
+          description: Created or deduped final compose job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [finalVideoJobId, jobId, status]
+                    properties:
+                      finalVideoJobId:
+                        type: string
+                      jobId:
+                        type: string
+                      status:
+                        $ref: "#/components/schemas/FinalVideoStatus"
+                  deduped:
+                    type: boolean
+        "409":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      tags: [Final Video]
+      summary: List final video jobs for a workspace.
+      operationId: listFinalVideos
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Final video jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FinalVideoJob"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/final-videos/{finalVideoJobId}:
+    get:
+      tags: [Final Video]
+      summary: Get final video job.
+      operationId: getFinalVideo
+      parameters:
+        - $ref: "#/components/parameters/FinalVideoJobId"
+      responses:
+        "200":
+          description: Final video job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/FinalVideoJob"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/final-videos/{finalVideoJobId}/file:
+    get:
+      tags: [Final Video]
+      summary: Read completed final video file.
+      operationId: getFinalVideoFile
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/FinalVideoJobId"
+      responses:
+        "200":
+          description: MP4 file.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/campaign-publications:
+    post:
+      tags: [Campaign]
+      summary: Create a reserved KOL/channel publication record.
+      description: P2 reserved API. It stores publication/channel metadata and does not call external campaign platforms.
+      operationId: createCampaignPublication
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignPublicationRequest"
+      responses:
+        "200":
+          description: Created publication.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignPublicationResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      tags: [Campaign]
+      summary: List KOL/channel publication records for a workspace.
+      operationId: listCampaignPublications
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Campaign publications.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CampaignPublication"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/campaign-publications/{publicationId}:
+    get:
+      tags: [Campaign]
+      summary: Get one KOL/channel publication record.
+      operationId: getCampaignPublication
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
+      responses:
+        "200":
+          description: Campaign publication.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignPublicationResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/campaign-publications/{publicationId}/metrics:
+    post:
+      tags: [Campaign]
+      summary: Record manual exposure/click metrics for a publication.
+      description: P2 reserved API for manually ingested campaign metrics.
+      operationId: recordCampaignPublicationMetrics
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordCampaignMetricsRequest"
+      responses:
+        "200":
+          description: Created metrics snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignMetricsResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+    ShotId:
+      name: shotId
+      in: path
+      required: true
+      schema:
+        type: string
+    BatchId:
+      name: batchId
+      in: path
+      required: true
+      schema:
+        type: string
+    FinalVideoJobId:
+      name: finalVideoJobId
+      in: path
+      required: true
+      schema:
+        type: string
+    PublicationId:
+      name: publicationId
+      in: path
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    AspectRatio:
+      type: string
+      enum: ["9:16", "16:9", "1:1"]
+
+    HealthResponse:
+      type: object
+      required: [ok, runtime]
+      properties:
+        ok:
+          type: boolean
+        runtime:
+          type: string
+
+    ConfigLimits:
+      type: object
+      required:
+        - defaultImageBatchSize
+        - maxImageBatchSize
+        - defaultVideoBatchSize
+        - maxVideoBatchSize
+        - aspectRatios
+      properties:
+        defaultImageBatchSize:
+          type: integer
+        maxImageBatchSize:
+          type: integer
+        defaultVideoBatchSize:
+          type: integer
+        maxVideoBatchSize:
+          type: integer
+        aspectRatios:
+          type: array
+          items:
+            $ref: "#/components/schemas/AspectRatio"
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        statusCode:
+          type: integer
+        code:
+          type: string
+        message:
+          type: string
+
+    WorkspaceTargetRequest:
+      type: object
+      anyOf:
+        - required: [workspaceId]
+        - required: [directory]
+      properties:
+        workspaceId:
+          type: string
+        directory:
+          type: string
+
+    CreateWorkspaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    Workspace:
+      type: object
+      required: [id, currentScriptId, status]
+      properties:
+        id:
+          type: string
+        localPath:
+          type: string
+          description: Legacy compatibility field. Empty until local storage is bound.
+        currentScriptId:
+          type: string
+        currentJobId:
+          type: [string, "null"]
+        status:
+          type: string
+        traceFile:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        storage:
+          $ref: "#/components/schemas/WorkspaceStorage"
+
+    WorkspaceStorage:
+      type: object
+      required: [bound]
+      properties:
+        bound:
+          type: boolean
+        id:
+          type: [string, "null"]
+        kind:
+          type: [string, "null"]
+          enum: [local, s3, null]
+        localPath:
+          type: [string, "null"]
+        s3:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [bucket, prefix]
+              properties:
+                bucket:
+                  type: string
+                prefix:
+                  type: string
+                region:
+                  type: [string, "null"]
+                endpoint:
+                  type: [string, "null"]
+        createdAt:
+          type: [string, "null"]
+        updatedAt:
+          type: [string, "null"]
+
+    WorkspaceStorageBindRequest:
+      oneOf:
+        - type: object
+          required: [kind, localPath]
+          properties:
+            kind:
+              type: string
+              const: local
+            localPath:
+              type: string
+        - type: object
+          required: [kind, bucket, prefix]
+          properties:
+            kind:
+              type: string
+              const: s3
+            bucket:
+              type: string
+            prefix:
+              type: string
+            region:
+              type: string
+            endpoint:
+              type: string
+
+    WorkspaceManifest:
+      type: object
+      required: [schemaVersion, workspaceId, currentScriptId, traceFile]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        workspaceId:
+          type: string
+        currentScriptId:
+          type: string
+        currentJobId:
+          type: string
+        traceFile:
+          type: string
+
+    WorkspaceInitializeResponse:
+      type: object
+      required: [workspace, manifest, storage]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        manifest:
+          $ref: "#/components/schemas/WorkspaceManifest"
+        storage:
+          $ref: "#/components/schemas/WorkspaceStorage"
+
+    UploadMaterialJsonRequest:
+      type: object
+      required: [workspaceId, filename, dataBase64]
+      properties:
+        workspaceId:
+          type: string
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 180
+        dataBase64:
+          type: string
+
+    MaterialUploadResult:
+      type: object
+      required: [assetId, ref, bytes, url]
+      properties:
+        assetId:
+          type: string
+          description: Persistent asset row id used by downstream shot_asset_refs.
+        ref:
+          type: string
+        bytes:
+          type: integer
+        mime:
+          type: string
+        sha256:
+          type: string
+        url:
+          type: string
+
+    WorkspaceArtifact:
+      type: object
+      required: [id, artifactType, status, data]
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        scriptId:
+          type: string
+        artifactType:
+          type: string
+        status:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    WorkspaceArtifactResponse:
+      type: object
+      required: [artifact]
+      properties:
+        artifact:
+          $ref: "#/components/schemas/WorkspaceArtifact"
+        form:
+          type: object
+          additionalProperties: true
+        traceId:
+          type: string
+
+    MaterialIntakeArtifact:
+      type: object
+      required: [primaryProductRef, assets, rejected]
+      properties:
+        scannedAt:
+          type: string
+        primaryProductRef:
+          type: string
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaterialAsset"
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [ref, reason]
+            properties:
+              ref:
+                type: string
+              reason:
+                type: string
+
+    MaterialAsset:
+      type: object
+      required: [ref, kind, mime, role, description]
+      properties:
+        ref:
+          type: string
+        kind:
+          type: string
+          enum: [image, video, text]
+        mime:
+          type: string
+        role:
+          type: string
+        description:
+          type: string
+        included:
+          type: boolean
+        usable:
+          type: boolean
+        sha256:
+          type: string
+
+    ProductBriefArtifact:
+      type: object
+      required: [product, audience, coreSellingPoint, proof, offer, brandTone]
+      additionalProperties: true
+      properties:
+        product:
+          type: object
+          additionalProperties: true
+        audience:
+          type: object
+          additionalProperties: true
+        coreSellingPoint:
+          type: string
+        proof:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        offer:
+          type: [string, "null"]
+        brandTone:
+          type: string
+
+    StoryboardArtifact:
+      type: object
+      required: [narrative, totalDurationSec, shots, assumptions]
+      properties:
+        narrative:
+          type: string
+        totalDurationSec:
+          type: integer
+        shots:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/StoryboardShot"
+        assumptions:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+
+    StoryboardShot:
+      type: object
+      required: [index, purpose, durationSec, scene, visualDirection, productAssetRef, voiceover]
+      properties:
+        index:
+          type: integer
+          minimum: 0
+        purpose:
+          type: string
+          enum: [hook, benefit, proof, cta]
+        durationSec:
+          type: integer
+          minimum: 1
+          maximum: 8
+        scene:
+          type: string
+        visualDirection:
+          type: string
+        productAssetRef:
+          type: string
+        voiceover:
+          type: string
+        transition:
+          type: string
+
+    ShotPromptArtifact:
+      type: object
+      required: [targetProvider, durationSec, aspectRatio, prompt, negativePrompt, shots, tts]
+      properties:
+        targetProvider:
+          type: string
+          enum: [seedance]
+        durationSec:
+          type: integer
+        aspectRatio:
+          $ref: "#/components/schemas/AspectRatio"
+        prompt:
+          type: string
+        negativePrompt:
+          type: string
+        shots:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ShotPromptShot"
+        tts:
+          type: object
+          additionalProperties: true
+        assumptions:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+
+    ShotPromptShot:
+      type: object
+      required: [index, startSec, endSec, providerPrompt, referenceAssetRefs, voiceover]
+      properties:
+        index:
+          type: integer
+        startSec:
+          type: integer
+        endSec:
+          type: integer
+        providerPrompt:
+          type: string
+        referenceAssetRefs:
+          type: array
+          items:
+            type: string
+        voiceover:
+          type: string
+
+    ShotStatus:
+      type: string
+      enum:
+        - DRAFT
+        - IMAGE_PROMPT_PROPOSING
+        - IMAGE_PROMPT_READY
+        - IMAGE_PROMPT_EDITED
+        - IMAGE_GENERATING
+        - IMAGE_CANDIDATES_READY
+        - IMAGE_SELECTED
+        - VIDEO_SCRIPT_PROPOSING
+        - VIDEO_SCRIPT_READY
+        - VIDEO_SCRIPT_EDITED
+        - VIDEO_GENERATING
+        - VIDEO_CANDIDATES_READY
+        - VIDEO_SELECTED
+        - FAILED
+
+    BatchStatus:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, PARTIAL, FAILED, CANCELLED]
+
+    CandidateStatus:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, FAILED, REJECTED]
+
+    FinalVideoStatus:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+
+    Shot:
+      type: object
+      required: [id, workspaceId, orderIndex, title, status, nextAction]
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        orderIndex:
+          type: integer
+        title:
+          type: string
+        objective:
+          type: [string, "null"]
+        defaultDurationSec:
+          type: [integer, "null"]
+        status:
+          $ref: "#/components/schemas/ShotStatus"
+        nextAction:
+          type: string
+        activeImagePromptArtifactId:
+          type: [string, "null"]
+        selectedImageId:
+          type: [string, "null"]
+        activeVideoScriptArtifactId:
+          type: [string, "null"]
+        selectedVideoId:
+          type: [string, "null"]
+        lastError:
+          type: [string, "null"]
+
+    ShotWorkflowStatusResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [workspaceId, shots, canComposeFinalVideo]
+          properties:
+            workspaceId:
+              type: string
+            canComposeFinalVideo:
+              type: boolean
+            shots:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+
+    WorkflowEnvelope:
+      type: object
+      required: [data, shotStatus, nextAction]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        shotStatus:
+          $ref: "#/components/schemas/ShotStatus"
+        nextAction:
+          type: string
+        traceId:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+
+    ImageProposeResponse:
+      allOf:
+        - $ref: "#/components/schemas/WorkflowEnvelope"
+        - type: object
+          required: [artifact, batch, candidates, context]
+          properties:
+            artifact:
+              type: object
+              additionalProperties: true
+            batch:
+              $ref: "#/components/schemas/GenerationBatch"
+            candidates:
+              type: array
+              items:
+                $ref: "#/components/schemas/ImageCandidate"
+            created:
+              type: integer
+            usage:
+              type: object
+              additionalProperties: true
+            context:
+              type: object
+              additionalProperties: true
+
+    VideoProposeResponse:
+      allOf:
+        - $ref: "#/components/schemas/WorkflowEnvelope"
+        - type: object
+          required: [artifact, batch, candidates, frames, context]
+          properties:
+            artifact:
+              type: object
+              additionalProperties: true
+            batch:
+              $ref: "#/components/schemas/GenerationBatch"
+            candidates:
+              type: array
+              items:
+                $ref: "#/components/schemas/VideoCandidate"
+            frames:
+              type: object
+              additionalProperties: true
+            context:
+              type: object
+              additionalProperties: true
+
+    BatchCreateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [batchId, status, requestedCount]
+          properties:
+            batchId:
+              type: string
+            jobId:
+              type: string
+              description: Single aggregate generation job id, used by video batches.
+            jobIds:
+              type: array
+              items:
+                type: string
+              description: Per-candidate generation job ids, used by image batches.
+            queueJobIds:
+              type: array
+              items:
+                type: string
+              description: Redis queue job ids when Redis-backed queueing is enabled.
+            status:
+              $ref: "#/components/schemas/BatchStatus"
+            requestedCount:
+              type: integer
+        deduped:
+          type: boolean
+
+    GenerationBatch:
+      type: object
+      required: [id, status, requestedCount]
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        shotId:
+          type: string
+        status:
+          $ref: "#/components/schemas/BatchStatus"
+        requestedCount:
+          type: integer
+        succeededCount:
+          type: integer
+        failedCount:
+          type: integer
+        provider:
+          type: string
+        aspectRatio:
+          $ref: "#/components/schemas/AspectRatio"
+        errorMessage:
+          type: [string, "null"]
+
+    ImageCandidate:
+      type: object
+      required: [id, shotId, status, provider]
+      properties:
+        id:
+          type: string
+        batchId:
+          type: string
+        shotId:
+          type: string
+        imageUrl:
+          type: [string, "null"]
+        width:
+          type: [integer, "null"]
+        height:
+          type: [integer, "null"]
+        provider:
+          type: string
+        status:
+          $ref: "#/components/schemas/CandidateStatus"
+        errorMessage:
+          type: [string, "null"]
+
+    VideoCandidate:
+      type: object
+      required: [id, shotId, status, provider]
+      properties:
+        id:
+          type: string
+        batchId:
+          type: string
+        shotId:
+          type: string
+        videoUrl:
+          type: [string, "null"]
+        thumbnailUrl:
+          type: [string, "null"]
+        durationSec:
+          type: [integer, "null"]
+        width:
+          type: [integer, "null"]
+        height:
+          type: [integer, "null"]
+        provider:
+          type: string
+        status:
+          $ref: "#/components/schemas/CandidateStatus"
+        errorMessage:
+          type: [string, "null"]
+
+    ImageRound:
+      type: object
+      required: [artifact, candidates]
+      properties:
+        artifact:
+          type: object
+          additionalProperties: true
+        batch:
+          $ref: "#/components/schemas/GenerationBatch"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageCandidate"
+
+    VideoRound:
+      type: object
+      required: [artifact, candidates]
+      properties:
+        artifact:
+          type: object
+          additionalProperties: true
+        batch:
+          $ref: "#/components/schemas/GenerationBatch"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/VideoCandidate"
+
+    ImageSelectionResponse:
+      type: object
+      required: [shotId, selectedCandidateId, selectedImageUrl, nextShotId, allShotsImageSelected]
+      properties:
+        shotId:
+          type: string
+        selectedCandidateId:
+          type: string
+        selectedImageUrl:
+          type: string
+        nextShotId:
+          type: [string, "null"]
+        allShotsImageSelected:
+          type: boolean
+
+    VideoSelectionResponse:
+      type: object
+      required: [shotId, selectedCandidateId, selectedVideoUrl, duration, allShotsVideoSelected]
+      properties:
+        shotId:
+          type: string
+        selectedCandidateId:
+          type: string
+        selectedVideoUrl:
+          type: string
+        duration:
+          type: integer
+        allShotsVideoSelected:
+          type: boolean
+
+    FinalVideoJob:
+      type: object
+      required: [id, workspaceId, status]
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        status:
+          $ref: "#/components/schemas/FinalVideoStatus"
+        localPath:
+          type: [string, "null"]
+        localUrl:
+          type: [string, "null"]
+        durationSec:
+          type: [integer, "null"]
+        width:
+          type: [integer, "null"]
+        height:
+          type: [integer, "null"]
+        errorMessage:
+          type: [string, "null"]
+
+    CampaignPublicationStatus:
+      type: string
+      enum: [planned, published, failed, archived]
+
+    CreateCampaignPublicationRequest:
+      type: object
+      required: [platform, channelName]
+      properties:
+        finalVideoJobId:
+          type: string
+          description: Optional final video job this publication is based on. Must belong to the same workspace.
+        platform:
+          type: string
+          minLength: 1
+          examples: [douyin, tiktok, xiaohongshu]
+        channelName:
+          type: string
+          minLength: 1
+          description: KOL/channel identifier used by campaign ops.
+        kolName:
+          type: string
+        publishUrl:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/CampaignPublicationStatus"
+        notes:
+          type: string
+
+    RecordCampaignMetricsRequest:
+      type: object
+      properties:
+        impressions:
+          type: integer
+          minimum: 0
+          default: 0
+        clicks:
+          type: integer
+          minimum: 0
+          default: 0
+        conversions:
+          type: integer
+          minimum: 0
+          default: 0
+        spendCents:
+          type: integer
+          minimum: 0
+          default: 0
+        capturedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          default: manual
+        metadata:
+          type: object
+          additionalProperties: true
+
+    CampaignMetrics:
+      type: object
+      required: [id, publicationId, impressions, clicks, conversions, spendCents, ctr, capturedAt, source, metadata, createdAt]
+      properties:
+        id:
+          type: string
+        publicationId:
+          type: string
+        impressions:
+          type: integer
+        clicks:
+          type: integer
+        conversions:
+          type: integer
+        spendCents:
+          type: integer
+        ctr:
+          type: [number, "null"]
+          description: clicks / impressions; null when impressions is zero.
+        capturedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CampaignPublication:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - finalVideoJobId
+        - platform
+        - channelName
+        - kolName
+        - publishUrl
+        - status
+        - notes
+        - latestMetrics
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        finalVideoJobId:
+          type: [string, "null"]
+        platform:
+          type: string
+        channelName:
+          type: string
+        kolName:
+          type: [string, "null"]
+        publishUrl:
+          type: [string, "null"]
+          format: uri
+        status:
+          $ref: "#/components/schemas/CampaignPublicationStatus"
+        notes:
+          type: [string, "null"]
+        latestMetrics:
+          oneOf:
+            - $ref: "#/components/schemas/CampaignMetrics"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CampaignPublicationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CampaignPublication"
+
+    CampaignMetricsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CampaignMetrics"

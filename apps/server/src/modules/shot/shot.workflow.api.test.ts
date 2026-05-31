@@ -10,7 +10,7 @@ import { transparentPngBytes } from "../../test/image-fixtures.js";
 
 const cleanupDirs: string[] = [];
 
-async function seedApprovedShotPromptWorkspace(app: FastifyInstance) {
+async function seedApprovedShotPromptWorkspace(app: FastifyInstance, shotCount = 1) {
   const createResponse = await app.inject({
     method: "POST",
     url: "/api/workspaces",
@@ -85,7 +85,9 @@ async function seedApprovedShotPromptWorkspace(app: FastifyInstance) {
   });
   assert.equal(shotPromptResponse.statusCode, 200, shotPromptResponse.body);
   const shotPrompt = shotPromptResponse.json().artifact.data;
-  const firstShot = shotPrompt.shots[0];
+  const approvedShots = shotPrompt.shots.slice(0, shotCount);
+  const firstShot = approvedShots[0];
+  assert.ok(firstShot, "shotprompt produced no shots");
   const approvalResponse = await app.inject({
     method: "POST",
     url: "/api/workspaces/artifacts/shotprompt/approve",
@@ -94,7 +96,7 @@ async function seedApprovedShotPromptWorkspace(app: FastifyInstance) {
       data: {
         ...shotPrompt,
         durationSec: firstShot.endSec - firstShot.startSec,
-        shots: [firstShot],
+        shots: approvedShots,
         tts: {
           ...shotPrompt.tts,
           voiceover: firstShot.voiceover
@@ -109,10 +111,12 @@ async function seedApprovedShotPromptWorkspace(app: FastifyInstance) {
     url: `/api/workspaces/${workspace.id}/shots`
   });
   assert.equal(shotsResponse.statusCode, 200, shotsResponse.body);
-  const shot = shotsResponse.json().data[0] as { id: string };
-  assert.ok(shot.id, "expected at least one seeded shot");
+  const shots = shotsResponse.json().data as Array<{ id: string }>;
+  const shot = shots[0];
+  assert.ok(shot, "expected at least one seeded shot");
+  assert.ok(shot.id, "expected seeded shot to have an id");
 
-  return { workspaceId: workspace.id, shotId: shot.id };
+  return { workspaceId: workspace.id, shotId: shot.id, shotIds: shots.map((item) => item.id) };
 }
 
 describe("shot workflow API", () => {
@@ -135,10 +139,22 @@ describe("shot workflow API", () => {
     const imagePromptResponse = await app.inject({
       method: "POST",
       url: `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`,
-      payload: { referenceAssetIds: [] }
+      payload: {}
     });
     assert.equal(imagePromptResponse.statusCode, 200, imagePromptResponse.body);
     const imagePromptId = imagePromptResponse.json().data.id as string;
+    const imageBatchId = imagePromptResponse.json().batch.id as string;
+    const imageCandidates = imagePromptResponse.json().candidates as Array<{
+      id: string;
+      imageUrl: string | null;
+      status: string;
+    }>;
+    assert.equal(imagePromptResponse.json().shotStatus, "IMAGE_GENERATING");
+    assert.equal(imageCandidates.length, 3);
+    assert.ok(
+      imageCandidates.every((candidate) => candidate.status === "PENDING"),
+      "image candidates should be queued as individual jobs",
+    );
     assert.deepEqual(imagePromptResponse.json().context.referenceAssetRefs, [
       "product.png"
     ]);
@@ -147,19 +163,6 @@ describe("shot workflow API", () => {
         imagePromptResponse.json().data.referenceAssetIds?.length,
       1
     );
-
-    const imageBatchResponse = await app.inject({
-      method: "POST",
-      url: `/api/shots/${shotId}/image-batches`,
-      headers: { "Idempotency-Key": `test-image-${Date.now()}` },
-      payload: {
-        imagePromptArtifactId: imagePromptId,
-        count: 3,
-        aspectRatio: "9:16"
-      }
-    });
-    assert.equal(imageBatchResponse.statusCode, 200, imageBatchResponse.body);
-    const imageBatchId = imageBatchResponse.json().data.batchId as string;
 
     const imageStatusResponse = await app.inject({
       method: "GET",
@@ -171,21 +174,23 @@ describe("shot workflow API", () => {
       .data.shots.find((s: { shotId: string }) => s.shotId === shotId);
     assert.equal(imageStatusShot.activeImageBatchId, imageBatchId);
 
-    const imageCandidate = await db.db2.insertImageCandidate({
-      id: `imc_${Date.now()}`,
-      batchId: imageBatchId,
-      workspaceId,
-      shotId,
-      imageUrl: "https://cdn.example/image.png",
-      objectKey: null,
-      width: 720,
-      height: 1280,
-      seed: null,
-      provider: "mock",
-      providerResponse: {},
+    for (const candidate of imageCandidates) {
+      await db.db2.updateImageCandidate(candidate.id, {
+        status: "SUCCEEDED",
+        imageUrl: `/api/workspaces/${workspaceId}/materials/generated-images/${candidate.id}.png`,
+        objectKey: `materials/generated-images/${candidate.id}.png`,
+      });
+    }
+    await db.db2.updateImageBatch(imageBatchId, {
       status: "SUCCEEDED",
-      errorMessage: null
+      succeededCount: imageCandidates.length,
+      failedCount: 0,
     });
+    await db.db2.updateShot(shotId, { status: "IMAGE_CANDIDATES_READY" });
+    const completedImageCandidates =
+      await db.db2.listImageCandidatesByBatch(imageBatchId);
+    const imageCandidate = completedImageCandidates.find((candidate) => candidate.status === "SUCCEEDED" && candidate.imageUrl);
+    assert.ok(imageCandidate);
     const failedImageCandidate = await db.db2.insertImageCandidate({
       id: `imc_failed_${Date.now()}`,
       batchId: imageBatchId,
@@ -241,27 +246,21 @@ describe("shot workflow API", () => {
     const videoScriptResponse = await app.inject({
       method: "POST",
       url: `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/propose`,
-      payload: { durationSec: 4, useNeighborFrames: true }
+      payload: {}
     });
     assert.equal(videoScriptResponse.statusCode, 200, videoScriptResponse.body);
-    const videoScriptId = videoScriptResponse.json().data.id as string;
+    const videoBatchId = videoScriptResponse.json().batch.id as string;
+    const videoCandidates = videoScriptResponse.json().candidates as Array<{
+      id: string;
+      videoUrl: string | null;
+      status: string;
+    }>;
+    assert.equal(videoScriptResponse.json().shotStatus, "VIDEO_CANDIDATES_READY");
+    assert.equal(videoCandidates.length, 2);
     assert.equal(
       videoScriptResponse.json().context.sceneAnchorImageUrl,
       imageCandidate.imageUrl
     );
-
-    const videoBatchResponse = await app.inject({
-      method: "POST",
-      url: `/api/shots/${shotId}/video-batches`,
-      headers: { "Idempotency-Key": `test-video-${Date.now()}` },
-      payload: {
-        videoScriptArtifactId: videoScriptId,
-        count: 5,
-        aspectRatio: "9:16"
-      }
-    });
-    assert.equal(videoBatchResponse.statusCode, 200, videoBatchResponse.body);
-    const videoBatchId = videoBatchResponse.json().data.batchId as string;
 
     const videoStatusResponse = await app.inject({
       method: "GET",
@@ -274,22 +273,8 @@ describe("shot workflow API", () => {
     assert.equal(videoStatusShot.activeImageBatchId, imageBatchId);
     assert.equal(videoStatusShot.activeVideoBatchId, videoBatchId);
 
-    const videoCandidate = await db.db2.insertVideoCandidate({
-      id: `vcd_${Date.now()}`,
-      batchId: videoBatchId,
-      workspaceId,
-      shotId,
-      videoUrl: "https://cdn.example/video.mp4",
-      objectKey: null,
-      thumbnailUrl: null,
-      durationSec: 4,
-      width: 720,
-      height: 1280,
-      provider: "mock",
-      providerResponse: {},
-      status: "SUCCEEDED",
-      errorMessage: null
-    });
+    const videoCandidate = videoCandidates.find((candidate) => candidate.status === "SUCCEEDED" && candidate.videoUrl);
+    assert.ok(videoCandidate);
     const failedVideoCandidate = await db.db2.insertVideoCandidate({
       id: `vcd_failed_${Date.now()}`,
       batchId: videoBatchId,
@@ -346,5 +331,91 @@ describe("shot workflow API", () => {
     );
     assert.equal(selectedVideoResult.rows[0]?.video_candidate_id, videoCandidate.id);
     assert.equal(selectedVideoResult.rows[0]?.video_generation_batch_id, videoBatchId);
+  });
+
+  it("rejects deprecated prompt-api inputs on propose endpoints", async () => {
+    const { workspaceId, shotId } = await seedApprovedShotPromptWorkspace(app);
+
+    const imageResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`,
+      payload: { referenceAssetIds: ["asset_legacy"] }
+    });
+    assert.equal(imageResponse.statusCode, 400);
+    assert.match(imageResponse.json().message, /referenceAssetIds/);
+
+    const videoResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/propose`,
+      payload: { durationSec: 4, useNeighborFrames: true }
+    });
+    assert.equal(videoResponse.statusCode, 400);
+    assert.match(videoResponse.json().message, /durationSec|useNeighborFrames/);
+  });
+
+  it("requires a previous selected image before proposing image candidates for shot N", async () => {
+    const { workspaceId, shotIds } = await seedApprovedShotPromptWorkspace(app, 2);
+    const secondShotId = shotIds[1];
+    assert.ok(secondShotId);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${secondShotId}/image-prompts/propose`,
+      payload: {}
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().code, "NO_SCENE_ANCHOR");
+  });
+
+  it("requires all shots to have selected images before proposing video candidates", async () => {
+    const { workspaceId, shotIds } = await seedApprovedShotPromptWorkspace(app, 2);
+    const firstShotId = shotIds[0];
+    const secondShotId = shotIds[1];
+    assert.ok(firstShotId);
+    assert.ok(secondShotId);
+
+    const imagePromptResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${firstShotId}/image-prompts/propose`,
+      payload: {}
+    });
+    assert.equal(imagePromptResponse.statusCode, 200, imagePromptResponse.body);
+    const imageCandidates = imagePromptResponse.json().candidates as Array<{
+      id: string;
+      imageUrl: string | null;
+      status: string;
+    }>;
+    const imageCandidate = imageCandidates[0];
+    assert.ok(imageCandidate);
+    const imageBatchId = imagePromptResponse.json().batch.id as string;
+    for (const candidate of imageCandidates) {
+      await db.db2.updateImageCandidate(candidate.id, {
+        status: "SUCCEEDED",
+        imageUrl: `/api/workspaces/${workspaceId}/materials/generated-images/${candidate.id}.png`,
+        objectKey: `materials/generated-images/${candidate.id}.png`,
+      });
+    }
+    await db.db2.updateImageBatch(imageBatchId, {
+      status: "SUCCEEDED",
+      succeededCount: imageCandidates.length,
+      failedCount: 0,
+    });
+    await db.db2.updateShot(firstShotId, { status: "IMAGE_CANDIDATES_READY" });
+
+    const selectImageResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${firstShotId}/image-candidates/select`,
+      payload: { candidateId: imageCandidate.id }
+    });
+    assert.equal(selectImageResponse.statusCode, 200, selectImageResponse.body);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${firstShotId}/video-scripts/propose`,
+      payload: {}
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().code, "IMAGE_SELECTION_INCOMPLETE");
+    assert.match(response.json().message, new RegExp(secondShotId));
   });
 });

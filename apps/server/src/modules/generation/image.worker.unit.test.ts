@@ -6,6 +6,7 @@ import {
   __setAssetUrlResolverForTests,
   __setGeneratedAssetPersisterForTests,
 } from "./image.worker.js";
+import { runImageGenerationCandidate } from "./direct-generation.js";
 
 type ProviderCall = {
   args: unknown;
@@ -33,6 +34,7 @@ function makeFakeDb() {
     }
   >();
   const candidates: any[] = [];
+  const candidateRows = new Map<string, any>();
   const shotPatches: any[] = [];
   const jobUpdates: any[] = [];
   const batchUpdates: any[] = [];
@@ -51,8 +53,16 @@ function makeFakeDb() {
       referenceAssetIds: [],
     }),
     insertImageCandidate: async (input: any) => {
-      candidates.push(input);
-      return { ...input, id: "cand-" + candidates.length, createdAt: new Date().toISOString() };
+      const row = { ...input, createdAt: new Date().toISOString() };
+      candidates.push(row);
+      candidateRows.set(row.id, row);
+      return row;
+    },
+    getImageCandidate: async (id: string) => candidateRows.get(id),
+    updateImageCandidate: async (id: string, patch: any) => {
+      const row = candidateRows.get(id)!;
+      Object.assign(row, patch);
+      return row;
     },
     updateGenerationJob: async (id: string, patch: any) => {
       jobUpdates.push({ id, ...patch });
@@ -95,7 +105,7 @@ function makeFakeDb() {
       },
     };
   }
-  return { adapter, batches, candidates, shotPatches, jobUpdates, batchUpdates, bootstrap };
+  return { adapter, batches, candidates, candidateRows, shotPatches, jobUpdates, batchUpdates, bootstrap };
 }
 
 // Trace service writes to Postgres. For unit tests, replace it with a no-op
@@ -197,5 +207,96 @@ describe("processGenerateImages", () => {
     );
     assert.deepEqual((seenArgs[0] as any).referenceImageUrls, ["https://r/1.png", "https://r/2.png"]);
     assert.deepEqual(seenResolverIds[0], ["a1", "a2"]);
+  });
+
+  it("generates one queued image candidate with a single-image provider request", async () => {
+    const seenArgs: unknown[] = [];
+    __setImageProviderForTests(async (args) => {
+      seenArgs.push(args);
+      return {
+        provider: "ark-seedream",
+        model: "test",
+        candidates: [{ imageUrl: "https://provider/image.jpg" }],
+        candidateErrors: [],
+      };
+    });
+    __setGeneratedAssetPersisterForTests(async (input) => ({
+      stableUrl: `/api/workspaces/${input.workspaceId}/materials/generated-images/${input.candidateId}.jpg`,
+      objectKey: `materials/generated-images/${input.candidateId}.jpg`,
+      providerTemporaryUrl: input.sourceUrl,
+    }));
+
+    const fakeDb = makeFakeDb();
+    const ctx = await fakeDb.bootstrap("RUNNING");
+    await fakeDb.adapter.insertImageCandidate({
+      id: "imc-1",
+      batchId: ctx.batchId,
+      workspaceId: "ws-1",
+      shotId: "shot-1",
+      imageUrl: null,
+      objectKey: null,
+      width: null,
+      height: null,
+      seed: null,
+      provider: "ark-seedream",
+      providerResponse: { candidateIndex: 0 },
+      status: "PENDING",
+      errorMessage: null,
+    });
+
+    const result = await runImageGenerationCandidate(
+      {
+        batchId: ctx.batchId,
+        candidateId: "imc-1",
+        aspectRatio: "9:16",
+        adapter: fakeDb.adapter as any,
+      },
+    );
+
+    assert.equal((seenArgs[0] as any).count, 1);
+    assert.equal(result.candidate.status, "SUCCEEDED");
+    assert.equal(
+      result.candidate.imageUrl,
+      "/api/workspaces/ws-1/materials/generated-images/imc-1.jpg",
+    );
+  });
+
+  it("leaves a candidate retryable before the final queue attempt", async () => {
+    __setImageProviderForTests(async () => {
+      throw new Error("temporary provider limit");
+    });
+
+    const fakeDb = makeFakeDb();
+    const ctx = await fakeDb.bootstrap("RUNNING");
+    await fakeDb.adapter.insertImageCandidate({
+      id: "imc-retry",
+      batchId: ctx.batchId,
+      workspaceId: "ws-1",
+      shotId: "shot-1",
+      imageUrl: null,
+      objectKey: null,
+      width: null,
+      height: null,
+      seed: null,
+      provider: "ark-seedream",
+      providerResponse: { candidateIndex: 0 },
+      status: "PENDING",
+      errorMessage: null,
+    });
+
+    await assert.rejects(
+      runImageGenerationCandidate({
+        batchId: ctx.batchId,
+        candidateId: "imc-retry",
+        aspectRatio: "9:16",
+        failCandidateOnError: false,
+        adapter: fakeDb.adapter as any,
+      }),
+      /temporary provider limit/,
+    );
+
+    const retryable = fakeDb.candidateRows.get("imc-retry");
+    assert.equal(retryable.status, "RUNNING");
+    assert.equal(retryable.errorMessage, null);
   });
 });
