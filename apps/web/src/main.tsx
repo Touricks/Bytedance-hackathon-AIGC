@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./routes/App.js";
-import { WorkspaceLayout } from "./features/workspace/WorkspaceLayout.js";
+import { Workbench } from "./features/workbench/Workbench.js";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -17,7 +17,12 @@ function Root() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   if (pathname.startsWith("/workspaces/")) {
-    return <WorkspaceLayout />;
+    const workspaceId = pathname.split("/")[2];
+    return workspaceId ? (
+      <Workbench workspaceId={workspaceId} />
+    ) : (
+      <div className="workspace-layout__empty">未指定工作区</div>
+    );
   }
   return <App />;
 }

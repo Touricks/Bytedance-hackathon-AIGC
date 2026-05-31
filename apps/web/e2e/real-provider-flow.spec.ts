@@ -147,10 +147,18 @@ test("creates a managed workspace via real backend and lands on focus mode", asy
   request
 }) => {
   // Sanity: backend reachable.
-  const health = await request.get(`${API_BASE_URL}/api/config/limits`);
+  let backendReachable = false;
+  let backendStatus = "unreachable";
+  try {
+    const health = await request.get(`${API_BASE_URL}/api/config/limits`);
+    backendReachable = health.ok();
+    backendStatus = String(health.status());
+  } catch {
+    backendReachable = false;
+  }
   test.skip(
-    !health.ok(),
-    `backend not reachable at ${API_BASE_URL} (status ${health.status()}); start pnpm dev`
+    !backendReachable,
+    `backend not reachable at ${API_BASE_URL} (status ${backendStatus}); start pnpm dev`
   );
 
   await page.goto("/");
@@ -160,10 +168,11 @@ test("creates a managed workspace via real backend and lands on focus mode", asy
     timeout: 30_000
   });
 
-  // Focus shell renders even with no shot selected.
-  await expect(page.getByText(/从左侧选择一个分镜开始|分镜列表|当前工作区/i)).toBeVisible(
-    { timeout: 15_000 }
-  );
+  // Workbench shell renders even before the workspace has seeded shots.
+  await expect(page.getByRole("heading", { name: "Artifact Pipeline" })).toBeVisible({
+    timeout: 15_000
+  });
+  await expect(page.getByRole("heading", { name: "Shot Workbench" })).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -193,40 +202,26 @@ test.describe("real provider flow @provider", () => {
   test("propose prompt -> generate images -> select first SUCCEEDED candidate", async ({
     page
   }) => {
-    await page.goto(
-      `/workspaces/${workspaceId}?shot=${firstShotId}&step=image_prompt`
-    );
-
-    // Step 1: propose initial image prompt via real Ark text endpoint.
-    await page
-      .getByRole("button", { name: "生成初始 Prompt" })
-      .click({ timeout: 10_000 });
-
-    // Wait for the prompt form to render — the "生成 N 张图" button appears once
-    // a prompt artifact is ACTIVE.
-    const startBatchButton = page.getByRole("button", {
-      name: /生成 \d+ 张图/
-    });
-    await expect(startBatchButton).toBeVisible({ timeout: 120_000 });
-
-    // Step 2: start the image batch against the real Seedream endpoint.
-    await startBatchButton.click();
-
-    // The router moves focus to image_candidates after kickoff.
-    await expect(page).toHaveURL(/step=image_candidates/, {
+    await page.goto(`/workspaces/${workspaceId}`);
+    await expect(page.getByText(firstShotId.slice(0, 6))).toBeVisible({
       timeout: 30_000
     });
 
-    // Step 3: wait for at least one SUCCEEDED candidate tile. Image generation
+    // Step 1: propose image prompt and create the internal image batch.
+    await page.getByRole("button", { name: /Image propose/ }).click({
+      timeout: 10_000
+    });
+
+    // Step 2: wait for at least one SUCCEEDED candidate tile. Image generation
     // typically takes 8–30 s per candidate; we wait up to 4 min.
-    const succeededTile = page.locator(".candidate-tile--succeeded").first();
+    const succeededTile = page.locator(".workbench-candidate--good").first();
     await expect(succeededTile).toBeVisible({ timeout: 4 * 60_000 });
 
-    // Step 4: select the first succeeded candidate.
+    // Step 3: select the first succeeded candidate.
     await succeededTile.click();
 
-    // After selection, the next-action transitions to PROPOSE_VIDEO_SCRIPT and
-    // the focus router auto-advances to video_script.
-    await expect(page).toHaveURL(/step=video_script/, { timeout: 30_000 });
+    await expect(page.getByText("IMAGE_SELECTED")).toBeVisible({
+      timeout: 30_000
+    });
   });
 });

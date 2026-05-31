@@ -3,67 +3,207 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const workspaceId = "ws-e2e";
 const shotId = "shot-1";
 
+const now = new Date(0).toISOString();
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+  "base64",
+);
+
 function json(route: Route, body: unknown) {
   return route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 }
 
-async function mockWorkspaceApi(page: Page) {
-  let imageBatchStarted = false;
-  let videoBatchStarted = false;
+async function mockWorkbenchApi(page: Page) {
+  let imageProposed = false;
+  let imageSelected = false;
+  let videoProposed = false;
   const requests: {
-    imageBatch?: unknown;
-    videoBatch?: unknown;
+    imagePropose?: unknown;
+    imageSelect?: unknown;
+    videoPropose?: unknown;
   } = {};
+
+  const workspace = {
+    id: workspaceId,
+    localPath: "/tmp/daireel-e2e",
+    currentScriptId: "script-e2e",
+    status: "shotprompt_approved",
+    traceFile: ".daireel/trace/events.jsonl",
+    createdAt: now,
+    updatedAt: now,
+    lastSeenAt: now,
+  };
+
+  const statusBody = () => ({
+    workspace,
+    manifest: {
+      schemaVersion: 1,
+      workspaceId,
+      currentScriptId: "script-e2e",
+      traceFile: ".daireel/trace/events.jsonl",
+    },
+    nextAction: {
+      stage: "shotprompt",
+      endpoint: "/api/workspaces/artifacts/shotprompt/approve",
+      method: "POST",
+      actionType: "human_approval",
+      requiresHumanApproval: false,
+      willCallProvider: false,
+      requiresProviderConfig: false,
+    },
+    materialLibrary: {
+      scannedAt: now,
+      primaryProductRef: `/api/workspaces/${workspaceId}/materials/product.png`,
+      assets: [
+        {
+          ref: `/api/workspaces/${workspaceId}/materials/product.png`,
+          kind: "image",
+          mime: "image/png",
+          bytes: 100,
+          sha256: "a".repeat(64),
+          role: "product_main",
+          description: "hero product frame",
+          relevance: "high",
+          usable: true,
+          included: true,
+        },
+      ],
+      rejected: [],
+    },
+    artifacts: {
+      material: {
+        id: "mat-1",
+        workspaceId,
+        scriptId: "script-e2e",
+        type: "assets",
+        status: "approved",
+        data: { scannedAt: now, primaryProductRef: "product.png", assets: [], rejected: [] },
+        createdAt: now,
+        updatedAt: now,
+      },
+      brief: {
+        id: "brief-1",
+        workspaceId,
+        scriptId: "script-e2e",
+        type: "brief",
+        status: "approved",
+        data: {
+          product: { name: "Desk Lamp", category: "lighting", keyFacts: [], assets: [] },
+          audience: { who: "home workers", painOrDesire: "clean desk light" },
+          coreSellingPoint: "soft adjustable light",
+          proof: [],
+          offer: null,
+          platform: "douyin",
+          brandTone: "clear",
+          bannedExpressions: [],
+          landingInfo: null,
+          assumptions: [],
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+      storyboard: {
+        id: "story-1",
+        workspaceId,
+        scriptId: "script-e2e",
+        type: "storyboard",
+        status: "approved",
+        data: { narrative: "show product", totalDurationSec: 8, shots: [], assumptions: [] },
+        createdAt: now,
+        updatedAt: now,
+      },
+      shotPrompt: {
+        id: "sp-1",
+        workspaceId,
+        scriptId: "script-e2e",
+        type: "shotprompt",
+        status: "approved",
+        data: {
+          targetProvider: "seedance",
+          durationSec: 8,
+          aspectRatio: "9:16",
+          prompt: "two shot sequence",
+          negativePrompt: "",
+          shots: [],
+          tts: { enabled: false, source: "shots.voiceover", voiceover: "" },
+          assumptions: [],
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+  });
+
+  const workflowStatus = () => ({
+    data: {
+      workspaceId,
+      shots: [
+        {
+          shotId,
+          orderIndex: 0,
+          status: videoProposed
+            ? "VIDEO_CANDIDATES_READY"
+            : imageSelected
+              ? "IMAGE_SELECTED"
+              : imageProposed
+                ? "IMAGE_CANDIDATES_READY"
+                : "DRAFT",
+          nextAction: videoProposed
+            ? "SELECT_VIDEO"
+            : imageSelected
+              ? "GENERATE_VIDEO_SCRIPT"
+              : imageProposed
+                ? "SELECT_IMAGE"
+                : "GENERATE_IMAGE_PROMPT",
+          activeImagePromptArtifactId: imageProposed ? "imgp-1" : null,
+          selectedImageId: imageSelected ? "imc-1" : null,
+          activeVideoScriptArtifactId: videoProposed ? "vsa-1" : null,
+          selectedVideoId: null,
+          activeImageBatchId: imageProposed ? "imb-1" : null,
+          activeVideoBatchId: videoProposed ? "vbb-1" : null,
+        },
+        {
+          shotId: "shot-2",
+          orderIndex: 1,
+          status: "IMAGE_SELECTED",
+          nextAction: "GENERATE_VIDEO_SCRIPT",
+          activeImagePromptArtifactId: "imgp-2",
+          selectedImageId: "imc-2",
+          activeVideoScriptArtifactId: null,
+          selectedVideoId: null,
+          activeImageBatchId: "imb-2",
+          activeVideoBatchId: null,
+        },
+      ],
+      canComposeFinalVideo: false,
+    },
+  });
 
   const handleApiRoute = async (route: Route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
 
+    if (path.endsWith(".png")) {
+      return route.fulfill({ contentType: "image/png", body: png });
+    }
+
     if (request.method() === "GET" && path === "/api/workspaces") {
       return json(route, { workspaceRoot: "storage/workspaces", workspaces: [] });
     }
 
     if (request.method() === "POST" && path === "/api/workspaces/init") {
-      const body = request.postDataJSON() as { directory?: string };
       return json(route, {
-        workspace: {
-          id: workspaceId,
-          localPath: body.directory,
+        workspace,
+        manifest: {
+          schemaVersion: 1,
+          workspaceId,
           currentScriptId: "script-e2e",
-          status: "draft",
           traceFile: ".daireel/trace/events.jsonl",
-          createdAt: new Date(0).toISOString(),
-          updatedAt: new Date(0).toISOString(),
-          lastSeenAt: new Date(0).toISOString()
         },
-        manifest: {
-          schemaVersion: 1,
-          workspaceId,
-          currentScriptId: "script-e2e",
-          traceFile: ".daireel/trace/events.jsonl"
-        }
-      });
-    }
-
-    if (request.method() === "POST" && path === "/api/workspaces/status") {
-      return json(route, {
-        workspace: { id: workspaceId, localPath: "/tmp/e2e", status: "draft" },
-        manifest: {
-          schemaVersion: 1,
-          workspaceId,
-          currentScriptId: "script-e2e",
-          traceFile: ".daireel/trace/events.jsonl"
-        },
-        nextAction: {},
-        materialLibrary: {
-          scannedAt: new Date(0).toISOString(),
-          assets: [],
-          rejected: []
-        }
       });
     }
 
@@ -72,156 +212,207 @@ async function mockWorkspaceApi(page: Page) {
         data: {
           defaultImageBatchSize: 3,
           maxImageBatchSize: 6,
-          defaultVideoBatchSize: 5,
+          defaultVideoBatchSize: 1,
           maxVideoBatchSize: 10,
-          aspectRatios: ["9:16", "16:9", "1:1"]
-        }
+          aspectRatios: ["9:16", "16:9", "1:1"],
+        },
       });
+    }
+
+    if (request.method() === "POST" && path === "/api/workspaces/status") {
+      return json(route, statusBody());
     }
 
     if (
       request.method() === "GET" &&
       path === `/api/workspaces/${workspaceId}/shot-workflow-status`
     ) {
-      return json(route, {
-        data: {
-          workspaceId,
-          shots: [
-            {
-              shotId,
-              orderIndex: 0,
-              status: videoBatchStarted
-                ? "VIDEO_GENERATING"
-                : imageBatchStarted
-                  ? "IMAGE_GENERATING"
-                  : "IMAGE_PROMPT_READY",
-              nextAction: videoBatchStarted
-                ? "POLL_VIDEO_BATCH"
-                : imageBatchStarted
-                  ? "POLL_IMAGE_BATCH"
-                  : "GENERATE_IMAGES",
-              activeImagePromptArtifactId: "imgp-1",
-              selectedImageId: imageBatchStarted ? "imc-1" : null,
-              activeVideoScriptArtifactId: "vsa-1",
-              selectedVideoId: null,
-              activeImageBatchId: imageBatchStarted ? "imb-1" : null,
-              activeVideoBatchId: videoBatchStarted ? "vbb-1" : null
-            }
-          ],
-          canComposeFinalVideo: false
-        }
-      });
+      return json(route, workflowStatus());
     }
 
-    if (request.method() === "GET" && path === `/api/shots/${shotId}/asset-refs`) {
-      return json(route, { data: [] });
-    }
-
-    if (request.method() === "GET" && path === `/api/shots/${shotId}/image-prompts`) {
+    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/shots`) {
       return json(route, {
         data: [
           {
-            id: "imgp-1",
-            shotId,
-            version: 1,
-            status: "ACTIVE",
-            promptText: "中文分镜图 prompt，展示商品在办公桌上的清晰首帧。",
-            negativePrompt: "",
-            referenceAssetIds: [],
-            createdBy: "agent",
-            createdAt: new Date(0).toISOString()
-          }
-        ]
-      });
-    }
-
-    if (request.method() === "POST" && path === `/api/shots/${shotId}/image-batches`) {
-      imageBatchStarted = true;
-      requests.imageBatch = request.postDataJSON();
-      return json(route, {
-        data: {
-          batchId: "imb-1",
-          jobId: "job-image",
-          status: "PENDING",
-          requestedCount: 3
-        }
+            id: shotId,
+            workspaceId,
+            orderIndex: 0,
+            title: "Hook",
+            objective: "open strong",
+            defaultDurationSec: 4,
+            status: "DRAFT",
+            nextAction: "GENERATE_IMAGE_PROMPT",
+            activeImagePromptArtifactId: imageProposed ? "imgp-1" : null,
+            selectedImageId: imageSelected ? "imc-1" : null,
+            activeVideoScriptArtifactId: videoProposed ? "vsa-1" : null,
+            selectedVideoId: null,
+          },
+        ],
       });
     }
 
     if (
       request.method() === "GET" &&
-      path === `/api/shots/${shotId}/image-batches/imb-1`
+      path === `/api/workspaces/${workspaceId}/shots/${shotId}/image-rounds`
     ) {
       return json(route, {
-        data: {
-          id: "imb-1",
-          batchId: "imb-1",
-          status: "SUCCEEDED",
-          requestedCount: 3,
-          succeededCount: 3,
-          failedCount: 0,
-          candidates: [
-            { id: "imc-1", imageUrl: "https://cdn.example/1.png", status: "SUCCEEDED" },
-            { id: "imc-2", imageUrl: "https://cdn.example/2.png", status: "SUCCEEDED" },
-            { id: "imc-3", imageUrl: "https://cdn.example/3.png", status: "SUCCEEDED" }
-          ]
-        }
-      });
-    }
-
-    if (request.method() === "GET" && path === `/api/shots/${shotId}/video-scripts`) {
-      return json(route, {
-        data: [
-          {
-            id: "vsa-1",
-            shotId,
-            version: 1,
-            status: "ACTIVE",
-            durationSec: 4,
-            scriptJson: {
-              cameraMotion: "slow push in",
-              subjectMotion: "product remains stable",
-              voiceover: "清晰展示商品卖点。"
-            },
-            providerPrompt:
-              "中文 Seedance 分镜视频剧本，持续四秒，保持商品外观稳定并完成一次连续镜头运动。",
-            basedOnImageCandidateId: "imc-1",
-            basedOnPrevImageCandidateId: null,
-            basedOnNextImageCandidateId: null,
-            createdBy: "agent",
-            createdAt: new Date(0).toISOString()
-          }
-        ]
-      });
-    }
-
-    if (request.method() === "POST" && path === `/api/shots/${shotId}/video-batches`) {
-      videoBatchStarted = true;
-      requests.videoBatch = request.postDataJSON();
-      return json(route, {
-        data: {
-          batchId: "vbb-1",
-          jobId: "job-video",
-          status: "PENDING",
-          requestedCount: 5
-        }
+        data: imageProposed
+          ? [
+              {
+                artifact: {
+                  id: "imgp-1",
+                  shotId,
+                  version: 1,
+                  status: "ACTIVE",
+                  promptText: "clean product hero image",
+                  negativePrompt: "",
+                  referenceAssetIds: [],
+                  createdBy: "agent",
+                  createdAt: now,
+                },
+                batch: {
+                  id: "imb-1",
+                  workspaceId,
+                  shotId,
+                  status: "SUCCEEDED",
+                  requestedCount: 3,
+                  succeededCount: 3,
+                  failedCount: 0,
+                  provider: "ark-seedream",
+                  aspectRatio: "9:16",
+                  providerRequest: {},
+                  errorMessage: null,
+                  idempotencyKey: "internal",
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                candidates: [
+                  {
+                    id: "imc-1",
+                    imageUrl: `/api/workspaces/${workspaceId}/materials/generated-images/imc-1.png`,
+                    status: "SUCCEEDED",
+                  },
+                ],
+                selection: null,
+                context: {},
+              },
+            ]
+          : [],
       });
     }
 
     if (
       request.method() === "GET" &&
-      path === `/api/shots/${shotId}/video-batches/vbb-1`
+      path === `/api/workspaces/${workspaceId}/shots/${shotId}/video-rounds`
     ) {
       return json(route, {
-        data: {
-          id: "vbb-1",
-          batchId: "vbb-1",
-          status: "SUCCEEDED",
-          requestedCount: 5,
-          succeededCount: 5,
-          failedCount: 0,
-          candidates: []
-        }
+        data: videoProposed
+          ? [
+              {
+                artifact: {
+                  id: "vsa-1",
+                  shotId,
+                  version: 1,
+                  status: "ACTIVE",
+                  durationSec: 4,
+                  scriptJson: {},
+                  providerPrompt: "Seedance four second product motion",
+                  basedOnImageCandidateId: "imc-1",
+                  basedOnPrevImageCandidateId: null,
+                  basedOnNextImageCandidateId: null,
+                  createdBy: "agent",
+                  createdAt: now,
+                },
+                batch: {
+                  id: "vbb-1",
+                  workspaceId,
+                  shotId,
+                  status: "SUCCEEDED",
+                  requestedCount: 1,
+                  succeededCount: 1,
+                  failedCount: 0,
+                  provider: "seedance",
+                  aspectRatio: "9:16",
+                  providerRequest: {},
+                  errorMessage: null,
+                  idempotencyKey: null,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                candidates: [],
+                selection: null,
+                frames: {
+                  firstFrameUrl: `/api/workspaces/${workspaceId}/materials/generated-images/imc-1.png`,
+                  lastFrameUrl: null,
+                  firstFrameCandidateId: "imc-1",
+                  lastFrameCandidateId: null,
+                },
+                context: {},
+              },
+            ]
+          : [],
+      });
+    }
+
+    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
+      return json(route, {
+        data: [
+          {
+            id: "tr-1",
+            workspaceId,
+            shotId,
+            traceType: "agent_run",
+            name: "image_prompt_proposed",
+            inputPreview: null,
+            outputPreview: "ok",
+            metadata: {},
+            createdAt: now,
+          },
+        ],
+      });
+    }
+
+    if (
+      request.method() === "POST" &&
+      path === `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`
+    ) {
+      imageProposed = true;
+      requests.imagePropose = request.postDataJSON();
+      return json(route, {
+        data: { id: "imgp-1" },
+        artifact: { id: "imgp-1" },
+        batch: { id: "imb-1", status: "PENDING" },
+        candidates: [{ id: "imc-1", status: "PENDING" }],
+        shotStatus: "IMAGE_GENERATING",
+        traceId: "trace-image",
+      });
+    }
+
+    if (
+      request.method() === "POST" &&
+      path === `/api/workspaces/${workspaceId}/shots/${shotId}/image-candidates/select`
+    ) {
+      imageSelected = true;
+      requests.imageSelect = request.postDataJSON();
+      return json(route, {
+        data: { selectedImageId: "imc-1" },
+        shotStatus: "IMAGE_SELECTED",
+      });
+    }
+
+    if (
+      request.method() === "POST" &&
+      path === `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/propose`
+    ) {
+      videoProposed = true;
+      requests.videoPropose = request.postDataJSON();
+      return json(route, {
+        data: { id: "vsa-1" },
+        artifact: { id: "vsa-1" },
+        batch: { id: "vbb-1", status: "SUCCEEDED" },
+        candidates: [],
+        shotStatus: "VIDEO_CANDIDATES_READY",
+        traceId: "trace-video",
       });
     }
 
@@ -237,28 +428,36 @@ async function mockWorkspaceApi(page: Page) {
 }
 
 test("user can open a chosen working directory", async ({ page }) => {
-  await mockWorkspaceApi(page);
+  await mockWorkbenchApi(page);
   await page.goto("/");
 
   await page.getByLabel("工作目录路径").fill("/tmp/daireel-e2e");
   await page.getByRole("button", { name: "打开" }).click();
 
   await expect(page).toHaveURL(/\/workspaces\/ws-e2e/);
+  await expect(page.getByRole("heading", { name: "Artifact Pipeline" })).toBeVisible();
 });
 
-test("per-shot controls default to 3 images and 5 videos", async ({ page }) => {
-  const requests = await mockWorkspaceApi(page);
+test("workbench drives propose/select endpoints from the current interface", async ({
+  page,
+}) => {
+  const requests = await mockWorkbenchApi(page);
 
-  await page.goto(`/workspaces/${workspaceId}?shot=${shotId}&step=image_prompt`);
-  await expect(page.getByRole("button", { name: "生成 3 张图" })).toBeVisible();
-  await page.getByRole("button", { name: "生成 3 张图" }).click();
-  await expect(page).toHaveURL(/step=image_candidates/);
-  expect((requests.imageBatch as { count?: number }).count).toBe(3);
-  await expect(page.getByText("状态 SUCCEEDED · 3/3")).toBeVisible();
+  await page.goto(`/workspaces/${workspaceId}`);
+  await expect(page.getByRole("heading", { name: "Shot Workbench" })).toBeVisible();
 
-  await page.goto(`/workspaces/${workspaceId}?shot=${shotId}&step=video_script`);
-  await expect(page.getByRole("button", { name: "生成 5 个视频" })).toBeVisible();
-  await page.getByRole("button", { name: "生成 5 个视频" }).click();
-  await expect(page).toHaveURL(/step=video_candidates/);
-  expect((requests.videoBatch as { count?: number }).count).toBe(5);
+  await page.getByRole("button", { name: /Image propose/ }).click();
+  await expect(page.getByText("SUCCEEDED")).toBeVisible();
+  expect(requests.imagePropose).toEqual({});
+
+  await page.locator(".workbench-candidate").first().click();
+  expect(requests.imageSelect).toEqual({
+    imageCandidateId: "imc-1",
+    imageGenerationBatchId: "imb-1",
+  });
+
+  await expect(page.getByRole("button", { name: /Video propose/ })).toBeEnabled();
+  await page.getByRole("button", { name: /Video propose/ }).click();
+  expect(requests.videoPropose).toEqual({});
+  await expect(page.getByText("SUCCEEDED")).toBeVisible();
 });

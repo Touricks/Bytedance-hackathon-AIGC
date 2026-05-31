@@ -40,6 +40,10 @@ _Avoid_: automatic prompt rewrite
 Merchant-editable structured inputs that guide script generation without exposing the video prompt.
 _Avoid_: raw prompt
 
+**创作要求**:
+Merchant-authored creative instructions that guide prompt assembly while the final prompt text remains system-owned.
+_Avoid_: raw prompt, system prompt override
+
 **创作会话**:
 A working unit centered on one creative-blueprint attempt. It may fail before a blueprint exists, stop after blueprint generation, or continue into one or more final-video jobs.
 _Avoid_: provider request, isolated video job
@@ -63,6 +67,14 @@ _Avoid_: demo session, generation job
 **分镜**:
 A script structure unit describing one beat of the final video.
 _Avoid_: render segment, clip
+
+**分镜图要求**:
+A shot-level creative requirement object that describes the intended key image before image generation.
+_Avoid_: raw image prompt, generated image
+
+**分镜视频要求**:
+A shot-level creative requirement object that describes the intended motion, continuity, and video behavior before video generation.
+_Avoid_: raw video prompt, generated clip
 
 **成片**:
 The final merchant-facing video output produced from product material and a script.
@@ -91,6 +103,7 @@ _Avoid_: primary generation path
 - A **创作蓝图** can be used as the recovery anchor for its review and final-video attempts.
 - A **改进提示** points to one or more **创作参数** and does not change them automatically.
 - **创作参数** guide **剧本** generation but do not directly expose the video prompt.
+- **创作要求** can guide **剧本**, **分镜**, and per-shot image/video generation, but the assembled provider prompt remains internal.
 - A **创作工作目录** scopes one or more **创作会话** for a merchant's product-video effort.
 - A **创作工作目录** must be recognized by the system before it can resume or advance creative work.
 - A **创作工作目录** may have one current **创作线路** for V0+.
@@ -102,6 +115,7 @@ _Avoid_: primary generation path
 - **创作会话追踪** records machine-readable event kinds; human-readable explanation belongs in event details only when it adds new information.
 - A **模型探测** can produce trace logs using a reserved probe identifier, but it is not a **创作会话**.
 - **一键成片** happens after a **剧本** and **分镜** are visible to the merchant.
+- A **分镜** may carry one **分镜图要求** and one **分镜视频要求** before generation.
 - A **成片任务** produces at most one current **成片**.
 - A **成片任务** is the recovery anchor for asynchronous final-video progress and result retrieval.
 - **上传素材** can be used to create a **剧本** and guide **成片** generation.
@@ -118,6 +132,7 @@ _Avoid_: primary generation path
 - "素材上传" was previously represented by a URL mock. Resolved: **上传素材** means merchant-supplied media accepted by the system; storage medium is an implementation detail.
 - "一键成片" could mean either the whole workflow or only final video generation. Resolved: in V0, **一键成片** starts after script and storyboard preview.
 - "Prompt 调整" could mean raw prompt editing. Resolved: V0 exposes **创作参数** as structured UI fields and does not let users directly edit the video prompt.
+- "完全独立组装 prompt" could mean user-owned raw prompt editing. Resolved: users edit **创作要求**, while input/output schema guidance and final prompt assembly remain system-owned.
 - "创作蓝图" could be confused with the internal video prompt. Resolved: **创作蓝图** is user-visible planning content, while the image-to-video prompt remains internal.
 - "改进提示" could imply automatic model rewriting. Resolved: **改进提示** only guides the user to structured fields they manually edit.
 - "生成任务" could mean both blueprint generation and video generation. Resolved: V0 uses **创作蓝图生成** for the first command and **成片任务** for the asynchronous video-generation command.

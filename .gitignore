@@ -22,5 +22,7 @@ apps/web/playwright-report/
 docs/*
 !docs/core/
 !docs/core/**
+!docs/plan/
+!docs/plan/**
 !docs/test/
 !docs/test/**
