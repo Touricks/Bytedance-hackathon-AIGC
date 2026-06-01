@@ -11,16 +11,16 @@
 ```
 shot prompt approved → storyboard_shots seeded
                        → ★ image prompt propose ★（内部：组装 prompt + 调 Ark + 返回 N 张候选）
-                                                  → 用户从 N 张里挑 1 张 (selected_shot_image)
+                                                  → 用户从 N 张里挑 1 张 (image_select_artifact)
                                                   → video script → video batch → ...
 ```
 
-- **上一步**：shot 已 seed 到 `storyboard_shots` 表。shot N（N≥1）的前一 shot 必须已经有 `selected_shot_image`，作为本 shot 的场景锚点 `image_ref`；shot 0 的 `image_ref` 由后端用 `materialIntake.primaryProductRef` 替代以建立基准。
+- **上一步**：shot 已 seed 到 `storyboard_shots` 表。shot N（N≥1）的前一 shot 必须已经有 `image_select_artifact`，作为本 shot 的场景锚点 `image_ref`；shot 0 的 `image_ref` 由后端用 `materialIntake.primaryProductRef` 替代以建立基准。
 - **本步**：用户点「生成图片」（或前端 auto-trigger），本 agent 在一次调用内完成：
   1. 读取 shot 上下文 + `image_ref` + `userDirection` → 组装结构化图像 prompt（写入 `ImagePromptArtifact`，status=ACTIVE）。
   2. 用该 prompt 调 Ark Seedream → 拿到 `number` 张候选图。
   3. 把候选写入 `image_candidates` 表，并在响应里一并返回前端。
-- **下一步**：用户在前端 candidate 选择页挑 1 张 → 写入 `selected_shot_images` → 进入 video-script。
+- **下一步**：用户在前端 candidate 选择页挑 1 张 → 写入 `image_select_artifacts` → 进入 video-script。
 
 ## 3. 触发接口
 
@@ -45,7 +45,7 @@ shot prompt approved → storyboard_shots seeded
 | `shotId` | 镜头 ID | 字符串 (uuid) | 是 | 路径参数 |
 | `userDirection` | 用户对画面的自由文本指示。例：「光线柔和一些」「再加点复古色调」「换个角度」 | 字符串 | 否 | 请求 |
 | `number` | 要求生成的候选图数量。默认从 `.env`（如 `DEFAULT_IMAGE_BATCH_SIZE=3`）提取 | 整数 | 是 | 环境变量 |
-| `image_ref` | 场景一致性锚点图 URL。**shot N（N≥1）**：必须是前一 shot 的已选首帧 URL（来自 `selected_shot_images[shot N-1]`）；**shot 0**：后端用 `materialIntake.primaryProductRef` 的 URL 替代。**必填，由后端基于 shotId 自动注入**，前端 / 用户不传 | 字符串 (URL) | 是 | 后端注入 |
+| `image_ref` | 场景一致性锚点图 URL。**shot N（N≥1）**：必须是前一 shot 的已选首帧 URL（来自 `image_select_artifacts[shot N-1]`）；**shot 0**：后端用 `materialIntake.primaryProductRef` 的 URL 替代。**必填，由后端基于 shotId 自动注入**，前端 / 用户不传 | 字符串 (URL) | 是 | 后端注入 |
 
 ### 模型实际看到的上下文（由后端拼装注入）
 

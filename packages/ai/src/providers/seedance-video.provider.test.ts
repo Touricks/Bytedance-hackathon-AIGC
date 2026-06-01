@@ -171,12 +171,14 @@ describe("generateVideoWithSeedance", () => {
       }
     );
 
-    assert.deepEqual(result, {
-      provider: "seedance",
-      model: "ark-video-endpoint",
-      videoUrl: "https://cdn.example/video.mp4",
-      prompt: "Create a vertical ecommerce product showcase video"
-    });
+    assert.equal(result.provider, "seedance");
+    assert.equal(result.model, "ark-video-endpoint");
+    assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
+    assert.equal(
+      result.prompt,
+      "Create a vertical ecommerce product showcase video",
+    );
+    assert.equal(typeof result.createdAt, "number");
     assert.deepEqual(
       events.map((event) => (event as { kind: string }).kind),
       ["video.task_create_started", "video.task_created", "video.completed"]

@@ -50,6 +50,8 @@ export interface WorkspaceNextAction {
     | "runtime_builder"
     | "human_approval"
     | "video_generation"
+    | "shot_set_apply"
+    | "final_compose"
     | "status_poll"
     | "feedback"
     | "recovery";
@@ -77,13 +79,51 @@ export interface WorkspaceInitializeDetail {
 export interface WorkspaceArtifact<TData> {
   id: string;
   workspaceId: string;
-  scriptId: string;
+  scriptId?: string;
+  moduleId:
+    | "prompt-requirements"
+    | "material-intake"
+    | "product-brief"
+    | "storyboard"
+    | "shotprompt";
   type: string;
-  status: "proposed" | "approved" | "stale" | "failed";
+  status: "proposed" | "approved" | "archived" | "failed";
+  isCurrent: boolean;
   data: TData;
+  sourceFingerprint: Record<string, unknown>;
+  promptAssembly: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
-  approvedAt?: string;
+  approvedAt: string | null;
+}
+
+export interface PromptRequirementsData {
+  image?: Record<string, unknown>;
+  script?: Record<string, unknown>;
+  storyboard?: Record<string, unknown>;
+  shotImage?: Record<string, unknown>;
+  shotVideo?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface WorkspaceModuleState<TData = unknown> {
+  moduleId: WorkspaceArtifact<TData>["moduleId"];
+  proposed: WorkspaceArtifact<TData> | null;
+  current: WorkspaceArtifact<TData> | null;
+  upstream?: {
+    upstreamChanged: boolean;
+    changedSources: string[];
+  };
+}
+
+export interface WorkspaceShotSet {
+  id: string;
+  workspaceId: string;
+  shotPromptArtifactId: string;
+  status: "active" | "archived" | string;
+  sourceFingerprint: Record<string, unknown>;
+  createdAt: string;
+  archivedAt: string | null;
 }
 
 export interface RuntimePromptView {
@@ -146,7 +186,16 @@ export interface WorkspaceStatusDetail {
   manifest: WorkspaceManifest;
   nextAction: WorkspaceNextAction;
   materialLibrary: WorkspaceMaterialLibrary;
+  modules?: {
+    "prompt-requirements"?: WorkspaceModuleState;
+    "material-intake"?: WorkspaceModuleState<MaterialIntakeArtifact>;
+    "product-brief"?: WorkspaceModuleState<ProductBriefArtifact>;
+    storyboard?: WorkspaceModuleState<StoryboardArtifact>;
+    shotprompt?: WorkspaceModuleState<ShotPromptArtifact>;
+  };
+  activeShotSet?: WorkspaceShotSet | null;
   artifacts?: {
+    promptRequirements?: WorkspaceArtifact<unknown> | null;
     material: WorkspaceArtifact<MaterialIntakeArtifact> | null;
     brief: WorkspaceArtifact<ProductBriefArtifact> | null;
     storyboard: WorkspaceArtifact<StoryboardArtifact> | null;
@@ -182,7 +231,7 @@ export interface WorkspaceDirectorySelectDetail {
 }
 
 export interface WorkspaceArtifactDetail<TData> {
-  workspace: CreativeWorkspace;
+  workspace?: CreativeWorkspace;
   artifact: WorkspaceArtifact<TData>;
   promptView?: RuntimePromptView;
   form?: ArtifactFormContract;
@@ -191,26 +240,14 @@ export interface WorkspaceArtifactDetail<TData> {
 
 export type WorkspaceMaterialDetail =
   WorkspaceArtifactDetail<MaterialIntakeArtifact>;
+export type WorkspacePromptRequirementsDetail =
+  WorkspaceArtifactDetail<PromptRequirementsData>;
 export type WorkspaceBriefDetail =
   WorkspaceArtifactDetail<ProductBriefArtifact>;
 export type WorkspaceStoryboardDetail =
   WorkspaceArtifactDetail<StoryboardArtifact>;
 export type WorkspaceShotPromptDetail =
   WorkspaceArtifactDetail<ShotPromptArtifact>;
-
-export interface WorkspaceFeedbackRouteDetail {
-  workspace: CreativeWorkspace;
-  routeArtifact: WorkspaceArtifact<unknown>;
-  artifact: WorkspaceArtifact<
-    ProductBriefArtifact | StoryboardArtifact | ShotPromptArtifact
-  >;
-  route: {
-    targetArtifact: "brief" | "storyboard" | "shotprompt";
-    reason: string;
-    revisionInstruction: string;
-    confidence: "high" | "medium" | "low";
-  };
-}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -342,6 +379,29 @@ async function postJson<TResponse>(
   return (await response.json()) as TResponse;
 }
 
+function normalizeWorkspaceArtifact<TData>(
+  artifact: WorkspaceArtifact<TData> | null | undefined,
+) {
+  if (!artifact) return null;
+  return {
+    ...artifact,
+    type: artifact.type ?? artifact.moduleId,
+  };
+}
+
+async function postModuleArtifact<TData>(
+  path: string,
+  body: unknown,
+): Promise<WorkspaceArtifactDetail<TData>> {
+  const response = await postJson<{ data: WorkspaceArtifact<TData> }>(
+    path,
+    body,
+  );
+  return {
+    artifact: normalizeWorkspaceArtifact(response.data)!,
+  };
+}
+
 export async function uploadProductImage(file: File): Promise<Asset> {
   const dataBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
 
@@ -366,6 +426,13 @@ export async function uploadProductImage(file: File): Promise<Asset> {
 
 export function toAbsoluteAssetUrl(url: string) {
   return url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
+}
+
+export function toWorkspaceMaterialUrl(workspaceId: string, refOrUrl: string) {
+  if (/^(https?:|data:|blob:)/.test(refOrUrl)) return refOrUrl;
+  if (refOrUrl.startsWith("/")) return toAbsoluteAssetUrl(refOrUrl);
+  const encodedRef = refOrUrl.split("/").map(encodeURIComponent).join("/");
+  return `${apiBaseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/materials/${encodedRef}`;
 }
 
 export async function initializeWorkspace(
@@ -404,13 +471,15 @@ export async function uploadWorkspaceMaterial(input: {
   file: File;
 }): Promise<WorkspaceMaterialUploadDetail> {
   const body = new FormData();
-  body.set("workspaceId", input.workspaceId);
   body.set("file", input.file);
 
-  const response = await fetch(`${apiBaseUrl}/api/workspaces/materials`, {
-    method: "POST",
-    body,
-  });
+  const response = await fetch(
+    `${apiBaseUrl}/api/workspaces/${input.workspaceId}/materials`,
+    {
+      method: "POST",
+      body,
+    },
+  );
 
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response));
@@ -422,9 +491,43 @@ export async function uploadWorkspaceMaterial(input: {
 export async function getWorkspaceStatus(
   workspaceId: string,
 ): Promise<WorkspaceStatusDetail> {
-  return postJson<WorkspaceStatusDetail>("/api/workspaces/status", {
-    workspaceId,
-  });
+  const detail = await fetchJson<WorkspaceStatusDetail>(
+    `/api/workspaces/${workspaceId}/status`,
+  );
+  if (detail.artifacts) {
+    detail.artifacts = {
+      ...detail.artifacts,
+      promptRequirements: normalizeWorkspaceArtifact(
+        detail.artifacts.promptRequirements,
+      ),
+      material: normalizeWorkspaceArtifact(detail.artifacts.material),
+      brief: normalizeWorkspaceArtifact(detail.artifacts.brief),
+      storyboard: normalizeWorkspaceArtifact(detail.artifacts.storyboard),
+      shotPrompt: normalizeWorkspaceArtifact(detail.artifacts.shotPrompt),
+    };
+  }
+  return detail;
+}
+
+export async function proposeWorkspacePromptRequirements(input: {
+  workspaceId: string;
+  data: PromptRequirementsData;
+}): Promise<WorkspacePromptRequirementsDetail> {
+  return postModuleArtifact<PromptRequirementsData>(
+    `/api/workspaces/${input.workspaceId}/prompt-requirements/propose`,
+    { data: input.data },
+  );
+}
+
+export async function approveWorkspacePromptRequirements(input: {
+  workspaceId: string;
+  artifactId?: string;
+  data?: PromptRequirementsData;
+}): Promise<WorkspacePromptRequirementsDetail> {
+  return postModuleArtifact<PromptRequirementsData>(
+    `/api/workspaces/${input.workspaceId}/prompt-requirements/approve`,
+    input.artifactId ? { artifactId: input.artifactId } : { data: input.data },
+  );
 }
 
 export async function runWorkspaceMaterialIntake(input: {
@@ -432,9 +535,22 @@ export async function runWorkspaceMaterialIntake(input: {
   prompt?: string;
   selectedMaterialRefs?: string[];
 }): Promise<WorkspaceMaterialDetail> {
-  return postJson<WorkspaceMaterialDetail>(
-    "/api/workspaces/material-intake",
-    input,
+  return postModuleArtifact<MaterialIntakeArtifact>(
+    `/api/workspaces/${input.workspaceId}/material-intake/propose`,
+    {
+      userDirection: input.prompt,
+      selectedMaterialRefs: input.selectedMaterialRefs,
+    },
+  );
+}
+
+export async function approveWorkspaceMaterialIntake(
+  workspaceId: string,
+  data: MaterialIntakeArtifact,
+): Promise<WorkspaceMaterialDetail> {
+  return postModuleArtifact<MaterialIntakeArtifact>(
+    `/api/workspaces/${workspaceId}/material-intake/approve`,
+    { data },
   );
 }
 
@@ -446,30 +562,34 @@ export async function proposeWorkspaceBrief(input: {
   audience?: string;
   stylePreference?: string;
 }): Promise<WorkspaceBriefDetail> {
-  return postJson<WorkspaceBriefDetail>("/api/workspaces/brief/propose", input);
+  return postModuleArtifact<ProductBriefArtifact>(
+    `/api/workspaces/${input.workspaceId}/product-brief/propose`,
+    {
+      userDirection: input.userDirection,
+      title: input.title,
+      sellingPoints: input.sellingPoints,
+      audience: input.audience,
+      stylePreference: input.stylePreference,
+    },
+  );
 }
 
 export async function approveWorkspaceBrief(
   workspaceId: string,
   data: ProductBriefArtifact,
 ): Promise<WorkspaceBriefDetail> {
-  return postJson<WorkspaceBriefDetail>(
-    "/api/workspaces/artifacts/brief/approve",
-    {
-      workspaceId,
-      data,
-    },
+  return postModuleArtifact<ProductBriefArtifact>(
+    `/api/workspaces/${workspaceId}/product-brief/approve`,
+    { data },
   );
 }
 
 export async function proposeWorkspaceStoryboard(
   workspaceId: string,
 ): Promise<WorkspaceStoryboardDetail> {
-  return postJson<WorkspaceStoryboardDetail>(
-    "/api/workspaces/storyboard/propose",
-    {
-      workspaceId,
-    },
+  return postModuleArtifact<StoryboardArtifact>(
+    `/api/workspaces/${workspaceId}/storyboard/propose`,
+    {},
   );
 }
 
@@ -477,12 +597,9 @@ export async function approveWorkspaceStoryboard(
   workspaceId: string,
   data: StoryboardArtifact,
 ): Promise<WorkspaceStoryboardDetail> {
-  return postJson<WorkspaceStoryboardDetail>(
-    "/api/workspaces/artifacts/storyboard/approve",
-    {
-      workspaceId,
-      data,
-    },
+  return postModuleArtifact<StoryboardArtifact>(
+    `/api/workspaces/${workspaceId}/storyboard/approve`,
+    { data },
   );
 }
 
@@ -490,9 +607,9 @@ export async function compileWorkspaceShotPrompt(input: {
   workspaceId: string;
   aspectRatio?: "9:16" | "16:9" | "1:1";
 }): Promise<WorkspaceShotPromptDetail> {
-  return postJson<WorkspaceShotPromptDetail>(
-    "/api/workspaces/shotprompt/compile",
-    input,
+  return postModuleArtifact<ShotPromptArtifact>(
+    `/api/workspaces/${input.workspaceId}/shotprompt/propose`,
+    { aspectRatio: input.aspectRatio },
   );
 }
 
@@ -500,22 +617,18 @@ export async function approveWorkspaceShotPrompt(
   workspaceId: string,
   data: ShotPromptArtifact,
 ): Promise<WorkspaceShotPromptDetail> {
-  return postJson<WorkspaceShotPromptDetail>(
-    "/api/workspaces/artifacts/shotprompt/approve",
-    {
-      workspaceId,
-      data,
-    },
+  return postModuleArtifact<ShotPromptArtifact>(
+    `/api/workspaces/${workspaceId}/shotprompt/approve`,
+    { data },
   );
 }
 
-export async function routeWorkspaceFeedback(input: {
+export async function applyWorkspaceShotSet(input: {
   workspaceId: string;
-  feedback: string;
-  jobId?: string;
-}): Promise<WorkspaceFeedbackRouteDetail> {
-  return postJson<WorkspaceFeedbackRouteDetail>(
-    "/api/workspaces/feedback/route",
-    input,
+  shotPromptArtifactId?: string;
+}): Promise<{ data: WorkspaceShotSet }> {
+  return postJson<{ data: WorkspaceShotSet }>(
+    `/api/workspaces/${input.workspaceId}/shot-sets`,
+    { shotPromptArtifactId: input.shotPromptArtifactId },
   );
 }

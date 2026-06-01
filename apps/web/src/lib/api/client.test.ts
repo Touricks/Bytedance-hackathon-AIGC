@@ -1,23 +1,66 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
+  approveWorkspacePromptRequirements,
   approveWorkspaceBrief,
   createWorkspace,
   getWorkspaceStatus,
   listWorkspaces,
+  proposeWorkspacePromptRequirements,
   runWorkspaceMaterialIntake,
   selectWorkspaceDirectory,
+  toWorkspaceMaterialUrl,
   uploadWorkspaceMaterial,
   uploadProductImage
 } from "./client.js";
 
 const originalFetch = globalThis.fetch;
 
+function moduleArtifact(moduleId: string, data: unknown, status = "proposed") {
+  return {
+    id: `${moduleId}_artifact_123`,
+    workspaceId: "workspace_123",
+    moduleId,
+    type: moduleId,
+    status,
+    isCurrent: status === "approved",
+    data,
+    sourceFingerprint: {},
+    promptAssembly: {
+      moduleId,
+      assemblerVersion: "v2",
+      subjectHash: "a".repeat(64),
+      contractHash: "b".repeat(64)
+    },
+    createdAt: "2026-05-25T00:00:00.000Z",
+    updatedAt: "2026-05-25T00:00:00.000Z",
+    approvedAt: status === "approved" ? "2026-05-25T00:00:00.000Z" : null
+  };
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
 describe("api client", () => {
+  it("builds workspace material URLs from bare asset refs", () => {
+    assert.equal(
+      toWorkspaceMaterialUrl("workspace_123", "DSC03391.JPG"),
+      "http://localhost:3000/api/workspaces/workspace_123/materials/DSC03391.JPG"
+    );
+    assert.equal(
+      toWorkspaceMaterialUrl("workspace_123", "folder/product image.png"),
+      "http://localhost:3000/api/workspaces/workspace_123/materials/folder/product%20image.png"
+    );
+    assert.equal(
+      toWorkspaceMaterialUrl(
+        "workspace_123",
+        "/api/workspaces/workspace_123/materials/product.png"
+      ),
+      "http://localhost:3000/api/workspaces/workspace_123/materials/product.png"
+    );
+  });
+
   it("surfaces product image upload validation failures as readable errors", async () => {
     globalThis.fetch = async () =>
       new Response(
@@ -41,37 +84,47 @@ describe("api client", () => {
   it("runs workspace status and material intake by workspaceId", async () => {
     const calls: unknown[] = [];
     globalThis.fetch = async (url, init) => {
-      assert.equal(init?.method, "POST");
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      const materialData = {
+        scannedAt: "2026-05-25T00:00:00.000Z",
+        primaryProductRef: "product.png",
+        assets: [],
+        rejected: []
+      };
 
       return new Response(
-        JSON.stringify({
-          workspace: {
-            id: "workspace_123",
-            localPath: "/tmp/desk-demo",
-            currentScriptId: "script_123",
-            status: "materials_ready",
-            traceFile: ".daireel/trace/events.jsonl",
-            createdAt: "2026-05-25T00:00:00.000Z",
-            updatedAt: "2026-05-25T00:00:00.000Z",
-            lastSeenAt: "2026-05-25T00:00:00.000Z"
-          },
-          artifact: {
-            id: "artifact_123",
-            workspaceId: "workspace_123",
-            scriptId: "script_123",
-            type: "assets",
-            status: "approved",
-            data: {
-              scannedAt: "2026-05-25T00:00:00.000Z",
-              primaryProductRef: "product.png",
-              assets: [],
-              rejected: []
-            },
-            createdAt: "2026-05-25T00:00:00.000Z",
-            updatedAt: "2026-05-25T00:00:00.000Z"
-          }
-        }),
+        JSON.stringify(
+          String(url).endsWith("/status")
+            ? {
+                workspace: {
+                  id: "workspace_123",
+                  localPath: "/tmp/desk-demo",
+                  currentScriptId: "script_123",
+                  status: "materials_ready",
+                  traceFile: ".daireel/trace/events.jsonl",
+                  createdAt: "2026-05-25T00:00:00.000Z",
+                  updatedAt: "2026-05-25T00:00:00.000Z",
+                  lastSeenAt: "2026-05-25T00:00:00.000Z"
+                },
+                artifacts: {
+                  material: moduleArtifact(
+                    "material-intake",
+                    materialData,
+                    "approved"
+                  ),
+                  brief: null,
+                  storyboard: null,
+                  shotPrompt: null
+                }
+              }
+            : {
+                data: moduleArtifact("material-intake", materialData)
+              }
+        ),
         { status: 200 }
       );
     };
@@ -84,20 +137,82 @@ describe("api client", () => {
     });
 
     assert.equal(status.workspace.id, "workspace_123");
-    assert.equal(detail.workspace.currentScriptId, "script_123");
-    assert.equal(detail.artifact.type, "assets");
+    assert.equal(status.artifacts?.material?.moduleId, "material-intake");
+    assert.equal(detail.artifact.moduleId, "material-intake");
     assert.deepEqual(calls, [
       {
-        url: "http://localhost:3000/api/workspaces/status",
-        body: { workspaceId: "workspace_123" }
+        method: "GET",
+        url: "http://localhost:3000/api/workspaces/workspace_123/status",
+        body: null
       },
       {
-        url: "http://localhost:3000/api/workspaces/material-intake",
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/material-intake/propose",
         body: {
-          workspaceId: "workspace_123",
-          prompt: "office UGC",
+          userDirection: "office UGC",
           selectedMaterialRefs: ["product.png"]
         }
+      }
+    ]);
+  });
+
+  it("proposes and approves prompt requirements by workspaceId", async () => {
+    const calls: unknown[] = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      const status = String(url).endsWith("/approve") ? "approved" : "proposed";
+      return new Response(
+        JSON.stringify({
+          data: moduleArtifact(
+            "prompt-requirements",
+            body.data ?? {
+              image: { style: "clean" },
+              shotImage: { global: "consistent scene" },
+              shotVideo: { global: "smooth motion" }
+            },
+            status
+          )
+        }),
+        { status: 200 }
+      );
+    };
+
+    const proposed = await proposeWorkspacePromptRequirements({
+      workspaceId: "workspace_123",
+      data: {
+        image: { style: "clean" },
+        shotImage: { global: "consistent scene" },
+        shotVideo: { global: "smooth motion" }
+      }
+    });
+    const approved = await approveWorkspacePromptRequirements({
+      workspaceId: "workspace_123",
+      artifactId: proposed.artifact.id
+    });
+
+    assert.equal(proposed.artifact.moduleId, "prompt-requirements");
+    assert.equal(approved.artifact.isCurrent, true);
+    assert.deepEqual(calls, [
+      {
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/prompt-requirements/propose",
+        body: {
+          data: {
+            image: { style: "clean" },
+            shotImage: { global: "consistent scene" },
+            shotVideo: { global: "smooth motion" }
+          }
+        }
+      },
+      {
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/prompt-requirements/approve",
+        body: { artifactId: "prompt-requirements_artifact_123" }
       }
     ]);
   });
@@ -192,11 +307,13 @@ describe("api client", () => {
 
   it("uploads files to a Fastify-managed workspace", async () => {
     globalThis.fetch = async (url, init) => {
-      assert.equal(String(url), "http://localhost:3000/api/workspaces/materials");
+      assert.equal(
+        String(url),
+        "http://localhost:3000/api/workspaces/workspace_123/materials"
+      );
       assert.equal(init?.method, "POST");
       assert.equal(init?.body instanceof FormData, true);
       const body = init?.body as FormData;
-      assert.equal(body.get("workspaceId"), "workspace_123");
       const file = body.get("file");
       assert.equal(file instanceof File, true);
       assert.equal((file as File).name, "notes.txt");
@@ -295,43 +412,21 @@ describe("api client", () => {
     );
   });
 
-  it("approves workspace brief artifacts through the V1 approval API", async () => {
+  it("approves workspace brief artifacts through the V2 module API", async () => {
     globalThis.fetch = async (url, init) => {
       assert.equal(
         String(url),
-        "http://localhost:3000/api/workspaces/artifacts/brief/approve"
+        "http://localhost:3000/api/workspaces/workspace_123/product-brief/approve"
       );
       assert.equal(init?.method, "POST");
       const body = JSON.parse(String(init?.body)) as {
-        workspaceId: string;
         data: { coreSellingPoint: string };
       };
-      assert.equal(body.workspaceId, "workspace_123");
       assert.equal(body.data.coreSellingPoint, "easy cleaning");
 
       return new Response(
         JSON.stringify({
-          workspace: {
-            id: "workspace_123",
-            localPath: "/tmp/desk-demo",
-            currentScriptId: "script_123",
-            status: "brief_approved",
-            traceFile: ".daireel/trace/events.jsonl",
-            createdAt: "2026-05-25T00:00:00.000Z",
-            updatedAt: "2026-05-25T00:00:00.000Z",
-            lastSeenAt: "2026-05-25T00:00:00.000Z"
-          },
-          artifact: {
-            id: "artifact_456",
-            workspaceId: "workspace_123",
-            scriptId: "script_123",
-            type: "brief",
-            status: "approved",
-            data: body.data,
-            createdAt: "2026-05-25T00:00:00.000Z",
-            updatedAt: "2026-05-25T00:00:00.000Z",
-            approvedAt: "2026-05-25T00:00:00.000Z"
-          }
+          data: moduleArtifact("product-brief", body.data, "approved")
         }),
         { status: 200 }
       );
@@ -358,7 +453,7 @@ describe("api client", () => {
       assumptions: []
     });
 
-    assert.equal(detail.workspace.status, "brief_approved");
+    assert.equal(detail.artifact.moduleId, "product-brief");
     assert.equal(detail.artifact.status, "approved");
   });
 });

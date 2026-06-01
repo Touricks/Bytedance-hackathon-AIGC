@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getWorkspaceStatus,
-  toAbsoluteAssetUrl,
+  toWorkspaceMaterialUrl,
 } from "../../../lib/api/client.js";
 import { useFocusStore } from "../state/focusStore.js";
 import { useShotAssetRefs } from "../hooks/useShotAssetRefs.js";
@@ -62,7 +62,7 @@ export function AssetRail({ workspaceId }: { workspaceId: string }) {
             <AssetTile
               key={a.ref}
               assetId={a.ref}
-              url={toAbsoluteAssetUrl(a.ref)}
+              url={toWorkspaceMaterialUrl(workspaceId, a.ref)}
               label={a.description}
               selected={refs.some((r) => r.assetId === a.ref)}
               onToggle={() => {

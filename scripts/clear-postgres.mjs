@@ -17,16 +17,25 @@ const tables = [
   "trace_events",
   "final_video_jobs",
   "generation_jobs",
+  "video_select_artifacts",
   "selected_shot_videos",
   "video_candidates",
   "video_generation_batches",
   "video_script_artifacts",
+  "image_select_artifacts",
   "selected_shot_images",
   "image_candidates",
   "image_generation_batches",
   "image_prompt_artifacts",
   "shot_asset_refs",
+  "shot_prompt_requirements",
   "storyboard_shots",
+  "shot_sets",
+  "shot_prompt_artifacts",
+  "storyboard_artifacts",
+  "product_brief_artifacts",
+  "material_intake_artifacts",
+  "prompt_requirements_artifacts",
   "workspace_artifact",
   "script",
   "creative_workspace",
@@ -142,7 +151,12 @@ async function getExistingTables(client) {
 
 async function countRows(client) {
   const counts = {};
+  const existingTables = await getExistingTables(client);
   for (const table of tables) {
+    if (!existingTables.has(table)) {
+      counts[table] = 0;
+      continue;
+    }
     const result = await client.query(
       `select count(*)::integer as count from ${quoteIdentifier(table)}`
     );
@@ -173,13 +187,13 @@ async function main() {
     console.log(`Target database: ${formatDatabaseTarget(databaseUrl)}`);
 
     const existingTables = await getExistingTables(client);
+    const existingTablesToTruncate = tables.filter((table) =>
+      existingTables.has(table)
+    );
     const missingTables = tables.filter((table) => !existingTables.has(table));
     if (missingTables.length > 0) {
-      throw new Error(
-        [
-          `Missing expected table(s): ${missingTables.join(", ")}`,
-          "Initialize the database schema first, for example by starting the server once."
-        ].join("\n")
+      console.log(
+        `Skipping missing table(s), schema will create them on next server start: ${missingTables.join(", ")}`
       );
     }
 
@@ -195,7 +209,7 @@ async function main() {
     await client.query("begin");
     try {
       await client.query(
-        `truncate table ${tables.map(quoteIdentifier).join(", ")}
+        `truncate table ${existingTablesToTruncate.map(quoteIdentifier).join(", ")}
          restart identity cascade`
       );
       await client.query("commit");

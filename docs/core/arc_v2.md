@@ -1,199 +1,397 @@
-# arc_v2 — 架构设计与仓库拓扑
+# arc_v2 — V2 模块化架构目标
 
-> 电商 AIGC 短视频生成系统（`ecommerce-aigc-video`）。本文描述**当前 main 分支真实代码**的架构与仓库拓扑，作为 `erd.md` / `interface.md` / `openapi.yaml` 的总纲。
+> 电商 AIGC 短视频生成系统（`ecommerce-aigc-video`）的 V2 目标架构。本文描述接下来要迁移到的模块化架构，而不是当前代码的混合态。
 >
-> 术语遵循 `CONTEXT.md`：创作工作目录（workspace）、上传素材（material）、创作蓝图 / 剧本（script）、分镜（shot）、成片（final video）。
+> 术语遵循 `CONTEXT.md`：创作工作目录、创作要求、待审创作产物、生效创作产物、上游变更提示、分镜链路实例、分镜图选择、分镜视频选择。
 
 ---
 
 ## 1. 一句话定位
 
-商家上传商品素材 → AI 构建管线（物料解读 → 产品 brief → 故事板 → 分镜提示）→ **逐分镜管线（per-shot pipeline）**（图像提示 → 候选图 → 视频脚本 → 候选视频 → 选定）→ ffmpeg 拼接出一条成片，并可发布到渠道/KOL 并回收指标。
+商家上传商品素材 → 模块化 AI 链路生成并批准生效创作产物 → 显式应用 shot prompt 创建分镜链路实例 → 逐分镜生成候选图/候选视频并选择当前结果 → ffmpeg 拼接成片。
 
-技术基座：**Fastify 5 + Zod + BullMQ + 原生 `pg`（PostgreSQL）+ ffmpeg**，AI 调用走火山引擎 **Ark（文本/Seedream 图像）** 与 **Seedance（视频）**。
+V2 的核心变化：
 
-> ⚠️ 注意：本系统**不是 NestJS**。没有装饰器/DI/Guard/Pipe，“controller” 是向 Fastify 实例注册路由的普通函数，校验靠每个 handler 内显式 `schema.parse()`。
+- 每个 prompt module 拥有自己的 artifact 表，`workspace_artifact` 退出主链路。
+- 用户编辑的是结构化**创作要求**，不是 raw prompt 或 system prompt。
+- prompt 模板分离为主体 prompt 与契约/schema prompt，并由 assembler 组装。
+- module artifact 物理 append，业务上只暴露当前生效内容。
+- 上游变更不自动 reset 下游，只产生**上游变更提示**。
+- `shotprompt approve` 不再删除并重建 shots；必须显式创建新的**分镜链路实例**。
+
+技术基座仍是 **Fastify 5 + Zod + BullMQ + 原生 `pg` + ffmpeg**，AI 调用走火山引擎 **Ark 文本 / Seedream 图像** 与 **Seedance 视频**。
 
 ---
 
-## 2. 仓库拓扑（Repository Topology）
+## 2. 仓库拓扑
 
-pnpm 9 workspace + Turbo 2。`pnpm-workspace.yaml` 收录 `apps/*` 与 `packages/*`。
+pnpm workspace + Turbo：
 
 ```
 Bytedancehack/
 ├── apps/
-│   ├── server/                # @aigc-video/server  — Fastify API + BullMQ worker + Postgres
-│   │   └── src/
-│   │       ├── main.ts        # 进程入口：assert ffmpeg → 注册 generation_v2 processor → 启动 worker → listen
-│   │       ├── app.ts         # buildServer()：db.initialize()、CORS、multipart、注册各模块路由
-│   │       ├── common/        # config.ts(env)、errors.ts(toHttpError)、image-validation.ts
-│   │       ├── db/
-│   │       │   ├── client.ts          # pg Pool；PostgresDbAdapter(V1) + PostgresDb2Adapter(V2, = db.db2)
-│   │       │   └── schema/schema.sql  # 权威 DDL，启动时幂等执行（即“迁移”机制）
-│   │       └── modules/
-│   │           ├── material/   # 商品图登记 / base64 上传（legacy 适配器）
-│   │           ├── pipeline/   # GET 管线契约元数据
-│   │           ├── script/     # 旧 v1 script 查询
-│   │           ├── workspace/  # 线性构建管线（draft→…→shotprompt_approved），最大模块(~2k 行)
-│   │           ├── shot/        # 逐分镜状态机：图像提示/候选/选定 + 视频脚本/候选/选定
-│   │           ├── generation/  # createImageBatch/createVideoBatch/createFinalCompose + 三个 worker + ffmpeg
-│   │           ├── campaign/    # 成片发布 + 指标回收
-│   │           ├── trace/       # trace_events 读写
-│   │           └── job/job.queue.ts  # BullMQ 队列/Worker + 在途任务恢复
-│   └── web/                   # @aigc-video/web    — React 19 + Vite 6 前端
-│       └── src/
-│           ├── main.tsx                       # 基于 pathname 的手写路由（无 router 库）
-│           ├── lib/api/client.ts              # API 基址解析 + fetchJson/postJson + 各资源 API 模块
-│           └── features/workspace/Focus/      # FocusRouter 按 ShotStatus 驱动逐分镜 UI 步骤
+│   ├── server/                # Fastify API + BullMQ worker + Postgres + 本地文件落盘
+│   └── web/                   # React/Vite 前端
 ├── packages/
-│   ├── ai/                    # @aigc-video/ai     — Provider 抽象 + agent/builder 工作流 + prompts + trace
-│   ├── shared/                # @aigc-video/shared — 领域类型、zod 契约、队列契约、shotprompt 编译器
-│   └── config/                # @aigc-video/config — eslint/prettier/tsconfig 预设（纯工具配置）
-├── infra/docker-compose.yml   # postgres:16 / redis:7 / minio
-├── scripts/                   # clear-postgres.mjs / clear-redis.mjs / reset-dev-session.mjs
-├── docs/                      # 本目录（arc_v2/erd/interface/openapi + reference/ 等）
-└── CONTEXT.md                 # 领域语言权威表
+│   ├── ai/                    # provider、agent/workflow、prompt assembly
+│   ├── shared/                # zod 契约、领域类型、job payload 类型
+│   └── config/                # lint/format/tsconfig 预设
+├── docs/
+│   ├── core/                  # 架构、ERD、接口、OpenAPI
+│   ├── plan/                  # 迁移计划
+│   └── test/                  # Postman/Newman 测试数据
+├── scripts/                   # reset/dev/test orchestration
+└── CONTEXT.md                 # 领域语言
 ```
 
-### 2.1 工作区依赖图（who imports whom）
+依赖方向：
 
 ```
-config        （叶子，仅 lint/ts 工具预设，无运行时依赖）
-
-shared  ──────────────►  zod
-ai      ──────────────►  shared,  @openai/agents,  openai,  zod
-web     ──────────────►  shared            （仅共享类型，不碰 ai / server）
-server  ──────────────►  shared,  ai
+shared  ──────────────► zod
+ai      ──────────────► shared, @openai/agents, openai, zod
+web     ──────────────► shared
+server  ──────────────► shared, ai
 ```
 
-- `shared` 是**契约枢纽**，被所有人引用。
-- `ai` 仅被 `server` 消费。
-- `web` 与后端只通过 `shared` 的类型 + HTTP 契约耦合，**不直接 import 后端代码**。
-- 无循环依赖。Turbo `build` 任务 `dependsOn: ["^build"]`，按依赖图拓扑构建；`dev` 为 persistent 任务。
+---
 
-### 2.2 各 workspace 角色
+## 3. Module Graph
 
-| Workspace | 包名 | 角色 |
+V2 把链路显式拆成 prompt modules 与同步点 modules。
+
+| 类型 | Module | 输出 |
 |---|---|---|
-| `apps/server` | `@aigc-video/server` | Fastify API + BullMQ worker + Postgres 访问。唯一持有业务事实（Postgres）与文件落盘。|
-| `apps/web` | `@aigc-video/web` | React 19 + Vite 前端；TanStack Query 轮询 + Zustand 状态 + 手写 pathname 路由。|
-| `packages/ai` | `@aigc-video/ai` | Provider 抽象（text/image/video）+ Ark/Seedance 集成 + `@openai/agents` 驱动的两个 agent + builder 工作流 + `.md` prompts + 管线契约登记 + trace。|
-| `packages/shared` | `@aigc-video/shared` | 领域实体/枚举、artifact zod 契约、队列名与 job payload 类型、`compileShotPrompt` 确定性编译器、阶段文案常量。|
-| `packages/config` | `@aigc-video/config` | 仅 eslint/prettier/tsconfig 预设。**不做 env 校验**（env 解析在 server 与 packages/ai 各自实现）。|
+| LLM | material-intake | 生效/待审素材解读 artifact |
+| LLM | product-brief | 生效/待审商品 brief artifact |
+| LLM | storyboard | 生效/待审 storyboard artifact |
+| LLM | shotprompt | 生效/待审 shot prompt artifact，含每个 shot 的 `shotImage` / `shotVideo` dict |
+| Apply | shot-set | 根据生效 shot prompt 创建分镜链路实例 |
+| LLM + Media | image-prompt | per-shot 图像 prompt artifact + image candidates |
+| Sync | image-select | per-shot 当前分镜图选择 |
+| LLM + Media | video-script | per-shot 视频脚本 artifact + video candidates |
+| Sync | video-select | per-shot 当前分镜视频选择 |
+| Media | final-compose | 按当前分镜视频选择拼接成片 |
 
----
-
-## 3. 运行时拓扑与进程模型
+主流程：
 
 ```
-┌────────────┐   HTTP (JSON / multipart)   ┌──────────────────────────────────────┐
-│  apps/web  │ ──────────────────────────► │            apps/server (Fastify)        │
-│  React/Vite│ ◄────────────────────────── │  全部路由硬编码 /api 前缀，无 URL 版本号  │
-└────────────┘     轮询 batch / 流式 trace   │                                        │
-                                            │   buildServer(): db.initialize() →     │
-                                            │   注册 material/pipeline/script/        │
-                                            │   workspace/shot/generation/campaign/   │
-                                            │   trace 模块路由                         │
-                                            └───────────┬──────────────┬─────────────┘
-                                                        │ enqueue       │ 直接调用
-                                                        ▼               ▼
-                                         ┌──────────────────────┐  ┌──────────────────────┐
-                                         │  BullMQ queue         │  │  packages/ai          │
-                                         │  generation_v2        │  │  Ark text(brief/      │
-                                         │  (USE_REDIS_QUEUE!=    │  │  storyboard/shotprompt│
-                                         │   true 时退化为         │  │  /feedback)、         │
-                                         │   setTimeout 内联执行)  │  │  agent(image-prompt / │
-                                         └──────────┬────────────┘  │  video-script)         │
-                                                    │ 多类 job        └──────────────────────┘
-                          ┌─────────────────────────┼─────────────────────────┐
-                          ▼                          ▼                         ▼
-                generate_image_candidate   generate_videos*          compose_final_video
-                image.worker.ts            video.worker.ts           final-compose.worker.ts
-                → generateImagesWithArk     → generateVideoWithSeedance → ffmpeg concat
-                  (每 candidate 一张图)        (retry/恢复路径使用)           → final.mp4
-                          │                          │                         │
-                          └──────────────┬───────────┴─────────────────────────┘
-                                         ▼
-                       Postgres(业务事实) + 本地 FS <workspace>/.daireel/(媒体产物)
+material-intake
+  -> product-brief
+  -> storyboard
+  -> shotprompt
+  -> apply shot-set
+  -> image-prompt -> image-select
+  -> video-script -> video-select
+  -> final-compose
 ```
 
-进程模式由 `SERVER_RUNTIME` 控制：`all`（默认，API+Worker 同进程）/ `api`（仅 API）/ `worker`（仅消费）。
-- 启动时 `main.ts` 先 `assertFfmpegAvailable()`，注册 `generation_v2` 单一 processor（按 `data.kind` 分派到对应 worker/processor），再 `startGenerationV2Worker()`。
-- API 模式额外执行 `recoverInflightGenerationJobs()`：把 `generation_jobs` 中 PENDING/RUNNING 且 `queue_job_id` 为空的任务重新入队，并把 RUNNING 的 batch 重置为 PENDING。Worker 幂等：batch 非 PENDING 时直接返回。
-- 当前主路径里 `image-prompts/propose` 会为每个图片候选创建一个 `generate_image_candidate` job；`video-scripts/propose` 会创建 video batch 并在请求内直接等待 `runVideoGenerationBatch()` 完成。`generate_videos` 仍用于 `/api/shots/:shotId/retry` 和启动恢复等批次重跑路径。
+---
+
+## 4. Module-Owned Artifact Tables
+
+V2 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module 有自己的表和 schema。
+
+| Module | 目标表 | 保存策略 |
+|---|---|---|
+| 创作要求 | `prompt_requirements_artifacts` | append；业务只读 current approved。 |
+| material-intake | `material_intake_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
+| product-brief | `product_brief_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
+| storyboard | `storyboard_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
+| shotprompt | `shot_prompt_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
+| shot-set | `shot_sets` + `storyboard_shots` | active/archived 分镜链路实例；不物理删除旧实例。 |
+| image-prompt | `image_prompt_artifacts` | per-shot propose round；保留生成事实。 |
+| image generation | `image_generation_batches` + `image_candidates` | per-round 候选事实。 |
+| image-select | `image_select_artifacts` | 每 shot current-only；UPSERT 覆盖当前选择。 |
+| video-script | `video_script_artifacts` | per-shot propose round；保留生成事实。 |
+| video generation | `video_generation_batches` + `video_candidates` | per-round 候选事实。 |
+| video-select | `video_select_artifacts` | 每 shot current-only；UPSERT 覆盖当前选择。 |
+| final-compose | `final_video_jobs` | 每次 compose 一条 job。 |
+
+### 4.1 Workspace Module Artifact 通用字段
+
+workspace 级 LLM module 表采用相同生命周期字段：
+
+```text
+id
+workspace_id
+status              proposed | approved | archived
+is_current          boolean
+data                jsonb
+source_fingerprint  jsonb
+prompt_assembly     jsonb
+created_at
+approved_at
+```
+
+约束：
+
+- 只有 `status='approved'` 的 row 可以 `is_current=true`。
+- 每个 workspace/module 最多一条 current approved row。
+- `propose` 插入 `status='proposed'` row，不成为下游 current input。
+- `approve` 插入新的 `status='approved', is_current=true` row，并把旧 current approved 置为 `is_current=false`。
+- 业务/API 语义是“新 approved 覆盖旧 approved”；DB 物理上 append 保留事实，产品上不提供版本追踪和回滚。
+- approved artifact 不原地编辑；前端 Edit 只是把当前生效内容带回表单，再由后端 `propose/approve` 产生新 row。
+
+### 4.2 Prompt Assembly Metadata
+
+主 artifact 表只保存 prompt assembly 元数据和预览，不保存完整 final prompt：
+
+```json
+{
+  "moduleId": "product-brief",
+  "assemblerVersion": "v2",
+  "subjectTemplateId": "product-brief/subject.md",
+  "contractTemplateId": "product-brief/contract.md",
+  "subjectHash": "sha256...",
+  "contractHash": "sha256...",
+  "requirementArtifactId": "prompt_requirements_artifact_id",
+  "preview": "短摘要"
+}
+```
+
+完整 assembled prompt 写入 `trace_events.metadata.finalPrompt` 和工作区本地 trace jsonl，用于调试和真实 provider 追溯。
 
 ---
 
-## 4. 两套数据世代（V1 builder vs V2 per-shot）
+## 5. 主体 Prompt 与 Contract Prompt 分离
 
-代码里并存两代表结构，**V2（复数表名）为当前主线**：
+每个 LLM module 的 prompt 模板文件化管理：
 
-- **构建管线（V1 builder，仍在用）**：`workspace` 模块的线性状态机（`draft → materials_ready → brief_proposed/approved → storyboard_proposed/approved → shotprompt_proposed/approved`）。每一步在 `MODEL_MODE==="real"` 时调用 Ark 文本 provider，否则走 `packages/shared` / `packages/ai` 的确定性 builder，把结果 upsert 进 `workspace_artifact`（按 `(workspace_id, artifact_type)` 唯一）。
-- **桥接点**：`shotprompt/approve` 触发 `seedShotsFromShotPrompt()`——在事务里清空并按 `ShotPromptArtifact.shots[]` 重建 `storyboard_shots` + `shot_asset_refs`，由此进入 V2。
-- **逐分镜管线（V2 per-shot，主线）**：每个 shot 独立走「图像提示 artifact → 图像 batch/候选 → 选图 → 视频脚本 artifact → 视频 batch/候选 → 选视频」的状态机（见 `shot.state.ts` 的 `ShotStatus` 枚举），全部 shot 选定后允许 `final-videos` 拼接成片。公开 API 当前把 batch 创建封装在 `image-prompts/propose` / `video-scripts/propose` 内部；`/api/shots/:shotId/retry` 才暴露带 `Idempotency-Key` 的批次重跑入口。
-- `db.initialize()` 每次启动都 `drop` 掉 V1 遗留表 `storyboard_shot` / `generation_job` / `workspace_video_archive`，仅保留共享表 `product` / `asset` / `creative_workspace` / `script` / `workspace_artifact` 与全部 V2 复数表。
+```
+packages/ai/src/prompts/modules/<module>/
+├── subject.md       # 主体创作任务：模块要创作什么
+└── contract.md      # 输入 artifact、输出 schema、JSON 格式、provider/safety 硬约束
+```
 
-详见 [`erd.md`](./erd.md)。
+当前集中式 assembler 位于 `packages/ai/src/prompts/module-prompt-assembler.ts`，负责读取对应 module 的 `subject.md` / `contract.md`，再拼入创作要求与运行时上下文。
 
----
+边界：
 
-## 5. AI Provider 层（packages/ai）
+- `subject.md` 描述创作目标、风格和业务策略，可由 prompt 设计同学迭代。
+- `contract.md` 描述可见输入、必须输出的 schema、字段语义、JSON 格式、provider 限制，系统锁定，用户不可覆盖。
+- `module-prompt-assembler.ts` 合并主体 prompt、契约 prompt、创作要求和运行时上下文，输出 `PromptAssemblyResult`。
+- 用户的创作要求只进入可控 slot，不替换 system prompt，也不改 input/output schema。
 
-- **按任务键分流的 Provider 配置**（`providers/provider-config.ts`）：`resolveTextProviderConfig` / `resolveImageProviderConfig` / `resolveVideoProviderConfig`，各自从 `TEXT_* / IMAGE_* / VIDEO_*`（并向 `AI_*_` 与 `ARK_*` 回退）读取 `apiKey / endpointId / baseURL`，缺失则返回 `null`，对应 worker 抛 `<task> provider not configured`。`isRealProviderMode()` ⇔ `MODEL_MODE==="real"`。
-- **文本**：`ark-text.provider.ts` — OpenAI 兼容 Chat Completions（用 `openai` SDK），支持 `json_schema` 响应格式。
-- **图像**：`ark-image.provider.ts` — Seedream 同步 `POST images/generations`；`count>1` 用 `sequential_image_generation`；支持参考图（图生图）；宽高比→尺寸映射（9:16→1600×2848、16:9→2848×1600、1:1→2048×2048）。
-- **视频**：`seedance-video.provider.ts` — 异步 `POST contents/generations/tasks` + 轮询 `GET .../tasks/{id}`（默认 10s × 20 次）；用 `first_frame`/`last_frame` 角色拼 `content[]`；单个 Seedance clip 的 `durationSec` 硬限 4–12 秒。批准 shotprompt 时没有数据库层时长校验，所以上游 storyboard/shotprompt 必须保证每个 shot span 至少 4 秒，否则会在 provider 调用前失败。
-- **Agent**（`@openai/agents` v0.0.5）：`storyboard-image-prompt.agent.ts`、`video-shot-script.agent.ts`，分别绑定 zod `outputType` 与 `prompts/*/v1.system.md`。mock 模式返回确定性、schema 合法的对象。
-- **契约登记**：`contracts/pipeline.contracts.ts` 的 `getPipelineContracts()` 暴露每个步骤（material_intake / product_brief / storyboard / shotprompt / feedback_route / video_export）的 provider、prompt builder、输入输出 JSON schema、目标 artifact，可经 `AIGC_VIDEO_PIPELINE_CONTRACT_OVERRIDES` 覆盖。由 `GET /api/pipeline/contracts` 暴露。
+### 5.1 Prompt 修改归属
 
----
+业务或剧本同学要自定义“主体生成 prompt”时，只改对应 module 的 `subject.md`：
 
-## 6. 存储与队列基座
-
-| 关注点 | 现状 |
+| 业务目标 | 修改文件 |
 |---|---|
-| **业务事实** | PostgreSQL（`DATABASE_URL` 必填，唯一事实源）。原生 `pg`，手写参数化 SQL；无 ORM、无迁移工具——`schema.sql` 启动幂等执行兼作迁移。|
-| **队列** | BullMQ over ioredis，队列名 `generation_v2`（旧 `generation` 仅保留常量）。`USE_REDIS_QUEUE!=="true"` 时退化为 `setTimeout(0)` 内联执行，**无需 Redis**。Worker 并发 = `maxImageBatchSize + maxVideoBatchSize`（默认 16）。Redis **仅作队列**，无应用级缓存。|
-| **媒体产物** | 当前实际全部落本地 FS，挂在工作目录 `<workspace>/.daireel/` 下（materials / generated-images / videos / final / trace）。|
-| **对象存储** | infra 起了 MinIO，`workspace_storage_bindings` 与 `*_candidates.object_key` 已为 S3 预留字段，但**代码未接 S3 SDK**——非 LOCAL 绑定时文件操作抛 `STORAGE_NOT_LOCAL`。|
-| **可观测** | 双轨 trace：Postgres `trace_events` 表（结构化、可查询）+ `<ws>/.daireel/trace/events.jsonl`（工作区本地 append-only 日志）。|
+| 素材清点/标签策略 | `packages/ai/src/prompts/modules/material-intake/subject.md` |
+| 商品 brief 写法 | `packages/ai/src/prompts/modules/product-brief/subject.md` |
+| 分镜叙事/节奏 | `packages/ai/src/prompts/modules/storyboard/subject.md` |
+| 主剧本 / shotprompt 生成 | `packages/ai/src/prompts/modules/shotprompt/subject.md` |
+| 单个 shot 的分镜图 prompt | `packages/ai/src/prompts/modules/image-prompt/subject.md` |
+| 单个 shot 的分镜视频脚本 / 运镜脚本 | `packages/ai/src/prompts/modules/video-script/subject.md` |
 
-落盘约定与 URL：图像 `.daireel/materials/generated-images/<batch>-<cand>.<ext>` → `/api/workspaces/{ws}/materials/generated-images/<file>`；视频 `.daireel/videos/<batch>-<cand>.<ext>` → `/api/workspaces/{ws}/videos/<file>`；成片记录在 `final_video_jobs.local_path/local_url`。详见 [`erd.md`](./erd.md) 第 4–5 节。
+`contract.md` 属于工程契约：只在输入 artifact、输出 schema、JSON 格式、provider 限制发生变化时由工程侧修改。业务自定义不应修改 `contract.md`，否则会改变 agent 可见输入和输出结构。
 
----
+每次 subject/contract 内容变化都会反映到对应 artifact 的 `prompt_assembly.subjectHash` / `contractHash`，完整 assembled prompt 继续写入 trace，便于回放本次生成到底使用了哪个模板版本。
 
-## 7. 端到端主流程（一条成片的生命周期）
+组装顺序：
 
-1. **建/开工作目录** — `POST /api/workspaces` 或 `/api/workspaces/init`：写 `creative_workspace` + LOCAL `workspace_storage_bindings`，落 `.daireel/workspace.json` manifest。
-2. **上传素材** — `POST /api/workspaces/materials`（multipart 或 base64）→ `.daireel/materials/`，登记 `asset` 行。
-3. **构建管线** — `material-intake` → `brief/propose`+`brief/approve` → `storyboard/propose`+`storyboard/approve` → `shotprompt/compile`+`shotprompt/approve`。real 模式调 Ark 文本，否则确定性 builder，结果进 `workspace_artifact`。
-4. **播种分镜** — shotprompt 批准触发 `seedShotsFromShotPrompt()`，生成 `storyboard_shots`（每分镜一行 DRAFT）。
-5. **逐分镜图像** — `image-prompts/propose`（agent）→ `image_prompt_artifacts`（ACTIVE）→ 内部写 `image_generation_batches` + 每候选一条 `image_candidates`/`generation_jobs(generate_image_candidate)`，shot→`IMAGE_GENERATING`。幂等键由服务端按 artifact/trace 合成，公开调用方不传。
-6. **图像 worker** — 每个 `generate_image_candidate` 调一次 `generateImagesWithArk(count=1)`，成功后落盘稳定 URL 并更新候选；batch 聚合为 SUCCEEDED/PARTIAL/FAILED，shot→`IMAGE_CANDIDATES_READY`。前端轮询 image rounds。
-7. **选图** — `.../image-candidates/select` → `selected_shot_images`，shot→`IMAGE_SELECTED`。
-8. **逐分镜视频** — `video-scripts/propose`（agent，须所有 shot 已选图）→ `video_script_artifacts`（关联选中图 + 下一 shot 选中图作为 last frame）→ 内部写 `video_generation_batches` 并直接执行 `runVideoGenerationBatch()` → `generateVideoWithSeedance` → `video_candidates`，shot→`VIDEO_CANDIDATES_READY` 或 FAILED。retry/恢复路径可重新入队 `generate_videos`。
-9. **选视频** — `.../video-candidates/select` → `selected_shot_videos`，shot→`VIDEO_SELECTED`。全部选定后 `shot-workflow-status.canComposeFinalVideo=true`。
-10. **成片合成** — `POST /api/workspaces/:id/final-videos`（须 `Idempotency-Key`）→ `final_video_jobs`（有序 `source_shot_video_ids`）入队 `compose_final_video`；worker 下载各候选视频→ffmpeg concat（libx264/aac/+faststart）→ `final.mp4`，写 manifest+hash，`local_url=/api/workspaces/{ws}/final-videos/{id}/file`。
-11. **发布与指标**（可选） — `campaign-publications` 登记渠道/KOL 发布，`.../metrics` 回收曝光/点击/转化/花费并算 CTR。
-
----
-
-## 8. 关键横切约定（写接口/契约时必读）
-
-- **路由前缀**：所有业务路由硬编码 `/api`，**URL 无版本号**（“v2” 仅体现在内部命名与表名）。
-- **响应包络**：多数返回 `{ data: ... }`，但**不一致**（部分 handler 返回裸对象）。`interface.md` / `openapi.yaml` 按各 handler 实际形态标注。
-- **幂等**：公开路由中 `POST /api/shots/:shotId/retry` 与 `POST /api/workspaces/:workspaceId/final-videos` **必须带请求头 `Idempotency-Key`**，缺失返回 400 `IDEMPOTENCY_KEY_REQUIRED`。image/video batch 创建由 propose 路由内部触发，服务端自行生成幂等键；底层 `generationService.createImageBatch/createVideoBatch/createFinalCompose` 均以 `idempotency_key` 唯一约束去重。
-- **真实 provider 限制**：Seedance 单 clip 必须 4–12 秒；Ark/Seedance 账号有 TPM/RPM 限流，真实验收脚本会退避重试文本端 throttle，并将并行视频候选数控制为每 shot 1 个，以验证 4-shot 稳定性而不把候选放大成账户限流问题。
-- **鉴权**：**全站无鉴权**（hackathon 单租户）。
-- **宽高比枚举**：固定 `["9:16","16:9","1:1"]`，默认 `9:16`。
-- **错误**：`common/errors.ts` 的 `toHttpError` 把 `HttpError`→其状态码、`NotFoundError`→404、普通 `Error`→400，其余→500；不少 handler 直接抛错走 Fastify 默认 500。
-- **遗留/未实现引用**：`nextAction` 提示里出现的 `/api/workspaces/video/generate`、`/api/jobs/:id` 属 V1 残留，当前代码**未实现**，不进 `openapi.yaml`。
+1. module identity 和 prompt version。
+2. locked input artifact guide。
+3. locked output schema guide。
+4. locked provider constraints。
+5. subject prompt。
+6. workspace 创作要求。
+7. shot 级 `shotImage` / `shotVideo` 要求。
+8. request inline `userDirection` / `customRequirements`。
+9. runtime context。
 
 ---
 
-## 9. 配置与本地编排
+## 6. 创作要求与 Shot Requirements
 
-- 关键 env：`DATABASE_URL`(必填)、`SERVER_PORT`(3000)、`WEB_PORT`(5173)、`REDIS_URL`、`USE_REDIS_QUEUE`、`SERVER_RUNTIME`、`MODEL_MODE`(real/mock)、`TEXT_/IMAGE_/VIDEO_*`(+`ARK_*` 回退)、`DEFAULT/MAX_IMAGE/VIDEO_BATCH_SIZE`、`UPLOAD_DIR`+`UPLOAD_URL_PREFIX`(legacy 商品图上传)、`ALLOW_TEST_CLEANUP`。
-- `infra/docker-compose.yml`：postgres:16(`aigc_video`,5432)、redis:7(6379)、minio(9000/9001, bucket `aigc-video`)。
-- 脚本：`pnpm db:clear` / `redis:clear` / `reset:dev`（停端口监听→清 PG 业务表→清 `bull:generation*` 队列→`pnpm dev`；不删 `.daireel/trace`、uploads、MinIO 内容）。
+workspace 级创作要求保存在 `prompt_requirements_artifacts`，作为当前生效要求参与所有 module 的 prompt assembly。
+
+建议结构：
+
+```json
+{
+  "globalStyle": { "enabled": true, "instruction": "..." },
+  "materialImage": { "enabled": true, "instruction": "..." },
+  "briefScript": { "enabled": true, "instruction": "..." },
+  "storyboard": { "enabled": true, "instruction": "..." },
+  "shotprompt": { "enabled": true, "instruction": "..." },
+  "shotImage": { "enabled": true, "instruction": "..." },
+  "shotVideo": { "enabled": true, "instruction": "..." },
+  "negativeRequirements": { "enabled": true, "instruction": "..." }
+}
+```
+
+`shot_prompt_artifacts.data.shots[]` 必须包含每个 shot 的初始 dict：
+
+```json
+{
+  "index": 0,
+  "startSec": 0,
+  "endSec": 4,
+  "providerPrompt": "...",
+  "referenceAssetRefs": ["..."],
+  "voiceover": "...",
+  "shotImage": {
+    "scene": "...",
+    "composition": "...",
+    "productVisibility": "...",
+    "style": "...",
+    "negative": ["..."]
+  },
+  "shotVideo": {
+    "cameraMotion": "...",
+    "subjectMotion": "...",
+    "firstFrameIntent": "...",
+    "lastFrameIntent": "...",
+    "continuity": "...",
+    "negative": ["..."]
+  }
+}
+```
+
+`apply shot-set` 时把 `shotImage` / `shotVideo` 写入 `shot_prompt_requirements` 或等价 per-shot requirements 表，供 image/video module 读取。用户后续修改单个 shot 的图像/视频要求，只覆盖该 shot 的当前 requirements，不影响旧 candidates。
+
+---
+
+## 7. 分镜链路实例（Shot Sets）
+
+`shotprompt approve` 与创建逐分镜链路必须解耦。
+
+当前代码会在 `shotprompt/approve` 中删除并重建 `storyboard_shots`；V2 禁止这种级联 reset。
+
+目标行为：
+
+```text
+shotprompt propose
+  -> 插入待审 shot_prompt_artifact
+
+shotprompt approve
+  -> 插入新的生效 shot_prompt_artifact
+  -> 不删除、不重建已有 shot_set
+  -> 对当前 active shot_set 产生上游变更提示
+
+POST /api/workspaces/:workspaceId/shot-sets
+  -> 显式应用 current approved shotprompt
+  -> 创建新的 shot_sets row
+  -> 创建新的 storyboard_shots 和 shot_prompt_requirements
+  -> 新 shot_set active，旧 active shot_set archived
+  -> 旧 candidates/selections/final jobs 不物理删除
+```
+
+`storyboard_shots` 增加 `shot_set_id`。API 默认只返回 active shot set 的 shots；调试接口可按 archived shot set 查询旧事实。
+
+---
+
+## 8. 上游变更提示
+
+上游变更不等于下游 stale。
+
+下游 artifact 记录生成时的 source fingerprint：
+
+```json
+{
+  "materialIntakeArtifactId": "...",
+  "productBriefArtifactId": "...",
+  "storyboardArtifactId": "...",
+  "shotPromptArtifactId": "...",
+  "promptRequirementsArtifactId": "...",
+  "sourceHash": "..."
+}
+```
+
+查询下游状态时，server 比较当前生效上游与下游保存的 fingerprint：
+
+```json
+{
+  "upstreamChanged": true,
+  "changedUpstreamArtifacts": ["productBrief", "shotPrompt"],
+  "impactLevel": "major"
+}
+```
+
+规则：
+
+- 上游变更提示不删除候选，不清空选择，不重置 shot 状态。
+- 用户可以继续使用当前下游内容。
+- 用户重新生成时，新的 artifact/candidates 使用新的 current upstream。
+- `STALE` 只保留给“同一 shot 重新 propose 新轮次，旧轮次不再是当前轮次”的技术状态，不表示上游变更。
+
+---
+
+## 9. Select Modules
+
+`image-select` 与 `video-select` 是同步点 module，并使用 artifact 表命名：
+
+```text
+image_select_artifacts
+video_select_artifacts
+```
+
+语义：
+
+- 每个 shot 至多一个 current image selection。
+- 每个 shot 至多一个 current video selection。
+- 重复 select 使用 UPSERT 覆盖当前选择。
+- select 不触发 stale。
+- 未选候选仍持久化在 workspace 中，UI 可以继续展示并允许以后选择。
+
+---
+
+## 10. Runtime 与队列
+
+运行时仍保留 `generation_v2` 队列：
+
+| kind | 用途 |
+|---|---|
+| `generate_image_candidate` | image-prompt 创建每个 image candidate job。 |
+| `generate_videos` | video retry / recovery 路径；主线 video-script 可直接等待 `runVideoGenerationBatch()`。 |
+| `compose_final_video` | final compose。 |
+
+真实 provider 限制：
+
+- Seedance 单 clip `durationSec` 必须 4-12 秒。
+- real-provider acceptance 应控制 video candidate 数量，避免把架构问题和 RPM/TPM 限流混在一起。
+
+---
+
+## 11. Agent Chain Acceptance
+
+V2 新增 real-provider agent-chain 验收：
+
+```
+docs/test/agent-chain/
+├── agent-chain.postman.json
+├── agent-chain.env.json
+└── agent-chain.data.json
+```
+
+`pnpm` 脚本调用 Newman 执行 collection，并补 DB/trace/文件断言：
+
+```text
+pnpm agenttest:real
+  -> reset dev
+  -> start pnpm dev
+  -> newman run docs/test/agent-chain/agent-chain.postman.json
+  -> inspect Postgres module artifacts
+  -> inspect trace finalPrompt / assembly metadata
+  -> verify final compose source count
+```
+
+第一版运行完整 real agent 链路：material-intake → product-brief → storyboard → shotprompt → apply shot-set → image/video candidates → selections → final compose。
+
+断言以 schema、状态、数量、source fingerprint、trace 和媒体文件为主，不断言具体文案。
+
+---
+
+## 12. 迁移边界
+
+已清除或退出主链路的旧架构：
+
+- `workspace_artifact` 作为 material/brief/storyboard/shotprompt 主存储。
+- `workspace.service.ts` 中集中式 V1 builder 大模块。
+- `shotprompt approve` 内的 `delete from storyboard_shots` 级联 reseed。
+- `selected_shot_images` / `selected_shot_videos` 命名与主链路引用。
+- 混在单个 prompt builder 中的主体 prompt 与 schema/contract prompt。
+
+迁移允许不兼容旧数据；以新 schema、新接口、新测试链路为准。

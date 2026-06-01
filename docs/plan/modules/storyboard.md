@@ -17,7 +17,7 @@ material intake → product brief → ★ storyboard ★ → shot prompt → 逐
 
 ## 3. 触发接口
 
-`POST /api/workspaces/storyboard/propose`
+`POST /api/workspaces/:workspaceId/storyboard/propose`
 
 ## 4. 输入字段
 

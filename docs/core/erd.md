@@ -1,143 +1,172 @@
-# erd — 数据库与缓存架构设计
+# erd — V2 数据库与缓存架构
 
-> 数据层权威文档。配套 [`arc_v2.md`](./arc_v2.md)。
+> 数据层目标文档。配套 [`arc_v2.md`](./arc_v2.md) 与 [`interface.md`](./interface.md)。
 >
-> 引擎：**PostgreSQL 16**（`infra/docker-compose.yml`，`DATABASE_URL` 必填，唯一业务事实源）。访问层：原生 `pg` Pool + 手写参数化 SQL，**无 ORM、无迁移工具**。DDL 权威来源：`apps/server/src/db/schema/schema.sql`（启动时 `db.initialize()` 幂等执行，所有语句 `create … if not exists` / `do $$ … duplicate_object` 守卫，兼作迁移）。
->
-> 缓存：**Redis 仅用于 BullMQ 队列，无应用级 K/V 缓存**（详见 §6）。
+> 引擎：**PostgreSQL 16** 是唯一业务事实源。访问层维持原生 `pg` Pool + 手写参数化 SQL，不引入 ORM。DDL 权威来源仍为 `apps/server/src/db/schema/schema.sql`，迁移期直接更新该文件。Redis 仅服务 BullMQ 队列，不作为业务缓存。
 
 ---
 
-## 1. 设计原则与世代
+## 1. 设计原则
 
-- **主键**：全部为 `text`，由 `nanoid()`（或调用方）填充，非自增 serial。
-- **时间戳**：`timestamptz`，默认 `now()`。
-- **JSON 负载**：provider 请求/响应、artifact 数据、manifest、metadata 均存 `jsonb`。
-- **两代表结构**：V2（复数表名）为当前主线；V1 遗留单数表 `storyboard_shot` / `generation_job` / `workspace_video_archive` 在启动时被 `drop … cascade`，**不在本 ERD**。共享存活表：`product`、`asset`、`creative_workspace`、`script`、`workspace_artifact`。
-- **状态字段**：核心用 PostgreSQL `enum` 类型（见 §3），少数为纯 `text`（`workspace_artifact.status` 取 `proposed/approved/...`、`campaign_publications.status` 默认 `planned`、metrics `source` 默认 `manual`）。
+- **模块自有 artifact 表**：`prompt_requirements_artifacts`、`material_intake_artifacts`、`product_brief_artifacts`、`storyboard_artifacts`、`shot_prompt_artifacts` 分别保存本模块产物，不再把主链路写入通用 `workspace_artifact`。
+- **物理追加，业务覆盖**：每次 propose/approve 都插入新行；业务上的“当前版本”由 `status='approved' and is_current=true` 指针表达。新 approved 会取消旧 approved 的 current 标记，但不物理删除旧行。
+- **无单会话版本追踪/回滚 UI**：历史行只用于审计、debug 和追溯，不作为产品级回滚功能。
+- **主体 prompt 与契约 prompt 分离**：artifact 表保存 `prompt_assembly` 元信息和 prompt preview；完整 assembled prompt 写入 trace，不在业务表冗余大文本。
+- **主体 prompt 可业务迭代，契约 prompt 工程锁定**：业务/剧本同学修改 `packages/ai/src/prompts/modules/<module>/subject.md`；`contract.md` 只随输入输出 schema 或 provider 硬约束变化。两者的 hash 都写入 `prompt_assembly`。
+- **只有 approved/current 进入下游**：proposed artifact 供用户审核，不自动驱动后续模块。
+- **上游变更只提示，不级联重置**：下游已生成内容保留可用；通过 `source_fingerprint` 对比暴露 `upstreamChanged`。
+- **shot set 是分镜链路实例**：approved shot prompt 只有在显式 apply 后才创建新的 active `shot_sets`。旧 shot set 归档但候选、选择、trace 继续保留。
+- **选择是 current 指针**：每个 shot 至多一个 selected image 和 selected video，写入 `image_select_artifacts` / `video_select_artifacts`。重复选择用 UPSERT 覆盖，不使未选候选 stale。
 
 ---
 
-## 2. ER 图（Mermaid）
+## 2. ER 图
 
 ```mermaid
 erDiagram
-    product ||--o{ script : "has versions"
-    product ||--o| asset : "main_image (logical)"
-    script ||--o{ script : "parent_script_id (version tree)"
+    product ||--o{ asset : "has material"
+    product ||--o{ script : "legacy script versions"
 
-    creative_workspace ||--o{ workspace_storage_bindings : "1:N 物理 / 1:1 active"
-    creative_workspace ||--o{ workspace_artifact : "per-type (unique)"
-    creative_workspace ||--o{ storyboard_shots : "shots"
-    creative_workspace ||--o{ image_generation_batches : ""
-    creative_workspace ||--o{ video_generation_batches : ""
-    creative_workspace ||--o{ generation_jobs : ""
-    creative_workspace ||--o{ trace_events : ""
-    creative_workspace ||--o{ final_video_jobs : ""
-    creative_workspace ||--o{ campaign_publications : ""
+    creative_workspace ||--o{ workspace_storage_bindings : "storage bindings"
+    creative_workspace ||--o{ prompt_requirements_artifacts : "creative requirements"
+    creative_workspace ||--o{ material_intake_artifacts : "material intake"
+    creative_workspace ||--o{ product_brief_artifacts : "brief"
+    creative_workspace ||--o{ storyboard_artifacts : "storyboard"
+    creative_workspace ||--o{ shot_prompt_artifacts : "shot prompt"
+    creative_workspace ||--o{ shot_sets : "shot chain instances"
+    creative_workspace ||--o{ image_generation_batches : "image jobs"
+    creative_workspace ||--o{ video_generation_batches : "video jobs"
+    creative_workspace ||--o{ final_video_jobs : "compose jobs"
+    creative_workspace ||--o{ generation_jobs : "queue jobs"
+    creative_workspace ||--o{ trace_events : "trace"
 
-    storyboard_shots ||--o{ shot_asset_refs : "N:M via refs"
-    asset ||--o{ shot_asset_refs : ""
+    prompt_requirements_artifacts ||--o{ material_intake_artifacts : "source"
+    material_intake_artifacts ||--o{ product_brief_artifacts : "source"
+    product_brief_artifacts ||--o{ storyboard_artifacts : "source"
+    storyboard_artifacts ||--o{ shot_prompt_artifacts : "source"
+    shot_prompt_artifacts ||--o{ shot_sets : "applied as"
+
+    shot_sets ||--o{ storyboard_shots : "contains"
+    storyboard_shots ||--o{ shot_prompt_requirements : "1:1"
+    storyboard_shots ||--o{ shot_asset_refs : "references"
+    asset ||--o{ shot_asset_refs : "referenced by"
+
     storyboard_shots ||--o{ image_prompt_artifacts : "versions"
-    image_prompt_artifacts ||--o{ image_prompt_artifacts : "base_artifact_id"
-    storyboard_shots ||--o{ image_generation_batches : ""
-    image_prompt_artifacts ||--o{ image_generation_batches : ""
-    image_generation_batches ||--o{ image_candidates : ""
-    storyboard_shots ||--o| selected_shot_images : "1:1"
-    image_candidates ||--o{ selected_shot_images : ""
-    image_generation_batches ||--o{ selected_shot_images : ""
+    image_prompt_artifacts ||--o{ image_generation_batches : "generates"
+    image_generation_batches ||--o{ image_candidates : "candidates"
+    storyboard_shots ||--o| image_select_artifacts : "current selected image"
+    image_candidates ||--o{ image_select_artifacts : "selected candidate"
 
-    image_candidates ||--o{ video_script_artifacts : "based_on (start/prev/next)"
+    image_candidates ||--o{ video_script_artifacts : "first/last frame source"
     storyboard_shots ||--o{ video_script_artifacts : "versions"
-    video_script_artifacts ||--o{ video_script_artifacts : "base_artifact_id"
-    storyboard_shots ||--o{ video_generation_batches : ""
-    video_script_artifacts ||--o{ video_generation_batches : ""
-    video_generation_batches ||--o{ video_candidates : ""
-    storyboard_shots ||--o| selected_shot_videos : "1:1"
-    video_candidates ||--o{ selected_shot_videos : ""
-    video_generation_batches ||--o{ selected_shot_videos : ""
+    video_script_artifacts ||--o{ video_generation_batches : "generates"
+    video_generation_batches ||--o{ video_candidates : "candidates"
+    storyboard_shots ||--o| video_select_artifacts : "current selected video"
+    video_candidates ||--o{ video_select_artifacts : "selected candidate"
 
-    final_video_jobs ||--o{ campaign_publications : "final_video_job_id (SET NULL)"
-    campaign_publications ||--o{ campaign_publication_metrics : "time-series"
+    shot_sets ||--o{ final_video_jobs : "compose source"
+    final_video_jobs ||--o{ campaign_publications : "published as"
+    campaign_publications ||--o{ campaign_publication_metrics : "metrics"
 
-    generation_jobs }o--o| storyboard_shots : "shot_id (SET NULL)"
-    trace_events }o--o| storyboard_shots : "shot_id (SET NULL)"
+    generation_jobs }o--o| storyboard_shots : "shot_id"
+    trace_events }o--o| storyboard_shots : "shot_id"
 
-    product {
-        text id PK
-        text title
-        text selling_points
-        text audience
-        text main_image_asset_id "logical ref → asset"
-        timestamptz created_at
-    }
-    asset {
-        text id PK
-        text type "e.g. product_image / generated"
-        text url
-        text source "upload / generated / ..."
-        jsonb metadata
-        timestamptz created_at
-    }
     creative_workspace {
         text id PK
-        text local_path "nullable (NOT NULL/unique dropped)"
+        text local_path
         text current_script_id
-        text current_job_id "nullable"
-        text status "WorkspaceStatus 文本状态机"
-        text trace_file ".daireel/trace/events.jsonl"
+        text current_job_id
+        text status
+        text trace_file
         timestamptz created_at
         timestamptz updated_at
         timestamptz last_seen_at
     }
-    workspace_storage_bindings {
-        text id PK
-        text workspace_id FK "→ creative_workspace CASCADE"
-        enum kind "workspace_storage_kind: LOCAL/S3"
-        enum status "ACTIVE/ARCHIVED"
-        text local_path
-        text local_path_normalized
-        text s3_bucket
-        text s3_prefix
-        text s3_region
-        text s3_endpoint
-        jsonb metadata
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    workspace_artifact {
+
+    prompt_requirements_artifacts {
         text id PK
         text workspace_id FK
-        text script_id
-        text artifact_type "brief/storyboard/shotprompt/assets/feedbackRoute"
-        text status "proposed/approved/stale/failed"
-        jsonb data
+        text status "proposed/approved/archived/failed"
+        boolean is_current
+        jsonb data "creative requirements by slot"
+        jsonb source_fingerprint
+        jsonb prompt_assembly
         timestamptz created_at
         timestamptz updated_at
         timestamptz approved_at
     }
-    script {
+
+    material_intake_artifacts {
         text id PK
-        text product_id FK
-        text job_id
-        text parent_script_id FK "self"
-        int version
-        text narrative
-        text visual_style
-        boolean frozen
-        timestamptz frozen_at
-        jsonb raw_json
+        text workspace_id FK
+        text status
+        boolean is_current
+        jsonb data "material summary and selected refs"
+        jsonb source_fingerprint
+        jsonb prompt_assembly
         timestamptz created_at
+        timestamptz updated_at
+        timestamptz approved_at
     }
+
+    product_brief_artifacts {
+        text id PK
+        text workspace_id FK
+        text status
+        boolean is_current
+        jsonb data "product brief"
+        jsonb source_fingerprint
+        jsonb prompt_assembly
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz approved_at
+    }
+
+    storyboard_artifacts {
+        text id PK
+        text workspace_id FK
+        text status
+        boolean is_current
+        jsonb data "storyboard beats"
+        jsonb source_fingerprint
+        jsonb prompt_assembly
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz approved_at
+    }
+
+    shot_prompt_artifacts {
+        text id PK
+        text workspace_id FK
+        text status
+        boolean is_current
+        jsonb data "shots with shotImage/shotVideo dicts"
+        jsonb source_fingerprint
+        jsonb prompt_assembly
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz approved_at
+    }
+
+    shot_sets {
+        text id PK
+        text workspace_id FK
+        text shot_prompt_artifact_id FK
+        text status "active/archived"
+        jsonb source_fingerprint
+        timestamptz created_at
+        timestamptz archived_at
+    }
+
     storyboard_shots {
         text id PK
         text workspace_id FK
-        text script_id
-        int order_index "UNIQUE(workspace_id,order_index)"
+        text shot_set_id FK
+        int order_index
         text title
         text objective
         int default_duration_sec
-        enum status "shot_status (14 态)"
+        text status
         text next_action
         text active_image_prompt_artifact_id
         text selected_image_id
@@ -147,322 +176,360 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
-    shot_asset_refs {
+
+    shot_prompt_requirements {
         text id PK
-        text shot_id FK "CASCADE"
-        text asset_id FK
-        text role
-        numeric weight "default 1.0"
-        int position
-        timestamptz created_at
-    }
-    image_prompt_artifacts {
-        text id PK
-        text shot_id FK "CASCADE"
-        int version "UNIQUE(shot_id,version)"
-        enum status "artifact_status_v2: DRAFT/ACTIVE/APPROVED/STALE/ARCHIVED"
-        text prompt_text
-        text negative_prompt
-        text_arr reference_asset_ids
-        jsonb prompt_json
-        text created_by
-        text agent_name
-        text prompt_template_version
-        text base_artifact_id FK "self"
-        timestamptz created_at
-    }
-    image_generation_batches {
-        text id PK
-        text workspace_id FK
-        text shot_id FK "CASCADE"
-        text image_prompt_artifact_id FK
-        enum status "batch_status"
-        int requested_count
-        int succeeded_count
-        int failed_count
-        text provider "ark-seedream"
-        text aspect_ratio "default 9:16"
-        jsonb provider_request
-        text error_message
-        text idempotency_key "UNIQUE"
+        text shot_id FK
+        jsonb shot_image "per-shot image requirement dict"
+        jsonb shot_video "per-shot video requirement dict"
+        text source_shot_prompt_artifact_id FK
         timestamptz created_at
         timestamptz updated_at
     }
+
+    image_prompt_artifacts {
+        text id PK
+        text shot_id FK
+        int version
+        text status "DRAFT/ACTIVE/APPROVED/STALE/ARCHIVED"
+        text prompt_text
+        text negative_prompt
+        text[] reference_asset_ids
+        jsonb prompt_json
+        jsonb source_fingerprint
+        jsonb prompt_assembly
+        text created_by
+        text agent_name
+        text prompt_template_version
+        text base_artifact_id FK
+        timestamptz created_at
+    }
+
+    image_generation_batches {
+        text id PK
+        text workspace_id FK
+        text shot_id FK
+        text image_prompt_artifact_id FK
+        text status
+        int requested_count
+        int succeeded_count
+        int failed_count
+        text provider
+        text aspect_ratio
+        jsonb provider_request
+        text error_message
+        text idempotency_key
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     image_candidates {
         text id PK
-        text batch_id FK "CASCADE"
+        text batch_id FK
         text workspace_id FK
-        text shot_id FK "CASCADE"
+        text shot_id FK
         text image_url
-        text object_key "S3 预留"
+        text object_key
         int width
         int height
         text seed
         text provider
         jsonb provider_response
-        enum status "candidate_status"
+        text status
         text error_message
         timestamptz created_at
     }
-    selected_shot_images {
+
+    image_select_artifacts {
         text id PK
-        text shot_id FK "UNIQUE CASCADE (1:1)"
+        text shot_id FK "UNIQUE"
         text image_candidate_id FK
         text image_generation_batch_id FK
         text selected_by
         timestamptz selected_at
     }
+
     video_script_artifacts {
         text id PK
-        text shot_id FK "CASCADE"
-        int version "UNIQUE(shot_id,version)"
-        enum status "artifact_status_v2"
+        text shot_id FK
+        int version
+        text status
         int duration_sec
         jsonb script_json
         text provider_prompt
         text based_on_image_candidate_id FK
         text based_on_prev_image_candidate_id FK
         text based_on_next_image_candidate_id FK
+        jsonb source_fingerprint
+        jsonb prompt_assembly
         text created_by
         text agent_name
         text prompt_template_version
-        text base_artifact_id FK "self"
+        text base_artifact_id FK
         timestamptz created_at
     }
+
     video_generation_batches {
         text id PK
         text workspace_id FK
-        text shot_id FK "CASCADE"
+        text shot_id FK
         text video_script_artifact_id FK
-        enum status "batch_status"
+        text status
         int requested_count
         int succeeded_count
         int failed_count
-        text provider "seedance"
-        text aspect_ratio "default 9:16"
+        text provider
+        text aspect_ratio
         jsonb provider_request
         text error_message
-        text idempotency_key "UNIQUE"
+        text idempotency_key
         timestamptz created_at
         timestamptz updated_at
     }
+
     video_candidates {
         text id PK
-        text batch_id FK "CASCADE"
+        text batch_id FK
         text workspace_id FK
-        text shot_id FK "CASCADE"
+        text shot_id FK
         text video_url
-        text object_key "S3 预留"
+        text object_key
         text thumbnail_url
         int duration_sec
         int width
         int height
         text provider
         jsonb provider_response
-        enum status "candidate_status"
+        text status
         text error_message
         timestamptz created_at
     }
-    selected_shot_videos {
+
+    video_select_artifacts {
         text id PK
-        text shot_id FK "UNIQUE CASCADE (1:1)"
+        text shot_id FK "UNIQUE"
         text video_candidate_id FK
         text video_generation_batch_id FK
         text selected_by
         timestamptz selected_at
     }
-    generation_jobs {
-        text id PK
-        text workspace_id FK
-        text shot_id FK "SET NULL"
-        text job_type "generate_image_candidate/generate_images/generate_videos/compose_final_video"
-        enum status "job_status_v2"
-        text queue_name
-        text queue_job_id "BullMQ id"
-        text related_batch_type
-        text related_batch_id
-        jsonb payload
-        numeric progress
-        int attempt_count
-        int max_attempts "images/videos=3, compose=1"
-        text error_message
-        timestamptz started_at
-        timestamptz completed_at
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    trace_events {
-        text id PK
-        text workspace_id FK
-        text shot_id FK "SET NULL"
-        text trace_type "agent_run/provider_call/job_event/state_transition/user_action"
-        text name
-        text input_preview
-        text output_preview
-        jsonb metadata
-        timestamptz created_at
-    }
+
     final_video_jobs {
         text id PK
         text workspace_id FK
-        enum status "final_video_status"
-        text_arr source_shot_video_ids "有序, 软引用"
-        text_arr source_video_script_artifact_ids "软引用"
-        text local_path
-        text local_url
-        int duration_sec
-        int width
-        int height
+        text shot_set_id FK
+        text status
+        text output_aspect_ratio
+        jsonb source_video_candidate_ids
+        jsonb source_video_script_artifact_ids
         jsonb compiled_manifest
-        text compiled_manifest_hash
-        text ffmpeg_log
+        text local_url
         text error_message
-        text idempotency_key "UNIQUE"
         timestamptz created_at
         timestamptz updated_at
-        timestamptz completed_at
-    }
-    campaign_publications {
-        text id PK
-        text workspace_id FK "CASCADE"
-        text final_video_job_id FK "SET NULL"
-        text platform
-        text channel_name
-        text kol_name
-        text publish_url
-        text status "default planned"
-        text notes
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    campaign_publication_metrics {
-        text id PK
-        text publication_id FK "CASCADE"
-        int impressions
-        int clicks
-        int conversions
-        int spend_cents
-        timestamptz captured_at
-        text source "default manual"
-        jsonb metadata
-        timestamptz created_at
     }
 ```
 
 ---
 
-## 3. 枚举类型（PostgreSQL enum）
+## 3. 模块 artifact 表
 
-| 枚举 | 取值 |
+五个工作区级模块表采用同一套结构：
+
+| 字段 | 语义 |
 |---|---|
-| `shot_status` | DRAFT, IMAGE_PROMPT_PROPOSING, IMAGE_PROMPT_READY, IMAGE_PROMPT_EDITED, IMAGE_GENERATING, IMAGE_CANDIDATES_READY, IMAGE_SELECTED, VIDEO_SCRIPT_PROPOSING, VIDEO_SCRIPT_READY, VIDEO_SCRIPT_EDITED, VIDEO_GENERATING, VIDEO_CANDIDATES_READY, VIDEO_SELECTED, FAILED |
-| `artifact_status_v2` | DRAFT, ACTIVE, APPROVED, STALE, ARCHIVED |
-| `batch_status` | PENDING, RUNNING, SUCCEEDED, PARTIAL, FAILED, CANCELLED |
-| `candidate_status` | PENDING, RUNNING, SUCCEEDED, FAILED, REJECTED |
-| `job_status_v2` | PENDING, RUNNING, SUCCEEDED, FAILED, RETRYING, CANCELLED |
-| `final_video_status` | PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED |
-| `workspace_storage_kind` | LOCAL, S3 |
-| `workspace_storage_status` | ACTIVE, ARCHIVED |
+| `id` | artifact id。 |
+| `workspace_id` | 所属工作区。 |
+| `status` | `proposed`、`approved`、`archived`、`failed`。 |
+| `is_current` | 当前业务指针。每个 workspace + module 最多一条 `approved/current`。 |
+| `data` | 模块输出 JSON。只存结构化产物，不存完整 final prompt。 |
+| `source_fingerprint` | 本产物生成时读取的上游 current artifact id/hash。用于检测上游变更。 |
+| `prompt_assembly` | `subjectTemplateId`、`contractTemplateId`、`subjectHash`、`contractHash`、`templateVersion`、`requirementArtifactId`、`preview`、provider/model 等。 |
+| `approved_at` | 用户 approve 时间。 |
 
-`workspace_artifact.status`（纯 text）取 `proposed / approved / stale / failed`，与 `packages/shared` 的 `artifactStatusSchema` 对应。
+推荐约束：
 
----
+```sql
+create unique index if not exists prompt_requirements_current_approved_idx
+  on prompt_requirements_artifacts (workspace_id)
+  where status = 'approved' and is_current = true;
+```
 
-## 4. 表分组与职责
+其余模块表使用同样的 partial unique index。approve 流程在事务内：
 
-**共享/构建管线层**
-- `product` — 被营销的商品 brief（标题/卖点/受众/主图逻辑引用）。
-- `asset` — 上传或生成的媒体引用（URL+metadata，含 sha256/storagePath）。
-- `creative_workspace` — 一个创作工作目录会话；`status` 是 V1 线性状态机；`trace_file` 指向工作区 JSONL。
-- `workspace_storage_bindings` — 工作区字节落在哪（LOCAL FS 或 S3）。`(workspace_id WHERE status='ACTIVE')` 部分唯一索引保证**一个工作区仅一条 active 绑定**；另有 active+LOCAL、active+S3 的部分唯一索引防冲突。CHECK 约束确保 LOCAL 必带 `local_path_normalized`、S3 必带 `bucket+prefix`。
-- `workspace_artifact` — 构建管线各阶段产物 JSON，按 `(workspace_id, artifact_type)` 唯一，upsert 推进。
-- `script` — 生成的叙事/视觉脚本，`parent_script_id` 自引用构成版本树。
-
-**逐分镜管线层（V2 主线）**
-- `storyboard_shots` — 单个分镜，`shot_status` 状态机；`(workspace_id, order_index)` 唯一保证顺序；冗余指针 `active_image_prompt_artifact_id` / `selected_image_id` / `active_video_script_artifact_id` / `selected_video_id` 便于快速读取当前态。
-- `shot_asset_refs` — shot↔asset 的 N:M（role/weight/position），`(shot_id, asset_id, role)` 唯一。
-- `image_prompt_artifacts` / `video_script_artifacts` — **版本化 artifact**：每次 propose/patch 新增一版（`(shot_id, version)` 唯一），旧版置 STALE，`base_artifact_id` 自引用记派生链。视频脚本通过 `based_on_image_candidate_id`(+ prev/next 邻帧) 锚定所选图像候选。
-- `image_generation_batches` / `video_generation_batches` — 一次批量生成请求；`idempotency_key` 唯一（propose 内部合成或 retry/final 公开请求头）；`requested/succeeded/failed_count` 计数；`provider` 固定 `ark-seedream` / `seedance`。
-- `image_candidates` / `video_candidates` — 批次内单个产物；`object_key` 为 S3 预留；`provider_response` 存原始响应。
-- `selected_shot_images` / `selected_shot_videos` — 每分镜选定结果，`shot_id` 唯一（1:1）。
-
-**作业 / 观测 / 成片 / 营销层**
-- `generation_jobs` — 持久化异步作业，镜像 BullMQ（`queue_job_id` 关联），`related_batch_type/id` 指向 image/video batch 或 final_video_job；启动恢复依赖它。
-- `trace_events` — DB 端结构化可观测事件（5 类 trace_type），按 `(workspace_id, created_at DESC)` / `(shot_id, created_at DESC)` 建索引支持分页。
-- `final_video_jobs` — ffmpeg 拼接作业与产物；`source_shot_video_ids` 为**有序 text[] 软引用**（无 FK），`compiled_manifest`+`hash` 记录可复现拼接清单。
-- `campaign_publications` — 成片到渠道/KOL 的发布记录。
-- `campaign_publication_metrics` — 每发布的指标时间序列（曝光/点击/转化/花费分），读取时取最新一条并算 `ctr = clicks/impressions`。
+1. 锁定 workspace 对应模块 current 行。
+2. 将旧 current 行 `is_current=false`。
+3. 插入或更新本次 approved artifact，置 `status='approved', is_current=true, approved_at=now()`。
 
 ---
 
-## 5. 索引与关系要点
+## 4. Prompt 要求与装配元数据
 
-- **1:1（唯一约束实现）**：`selected_shot_images.shot_id`、`selected_shot_videos.shot_id`、`workspace_artifact (workspace_id, artifact_type)`、`workspace_storage_bindings` 的 active 部分唯一索引。
-- **版本唯一**：`image_prompt_artifacts (shot_id, version)`、`video_script_artifacts (shot_id, version)`。
-- **幂等唯一**：三类 `idempotency_key`（image/video batch、final_video_job）。
-- **顺序唯一**：`storyboard_shots (workspace_id, order_index)`。
-- **软引用（无 FK，需应用层保证）**：`final_video_jobs.source_shot_video_ids[]` / `source_video_script_artifact_ids[]`；`product.main_image_asset_id`。
-- **删除策略**：大量子表对 `shot_id` 用 `ON DELETE CASCADE`；`generation_jobs` / `trace_events` 的 `shot_id` 用 `ON DELETE SET NULL`（删 shot 不丢作业/审计）；`workspace_storage_bindings`、`campaign_*` 对父用 CASCADE。
-- **常用查询索引**：各 batch 表 `(shot_id)`、candidates 表 `(batch_id)`、`generation_jobs (status)` 与 `(related_batch_type, related_batch_id)`、`campaign_publications (workspace_id, created_at DESC)`、`campaign_publication_metrics (publication_id, captured_at DESC)`。
+### 4.1 Prompt requirements
 
----
+`prompt_requirements_artifacts.data` 保存用户可编辑的结构化创作要求。推荐形态：
 
-## 6. 缓存 / 队列设计（Redis + BullMQ）
+```json
+{
+  "image": {
+    "style": "realistic ecommerce product photography",
+    "composition": "close-up hero product, clean background",
+    "avoid": ["text overlay", "extra product variants"]
+  },
+  "script": {
+    "tone": "confident and concise",
+    "sellingPoints": ["portable", "premium texture"]
+  },
+  "storyboard": {
+    "rhythm": "fast opening, clear product reveal"
+  },
+  "shotImage": {
+    "global": "each shot must preserve the same product identity"
+  },
+  "shotVideo": {
+    "global": "smooth motion, avoid abrupt camera jumps"
+  }
+}
+```
 
-- **库**：BullMQ over ioredis（`REDIS_URL`，默认 `redis://localhost:6379`，`maxRetriesPerRequest: null`）。
-- **开关**：`USE_REDIS_QUEUE==="true"` 才用真实 Redis 队列；否则 `job.queue.ts` 用 `setTimeout(0)` **内联执行**，开发/测试可零依赖跑通。
-- **Redis 仅作队列，无应用缓存**（无 `GET/SET`/TTL 业务缓存）。持久作业状态镜像在 Postgres `generation_jobs`。
-- **队列**：
-  - `generation`（`GENERATION_QUEUE_NAME`）— V1 遗留，仅常量，无活跃 worker。
-  - `generation_v2`（`GENERATION_V2_QUEUE_NAME`）— **当前队列**，单队列多类 job（job name = `data.kind`）：
+用户不直接编辑 provider system prompt。后端 assembler 将当前 requirements 注入主体 prompt。
 
-    | kind | payload |
-    |---|---|
-    | `generate_image_candidate` | `{ jobId, batchId, candidateId, candidateIndex, shotId, workspaceId, imagePromptArtifactId, aspectRatio, referenceImageUrls?, traceId }` |
-    | `generate_images` | `{ jobId, batchId, shotId, workspaceId, imagePromptArtifactId, count, aspectRatio, traceId }`；旧批量图片恢复路径保留 |
-    | `generate_videos` | `{ jobId, batchId, shotId, workspaceId, videoScriptArtifactId, count, aspectRatio, traceId }`；当前主路径的视频 propose 直接执行，retry/恢复路径使用 |
-    | `compose_final_video` | `{ jobId, finalVideoJobId, workspaceId, traceId }` |
+### 4.2 Prompt assembly
 
-- **Key 形态**：BullMQ 默认 `bull:<queue>:*`（清理脚本扫 `bull:generation:*` 与 `bull:generation_v2:*`）。
-- **并发**：`max(1, maxImageBatchSize + maxVideoBatchSize)`（默认 6+10=16）。
-- **重试/恢复**：`generation_jobs.max_attempts`（image/video candidates=3，compose=1）记在 DB；BullMQ `attempts=3`、指数退避 5s。公开重跑靠 `/api/shots/:shotId/retry`；启动时 `recoverInflightGenerationJobs()` 会重置 RUNNING batch/candidate→PENDING 并重新入队，worker 幂等。
-- **无显式 TTL**，沿用 BullMQ 默认。
+所有 agent 产物表的 `prompt_assembly` 都保存同一类元数据：
 
----
+```json
+{
+  "moduleId": "shotprompt",
+  "subjectTemplateId": "shotprompt/subject.md",
+  "contractTemplateId": "shotprompt/contract.md",
+  "subjectHash": "sha256-of-subject",
+  "contractHash": "sha256-of-contract",
+  "assemblerVersion": "2026-05-31",
+  "requirementArtifactId": "req_...",
+  "provider": "ark",
+  "model": "doubao-seed-1-6",
+  "preview": "short prompt preview for debugging"
+}
+```
 
-## 7. 对象存储与文件系统布局
+`subjectTemplateId` 指向业务主体 prompt。剧本同学如果要改主剧本 / shotprompt 的生成策略，应修改 `packages/ai/src/prompts/modules/shotprompt/subject.md`；如果要改单个 shot 的视频运镜脚本，应修改 `packages/ai/src/prompts/modules/video-script/subject.md`。`contractTemplateId` 指向工程契约 prompt，不作为日常业务自定义入口。
 
-- **当前实际落本地 FS**：媒体产物挂在工作区绑定的本地目录 `<workspace>/.daireel/` 下（`generated-asset-storage.ts`）。
-  - `.daireel/workspace.json` — manifest（`{ schemaVersion:1, workspaceId, currentScriptId, currentJobId?, traceFile }`）。
-  - `.daireel/materials/` — 上传素材（≤50MB，mime 白名单 bmp/gif/jpg/jpeg/md/mov/mp4/png/txt/webm/webp）。
-  - `.daireel/materials/generated-images/<batch>-<cand>.<ext>` — 生成图，`object_key=materials/generated-images/<file>`，URL `/api/workspaces/{ws}/materials/generated-images/<file>`。
-  - `.daireel/videos/<batch>-<cand>.<ext>` — 生成视频，`object_key=videos/<file>`，URL `/api/workspaces/{ws}/videos/<file>`。
-  - `.daireel/final/<jobId>/` — 成片工作目录与 `final.mp4`。
-  - `.daireel/trace/events.jsonl` — 工作区本地 append-only trace（与 DB `trace_events` 互为补充）。
-- **MinIO/S3**：infra 已起 MinIO（bucket `aigc-video`），`workspace_storage_bindings(S3)` 与 `*_candidates.object_key` 已建模，但**代码未接 AWS SDK**——非 LOCAL 绑定的文件操作抛 `STORAGE_NOT_LOCAL`。S3 为前瞻设计，未启用。
-- **legacy 上传适配器**：`UPLOAD_DIR`+`UPLOAD_URL_PREFIX`（须成对、本地路径），仅 `POST /api/materials/product-image` 使用。
-
----
-
-## 8. 迁移与清理
-
-- **迁移**：无传统迁移工具。`schema.sql` 启动幂等执行即“迁移”，前向 ALTER 内联其中（如 `creative_workspace.local_path drop not null`、`drop constraint *_local_path_key`、`shot_asset_refs add column position`、`drop table … storyboard_shot/generation_job/workspace_video_archive cascade`）。
-- **种子**：无 seed 脚本。
-- **清理脚本**（`scripts/`，root `package.json` 暴露）：
-  - `pnpm db:clear` → `clear-postgres.mjs`：`TRUNCATE … RESTART IDENTITY CASCADE` 20 张业务表（默认 dry-run，需 `--yes`）；**不含** `workspace_storage_bindings`（靠 `creative_workspace` CASCADE）。
-  - `pnpm redis:clear` → `clear-redis.mjs`：`SCAN+DEL` `bull:generation:*` / `bull:generation_v2:*`。
-  - `pnpm reset:dev` → `reset-dev-session.mjs`：停 `SERVER_PORT`/`WEB_PORT` 监听 → clear-postgres `--yes` → clear-redis `--yes` → `pnpm dev`（`--no-dev` 可跳过）。**不删** `.daireel/trace`、`storage/uploads`、MinIO 内容。
+完整 assembled prompt 进入 `trace_events.payload`，便于通过 trace 回放 agent 链路。
 
 ---
 
-## 9. 关键文件
+## 5. Shot set 与分镜要求
 
-| 文件 | 作用 |
-|---|---|
-| `apps/server/src/db/schema/schema.sql` | 权威 DDL（全部表/枚举/索引/约束） |
-| `apps/server/src/db/schema/schema.ts` | schema 的 TS 字符串导出 |
-| `apps/server/src/db/client.ts` | pg Pool；V1 `PostgresDbAdapter` + V2 `PostgresDb2Adapter`(`db.db2`) |
-| `apps/server/src/modules/job/job.queue.ts` | BullMQ 队列/Worker + 在途恢复 |
-| `packages/shared/src/jobs/types.ts` | 队列名 + job payload 类型 |
-| `apps/server/src/modules/generation/generated-asset-storage.ts` | 本地 FS 落盘 + object_key 约定 |
-| `infra/docker-compose.yml` | postgres:16 / redis:7 / minio |
+`shot_prompt_artifacts.data.shots[]` 是 approved shot prompt 的结构化输出，每个 shot 至少包含：
+
+```json
+{
+  "id": "shot-1",
+  "title": "Opening product reveal",
+  "startSec": 0,
+  "endSec": 4,
+  "visualPrompt": "...",
+  "shotImage": {
+    "subject": "product in hand",
+    "composition": "centered close-up",
+    "lighting": "soft daylight"
+  },
+  "shotVideo": {
+    "motion": "slow push-in",
+    "continuity": "keep the same product angle",
+    "durationSec": 4
+  }
+}
+```
+
+显式 apply 后：
+
+- 创建新的 `shot_sets(status='active')`，引用当前 approved `shot_prompt_artifacts.id`。
+- 将旧 active shot set 改为 `archived`。
+- 按 shot prompt 创建新 `storyboard_shots`。
+- 为每个 shot 创建 `shot_prompt_requirements`，把 `shotImage` / `shotVideo` dict 持久化到 shot 维度。
+
+`storyboard_shots.order_index` 的唯一性应以 `(shot_set_id, order_index)` 为边界，而不是整个 workspace。
+
+---
+
+## 6. 上游变更提示
+
+每个下游 artifact 通过 `source_fingerprint` 记录其生成时依赖的上游 current artifact。查询接口计算：
+
+```json
+{
+  "upstreamChanged": true,
+  "changedSources": ["shot_prompt_artifact_id"],
+  "message": "当前分镜链路来自较旧的 approved shotprompt，重新生成会出现较大变化。"
+}
+```
+
+该提示不改变下游状态，不删除候选，不重置选择，也不阻止成片。它只是告诉用户“继续使用旧链路”还是“显式 apply 新 shot set”。
+
+---
+
+## 7. 图像与视频选择
+
+`image_select_artifacts`：
+
+- 每个 `shot_id` 最多一条 current selection。
+- 选择时校验 candidate 属于该 shot/workspace 且 `status='SUCCEEDED'`。
+- UPSERT 覆盖当前 selection。
+- 未选中的 `image_candidates` 不 stale、不删除，前端继续展示。
+
+`video_select_artifacts` 同理。成片合成读取 active shot set 下每个 shot 的 `video_select_artifacts.video_candidate_id`。
+
+---
+
+## 8. 逐分镜生成表
+
+`image_prompt_artifacts` / `video_script_artifacts` 继续保留版本号和 ACTIVE 状态，用于多轮候选生成。与工作区级模块 artifact 的区别：
+
+- 作用域是 shot，不是 workspace。
+- 一次 propose 通常立即创建 generation batch。
+- `prompt_assembly` 同样保存模板拆分信息。
+- `source_fingerprint` 需要包含当前 shot requirement、前后镜选择、上游 shot set 等依赖。
+
+`image_generation_batches`、`image_candidates`、`video_generation_batches`、`video_candidates` 保持候选生成事实表语义。provider 请求/响应继续存在 JSONB 字段中。
+
+---
+
+## 9. Final video
+
+`final_video_jobs` 增加 `shot_set_id`，成片必须绑定具体分镜链路实例。推荐保存：
+
+- `source_video_candidate_ids`：按 shot 顺序排列的视频候选 id。
+- `source_video_script_artifact_ids`：生成这些候选时使用的视频脚本 artifact id。
+- `compiled_manifest`：ffmpeg concat 输入、输出文件、duration、sha256 等。
+
+当 active shot set 变化后，旧 final video job 不失效；它仍然指向创建时的 shot set。
+
+---
+
+## 10. Queue 与 Trace
+
+- Redis 继续只承载 BullMQ 队列：`generation`、`generation_v2`。
+- `generation_jobs` 是队列业务镜像，便于 API 查询和恢复。
+- `trace_events` 同时写 DB 和 `.daireel/trace/events.jsonl`。agent/provider 调用必须记录：
+  - module id / shot id
+  - input artifact ids
+  - prompt template ids
+  - subject/contract hash
+  - 完整 assembled prompt
+  - provider request/response 摘要
+  - error code / retry 信息
+
+---
+
+## 11. 旧结构清理
+
+V2 主链路迁移完成后应清理或停止使用：
+
+- `workspace_artifact`：不再承载 `assets/brief/storyboard/shotprompt/feedbackRoute` 主链路。
+- `selected_shot_images` / `selected_shot_videos`：由 `image_select_artifacts` / `video_select_artifacts` 替代。
+- `shotprompt approve` 清空并重建 `storyboard_shots` 的逻辑：由显式 `shot_sets apply` 替代。
+- `storyboard_shots` 的 workspace 级 `order_index` 唯一约束：改为 shot set 级唯一。
+
+迁移不要求兼容旧 API 或旧表读写。若需要保留历史数据，可写一次性 backfill；否则开发环境可直接 reset。

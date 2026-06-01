@@ -1,5 +1,6 @@
 import type { MaterialIntakeArtifact } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
+import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const PRODUCT_BRIEF_PROMPT_VERSION = "product-brief.v1";
 
@@ -104,47 +105,17 @@ export function buildProductBriefPromptView(
 }
 
 export function buildProductBriefPrompt(input: BuildProductBriefPromptInput) {
-  return [
-    "角色：",
-    "你是电商商品简报构建器。你要生成商家可编辑的商品 brief，不要生成开场钩子、分镜或最终视频提示词。",
-    "",
-    "输入：",
-    `用户方向：${input.userDirection ?? "未指定"}`,
-    legacySeed(input),
-    `主商品素材 ref：${input.material.primaryProductRef}`,
-    "可用素材清单：",
-    JSON.stringify(input.material.assets),
-    "",
-    "任务：",
-    "为一条电商短视频生成一份简洁商品 brief。",
-    "只选择一个 coreSellingPoint。",
-    "product.assets 中的 ref 只能来自素材清单。",
-    "不要写开场钩子、分镜节拍、口播、CTA 文案或图生视频提示词。",
-    "如果事实没有被输入直接支持，必须写入 assumptions。",
-    "",
-    "输出：",
-    "返回严格 JSON，匹配以下结构，不要包含 Markdown：",
-    JSON.stringify({
-      product: {
-        name: "字符串",
-        category: "字符串",
-        keyFacts: ["字符串"],
-        assets: [{ ref: "product.png", useAs: "primary | support" }],
-      },
-      audience: {
-        who: "字符串",
-        painOrDesire: "字符串",
-      },
-      coreSellingPoint: "单个字符串",
-      proof: ["字符串"],
-      offer: null,
-      platform: "Seedance",
-      brandTone: "字符串",
-      bannedExpressions: ["字符串"],
-      landingInfo: null,
-      assumptions: ["字符串"],
-    }),
-  ].join("\n");
+  return buildModulePrompt({
+    moduleId: "product-brief",
+    runtimeContext: [
+      "输入：",
+      `用户方向：${input.userDirection ?? "未指定"}`,
+      legacySeed(input),
+      `主商品素材 ref：${input.material.primaryProductRef}`,
+      "可用素材清单：",
+      JSON.stringify(input.material.assets),
+    ].join("\n"),
+  }).prompt;
 }
 
 export function buildProductBriefRepairPrompt(rawOutput: string) {

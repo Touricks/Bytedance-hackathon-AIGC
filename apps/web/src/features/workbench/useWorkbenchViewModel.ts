@@ -1,22 +1,27 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  MaterialIntakeArtifact,
   ProductBriefArtifact,
   ShotPromptArtifact,
   StoryboardArtifact,
 } from "@aigc-video/shared";
 import {
+  applyWorkspaceShotSet,
+  approveWorkspacePromptRequirements,
+  approveWorkspaceMaterialIntake,
   approveWorkspaceBrief,
   approveWorkspaceShotPrompt,
   approveWorkspaceStoryboard,
   compileWorkspaceShotPrompt,
   getWorkspaceStatus,
+  proposeWorkspacePromptRequirements,
   proposeWorkspaceBrief,
   proposeWorkspaceStoryboard,
   runWorkspaceMaterialIntake,
   uploadWorkspaceMaterial,
 } from "../../lib/api/client.js";
-import type { AspectRatio } from "../../lib/api/client.js";
+import type { AspectRatio, PromptRequirementsData } from "../../lib/api/client.js";
 import { createFinalVideo } from "../../lib/api/finalVideo.js";
 import { listImageRounds } from "../../lib/api/imageBatch.js";
 import { proposeImagePrompt } from "../../lib/api/imagePrompt.js";
@@ -62,6 +67,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const shots = useQuery({
     queryKey: ["shots", workspaceId],
     queryFn: () => listShots(workspaceId),
+    enabled: Boolean(workspaceStatus.data?.activeShotSet),
     refetchInterval: 30_000,
   });
 
@@ -141,12 +147,41 @@ export function useWorkbenchViewModel(workspaceId: string) {
     onSuccess: invalidateWorkspace,
   });
 
+  const startCreativeReview = useMutation({
+    mutationFn: async (data: PromptRequirementsData) => {
+      const requirements = await proposeWorkspacePromptRequirements({
+        workspaceId,
+        data,
+      });
+      await approveWorkspacePromptRequirements({
+        workspaceId,
+        artifactId: requirements.artifact.id,
+      });
+      const material = await runWorkspaceMaterialIntake({
+        workspaceId,
+        prompt: materialPrompt.trim() || undefined,
+      });
+      await approveWorkspaceMaterialIntake(workspaceId, material.artifact.data);
+      return await proposeWorkspaceBrief({
+        workspaceId,
+        userDirection: briefDirection.trim() || undefined,
+      });
+    },
+    onSuccess: invalidateWorkspace,
+  });
+
   const materialIntake = useMutation({
     mutationFn: () =>
       runWorkspaceMaterialIntake({
         workspaceId,
         prompt: materialPrompt.trim() || undefined,
       }),
+    onSuccess: invalidateWorkspace,
+  });
+
+  const approveMaterialIntake = useMutation({
+    mutationFn: (data: MaterialIntakeArtifact) =>
+      approveWorkspaceMaterialIntake(workspaceId, data),
     onSuccess: invalidateWorkspace,
   });
 
@@ -165,6 +200,14 @@ export function useWorkbenchViewModel(workspaceId: string) {
     onSuccess: invalidateWorkspace,
   });
 
+  const approveBriefAndProposeStoryboard = useMutation({
+    mutationFn: async (data: ProductBriefArtifact) => {
+      await approveWorkspaceBrief(workspaceId, data);
+      return await proposeWorkspaceStoryboard(workspaceId);
+    },
+    onSuccess: invalidateWorkspace,
+  });
+
   const proposeStoryboard = useMutation({
     mutationFn: () => proposeWorkspaceStoryboard(workspaceId),
     onSuccess: invalidateWorkspace,
@@ -173,6 +216,14 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const approveStoryboard = useMutation({
     mutationFn: (data: StoryboardArtifact) =>
       approveWorkspaceStoryboard(workspaceId, data),
+    onSuccess: invalidateWorkspace,
+  });
+
+  const approveStoryboardAndProposeShotPrompt = useMutation({
+    mutationFn: async (data: StoryboardArtifact) => {
+      await approveWorkspaceStoryboard(workspaceId, data);
+      return await compileWorkspaceShotPrompt({ workspaceId, aspectRatio });
+    },
     onSuccess: invalidateWorkspace,
   });
 
@@ -185,6 +236,23 @@ export function useWorkbenchViewModel(workspaceId: string) {
     mutationFn: (data: ShotPromptArtifact) =>
       approveWorkspaceShotPrompt(workspaceId, data),
     onSuccess: invalidateWorkspace,
+  });
+
+  const applyShotSet = useMutation({
+    mutationFn: () => applyWorkspaceShotSet({ workspaceId }),
+    onSuccess: invalidateShot,
+  });
+
+  const approveShotPromptAndApply = useMutation({
+    mutationFn: async (data: ShotPromptArtifact) => {
+      const approved = await approveWorkspaceShotPrompt(workspaceId, data);
+      const applied = await applyWorkspaceShotSet({
+        workspaceId,
+        shotPromptArtifactId: approved.artifact.id,
+      });
+      await invalidateShot();
+      return applied;
+    },
   });
 
   const proposeImage = useMutation({
@@ -209,6 +277,24 @@ export function useWorkbenchViewModel(workspaceId: string) {
       proposeVideoScript(workspaceId, selectedShotId!, {
         userDirection: shotDirection.trim() || undefined,
       }),
+    onSuccess: invalidateShot,
+  });
+
+  const proposeAllVideos = useMutation({
+    mutationFn: async () => {
+      const targets = workflowShots.filter(
+        (shot) =>
+          shot.selectedImageId && !shot.selectedVideoId && !shot.activeVideoBatchId,
+      );
+      await Promise.all(
+        targets.map((shot) =>
+          proposeVideoScript(workspaceId, shot.shotId, {
+            userDirection: shotDirection.trim() || undefined,
+          }),
+        ),
+      );
+      return targets.length;
+    },
     onSuccess: invalidateShot,
   });
 
@@ -255,8 +341,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const artifacts = workspaceStatus.data?.artifacts;
-  const latestImageRound = imageRounds.data?.data[0] ?? null;
-  const latestVideoRound = videoRounds.data?.data[0] ?? null;
+  const latestImageRound = (imageRounds.data?.data ?? [])[0] ?? null;
+  const latestVideoRound = (videoRounds.data?.data ?? [])[0] ?? null;
   const latestImageBatch = latestImageRound?.batch ?? null;
   const latestVideoBatch = latestVideoRound?.batch ?? null;
   const hasActiveGeneration =
@@ -265,16 +351,23 @@ export function useWorkbenchViewModel(workspaceId: string) {
 
   const mutations = [
     uploadMaterial,
+    startCreativeReview,
     materialIntake,
+    approveMaterialIntake,
     proposeBrief,
     approveBrief,
+    approveBriefAndProposeStoryboard,
     proposeStoryboard,
     approveStoryboard,
+    approveStoryboardAndProposeShotPrompt,
     compileShotPrompt,
     approveShotPrompt,
+    applyShotSet,
+    approveShotPromptAndApply,
     proposeImage,
     selectImageCandidate,
     proposeVideo,
+    proposeAllVideos,
     selectVideoCandidate,
     retryImage,
     retryVideo,
@@ -287,6 +380,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     workspaceStatus: workspaceStatus.data ?? null,
     materialLibrary: workspaceStatus.data?.materialLibrary ?? null,
     artifacts: {
+      promptRequirements: artifacts?.promptRequirements ?? null,
       material: artifacts?.material ?? null,
       brief: artifacts?.brief ?? null,
       storyboard: artifacts?.storyboard ?? null,
@@ -319,26 +413,40 @@ export function useWorkbenchViewModel(workspaceId: string) {
       setSelectedShotId,
       refresh: invalidateWorkspace,
       uploadMaterial: (file: File) => uploadMaterial.mutate(file),
+      startCreativeReview: (data: PromptRequirementsData) =>
+        startCreativeReview.mutate(data),
       runMaterialIntake: () => materialIntake.mutate(),
+      approveMaterialIntake: () => {
+        const data = artifacts?.material?.data;
+        if (data) approveMaterialIntake.mutate(data);
+      },
       proposeBrief: () => proposeBrief.mutate(),
       approveBrief: () => {
         const data = artifacts?.brief?.data;
         if (data) approveBrief.mutate(data);
       },
+      approveBriefAndProposeStoryboard: (data: ProductBriefArtifact) =>
+        approveBriefAndProposeStoryboard.mutate(data),
       proposeStoryboard: () => proposeStoryboard.mutate(),
       approveStoryboard: () => {
         const data = artifacts?.storyboard?.data;
         if (data) approveStoryboard.mutate(data);
       },
+      approveStoryboardAndProposeShotPrompt: (data: StoryboardArtifact) =>
+        approveStoryboardAndProposeShotPrompt.mutate(data),
       compileShotPrompt: () => compileShotPrompt.mutate(),
       approveShotPrompt: () => {
         const data = artifacts?.shotPrompt?.data;
         if (data) approveShotPrompt.mutate(data);
       },
+      applyShotSet: () => applyShotSet.mutate(),
+      approveShotPromptAndApply: (data: ShotPromptArtifact) =>
+        approveShotPromptAndApply.mutate(data),
       proposeImage: () => proposeImage.mutate(),
       selectImageCandidate: (candidateId: string, batchId: string) =>
         selectImageCandidate.mutate({ candidateId, batchId }),
       proposeVideo: () => proposeVideo.mutate(),
+      proposeAllVideos: () => proposeAllVideos.mutate(),
       selectVideoCandidate: (candidateId: string, batchId: string) =>
         selectVideoCandidate.mutate({ candidateId, batchId }),
       retryImage: () => retryImage.mutate(),

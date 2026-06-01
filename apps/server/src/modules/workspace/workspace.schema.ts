@@ -1,10 +1,4 @@
 import { z } from "zod";
-import {
-  productBriefArtifactSchema,
-  shotPromptArtifactSchema,
-  storyboardArtifactSchema,
-} from "@aigc-video/shared";
-
 const workspaceDirectoryRequestBaseSchema = z.object({
   directory: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
@@ -50,71 +44,52 @@ export const workspaceMaterialUploadRequestSchema = z.object({
   dataBase64: z.string().min(1),
 });
 
-export const materialIntakeRequestSchema = workspaceDirectoryRequestBaseSchema
-  .extend({
-    prompt: z.string().optional(),
-    selectedMaterialRefs: z.array(z.string().min(1)).optional(),
+export const promptRequirementsDataSchema = z
+  .object({
+    image: z.record(z.unknown()).optional(),
+    script: z.record(z.unknown()).optional(),
+    storyboard: z.record(z.unknown()).optional(),
+    shotImage: z.record(z.unknown()).optional(),
+    shotVideo: z.record(z.unknown()).optional(),
   })
-  .refine((value) => value.directory || value.workspaceId, {
-    message: "workspaceId or directory is required",
-  });
+  .passthrough();
 
-export const productBriefProposalRequestSchema =
-  workspaceDirectoryRequestBaseSchema
-    .extend({
-      userDirection: z.string().optional(),
-      title: z.string().min(1).optional(),
-      sellingPoints: z.string().min(1).optional(),
-      audience: z.string().min(1).optional(),
-      stylePreference: z.string().optional(),
-    })
-    .refine((value) => value.directory || value.workspaceId, {
-      message: "workspaceId or directory is required",
-    });
+export const promptRequirementsProposeRequestSchema = z.object({
+  data: promptRequirementsDataSchema,
+});
 
-export const productBriefApprovalRequestSchema =
-  workspaceDirectoryRequestBaseSchema
-    .extend({
-      data: productBriefArtifactSchema,
-    })
-    .refine((value) => value.directory || value.workspaceId, {
-      message: "workspaceId or directory is required",
-    });
+export const materialIntakeModuleProposeRequestSchema = z.object({
+  selectedMaterialRefs: z.array(z.string().min(1)).optional(),
+  userDirection: z.string().optional(),
+});
 
-export const storyboardApprovalRequestSchema =
-  workspaceDirectoryRequestBaseSchema
-    .extend({
-      data: storyboardArtifactSchema,
-    })
-    .refine((value) => value.directory || value.workspaceId, {
-      message: "workspaceId or directory is required",
-    });
+export const productBriefModuleProposeRequestSchema = z.object({
+  userDirection: z.string().optional(),
+  title: z.string().min(1).optional(),
+  sellingPoints: z.string().min(1).optional(),
+  audience: z.string().min(1).optional(),
+  stylePreference: z.string().optional(),
+});
 
-export const shotPromptCompileRequestSchema =
-  workspaceDirectoryRequestBaseSchema
-    .extend({
-      aspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional(),
-    })
-    .refine((value) => value.directory || value.workspaceId, {
-      message: "workspaceId or directory is required",
-    });
+export const storyboardModuleProposeRequestSchema = z.object({
+  userDirection: z.string().optional(),
+});
 
-export const shotPromptApprovalRequestSchema =
-  workspaceDirectoryRequestBaseSchema
-    .extend({
-      data: shotPromptArtifactSchema,
-    })
-    .refine((value) => value.directory || value.workspaceId, {
-      message: "workspaceId or directory is required",
-    });
+export const shotPromptModuleProposeRequestSchema = z.object({
+  aspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional(),
+});
 
-export const feedbackRouteRequestSchema = workspaceDirectoryRequestBaseSchema
-  .extend({
-    feedback: z.string().min(1),
-    jobId: z.string().min(1).optional(),
+export const shotSetCreateRequestSchema = z.object({
+  shotPromptArtifactId: z.string().min(1).optional(),
+});
+
+export const moduleArtifactApprovalRequestSchema = z
+  .object({
+    artifactId: z.string().min(1).optional(),
+    data: z.unknown().optional(),
   })
-  .refine((value) => value.directory || value.workspaceId, {
-    message: "workspaceId or directory is required",
+  .refine((value) => value.artifactId || value.data !== undefined, {
+    message: "artifactId or data is required",
   });
 
 export const workspaceManifestSchema = z.object({

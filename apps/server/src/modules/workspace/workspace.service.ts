@@ -10,32 +10,14 @@ import {
 import path from "node:path";
 import { nanoid } from "nanoid";
 import type { PoolClient } from "pg";
+import { createFileTraceLogger } from "@aigc-video/ai";
 import {
-  buildMaterialIntakePromptView,
-  buildProductBriefPromptView,
-  buildShotPromptPromptView,
-  buildStoryboardPromptView,
-  createFileTraceLogger,
-  generateFeedbackRouteWithArk,
-  generateMaterialIntakeWithArk,
-  generateProductBriefWithArk,
-  generateShotPromptWithArk,
-  generateStoryboardWithArk,
-  getPipelineContractStep,
-} from "@aigc-video/ai";
-import {
-  compileShotPrompt as compileShotPromptArtifact,
-  feedbackRouteArtifactSchema,
-  materialIntakeArtifactSchema,
   productBriefArtifactSchema,
-  shotPromptArtifactSchema,
   storyboardArtifactSchema,
   type MaterialAsset,
   type MaterialIntakeArtifact,
   type ProductBriefArtifact,
-  type ShotPromptArtifact,
   type StoryboardArtifact,
-  type FeedbackRouteArtifact,
   type CreativeWorkspace,
 } from "@aigc-video/shared";
 import {
@@ -181,7 +163,7 @@ async function writeManifest(directory: string, manifest: WorkspaceManifest) {
   );
 }
 
-async function writeReviewSnapshot(input: {
+export async function writeReviewSnapshot(input: {
   localPath: string;
   workspace: CreativeWorkspace;
   artifact: "product-brief" | "storyboard";
@@ -337,7 +319,7 @@ function inferSellingPoint(input: {
   );
 }
 
-function toProductBrief(input: {
+export function toProductBrief(input: {
   userDirection?: string;
   title?: string;
   sellingPoints?: string;
@@ -383,72 +365,6 @@ function toProductBrief(input: {
   });
 }
 
-const productBriefForm = {
-  artifactType: "brief",
-  artifactSchemaVersion: "product-brief.v1",
-  fields: [
-    {
-      path: "product.name",
-      label: "商品名称",
-      component: "text",
-      required: true,
-    },
-    {
-      path: "product.category",
-      label: "商品类目",
-      component: "text",
-      required: true,
-    },
-    {
-      path: "product.keyFacts",
-      label: "关键事实",
-      component: "string_list",
-      required: true,
-    },
-    {
-      path: "product.assets",
-      label: "产品素材",
-      component: "asset_ref_list",
-      source: "material.assets",
-      required: true,
-    },
-    {
-      path: "audience.who",
-      label: "目标人群",
-      component: "text",
-      required: true,
-    },
-    {
-      path: "audience.painOrDesire",
-      label: "痛点/欲望",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "coreSellingPoint",
-      label: "核心卖点",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "proof",
-      label: "证明点",
-      component: "string_list",
-      required: true,
-    },
-    { path: "offer", label: "优惠信息", component: "nullable_text" },
-    { path: "platform", label: "平台", component: "text", required: true },
-    { path: "brandTone", label: "品牌语气", component: "text", required: true },
-    {
-      path: "bannedExpressions",
-      label: "禁用表达",
-      component: "string_list",
-    },
-    { path: "landingInfo", label: "落地页信息", component: "nullable_text" },
-    { path: "assumptions", label: "假设", component: "string_list" },
-  ],
-};
-
 function primaryBriefAsset(brief: ProductBriefArtifact) {
   return (
     brief.product.assets.find((asset) => asset.useAs === "primary")?.ref ??
@@ -457,7 +373,7 @@ function primaryBriefAsset(brief: ProductBriefArtifact) {
   );
 }
 
-function toStoryboard(brief: ProductBriefArtifact): StoryboardArtifact {
+export function toStoryboard(brief: ProductBriefArtifact): StoryboardArtifact {
   const productAssetRef = primaryBriefAsset(brief);
   const proof = brief.proof[0] ?? brief.coreSellingPoint;
 
@@ -510,113 +426,7 @@ function toStoryboard(brief: ProductBriefArtifact): StoryboardArtifact {
   });
 }
 
-const storyboardForm = {
-  artifactType: "storyboard",
-  artifactSchemaVersion: "ugc-storyboard.v1",
-  fields: [
-    {
-      path: "narrative",
-      label: "叙事主线",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "totalDurationSec",
-      label: "总时长",
-      component: "number",
-      required: true,
-    },
-    {
-      path: "shots[].purpose",
-      label: "镜头目的",
-      component: "select",
-      options: ["hook", "benefit", "proof", "cta"],
-      required: true,
-    },
-    {
-      path: "shots[].durationSec",
-      label: "镜头时长",
-      component: "number",
-      required: true,
-    },
-    {
-      path: "shots[].scene",
-      label: "场景",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "shots[].visualDirection",
-      label: "画面方向",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "shots[].productAssetRef",
-      label: "素材引用",
-      component: "asset_ref_select",
-      source: "material.assets",
-      required: true,
-    },
-    {
-      path: "shots[].voiceover",
-      label: "旁白",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "shots[].transition",
-      label: "转场",
-      component: "text",
-      required: true,
-    },
-    { path: "assumptions", label: "假设", component: "string_list" },
-  ],
-};
-
-const shotPromptForm = {
-  artifactType: "shotprompt",
-  artifactSchemaVersion: "video-shotprompt.v1",
-  fields: [
-    {
-      path: "prompt",
-      label: "Seedance 总 Prompt",
-      component: "textarea",
-      required: true,
-    },
-    { path: "negativePrompt", label: "负向 Prompt", component: "textarea" },
-    {
-      path: "shots[].providerPrompt",
-      label: "镜头 Prompt",
-      component: "textarea",
-      required: true,
-    },
-    {
-      path: "shots[].referenceAssetRefs",
-      label: "参考素材",
-      component: "asset_ref_list",
-      source: "material.assets",
-      required: true,
-    },
-    {
-      path: "shots[].voiceover",
-      label: "旁白源",
-      component: "textarea",
-      required: true,
-    },
-    { path: "tts.enabled", label: "启用 TTS", component: "checkbox" },
-    {
-      path: "tts.voiceover",
-      label: "TTS 预览",
-      component: "textarea",
-      source: "shots.voiceover",
-      readOnly: true,
-    },
-    { path: "assumptions", label: "假设", component: "string_list" },
-  ],
-};
-
-function createWorkspaceTraceLogger(
+export function createWorkspaceTraceLogger(
   localPath: string,
   workspace: CreativeWorkspace,
 ) {
@@ -627,7 +437,7 @@ function createWorkspaceTraceLogger(
   });
 }
 
-async function productBriefImageInput(
+export async function productBriefImageInput(
   localPath: string,
   material: MaterialIntakeArtifact,
 ) {
@@ -657,7 +467,7 @@ async function productBriefImageInput(
   };
 }
 
-async function materialIntakeImageInputs(
+export async function materialIntakeImageInputs(
   localPath: string,
   material: MaterialIntakeArtifact,
 ) {
@@ -681,7 +491,7 @@ async function materialIntakeImageInputs(
   );
 }
 
-async function materialIntakeTextPreviews(
+export async function materialIntakeTextPreviews(
   localPath: string,
   material: MaterialIntakeArtifact,
 ) {
@@ -777,109 +587,6 @@ async function ensureWorkspaceMaterialAsset(input: {
   return assetId;
 }
 
-function workspaceShotPurpose(index: number, shotCount: number) {
-  if (index === 0) {
-    return "hook" as const;
-  }
-  if (index === shotCount - 1) {
-    return "cta" as const;
-  }
-  return "benefit" as const;
-}
-
-function toLegacyScriptPlaceholder(shotPrompt: ShotPromptArtifact) {
-  return {
-    kind: "legacy_script_placeholder",
-    reason:
-      "GeneratedScript is V0 legacy. V1 workspace video export compiles the approved ShotPromptArtifact from job.payload.shotprompt.",
-    promptSource: "job.payload.shotprompt",
-    shotprompt: shotPrompt,
-  };
-}
-
-function toDbShots(shotPrompt: ShotPromptArtifact) {
-  return shotPrompt.shots.map((shot, index) => ({
-    index: index + 1,
-    durationSec: shot.endSec - shot.startSec,
-    purpose: workspaceShotPurpose(index, shotPrompt.shots.length),
-    visualPrompt: shot.providerPrompt,
-    cameraMotion: "按已批准视频剧本平稳衔接",
-    voiceover: shot.voiceover,
-    subtitle: shot.voiceover,
-    status: "pending" as const,
-  }));
-}
-
-async function getExistingScript(scriptId: string) {
-  try {
-    return await db.getScript(scriptId);
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-async function createScriptBundleForShotPrompt(input: {
-  localPath: string;
-  workspace: CreativeWorkspace;
-  brief: ProductBriefArtifact;
-  shotPrompt: ShotPromptArtifact;
-}) {
-  const scriptRawJson = toLegacyScriptPlaceholder(input.shotPrompt);
-  const narrative = input.shotPrompt.prompt;
-  const visualStyle = `${input.shotPrompt.aspectRatio} Seedance 视频剧本事实源`;
-  const existing = await getExistingScript(input.workspace.currentScriptId);
-  if (existing) {
-    const script = await db.updateScript(existing.id, {
-      narrative,
-      visualStyle,
-      frozen: false,
-      frozenAt: undefined,
-      rawJson: scriptRawJson,
-    });
-    await db.replaceShots(script.id, toDbShots(input.shotPrompt));
-    return script;
-  }
-
-  const primaryRef =
-    input.shotPrompt.shots[0]?.referenceAssetRefs[0] ??
-    primaryBriefAsset(input.brief);
-  const storagePath = path.join(workspaceMaterialsPath(input.localPath), primaryRef);
-  const fileStats = await stat(storagePath);
-  const contentType =
-    mimeByExtension[path.extname(primaryRef).toLowerCase()] ?? "image/png";
-  const imageAsset = await db.createAsset({
-    type: "product_image",
-    url: workspaceAssetUrl(input.workspace.id, primaryRef),
-    source: "upload",
-    metadata: {
-      storagePath,
-      contentType,
-      sizeBytes: fileStats.size,
-    },
-  });
-  const product = await db.createProduct({
-    title: input.brief.product.name,
-    sellingPoints: input.brief.coreSellingPoint,
-    audience: input.brief.audience.who,
-    mainImageAssetId: imageAsset.id,
-  });
-  const script = await db.createScript({
-    id: input.workspace.currentScriptId,
-    productId: product.id,
-    version: 1,
-    narrative,
-    visualStyle,
-    frozen: false,
-    rawJson: scriptRawJson,
-  });
-  await db.createShots(script.id, toDbShots(input.shotPrompt));
-
-  return script;
-}
-
 async function refreshWorkspaceForCurrentJob(workspace: CreativeWorkspace) {
   if (!workspace.currentJobId || workspace.status !== "video_generating") {
     return workspace;
@@ -896,15 +603,15 @@ async function refreshWorkspaceForCurrentJob(workspace: CreativeWorkspace) {
   return workspace;
 }
 
-function runtimeMode() {
+export function runtimeMode() {
   return process.env.MODEL_MODE === "real" ? "real" : "mock";
 }
 
-function promptViewProvider(): "ark" | "deterministic" {
+export function promptViewProvider(): "ark" | "deterministic" {
   return runtimeMode() === "real" ? "ark" : "deterministic";
 }
 
-function promptViewModel() {
+export function promptViewModel() {
   return runtimeMode() === "real"
     ? process.env.TEXT_ENDPOINT_ID ?? process.env.AI_TEXT_ENDPOINT_ID ?? process.env.ARK_TEXT_ENDPOINT_ID
     : undefined;
@@ -943,105 +650,53 @@ function humanApprovalNextAction(input: { stage: string; endpoint: string }) {
   };
 }
 
-type FeedbackRouteDecision = Pick<
-  FeedbackRouteArtifact,
-  "targetArtifact" | "reason" | "revisionInstruction" | "confidence"
->;
-
-function deterministicFeedbackRoute(feedback: string): FeedbackRouteDecision {
-  const normalized = feedback.toLowerCase();
-  if (
-    /商品不像|不像原图|镜头运动|运镜|运动|演示动作|时长|结尾|定格|负向|禁用|不要出现|违规|prompt|negative|camera|motion|duration/.test(
-      normalized,
-    )
-  ) {
-    return {
-      targetArtifact: "shotprompt",
-      reason: "反馈主要涉及画面生成约束、商品保真或视频提示词细节，应该回到视频剧本。",
-      revisionInstruction:
-        "根据成片反馈调整视频剧本中的画面约束、镜头运动或禁止项，保持商品外观一致。",
-      confidence: "medium",
-    };
-  }
-  if (
-    /口播|旁白|字幕|文案|hook|开头|节奏|cta|脚本|更早|更快|voice|caption|text|faster|earlier/.test(
-      normalized,
-    )
-  ) {
-    return {
-      targetArtifact: "storyboard",
-      reason: "反馈主要涉及叙事节奏、开头钩子、口播或 CTA，应该回到 UGC 分镜。",
-      revisionInstruction:
-        "根据成片反馈调整分镜节奏、开头呈现方式和口播表达，保留已确认商品卖点。",
-      confidence: "medium",
-    };
-  }
-  return {
-    targetArtifact: "brief",
-    reason: "反馈主要涉及商品定位、受众、卖点或品牌表达，应该回到商品 brief。",
-    revisionInstruction:
-      "根据成片反馈调整商品定位、目标人群或核心卖点，避免影响已确认素材事实。",
-    confidence: "medium",
-  };
-}
-
-function proposedStatusForFeedbackTarget(
-  targetArtifact: FeedbackRouteDecision["targetArtifact"],
-) {
-  return targetArtifact === "shotprompt"
-    ? "shotprompt_proposed"
-    : targetArtifact === "storyboard"
-      ? "storyboard_proposed"
-      : "brief_proposed";
-}
-
 function nextActionFor(workspace: CreativeWorkspace) {
   switch (workspace.status) {
     case "draft":
       return runtimeBuilderNextAction({
         stage: "materials",
-        endpoint: "/api/workspaces/material-intake",
+        endpoint: "/api/workspaces/{workspaceId}/material-intake/propose",
         runtimeBuilder: "material_intake",
       });
     case "materials_ready":
       return runtimeBuilderNextAction({
         stage: "brief",
-        endpoint: "/api/workspaces/brief/propose",
+        endpoint: "/api/workspaces/{workspaceId}/product-brief/propose",
         runtimeBuilder: "product_brief",
       });
     case "brief_proposed":
       return humanApprovalNextAction({
         stage: "brief",
-        endpoint: "/api/workspaces/artifacts/brief/approve",
+        endpoint: "/api/workspaces/{workspaceId}/product-brief/approve",
       });
     case "brief_approved":
       return runtimeBuilderNextAction({
         stage: "storyboard",
-        endpoint: "/api/workspaces/storyboard/propose",
+        endpoint: "/api/workspaces/{workspaceId}/storyboard/propose",
         runtimeBuilder: "storyboard",
       });
     case "storyboard_proposed":
       return humanApprovalNextAction({
         stage: "storyboard",
-        endpoint: "/api/workspaces/artifacts/storyboard/approve",
+        endpoint: "/api/workspaces/{workspaceId}/storyboard/approve",
       });
     case "storyboard_approved":
       return runtimeBuilderNextAction({
         stage: "shotprompt",
-        endpoint: "/api/workspaces/shotprompt/compile",
+        endpoint: "/api/workspaces/{workspaceId}/shotprompt/propose",
         runtimeBuilder: "shotprompt",
       });
     case "shotprompt_proposed":
       return humanApprovalNextAction({
         stage: "shotprompt",
-        endpoint: "/api/workspaces/artifacts/shotprompt/approve",
+        endpoint: "/api/workspaces/{workspaceId}/shotprompt/approve",
       });
     case "shotprompt_approved":
       return {
         stage: "video",
-        endpoint: "/api/workspaces/video/generate",
+        endpoint: "/api/workspaces/{workspaceId}/shot-sets",
         method: "POST",
-        actionType: "video_generation",
+        actionType: "shot_set_apply",
         runtimeMode: runtimeMode(),
         requiresHumanApproval: false,
         willCallProvider: runtimeMode() === "real",
@@ -1062,9 +717,9 @@ function nextActionFor(workspace: CreativeWorkspace) {
     case "video_ready":
       return {
         stage: "feedback",
-        endpoint: "/api/workspaces/feedback/route",
+        endpoint: "/api/workspaces/{workspaceId}/final-videos",
         method: "POST",
-        actionType: "feedback",
+        actionType: "final_compose",
         runtimeMode: runtimeMode(),
         requiresHumanApproval: false,
         willCallProvider: false,
@@ -1073,7 +728,7 @@ function nextActionFor(workspace: CreativeWorkspace) {
     case "failed":
       return {
         stage: "recovery",
-        endpoint: "/api/workspaces/status",
+        endpoint: "/api/workspaces/{workspaceId}/status",
         method: "POST",
         actionType: "recovery",
         runtimeMode: runtimeMode(),
@@ -1095,7 +750,7 @@ function nextActionFor(workspace: CreativeWorkspace) {
   }
 }
 
-function applySelectedMaterialRefs(
+export function applySelectedMaterialRefs(
   materialLibrary: Awaited<ReturnType<typeof collectWorkspaceMaterialLibrary>>,
   selectedMaterialRefs?: string[],
 ) {
@@ -1289,7 +944,7 @@ async function collectMaterialLibraryFromDirectory(materialDirectory: string) {
   };
 }
 
-async function collectWorkspaceMaterialLibrary(directory: string) {
+export async function collectWorkspaceMaterialLibrary(directory: string) {
   const managed = await collectMaterialLibraryFromDirectory(
     workspaceMaterialsPath(directory),
   );
@@ -1300,34 +955,145 @@ async function collectWorkspaceMaterialLibrary(directory: string) {
   return collectMaterialLibraryFromDirectory(directory);
 }
 
-async function getOptionalWorkspaceArtifact(
-  workspaceId: string,
-  artifactType: string,
-) {
-  try {
-    return await db.getWorkspaceArtifact(workspaceId, artifactType);
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      return null;
-    }
-    throw error;
-  }
+const workspaceModuleTables = [
+  {
+    moduleId: "prompt-requirements",
+    table: "prompt_requirements_artifacts",
+  },
+  { moduleId: "material-intake", table: "material_intake_artifacts" },
+  { moduleId: "product-brief", table: "product_brief_artifacts" },
+  { moduleId: "storyboard", table: "storyboard_artifacts" },
+  { moduleId: "shotprompt", table: "shot_prompt_artifacts" },
+] as const;
+
+type WorkspaceModuleId = (typeof workspaceModuleTables)[number]["moduleId"];
+
+function toIsoString(value: unknown): string {
+  return value instanceof Date ? value.toISOString() : String(value);
 }
 
-async function hydrateWorkspaceArtifacts(workspaceId: string) {
-  const [material, brief, storyboard, shotPrompt] = await Promise.all([
-    getOptionalWorkspaceArtifact(workspaceId, "assets"),
-    getOptionalWorkspaceArtifact(workspaceId, "brief"),
-    getOptionalWorkspaceArtifact(workspaceId, "storyboard"),
-    getOptionalWorkspaceArtifact(workspaceId, "shotprompt"),
+function moduleArtifactView(
+  row: Record<string, unknown>,
+  moduleId: WorkspaceModuleId,
+) {
+  return {
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    moduleId,
+    type: moduleId,
+    status: String(row.status),
+    isCurrent: Boolean(row.is_current),
+    data: row.data,
+    sourceFingerprint:
+      row.source_fingerprint && typeof row.source_fingerprint === "object"
+        ? row.source_fingerprint
+        : {},
+    promptAssembly:
+      row.prompt_assembly && typeof row.prompt_assembly === "object"
+        ? row.prompt_assembly
+        : {},
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+    approvedAt: row.approved_at ? toIsoString(row.approved_at) : null,
+  };
+}
+
+async function hydrateWorkspaceModuleState(
+  workspaceId: string,
+  module: (typeof workspaceModuleTables)[number],
+) {
+  const [proposedResult, currentResult] = await Promise.all([
+    db.db2.pool().query(
+      `select *
+       from ${module.table}
+       where workspace_id = $1 and status = 'proposed'
+       order by created_at desc, id desc
+       limit 1`,
+      [workspaceId],
+    ),
+    db.db2.pool().query(
+      `select *
+       from ${module.table}
+       where workspace_id = $1
+         and status = 'approved'
+         and is_current = true
+       order by approved_at desc, created_at desc, id desc
+       limit 1`,
+      [workspaceId],
+    ),
   ]);
+  const proposed = proposedResult.rows[0]
+    ? moduleArtifactView(proposedResult.rows[0], module.moduleId)
+    : null;
+  const current = currentResult.rows[0]
+    ? moduleArtifactView(currentResult.rows[0], module.moduleId)
+    : null;
 
   return {
-    material,
-    brief,
-    storyboard,
-    shotPrompt,
+    moduleId: module.moduleId,
+    proposed,
+    current,
+    upstream: {
+      upstreamChanged: false,
+      changedSources: [],
+    },
   };
+}
+
+async function hydrateWorkspaceModules(workspaceId: string) {
+  const entries = await Promise.all(
+    workspaceModuleTables.map(async (module) => [
+      module.moduleId,
+      await hydrateWorkspaceModuleState(workspaceId, module),
+    ]),
+  );
+  return Object.fromEntries(entries) as Record<
+    WorkspaceModuleId,
+    Awaited<ReturnType<typeof hydrateWorkspaceModuleState>>
+  >;
+}
+
+function hydrateWorkspaceArtifacts(
+  modules: Awaited<ReturnType<typeof hydrateWorkspaceModules>>,
+) {
+  return {
+    promptRequirements:
+      modules["prompt-requirements"].current ??
+      modules["prompt-requirements"].proposed,
+    material:
+      modules["material-intake"].current ?? modules["material-intake"].proposed,
+    brief:
+      modules["product-brief"].current ?? modules["product-brief"].proposed,
+    storyboard: modules.storyboard.current ?? modules.storyboard.proposed,
+    shotPrompt: modules.shotprompt.current ?? modules.shotprompt.proposed,
+  };
+}
+
+function shotSetView(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    shotPromptArtifactId: String(row.shot_prompt_artifact_id),
+    status: String(row.status),
+    sourceFingerprint:
+      row.source_fingerprint && typeof row.source_fingerprint === "object"
+        ? row.source_fingerprint
+        : {},
+    createdAt: toIsoString(row.created_at),
+    archivedAt: row.archived_at ? toIsoString(row.archived_at) : null,
+  };
+}
+
+async function getActiveWorkspaceShotSet(workspaceId: string) {
+  const result = await db.db2.pool().query(
+    `select *
+     from shot_sets
+     where workspace_id = $1 and status = 'active'
+     order by created_at desc, id desc
+     limit 1`,
+    [workspaceId],
+  );
+  return result.rows[0] ? shotSetView(result.rows[0]) : null;
 }
 
 export const workspaceService = {
@@ -1535,6 +1301,10 @@ export const workspaceService = {
       );
       const binding = await db.getActiveWorkspaceStorage(workspace.id);
       if (!binding) {
+        const [modules, activeShotSet] = await Promise.all([
+          hydrateWorkspaceModules(workspace.id),
+          getActiveWorkspaceShotSet(workspace.id),
+        ]);
         return {
           workspace,
           manifest: toManifest({
@@ -1549,7 +1319,9 @@ export const workspaceService = {
             assets: [],
             rejected: [],
           },
-          artifacts: await hydrateWorkspaceArtifacts(workspace.id),
+          modules,
+          activeShotSet,
+          artifacts: hydrateWorkspaceArtifacts(modules),
         };
       }
     }
@@ -1568,498 +1340,20 @@ export const workspaceService = {
       await writeManifest(localPath, current);
     }
 
+    const [modules, activeShotSet] = await Promise.all([
+      hydrateWorkspaceModules(workspace.id),
+      getActiveWorkspaceShotSet(workspace.id),
+    ]);
+
     return {
       workspace,
       manifest: current,
       storage: storageBindingView(binding),
       nextAction: nextActionFor(workspace),
       materialLibrary: await collectWorkspaceMaterialLibrary(localPath),
-      artifacts: await hydrateWorkspaceArtifacts(workspace.id),
+      modules,
+      activeShotSet,
+      artifacts: hydrateWorkspaceArtifacts(modules),
     };
-  },
-
-  async materialIntake(
-    target:
-      | string
-      | (WorkspaceDirectoryRequest & { selectedMaterialRefs?: string[] }),
-    prompt?: string,
-  ) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const selectedMaterialRefs =
-      typeof target === "string" ? undefined : target.selectedMaterialRefs;
-    await copySelectedLegacyRootMaterials({
-      directory: localPath,
-      selectedMaterialRefs,
-    });
-    const materialLibrary = await collectWorkspaceMaterialLibrary(localPath);
-    const selectedLibrary = applySelectedMaterialRefs(
-      materialLibrary,
-      selectedMaterialRefs,
-    );
-    const scanned = materialIntakeArtifactSchema.parse({
-      ...selectedLibrary,
-      primaryProductRef: selectedLibrary.primaryProductRef ?? "",
-    });
-    const contract = getPipelineContractStep("material_intake");
-    const textPreviews = await materialIntakeTextPreviews(localPath, scanned);
-    const promptView = buildMaterialIntakePromptView({
-      initialPrompt: prompt,
-      scanned,
-      textPreviews,
-      contractId: contract.id,
-      promptVersion: contract.activeVersion,
-      provider: promptViewProvider(),
-      ...(promptViewModel() ? { model: promptViewModel() } : {}),
-    });
-    let trace;
-    const data =
-      process.env.MODEL_MODE === "real"
-        ? await (async () => {
-            const result = await generateMaterialIntakeWithArk(
-              {
-                initialPrompt: prompt,
-                scanned,
-                textPreviews,
-              },
-              {
-                imageInputs: await materialIntakeImageInputs(
-                  localPath,
-                  scanned,
-                ),
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
-              },
-            );
-            trace = result.trace;
-            return result.material;
-          })()
-        : scanned;
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "assets",
-      status: "approved",
-      data,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "materials_ready",
-    });
-
-    return { workspace: updatedWorkspace, artifact, promptView, trace };
-  },
-
-  async proposeBrief(input: {
-    directory?: string;
-    workspaceId?: string;
-    userDirection?: string;
-    title?: string;
-    sellingPoints?: string;
-    audience?: string;
-    stylePreference?: string;
-  }) {
-    const localPath = await resolveWorkspaceLocalPath(input);
-    const { workspace } = await this.status(localPath);
-    const materialArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      "assets",
-    );
-    const material = materialIntakeArtifactSchema.parse(materialArtifact.data);
-    const contract = getPipelineContractStep("product_brief");
-    const promptView = buildProductBriefPromptView({
-      ...input,
-      material,
-      contractId: contract.id,
-      promptVersion: contract.activeVersion,
-      provider: promptViewProvider(),
-      ...(promptViewModel() ? { model: promptViewModel() } : {}),
-    });
-    let trace;
-    const data =
-      process.env.MODEL_MODE === "real"
-        ? await (async () => {
-            const result = await generateProductBriefWithArk(
-              { ...input, material },
-              {
-                imageInput: await productBriefImageInput(localPath, material),
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
-              },
-            );
-            trace = result.trace;
-            return result.productBrief;
-          })()
-        : toProductBrief({ ...input, material });
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "brief",
-      status: "proposed",
-      data,
-    });
-    await writeReviewSnapshot({
-      localPath,
-      workspace,
-      artifact: "product-brief",
-      status: "proposed",
-      schemaVersion: "product-brief.v1",
-      data,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "brief_proposed",
-    });
-
-    return {
-      workspace: updatedWorkspace,
-      artifact,
-      promptView,
-      form: productBriefForm,
-      trace,
-    };
-  },
-
-  async approveBrief(
-    target: string | WorkspaceDirectoryRequest,
-    data: ProductBriefArtifact,
-  ) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const approvedData = productBriefArtifactSchema.parse(data);
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "brief",
-      status: "approved",
-      data: approvedData,
-    });
-    await writeReviewSnapshot({
-      localPath,
-      workspace,
-      artifact: "product-brief",
-      status: "approved",
-      schemaVersion: "product-brief.v1",
-      data: approvedData,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "brief_approved",
-    });
-
-    return { workspace: updatedWorkspace, artifact };
-  },
-
-  async proposeStoryboard(target: string | WorkspaceDirectoryRequest) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const briefArtifact = await db.getWorkspaceArtifact(workspace.id, "brief");
-    const materialArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      "assets",
-    );
-    const brief = productBriefArtifactSchema.parse(briefArtifact.data);
-    const material = materialIntakeArtifactSchema.parse(materialArtifact.data);
-    const contract = getPipelineContractStep("storyboard");
-    const promptView = buildStoryboardPromptView({
-      brief,
-      material,
-      contractId: contract.id,
-      promptVersion: contract.activeVersion,
-      provider: promptViewProvider(),
-      ...(promptViewModel() ? { model: promptViewModel() } : {}),
-    });
-    let trace;
-    const data =
-      process.env.MODEL_MODE === "real"
-        ? await (async () => {
-            const result = await generateStoryboardWithArk(
-              { brief, material },
-              {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
-              },
-            );
-            trace = result.trace;
-            return result.storyboard;
-          })()
-        : toStoryboard(brief);
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "storyboard",
-      status: "proposed",
-      data,
-    });
-    await writeReviewSnapshot({
-      localPath,
-      workspace,
-      artifact: "storyboard",
-      status: "proposed",
-      schemaVersion: "ugc-storyboard.v1",
-      data,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "storyboard_proposed",
-    });
-
-    return {
-      workspace: updatedWorkspace,
-      artifact,
-      promptView,
-      form: storyboardForm,
-      trace,
-    };
-  },
-
-  async approveStoryboard(
-    target: string | WorkspaceDirectoryRequest,
-    data: StoryboardArtifact,
-  ) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const approvedData = storyboardArtifactSchema.parse(data);
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "storyboard",
-      status: "approved",
-      data: approvedData,
-    });
-    await writeReviewSnapshot({
-      localPath,
-      workspace,
-      artifact: "storyboard",
-      status: "approved",
-      schemaVersion: "ugc-storyboard.v1",
-      data: approvedData,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "storyboard_approved",
-    });
-
-    return { workspace: updatedWorkspace, artifact };
-  },
-
-  async compileShotPrompt(input: {
-    directory?: string;
-    workspaceId?: string;
-    aspectRatio?: "9:16" | "16:9" | "1:1";
-  }) {
-    const localPath = await resolveWorkspaceLocalPath(input);
-    const { workspace } = await this.status(localPath);
-    const briefArtifact = await db.getWorkspaceArtifact(workspace.id, "brief");
-    const materialArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      "assets",
-    );
-    const storyboardArtifact = await db.getWorkspaceArtifact(
-      workspace.id,
-      "storyboard",
-    );
-    const brief = productBriefArtifactSchema.parse(briefArtifact.data);
-    const material = materialIntakeArtifactSchema.parse(materialArtifact.data);
-    const storyboard = storyboardArtifactSchema.parse(storyboardArtifact.data);
-    const aspectRatio = input.aspectRatio ?? "9:16";
-    const contract = getPipelineContractStep("shotprompt");
-    const promptView = buildShotPromptPromptView({
-      brief,
-      material,
-      storyboard,
-      aspectRatio,
-      contractId: contract.id,
-      promptVersion: contract.activeVersion,
-      provider: promptViewProvider(),
-      ...(promptViewModel() ? { model: promptViewModel() } : {}),
-    });
-    let trace;
-    const data =
-      process.env.MODEL_MODE === "real"
-        ? await (async () => {
-            const result = await generateShotPromptWithArk(
-              { brief, material, storyboard, aspectRatio },
-              {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
-              },
-            );
-            trace = result.trace;
-            return result.shotPrompt;
-          })()
-        : compileShotPromptArtifact(storyboard, { aspectRatio });
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "shotprompt",
-      status: "proposed",
-      data,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "shotprompt_proposed",
-    });
-
-    return {
-      workspace: updatedWorkspace,
-      artifact,
-      promptView,
-      form: shotPromptForm,
-      trace,
-    };
-  },
-
-  async approveShotPrompt(
-    target: string | WorkspaceDirectoryRequest,
-    data: ShotPromptArtifact,
-  ) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const approvedData = shotPromptArtifactSchema.parse(data);
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "shotprompt",
-      status: "approved",
-      data: approvedData,
-    });
-    await seedShotsFromShotPrompt({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      localPath,
-      shotPrompt: approvedData,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: "shotprompt_approved",
-    });
-
-    return { workspace: updatedWorkspace, artifact };
-  },
-
-  async routeFeedback(
-    target: string | (WorkspaceDirectoryRequest & { jobId?: string }),
-    feedback: string,
-  ) {
-    const localPath = await resolveWorkspaceLocalPath(target);
-    const { workspace } = await this.status(localPath);
-    const [briefArtifact, storyboardArtifact, shotPromptArtifact] =
-      await Promise.all([
-        db.getWorkspaceArtifact(workspace.id, "brief"),
-        db.getWorkspaceArtifact(workspace.id, "storyboard"),
-        db.getWorkspaceArtifact(workspace.id, "shotprompt"),
-      ]);
-    const brief = productBriefArtifactSchema.parse(briefArtifact.data);
-    const storyboard = storyboardArtifactSchema.parse(storyboardArtifact.data);
-    const shotPrompt = shotPromptArtifactSchema.parse(shotPromptArtifact.data);
-    let trace;
-    const route =
-      runtimeMode() === "real"
-        ? await (async () => {
-            const result = await generateFeedbackRouteWithArk(
-              {
-                feedback,
-                brief,
-                storyboard,
-                shotPrompt,
-              },
-              {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
-              },
-            );
-            trace = result.trace;
-            return result.route;
-          })()
-        : deterministicFeedbackRoute(feedback);
-    const routeData = feedbackRouteArtifactSchema.parse({
-      feedback,
-      targetArtifact: route.targetArtifact,
-      previousJobId:
-        typeof target === "string"
-          ? workspace.currentJobId
-          : (target.jobId ?? workspace.currentJobId),
-      reason: route.reason,
-      revisionInstruction: route.revisionInstruction,
-      confidence: route.confidence,
-      routedAt: new Date().toISOString(),
-    });
-    const routeArtifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: "feedbackRoute",
-      status: "approved",
-      data: routeData,
-    });
-    const currentArtifact =
-      route.targetArtifact === "brief"
-        ? briefArtifact
-        : route.targetArtifact === "storyboard"
-          ? storyboardArtifact
-          : shotPromptArtifact;
-    const artifact = await db.upsertWorkspaceArtifact({
-      workspaceId: workspace.id,
-      scriptId: workspace.currentScriptId,
-      type: route.targetArtifact,
-      status: "proposed",
-      data: currentArtifact.data,
-    });
-    const updatedWorkspace = await db.updateWorkspace(workspace.id, {
-      status: proposedStatusForFeedbackTarget(route.targetArtifact),
-    });
-
-    return { workspace: updatedWorkspace, routeArtifact, artifact, route, trace };
   },
 };
-
-async function seedShotsFromShotPrompt(input: {
-  workspaceId: string;
-  scriptId: string;
-  localPath: string;
-  shotPrompt: ShotPromptArtifact;
-}) {
-  // Re-seeding wipes prior shots; first wave doesn't support edit/add yet.
-  const pool = db.db2.pool();
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    await client.query("delete from storyboard_shots where workspace_id=$1", [input.workspaceId]);
-    for (const shot of input.shotPrompt.shots) {
-      const inserted = await client.query(
-        `insert into storyboard_shots
-           (id, workspace_id, script_id, order_index, title, objective, default_duration_sec, status)
-         values ($1,$2,$3,$4,$5,$6,$7,'DRAFT')
-         returning id`,
-        [
-          `shot_${Math.random().toString(36).slice(2, 12)}`,
-          input.workspaceId,
-          input.scriptId,
-          shot.index,
-          shot.providerPrompt.slice(0, 80) || `Shot ${shot.index + 1}`,
-          shot.providerPrompt,
-          shot.endSec - shot.startSec,
-        ],
-      );
-      const shotId = String(inserted.rows[0]?.id);
-      const uniqueRefs = [...new Set(shot.referenceAssetRefs)];
-      for (const [position, ref] of uniqueRefs.entries()) {
-        const assetId = await ensureWorkspaceMaterialAsset({
-          client,
-          workspaceId: input.workspaceId,
-          localPath: input.localPath,
-          ref,
-        });
-        await client.query(
-          `insert into shot_asset_refs (id, shot_id, asset_id, role, weight, position)
-           values ($1, $2, $3, $4, $5, $6)
-           on conflict (shot_id, asset_id, role) do update
-           set weight = excluded.weight,
-               position = excluded.position`,
-          [
-            `sar_${Math.random().toString(36).slice(2, 12)}`,
-            shotId,
-            assetId,
-            position === 0 ? "product_identity" : "reference",
-            position === 0 ? 1 : 0.8,
-            position,
-          ],
-        );
-      }
-    }
-    await client.query("commit");
-  } catch (err) {
-    await client.query("rollback");
-    throw err;
-  } finally {
-    client.release();
-  }
-}

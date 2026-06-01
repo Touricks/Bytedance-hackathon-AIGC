@@ -1,16 +1,32 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+import { config } from "../../common/config.js";
 import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
 
 const cleanupDirs: string[] = [];
 
-async function seedApprovedShotPromptWorkspace(app: FastifyInstance, shotCount = 1) {
+function assertPromptAssembly(value: unknown, moduleId: string) {
+  assert.ok(value && typeof value === "object", "expected promptAssembly object");
+  const assembly = value as Record<string, unknown>;
+  assert.equal(assembly.moduleId, moduleId);
+  assert.equal(assembly.assemblerVersion, "v2");
+  assert.match(String(assembly.subjectHash), /^[a-f0-9]{64}$/);
+  assert.match(String(assembly.contractHash), /^[a-f0-9]{64}$/);
+  assert.match(String(assembly.subjectTemplateId), /subject\.md$/);
+  assert.match(String(assembly.contractTemplateId), /contract\.md$/);
+}
+
+async function seedApprovedShotPromptWorkspace(
+  app: FastifyInstance,
+  shotCount = 1,
+  options: { registerMaterialAsset?: boolean } = {},
+) {
   const createResponse = await app.inject({
     method: "POST",
     url: "/api/workspaces",
@@ -30,69 +46,98 @@ async function seedApprovedShotPromptWorkspace(app: FastifyInstance, shotCount =
   });
   assert.equal(bindResponse.statusCode, 200, bindResponse.body);
 
-  const uploadResponse = await app.inject({
+  if (options.registerMaterialAsset === false) {
+    const materialDirectory = path.join(directory, ".daireel", "materials");
+    await mkdir(materialDirectory, { recursive: true });
+    await writeFile(path.join(materialDirectory, "product.png"), transparentPngBytes);
+  } else {
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspace.id}/materials`,
+      payload: {
+        filename: "product.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64")
+      }
+    });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+  }
+
+  const requirementsProposeResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/materials",
+    url: `/api/workspaces/${workspace.id}/prompt-requirements/propose`,
     payload: {
-      workspaceId: workspace.id,
-      filename: "product.png",
-      dataBase64: Buffer.from(transparentPngBytes).toString("base64")
+      data: {
+        image: { style: "clean ecommerce product photo" },
+        shotImage: { global: "preserve exact product identity" },
+        shotVideo: { global: "smooth motion and stable product shape" }
+      }
     }
   });
-  assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+  assert.equal(requirementsProposeResponse.statusCode, 200, requirementsProposeResponse.body);
+  const requirementsApproveResponse = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspace.id}/prompt-requirements/approve`,
+    payload: { artifactId: requirementsProposeResponse.json().data.id }
+  });
+  assert.equal(requirementsApproveResponse.statusCode, 200, requirementsApproveResponse.body);
 
   const materialResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/material-intake",
-    payload: { workspaceId: workspace.id }
+    url: `/api/workspaces/${workspace.id}/material-intake/propose`,
+    payload: {}
   });
   assert.equal(materialResponse.statusCode, 200, materialResponse.body);
+  const materialApproveResponse = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspace.id}/material-intake/approve`,
+    payload: { artifactId: materialResponse.json().data.id }
+  });
+  assert.equal(materialApproveResponse.statusCode, 200, materialApproveResponse.body);
 
   const briefResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/brief/propose",
-    payload: { workspaceId: workspace.id }
+    url: `/api/workspaces/${workspace.id}/product-brief/propose`,
+    payload: {}
   });
   assert.equal(briefResponse.statusCode, 200, briefResponse.body);
-  await app.inject({
+  const briefApproveResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/artifacts/brief/approve",
+    url: `/api/workspaces/${workspace.id}/product-brief/approve`,
     payload: {
-      workspaceId: workspace.id,
-      data: briefResponse.json().artifact.data
+      artifactId: briefResponse.json().data.id
     }
   });
+  assert.equal(briefApproveResponse.statusCode, 200, briefApproveResponse.body);
 
   const storyboardResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/storyboard/propose",
-    payload: { workspaceId: workspace.id }
+    url: `/api/workspaces/${workspace.id}/storyboard/propose`,
+    payload: {}
   });
   assert.equal(storyboardResponse.statusCode, 200, storyboardResponse.body);
-  await app.inject({
+  const storyboardApproveResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/artifacts/storyboard/approve",
+    url: `/api/workspaces/${workspace.id}/storyboard/approve`,
     payload: {
-      workspaceId: workspace.id,
-      data: storyboardResponse.json().artifact.data
+      artifactId: storyboardResponse.json().data.id
     }
   });
+  assert.equal(storyboardApproveResponse.statusCode, 200, storyboardApproveResponse.body);
 
   const shotPromptResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/shotprompt/compile",
-    payload: { workspaceId: workspace.id }
+    url: `/api/workspaces/${workspace.id}/shotprompt/propose`,
+    payload: {}
   });
   assert.equal(shotPromptResponse.statusCode, 200, shotPromptResponse.body);
-  const shotPrompt = shotPromptResponse.json().artifact.data;
+  const shotPrompt = shotPromptResponse.json().data.data;
   const approvedShots = shotPrompt.shots.slice(0, shotCount);
   const firstShot = approvedShots[0];
   assert.ok(firstShot, "shotprompt produced no shots");
   const approvalResponse = await app.inject({
     method: "POST",
-    url: "/api/workspaces/artifacts/shotprompt/approve",
+    url: `/api/workspaces/${workspace.id}/shotprompt/approve`,
     payload: {
-      workspaceId: workspace.id,
       data: {
         ...shotPrompt,
         durationSec: firstShot.endSec - firstShot.startSec,
@@ -105,6 +150,12 @@ async function seedApprovedShotPromptWorkspace(app: FastifyInstance, shotCount =
     }
   });
   assert.equal(approvalResponse.statusCode, 200, approvalResponse.body);
+  const shotSetResponse = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspace.id}/shot-sets`,
+    payload: { shotPromptArtifactId: approvalResponse.json().data.id }
+  });
+  assert.equal(shotSetResponse.statusCode, 200, shotSetResponse.body);
 
   const shotsResponse = await app.inject({
     method: "GET",
@@ -116,7 +167,11 @@ async function seedApprovedShotPromptWorkspace(app: FastifyInstance, shotCount =
   assert.ok(shot, "expected at least one seeded shot");
   assert.ok(shot.id, "expected seeded shot to have an id");
 
-  return { workspaceId: workspace.id, shotId: shot.id, shotIds: shots.map((item) => item.id) };
+  return {
+    workspaceId: workspace.id,
+    shotId: shot.id,
+    shotIds: shots.map((item) => item.id),
+  };
 }
 
 describe("shot workflow API", () => {
@@ -143,6 +198,10 @@ describe("shot workflow API", () => {
     });
     assert.equal(imagePromptResponse.statusCode, 200, imagePromptResponse.body);
     const imagePromptId = imagePromptResponse.json().data.id as string;
+    assertPromptAssembly(
+      imagePromptResponse.json().data.promptAssembly,
+      "image-prompt",
+    );
     const imageBatchId = imagePromptResponse.json().batch.id as string;
     const imageCandidates = imagePromptResponse.json().candidates as Array<{
       id: string;
@@ -150,7 +209,7 @@ describe("shot workflow API", () => {
       status: string;
     }>;
     assert.equal(imagePromptResponse.json().shotStatus, "IMAGE_GENERATING");
-    assert.equal(imageCandidates.length, 3);
+    assert.equal(imageCandidates.length, config.defaultImageBatchSize);
     assert.ok(
       imageCandidates.every((candidate) => candidate.status === "PENDING"),
       "image candidates should be queued as individual jobs",
@@ -234,6 +293,7 @@ describe("shot workflow API", () => {
     assert.equal(selectedImage?.imageGenerationBatchId, imageBatchId);
     const activeImagePrompt = await db.db2.getImagePromptArtifact(imagePromptId);
     assert.equal(activeImagePrompt.status, "ACTIVE");
+    assertPromptAssembly(activeImagePrompt.promptAssembly, "image-prompt");
 
     const imageRoundsResponse = await app.inject({
       method: "GET",
@@ -249,6 +309,10 @@ describe("shot workflow API", () => {
       payload: {}
     });
     assert.equal(videoScriptResponse.statusCode, 200, videoScriptResponse.body);
+    assertPromptAssembly(
+      videoScriptResponse.json().data.promptAssembly,
+      "video-script",
+    );
     const videoBatchId = videoScriptResponse.json().batch.id as string;
     const videoCandidates = videoScriptResponse.json().candidates as Array<{
       id: string;
@@ -256,7 +320,7 @@ describe("shot workflow API", () => {
       status: string;
     }>;
     assert.equal(videoScriptResponse.json().shotStatus, "VIDEO_CANDIDATES_READY");
-    assert.equal(videoCandidates.length, 2);
+    assert.equal(videoCandidates.length, config.defaultVideoBatchSize);
     assert.equal(
       videoScriptResponse.json().context.sceneAnchorImageUrl,
       imageCandidate.imageUrl
@@ -325,12 +389,31 @@ describe("shot workflow API", () => {
 
     const selectedVideoResult = await db.db2.pool().query(
       `select video_candidate_id, video_generation_batch_id
-       from selected_shot_videos
+       from video_select_artifacts
        where shot_id = $1`,
       [shotId]
     );
     assert.equal(selectedVideoResult.rows[0]?.video_candidate_id, videoCandidate.id);
     assert.equal(selectedVideoResult.rows[0]?.video_generation_batch_id, videoBatchId);
+
+    const traceResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/traces?limit=100`,
+    });
+    assert.equal(traceResponse.statusCode, 200, traceResponse.body);
+    const traceNames = new Set(
+      (traceResponse.json() as Array<{ name: string; shotId?: string }>)
+        .filter((event) => event.shotId === shotId)
+        .map((event) => event.name),
+    );
+    const missingTraceEvents = [
+      "image_prompt_proposed",
+      "image_candidate_selected",
+      "video_script_proposed",
+      "video_generation_completed",
+      "video_candidate_selected",
+    ].filter((name) => !traceNames.has(name));
+    assert.deepEqual(missingTraceEvents, []);
   });
 
   it("rejects deprecated prompt-api inputs on propose endpoints", async () => {
@@ -417,5 +500,28 @@ describe("shot workflow API", () => {
     assert.equal(response.statusCode, 400);
     assert.equal(response.json().code, "IMAGE_SELECTION_INCOMPLETE");
     assert.match(response.json().message, new RegExp(secondShotId));
+  });
+
+  it("keeps directly managed material files resolvable when applying a shot set", async () => {
+    const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 1, {
+      registerMaterialAsset: false,
+    });
+
+    const result = await db.db2.pool().query(
+      `select a.metadata
+       from asset a
+       join shot_asset_refs sar on sar.asset_id = a.id
+       join storyboard_shots s on s.id = sar.shot_id
+       where s.workspace_id = $1
+       order by sar.position
+       limit 1`,
+      [workspaceId],
+    );
+    const metadata = result.rows[0]?.metadata as
+      | Record<string, unknown>
+      | undefined;
+    assert.equal(metadata?.ref, "product.png");
+    assert.equal(metadata?.contentType, "image/png");
+    assert.match(String(metadata?.storagePath ?? ""), /product\.png$/);
   });
 });

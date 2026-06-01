@@ -1,4 +1,5 @@
 import type { MaterialIntakeArtifact } from "@aigc-video/shared";
+import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake.v1";
 
@@ -92,38 +93,17 @@ export function buildMaterialIntakePromptView(
 }
 
 export function buildMaterialIntakePrompt(input: BuildMaterialIntakePromptInput) {
-  return [
-    "角色：",
-    "你是素材清点标签构建器。你会为已验证的工作区文件打标，供电商视频生成使用。",
-    "",
-    "输入：",
-    `用户初始意图：${input.initialPrompt ?? "未指定"}`,
-    "已验证素材清单：",
-    JSON.stringify(input.scanned.assets),
-    "被拒绝文件，仅作背景信息。不要把这些文件写入 tags：",
-    JSON.stringify(input.scanned.rejected),
-    "文本预览：",
-    JSON.stringify(input.textPreviews ?? []),
-    "",
-    "任务：",
-    "为每个已验证素材选择 role、description、relevance 和 included。",
-    "存在有效商品图片时，优先选择一张图片作为 primaryProductRef。",
-    "不要编造 ref，必须逐字使用已验证素材清单中的 ref。",
-    "不要生成商品 brief、开场钩子、分镜或视频生成提示词。",
-    "",
-    "输出：",
-    "返回严格 JSON，匹配以下结构，不要包含 Markdown：",
-    JSON.stringify({
-      primaryProductRef: "product.png",
-      tags: [
-        {
-          ref: "product.png",
-          role: "product_main",
-          description: "简短事实描述",
-          relevance: "high",
-          included: true
-        }
-      ]
-    })
-  ].join("\n");
+  return buildModulePrompt({
+    moduleId: "material-intake",
+    runtimeContext: [
+      "输入：",
+      `用户初始意图：${input.initialPrompt ?? "未指定"}`,
+      "已验证素材清单：",
+      JSON.stringify(input.scanned.assets),
+      "被拒绝文件，仅作背景信息。不要把这些文件写入 tags：",
+      JSON.stringify(input.scanned.rejected),
+      "文本预览：",
+      JSON.stringify(input.textPreviews ?? []),
+    ].join("\n"),
+  }).prompt;
 }

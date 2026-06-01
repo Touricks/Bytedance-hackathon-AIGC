@@ -196,15 +196,46 @@ export const generationService = {
   }) {
     const existing = await db.db2.getFinalVideoJobByIdempotencyKey(input.idempotencyKey);
     if (existing) return { data: existing, deduped: true };
-    const shots = await db.db2.listShotsByWorkspace(input.workspaceId);
+    const activeShotSet = await db.db2.pool().query(
+      `select id from shot_sets
+       where workspace_id = $1 and status = 'active'
+       order by created_at desc
+       limit 1`,
+      [input.workspaceId],
+    );
+    const shotSetId =
+      typeof activeShotSet.rows[0]?.id === "string" ? activeShotSet.rows[0].id : null;
+    if (!shotSetId) {
+      throw new HttpError(409, "NO_ACTIVE_SHOT_SET", "No active shot set exists");
+    }
+    const selected = await db.db2.pool().query(
+      `select s.id as shot_id,
+              s.order_index,
+              s.active_video_script_artifact_id,
+              v.video_candidate_id
+       from storyboard_shots s
+       left join video_select_artifacts v on v.shot_id = s.id
+       where s.workspace_id = $1
+         and s.shot_set_id = $2
+       order by s.order_index asc`,
+      [input.workspaceId, shotSetId],
+    );
+    const shots = selected.rows.map((row) => ({
+      id: String(row.shot_id),
+      activeVideoScriptArtifactId:
+        typeof row.active_video_script_artifact_id === "string"
+          ? row.active_video_script_artifact_id
+          : null,
+      selectedVideoId:
+        typeof row.video_candidate_id === "string" ? row.video_candidate_id : null,
+    }));
     const missing = shots.filter((s) => !s.selectedVideoId).map((s) => s.id);
     if (missing.length > 0) {
       throw new HttpError(409, "MISSING_SELECTIONS", JSON.stringify(missing));
     }
-    const orderedShots = [...shots].sort((a, b) => a.orderIndex - b.orderIndex);
     const sourceShotVideoIds: string[] = [];
     const sourceScriptIds: string[] = [];
-    for (const s of orderedShots) {
+    for (const s of shots) {
       sourceShotVideoIds.push(s.selectedVideoId!);
       const script = s.activeVideoScriptArtifactId;
       if (!script) {
@@ -215,6 +246,7 @@ export const generationService = {
     const fv = await db.db2.insertFinalVideoJob({
       id: "fnl_" + nanoid(10),
       workspaceId: input.workspaceId,
+      shotSetId,
       status: "PENDING",
       sourceShotVideoIds,
       sourceVideoScriptArtifactIds: sourceScriptIds,

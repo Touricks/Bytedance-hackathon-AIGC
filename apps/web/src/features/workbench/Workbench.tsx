@@ -12,7 +12,10 @@ import {
   Wand2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { toAbsoluteAssetUrl } from "../../lib/api/client.js";
+import {
+  toAbsoluteAssetUrl,
+  toWorkspaceMaterialUrl,
+} from "../../lib/api/client.js";
 import type { WorkbenchViewModel } from "./useWorkbenchViewModel.js";
 import { useWorkbenchViewModel } from "./useWorkbenchViewModel.js";
 
@@ -120,7 +123,7 @@ function PipelinePanel({ vm }: { vm: WorkbenchViewModel }) {
         <Layers3 size={18} />
         <div>
           <h2>Artifact Pipeline</h2>
-          <p>V1 artifact approval, then V2 shot production.</p>
+          <p>Module artifacts, shot set apply, then shot production.</p>
         </div>
       </div>
 
@@ -160,11 +163,23 @@ function PipelinePanel({ vm }: { vm: WorkbenchViewModel }) {
           <Wand2 size={16} />
           Run intake
         </button>
+        <button
+          type="button"
+          className="workbench-button--quiet"
+          onClick={vm.actions.approveMaterialIntake}
+          disabled={vm.busy || !vm.artifacts.material}
+        >
+          <CheckCircle2 size={16} />
+          Approve
+        </button>
         <div className="workbench-material-grid">
           {materialAssets.slice(0, 6).map((asset) => (
             <div key={asset.ref} className="workbench-material">
               {asset.kind === "image" ? (
-                <img src={toAbsoluteAssetUrl(asset.ref)} alt={asset.description} />
+                <img
+                  src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
+                  alt={asset.description}
+                />
               ) : (
                 <FileText size={18} />
               )}
@@ -258,7 +273,7 @@ function PipelinePanel({ vm }: { vm: WorkbenchViewModel }) {
             disabled={vm.busy}
           >
             <Wand2 size={16} />
-            Compile
+            Propose
           </button>
           <button
             type="button"
@@ -268,6 +283,15 @@ function PipelinePanel({ vm }: { vm: WorkbenchViewModel }) {
           >
             <CheckCircle2 size={16} />
             Approve
+          </button>
+          <button
+            type="button"
+            className="workbench-button--quiet"
+            onClick={vm.actions.applyShotSet}
+            disabled={vm.busy || !vm.artifacts.shotPrompt}
+          >
+            <Play size={16} />
+            Apply
           </button>
         </div>
       </PipelineStage>
@@ -287,7 +311,11 @@ function ArtifactPanel({ vm }: { vm: WorkbenchViewModel }) {
         <FileText size={18} />
         <div>
           <h2>Latest Artifact</h2>
-          <p>{active ? `${active.type} · ${active.status}` : "No artifact"}</p>
+          <p>
+            {active
+              ? `${active.moduleId ?? active.type} · ${active.status}`
+              : "No artifact"}
+          </p>
         </div>
       </div>
       <pre className="workbench-json">{jsonPreview(active?.data)}</pre>
@@ -299,7 +327,7 @@ function ShotSelector({ vm }: { vm: WorkbenchViewModel }) {
   if (vm.shots.length === 0) {
     return (
       <div className="workbench-empty">
-        Approve shotprompt to seed storyboard shots.
+        Apply the approved shotprompt to create the active shot set.
       </div>
     );
   }

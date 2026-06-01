@@ -90,6 +90,8 @@ export interface ImagePromptArtifactRow {
   negativePrompt: string | null;
   referenceAssetIds: string[];
   promptJson: unknown;
+  sourceFingerprint: unknown;
+  promptAssembly: unknown;
   createdBy: string;
   agentName: string | null;
   promptTemplateVersion: string | null;
@@ -143,6 +145,8 @@ export interface VideoScriptArtifactRow {
   basedOnImageCandidateId: string;
   basedOnPrevImageCandidateId: string | null;
   basedOnNextImageCandidateId: string | null;
+  sourceFingerprint: unknown;
+  promptAssembly: unknown;
   createdBy: string;
   agentName: string | null;
   promptTemplateVersion: string | null;
@@ -210,6 +214,7 @@ export interface GenerationJobRow {
 export interface FinalVideoJobRow {
   id: string;
   workspaceId: string;
+  shotSetId: string | null;
   status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   sourceShotVideoIds: string[];
   sourceVideoScriptArtifactIds: string[];
@@ -307,6 +312,7 @@ export interface Db2Adapter {
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void>;
   getSelectedImage(
     shotId: string
@@ -339,7 +345,11 @@ export interface Db2Adapter {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void>;
+  getSelectedVideo(
+    shotId: string
+  ): Promise<{ videoCandidateId: string; videoGenerationBatchId: string } | null>;
   deleteSelectedVideo(shotId: string): Promise<void>;
   // Generation jobs
   insertGenerationJob(
@@ -1260,6 +1270,8 @@ function toImagePromptArtifactRow(row: Record<string, unknown>): ImagePromptArti
       ? (row.reference_asset_ids as string[])
       : [],
     promptJson: row.prompt_json,
+    sourceFingerprint: row.source_fingerprint ?? {},
+    promptAssembly: row.prompt_assembly ?? {},
     createdBy: String(row.created_by),
     agentName: typeof row.agent_name === "string" ? row.agent_name : null,
     promptTemplateVersion:
@@ -1331,6 +1343,8 @@ function toVideoScriptArtifactRow(row: Record<string, unknown>): VideoScriptArti
       typeof row.based_on_next_image_candidate_id === "string"
         ? row.based_on_next_image_candidate_id
         : null,
+    sourceFingerprint: row.source_fingerprint ?? {},
+    promptAssembly: row.prompt_assembly ?? {},
     createdBy: String(row.created_by),
     agentName: typeof row.agent_name === "string" ? row.agent_name : null,
     promptTemplateVersion:
@@ -1414,6 +1428,7 @@ function toFinalVideoJobRow(row: Record<string, unknown>): FinalVideoJobRow {
   return {
     id: String(row.id),
     workspaceId: String(row.workspace_id),
+    shotSetId: typeof row.shot_set_id === "string" ? row.shot_set_id : null,
     status: row.status as FinalVideoJobRow["status"],
     sourceShotVideoIds: Array.isArray(row.source_shot_video_ids)
       ? (row.source_shot_video_ids as string[])
@@ -1552,8 +1567,9 @@ class PostgresDb2Adapter implements Db2Adapter {
     const result = await this._pool.query(
       `insert into image_prompt_artifacts
          (id, shot_id, version, status, prompt_text, negative_prompt, reference_asset_ids,
-          prompt_json, created_by, agent_name, prompt_template_version, base_artifact_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          prompt_json, source_fingerprint, prompt_assembly, created_by, agent_name,
+          prompt_template_version, base_artifact_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        returning *`,
       [
         input.id,
@@ -1564,6 +1580,8 @@ class PostgresDb2Adapter implements Db2Adapter {
         input.negativePrompt ?? null,
         input.referenceAssetIds,
         jsonbParam(input.promptJson),
+        jsonbParam(input.sourceFingerprint),
+        jsonbParam(input.promptAssembly),
         input.createdBy,
         input.agentName ?? null,
         input.promptTemplateVersion ?? null,
@@ -1781,28 +1799,43 @@ class PostgresDb2Adapter implements Db2Adapter {
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void> {
-    await this._pool.query(
-      `insert into selected_shot_images (id, shot_id, image_candidate_id, image_generation_batch_id)
-       values ($1, $2, $3, $4)
+    const result = await this._pool.query(
+      `insert into image_select_artifacts
+         (id, workspace_id, shot_set_id, shot_id, image_candidate_id,
+          image_generation_batch_id, selected_by)
+       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4, $5
+       from storyboard_shots s
+       where s.id = $2
+         and s.shot_set_id is not null
        on conflict (shot_id) do update
        set image_candidate_id = excluded.image_candidate_id,
            image_generation_batch_id = excluded.image_generation_batch_id,
-           selected_at = now()`,
+           workspace_id = excluded.workspace_id,
+           shot_set_id = excluded.shot_set_id,
+           selected_by = excluded.selected_by,
+           selected_at = now(),
+           updated_at = now()
+       returning id`,
       [
         "sel_img_" + nanoid(10),
         input.shotId,
         input.imageCandidateId,
-        input.imageGenerationBatchId
+        input.imageGenerationBatchId,
+        input.selectedBy ?? null
       ]
     );
+    if (result.rowCount !== 1) {
+      throw new NotFoundError("ActiveShotSet");
+    }
   }
 
   async getSelectedImage(
     shotId: string
   ): Promise<{ imageCandidateId: string; imageGenerationBatchId: string } | null> {
     const result = await this._pool.query(
-      "select * from selected_shot_images where shot_id = $1",
+      "select * from image_select_artifacts where shot_id = $1",
       [shotId]
     );
     const row = result.rows[0];
@@ -1822,9 +1855,10 @@ class PostgresDb2Adapter implements Db2Adapter {
       `insert into video_script_artifacts
          (id, shot_id, version, status, duration_sec, script_json, provider_prompt,
           based_on_image_candidate_id, based_on_prev_image_candidate_id,
-          based_on_next_image_candidate_id, created_by, agent_name,
+          based_on_next_image_candidate_id, source_fingerprint, prompt_assembly,
+          created_by, agent_name,
           prompt_template_version, base_artifact_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        returning *`,
       [
         input.id,
@@ -1837,6 +1871,8 @@ class PostgresDb2Adapter implements Db2Adapter {
         input.basedOnImageCandidateId,
         input.basedOnPrevImageCandidateId ?? null,
         input.basedOnNextImageCandidateId ?? null,
+        jsonbParam(input.sourceFingerprint),
+        jsonbParam(input.promptAssembly),
         input.createdBy,
         input.agentName ?? null,
         input.promptTemplateVersion ?? null,
@@ -2021,25 +2057,55 @@ class PostgresDb2Adapter implements Db2Adapter {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void> {
-    await this._pool.query(
-      `insert into selected_shot_videos (id, shot_id, video_candidate_id, video_generation_batch_id)
-       values ($1, $2, $3, $4)
+    const result = await this._pool.query(
+      `insert into video_select_artifacts
+         (id, workspace_id, shot_set_id, shot_id, video_candidate_id,
+          video_generation_batch_id, selected_by)
+       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4, $5
+       from storyboard_shots s
+       where s.id = $2
+         and s.shot_set_id is not null
        on conflict (shot_id) do update
        set video_candidate_id = excluded.video_candidate_id,
            video_generation_batch_id = excluded.video_generation_batch_id,
-           selected_at = now()`,
+           workspace_id = excluded.workspace_id,
+           shot_set_id = excluded.shot_set_id,
+           selected_by = excluded.selected_by,
+           selected_at = now(),
+           updated_at = now()
+       returning id`,
       [
         "sel_vid_" + nanoid(10),
         input.shotId,
         input.videoCandidateId,
-        input.videoGenerationBatchId
+        input.videoGenerationBatchId,
+        input.selectedBy ?? null
       ]
     );
+    if (result.rowCount !== 1) {
+      throw new NotFoundError("ActiveShotSet");
+    }
+  }
+
+  async getSelectedVideo(
+    shotId: string
+  ): Promise<{ videoCandidateId: string; videoGenerationBatchId: string } | null> {
+    const result = await this._pool.query(
+      "select * from video_select_artifacts where shot_id = $1",
+      [shotId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      videoCandidateId: String(row.video_candidate_id),
+      videoGenerationBatchId: String(row.video_generation_batch_id)
+    };
   }
 
   async deleteSelectedVideo(shotId: string): Promise<void> {
-    await this._pool.query("delete from selected_shot_videos where shot_id = $1", [
+    await this._pool.query("delete from video_select_artifacts where shot_id = $1", [
       shotId
     ]);
   }
@@ -2128,14 +2194,15 @@ class PostgresDb2Adapter implements Db2Adapter {
   ): Promise<FinalVideoJobRow> {
     const result = await this._pool.query(
       `insert into final_video_jobs
-         (id, workspace_id, status, source_shot_video_ids, source_video_script_artifact_ids,
+         (id, workspace_id, shot_set_id, status, source_shot_video_ids, source_video_script_artifact_ids,
           local_path, local_url, duration_sec, width, height, compiled_manifest,
           compiled_manifest_hash, ffmpeg_log, error_message, idempotency_key, completed_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        returning *`,
       [
         input.id,
         input.workspaceId,
+        input.shotSetId ?? null,
         input.status,
         input.sourceShotVideoIds,
         input.sourceVideoScriptArtifactIds,
@@ -2178,6 +2245,7 @@ class PostgresDb2Adapter implements Db2Adapter {
   ): Promise<FinalVideoJobRow> {
     const colMap: Record<string, string> = {
       status: "status",
+      shotSetId: "shot_set_id",
       sourceShotVideoIds: "source_shot_video_ids",
       sourceVideoScriptArtifactIds: "source_video_script_artifact_ids",
       localPath: "local_path",

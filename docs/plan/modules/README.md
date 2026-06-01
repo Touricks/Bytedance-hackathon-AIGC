@@ -1,5 +1,7 @@
 # Prompt 模块草稿（claude 版）
 
+> 这些文件是 0529 模块提案的原始草稿，已由 [`../module-artifact-v2-migration-plan.md`](../module-artifact-v2-migration-plan.md) 综合为当前实施计划。当前权威契约以 `docs/core/`、`docs/test/agent-chain/` 和迁移计划为准。
+
 按统一格式整理的模块设计文档，交给 prompt 设计同学接手。格式规范见 [_format-suggestions.md](_format-suggestions.md)。
 
 ## 模块分类
@@ -17,9 +19,9 @@
 2. [product-brief.md](product-brief.md) — 卖点 + 品牌语气，下游所有 prompt 的事实根基。
 3. [storyboard.md](storyboard.md) — 分镜，决定 shot 数量与节奏。
 4. [shotprompt.md](shotprompt.md) — LLM agent，跨 shot 编排「拍摄任务卡」，重点是 shot 0 建立基准、shot 1+ 继承场景。
-5. [image-prompt.md](image-prompt.md) — Per-shot 关键帧：组 prompt + 调 Ark 直接产出 N 张候选；shot N≥1 强制注入前一 shot selected_shot_image 作为 `image_ref` 保场景。
+5. [image-prompt.md](image-prompt.md) — Per-shot 关键帧：组 prompt + 调 Ark 直接产出 N 张候选；shot N≥1 强制注入前一 shot 的 `image_select_artifacts` 当前选择作为 `image_ref` 保场景。
 6. [image-select.md](image-select.md) — 同步点：用户挑 1 张关键帧。**所有 shot 都 image-selected 后** 才解锁视频链路。且后一张分镜图的生成工作必须在当前分镜图确认后才能开始。`select 不触发 stale`。
-7. [video-script.md](video-script.md) — Per-shot 视频生成：所有 shot 并行（无 inter-shot 依赖，首尾帧来自相邻 shot 的 selected_shot_image）。组 prompt + 调 Seedance 异步 task + 轮询 + 直接产出 M 段候选。
+7. [video-script.md](video-script.md) — Per-shot 视频生成：所有 shot 并行（无 inter-shot 依赖，首尾帧来自相邻 shot 的 `image_select_artifacts` 当前选择）。组 prompt + 调 Seedance 异步 task + 轮询 + 直接产出 M 段候选。
 8. [video-select.md](video-select.md) — 同步点：用户挑 1 段视频。所有 shot 都 video-selected 后解锁 final compose。`select 不触发 stale`。
 
 ## 关键设计原则速查

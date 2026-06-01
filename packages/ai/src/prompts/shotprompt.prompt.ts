@@ -4,6 +4,7 @@ import type {
   StoryboardArtifact,
 } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
+import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const SHOTPROMPT_PROMPT_VERSION = "video-shotprompt.v1";
 
@@ -79,38 +80,17 @@ export function buildShotPromptPromptView(
 }
 
 export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
-  return [
-    "角色：",
-    "你是 Seedance 图生视频提示词构建器。你要把已确认分镜转成一份商家可编辑、可传给 provider 的 shotprompt artifact。",
-    "",
-    "输入：",
-    `画幅比例：${input.aspectRatio}`,
-    "已确认商品 brief：",
-    JSON.stringify(input.brief),
-    "已确认素材清单：",
-    JSON.stringify(input.material.assets),
-    "已确认分镜：",
-    JSON.stringify(input.storyboard),
-    "",
-    "任务：",
-    "生成面向 Seedance 的 shotprompt artifact，必须准确保持被引用商品。",
-    "referenceAssetRefs 只能来自已确认素材清单。",
-    "保持分镜时间和口播对齐。",
-    "V1 不生成字幕，不要把可读文字作为视频生成要求。",
-    "启用 tts，并从 shots[].voiceover 汇总完整 voiceover。tts 是渲染计划/结果，不是第二份可编辑脚本。",
-    "不要改变上游商品主张或目标人群。",
-    "",
-    "输出：",
-    "返回一个严格 JSON object，不要包含 Markdown。",
-    "结构契约由 Ark response_format.json_schema 强制约束；不要依赖 prompt 里的示例推断字段。",
-    "字段名、enum 和 schema key 必须严格使用机器契约中的英文值，例如 targetProvider、durationSec、aspectRatio、providerPrompt、shots.voiceover。",
-    "字段值中的自然语言内容必须使用中文构建。",
-    "prompt：全局视频目标和叙事主线，不要重复承载所有逐镜头 providerPrompt。",
-    "negativePrompt：中文负向约束；如没有额外负向要求，可以返回空字符串。",
-    "shots[].providerPrompt：逐镜头中文 Seedance 画面指令，必须来自已确认分镜和素材绑定。",
-    "shots[].referenceAssetRefs：只能使用已确认素材清单里的 ref。",
-    "tts.voiceover：从 shots[].voiceover 汇总，不新增第二份脚本。",
-    "assumptions：只记录必要且可审计的中文假设。",
-    "禁止输出占位符值，例如：字符串、string、TODO、N/A、示例、待补充。",
-  ].join("\n");
+  return buildModulePrompt({
+    moduleId: "shotprompt",
+    runtimeContext: [
+      "输入：",
+      `画幅比例：${input.aspectRatio}`,
+      "已确认商品 brief：",
+      JSON.stringify(input.brief),
+      "已确认素材清单：",
+      JSON.stringify(input.material.assets),
+      "已确认分镜：",
+      JSON.stringify(input.storyboard),
+    ].join("\n"),
+  }).prompt;
 }

@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,7 +49,7 @@ interface CreatedWorkspace {
   workspace: { id: string; localPath: string; currentScriptId: string };
 }
 interface ArtifactProposeResponse {
-  artifact: { id: string; data: unknown };
+  data: { id: string; data: unknown };
 }
 interface ShotRow {
   id: string;
@@ -65,43 +67,73 @@ async function seedWorkspaceViaApi(request: APIRequestContext): Promise<{
   });
   const workspaceId = ws.workspace.id;
   const scriptId = ws.workspace.currentScriptId;
+  const workspaceDirectory = await mkdtemp(path.join(os.tmpdir(), "web-e2e-"));
+  await apiPost(request, `/api/workspaces/${workspaceId}/storage/bind`, {
+    kind: "local",
+    localPath: workspaceDirectory
+  });
 
   const pngBytes = readFileSync(fixturePath);
-  await apiPost(request, "/api/workspaces/materials", {
-    workspaceId,
+  await apiPost(request, `/api/workspaces/${workspaceId}/materials`, {
     filename: "red-apple.png",
     dataBase64: pngBytes.toString("base64")
   });
-  await apiPost(request, "/api/workspaces/material-intake", { workspaceId });
+  const requirements = await apiPost<ArtifactProposeResponse>(
+    request,
+    `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+    {
+      data: {
+        image: { style: "clean ecommerce product photography" },
+        script: { tone: "confident and concise" },
+        storyboard: { rhythm: "fast product reveal" },
+        shotImage: { continuity: "preserve product identity" },
+        shotVideo: { motion: "smooth and stable" }
+      }
+    }
+  );
+  await apiPost(request, `/api/workspaces/${workspaceId}/prompt-requirements/approve`, {
+    artifactId: requirements.data.id
+  });
+
+  const material = await apiPost<ArtifactProposeResponse>(
+    request,
+    `/api/workspaces/${workspaceId}/material-intake/propose`,
+    { selectedMaterialRefs: ["red-apple.png"] }
+  );
+  await apiPost(request, `/api/workspaces/${workspaceId}/material-intake/approve`, {
+    artifactId: material.data.id
+  });
 
   const brief = await apiPost<ArtifactProposeResponse>(
     request,
-    "/api/workspaces/brief/propose",
-    { workspaceId }
+    `/api/workspaces/${workspaceId}/product-brief/propose`,
+    {}
   );
-  await apiPost(request, "/api/workspaces/artifacts/brief/approve", {
-    workspaceId,
-    data: brief.artifact.data
+  await apiPost(request, `/api/workspaces/${workspaceId}/product-brief/approve`, {
+    artifactId: brief.data.id
   });
 
   const storyboard = await apiPost<ArtifactProposeResponse>(
     request,
-    "/api/workspaces/storyboard/propose",
-    { workspaceId }
+    `/api/workspaces/${workspaceId}/storyboard/propose`,
+    {}
   );
-  await apiPost(request, "/api/workspaces/artifacts/storyboard/approve", {
-    workspaceId,
-    data: storyboard.artifact.data
+  await apiPost(request, `/api/workspaces/${workspaceId}/storyboard/approve`, {
+    artifactId: storyboard.data.id
   });
 
   const shotprompt = await apiPost<ArtifactProposeResponse>(
     request,
-    "/api/workspaces/shotprompt/compile",
-    { workspaceId }
+    `/api/workspaces/${workspaceId}/shotprompt/propose`,
+    {}
   );
-  await apiPost(request, "/api/workspaces/artifacts/shotprompt/approve", {
-    workspaceId,
-    data: shotprompt.artifact.data
+  const approvedShotPrompt = await apiPost<ArtifactProposeResponse>(
+    request,
+    `/api/workspaces/${workspaceId}/shotprompt/approve`,
+    { artifactId: shotprompt.data.id }
+  );
+  await apiPost(request, `/api/workspaces/${workspaceId}/shot-sets`, {
+    shotPromptArtifactId: approvedShotPrompt.data.id
   });
 
   const shotsResp = await apiGet<unknown>(
@@ -162,17 +194,17 @@ test("creates a managed workspace via real backend and lands on focus mode", asy
   );
 
   await page.goto("/");
-  await page.getByRole("button", { name: "新建托管工作区" }).click();
+  await page.getByRole("button", { name: /启动创作会话/ }).click();
 
   await expect(page).toHaveURL(/\/workspaces\/[a-zA-Z0-9_-]+/, {
     timeout: 30_000
   });
 
-  // Workbench shell renders even before the workspace has seeded shots.
-  await expect(page.getByRole("heading", { name: "Artifact Pipeline" })).toBeVisible({
+  // Review desk shell renders even before the workspace has seeded shots.
+  await expect(page.getByText("创作审核台")).toBeVisible({
     timeout: 15_000
   });
-  await expect(page.getByRole("heading", { name: "Shot Workbench" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "创作要求 + 上传素材" })).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -203,18 +235,18 @@ test.describe("real provider flow @provider", () => {
     page
   }) => {
     await page.goto(`/workspaces/${workspaceId}`);
-    await expect(page.getByText(firstShotId.slice(0, 6))).toBeVisible({
+    await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible({
       timeout: 30_000
     });
 
     // Step 1: propose image prompt and create the internal image batch.
-    await page.getByRole("button", { name: /Image propose/ }).click({
+    await page.getByRole("button", { name: /生成分镜图候选/ }).click({
       timeout: 10_000
     });
 
     // Step 2: wait for at least one SUCCEEDED candidate tile. Image generation
     // typically takes 8–30 s per candidate; we wait up to 4 min.
-    const succeededTile = page.locator(".workbench-candidate--good").first();
+    const succeededTile = page.locator(".review-candidate--good").first();
     await expect(succeededTile).toBeVisible({ timeout: 4 * 60_000 });
 
     // Step 3: select the first succeeded candidate.

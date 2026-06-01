@@ -38,11 +38,12 @@ function usage() {
     "Environment overrides:",
     "  REALITEST_BASE_URL",
     "  REALITEST_WORKSPACE_DIRECTORY",
-    "  REALITEST_MATERIAL_REF",
-    "  REALITEST_PARALLEL_SHOTPROMPT_SOURCE=compiled|fixed",
-    "  REALITEST_PARALLEL_VIDEO_BATCH_SIZE",
-    "  REALITEST_REQUEST_RETRY_MAX_ATTEMPTS",
-    "  REALITEST_REQUEST_RETRY_BASE_MS"
+  "  REALITEST_MATERIAL_REF",
+  "  REALITEST_PARALLEL_SHOTPROMPT_SOURCE=compiled|fixed",
+  "  REALITEST_PARALLEL_IMAGE_BATCH_SIZE",
+  "  REALITEST_PARALLEL_VIDEO_BATCH_SIZE",
+  "  REALITEST_REQUEST_RETRY_MAX_ATTEMPTS",
+  "  REALITEST_REQUEST_RETRY_BASE_MS"
   ].join("\n");
 }
 
@@ -514,13 +515,17 @@ async function ensureMaterialAvailable(
   workspaceDirectory,
   materialRef
 ) {
-  const rootMaterial = path.join(workspaceDirectory, materialRef);
-  if (existsSync(rootMaterial)) return;
+  const managedMaterial = path.join(
+    workspaceDirectory,
+    ".daireel",
+    "materials",
+    materialRef
+  );
+  if (existsSync(managedMaterial)) return;
 
   const fixture = path.join(repoRoot, "apps/server/test/helpers/fixtures/red-apple.png");
   const bytes = await readFile(fixture);
-  await requestJson(baseUrl, "POST", "/api/workspaces/materials", {
-    workspaceId,
+  await requestJson(baseUrl, "POST", `/api/workspaces/${workspaceId}/materials`, {
     filename: materialRef,
     dataBase64: bytes.toString("base64")
   });
@@ -626,11 +631,13 @@ async function scanReviewGate(workspaceDirectory) {
 async function scanTraceGate(baseUrl, workspaceDirectory, workspaceId) {
   const tracePath = path.join(workspaceDirectory, ".daireel/trace/events.jsonl");
   const badFileEvents = [];
+  const fileEvents = [];
   try {
     const raw = await readFile(tracePath, "utf8");
     for (const [index, line] of raw.split(/\r?\n/).entries()) {
       if (!line.trim()) continue;
       const event = JSON.parse(line);
+      fileEvents.push(event);
       const name = event.kind ?? event.name ?? "";
       if (name === "provider.failed" || name === "batch.failed") {
         badFileEvents.push({ line: index + 1, name, event });
@@ -657,7 +664,36 @@ async function scanTraceGate(baseUrl, workspaceDirectory, workspaceId) {
     dbFailedEvents.length === 0,
     `DB trace contains failed events: ${JSON.stringify(dbFailedEvents)}`
   );
-  return { tracePath, dbTraceCount: Array.isArray(traceRows) ? traceRows.length : 0 };
+
+  const shotFileEvents = fileEvents.filter(
+    (event) => typeof event.shotId === "string" && event.shotId.length > 0
+  );
+  const requiredShotTraceKinds = [
+    "image_prompt_proposed",
+    "image_candidate_completed",
+    "image_candidate_selected",
+    "video_script_proposed",
+    "video_generation_completed",
+    "video_candidate_selected",
+  ];
+  for (const kind of requiredShotTraceKinds) {
+    const shotIds = new Set(
+      shotFileEvents
+        .filter((event) => (event.kind ?? event.name) === kind)
+        .map((event) => event.shotId)
+    );
+    assert(
+      shotIds.size === fixedShotCount,
+      `file trace must include ${kind} for ${fixedShotCount} shots, got ${shotIds.size}`
+    );
+  }
+
+  return {
+    tracePath,
+    fileTraceCount: fileEvents.length,
+    fileShotTraceCount: shotFileEvents.length,
+    dbTraceCount: Array.isArray(traceRows) ? traceRows.length : 0,
+  };
 }
 
 async function runDbAudit(workspaceId, finalVideoJobId) {
@@ -675,9 +711,34 @@ async function runDbAudit(workspaceId, finalVideoJobId) {
         (select count(distinct shot_id)::int from image_generation_batches where workspace_id = $1) as "imageBatchShotCount",
         (select count(*)::int from video_generation_batches where workspace_id = $1) as "videoBatchCount",
         (select count(distinct shot_id)::int from video_generation_batches where workspace_id = $1) as "videoBatchShotCount",
-        (select count(*)::int from selected_shot_images ssi join storyboard_shots ss on ss.id = ssi.shot_id where ss.workspace_id = $1) as "selectedImageCount",
-        (select count(*)::int from selected_shot_videos ssv join storyboard_shots ss on ss.id = ssv.shot_id where ss.workspace_id = $1) as "selectedVideoCount",
-        (select coalesce(array_length(source_shot_video_ids, 1), 0)::int from final_video_jobs where id = $2) as "finalSourceVideoCount"\`,
+        (select count(*)::int from image_select_artifacts isa join storyboard_shots ss on ss.id = isa.shot_id where ss.workspace_id = $1) as "selectedImageCount",
+        (select count(*)::int from video_select_artifacts vsa join storyboard_shots ss on ss.id = vsa.shot_id where ss.workspace_id = $1) as "selectedVideoCount",
+        (select coalesce(array_length(source_shot_video_ids, 1), 0)::int from final_video_jobs where id = $2) as "finalSourceVideoCount",
+        (select shot_set_id from final_video_jobs where id = $2) as "finalShotSetId",
+        (select count(*)::int from workspace_artifact where workspace_id = $1 and artifact_type in ('assets', 'brief', 'storyboard', 'shotprompt')) as "legacyMainChainArtifactCount",
+        (
+          select count(distinct ipa.shot_id)::int
+          from image_prompt_artifacts ipa
+          join storyboard_shots ss on ss.id = ipa.shot_id
+          where ss.workspace_id = $1
+            and length(ipa.prompt_assembly->>'subjectHash') = 64
+            and length(ipa.prompt_assembly->>'contractHash') = 64
+        ) as "imagePromptAssemblyShotCount",
+        (
+          select count(distinct vsa.shot_id)::int
+          from video_script_artifacts vsa
+          join storyboard_shots ss on ss.id = vsa.shot_id
+          where ss.workspace_id = $1
+            and length(vsa.prompt_assembly->>'subjectHash') = 64
+            and length(vsa.prompt_assembly->>'contractHash') = 64
+        ) as "videoScriptAssemblyShotCount",
+        (
+          (select count(*)::int from prompt_requirements_artifacts where workspace_id = $1 and status = 'approved' and is_current = true and length(prompt_assembly->>'subjectHash') = 64 and length(prompt_assembly->>'contractHash') = 64)
+          + (select count(*)::int from material_intake_artifacts where workspace_id = $1 and status = 'approved' and is_current = true and length(prompt_assembly->>'subjectHash') = 64 and length(prompt_assembly->>'contractHash') = 64)
+          + (select count(*)::int from product_brief_artifacts where workspace_id = $1 and status = 'approved' and is_current = true and length(prompt_assembly->>'subjectHash') = 64 and length(prompt_assembly->>'contractHash') = 64)
+          + (select count(*)::int from storyboard_artifacts where workspace_id = $1 and status = 'approved' and is_current = true and length(prompt_assembly->>'subjectHash') = 64 and length(prompt_assembly->>'contractHash') = 64)
+          + (select count(*)::int from shot_prompt_artifacts where workspace_id = $1 and status = 'approved' and is_current = true and length(prompt_assembly->>'subjectHash') = 64 and length(prompt_assembly->>'contractHash') = 64)
+        ) as "promptAssemblyHashCount"\`,
       [workspaceId, finalVideoJobId],
     );
     await pool.end();
@@ -725,6 +786,23 @@ async function runDbAudit(workspaceId, finalVideoJobId) {
     audit.finalSourceVideoCount === audit.selectedVideoCount,
     "final compose input video count must equal selected video shot count"
   );
+  assert(audit.finalShotSetId, "final compose job must bind a shot set");
+  assert(
+    audit.legacyMainChainArtifactCount === 0,
+    "V2 main chain must not write assets/brief/storyboard/shotprompt to workspace_artifact"
+  );
+  assert(
+    audit.promptAssemblyHashCount === 5,
+    "all current approved V2 module artifacts must persist split prompt assembly hashes"
+  );
+  assert(
+    audit.imagePromptAssemblyShotCount >= audit.shotCount,
+    "image prompt artifacts must persist split prompt assembly hashes for every shot"
+  );
+  assert(
+    audit.videoScriptAssemblyShotCount >= audit.shotCount,
+    "video script artifacts must persist split prompt assembly hashes for every shot"
+  );
   return audit;
 }
 
@@ -754,21 +832,52 @@ async function runParallelFlow(input) {
   });
   await ensureMaterialAvailable(baseUrl, workspaceId, workspaceDirectory, materialRef);
 
-  console.log("Approving fixed brief and fixed 4-shot storyboard...");
-  await requestJson(baseUrl, "POST", "/api/workspaces/material-intake", {
-    workspaceId,
-    prompt: "Parallel realitest material intake.",
-    selectedMaterialRefs: [materialRef]
+  console.log("Approving V2 prompt requirements and fixed 4-shot module artifacts...");
+  const requirementsProposed = await requestJson(
+    baseUrl,
+    "POST",
+    `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+    {
+      data: {
+        image: {
+          style: "realistic ecommerce product photography",
+          composition: "clean product continuity across all shots",
+          avoid: ["watermark", "garbled text", "product deformation"]
+        },
+        script: { tone: "concise benefit-led creator voice" },
+        storyboard: { rhythm: "four stable 4-second shots" },
+        shotImage: { global: "preserve exact product identity" },
+        shotVideo: { global: "smooth motion, stable first and last frames" }
+      }
+    }
+  );
+  await requestJson(
+    baseUrl,
+    "POST",
+    `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+    { artifactId: requirementsProposed.data?.id }
+  );
+
+  const materialProposed = await requestJson(
+    baseUrl,
+    "POST",
+    `/api/workspaces/${workspaceId}/material-intake/propose`,
+    {
+      userDirection: "Parallel realitest material intake.",
+      selectedMaterialRefs: [materialRef]
+    }
+  );
+  await requestJson(baseUrl, "POST", `/api/workspaces/${workspaceId}/material-intake/approve`, {
+    artifactId: materialProposed.data?.id
   });
-  await requestJson(baseUrl, "POST", "/api/workspaces/artifacts/brief/approve", {
-    workspaceId,
+
+  await requestJson(baseUrl, "POST", `/api/workspaces/${workspaceId}/product-brief/approve`, {
     data: fixedBrief(materialRef)
   });
 
   const storyboard = fixedStoryboard(materialRef);
   validateStoryboard(storyboard);
-  await requestJson(baseUrl, "POST", "/api/workspaces/artifacts/storyboard/approve", {
-    workspaceId,
+  await requestJson(baseUrl, "POST", `/api/workspaces/${workspaceId}/storyboard/approve`, {
     data: storyboard
   });
 
@@ -776,10 +885,11 @@ async function runParallelFlow(input) {
   const compiled = await requestJson(
     baseUrl,
     "POST",
-    "/api/workspaces/shotprompt/compile",
-    { workspaceId, aspectRatio: "9:16" }
+    `/api/workspaces/${workspaceId}/shotprompt/propose`,
+    { aspectRatio: "9:16" }
   );
-  const compiledShotPrompt = compiled.artifact?.data;
+  const compiledArtifactId = compiled.data?.id;
+  const compiledShotPrompt = compiled.data?.data;
   validateShotPrompt(compiledShotPrompt, storyboard);
 
   const shotPromptSource = process.env.REALITEST_PARALLEL_SHOTPROMPT_SOURCE ?? "compiled";
@@ -790,10 +900,21 @@ async function runParallelFlow(input) {
   const approvedShotPrompt =
     shotPromptSource === "fixed" ? fixedShotPrompt(storyboard) : compiledShotPrompt;
   validateShotPrompt(approvedShotPrompt, storyboard);
-  await requestJson(baseUrl, "POST", "/api/workspaces/artifacts/shotprompt/approve", {
-    workspaceId,
-    data: approvedShotPrompt
-  });
+  const approved = await requestJson(
+    baseUrl,
+    "POST",
+    `/api/workspaces/${workspaceId}/shotprompt/approve`,
+    shotPromptSource === "fixed"
+      ? { data: approvedShotPrompt }
+      : { artifactId: compiledArtifactId }
+  );
+  const shotSet = await requestJson(
+    baseUrl,
+    "POST",
+    `/api/workspaces/${workspaceId}/shot-sets`,
+    { shotPromptArtifactId: approved.data?.id }
+  );
+  assert(shotSet.data?.status === "active", "shot set apply must create active shot set");
 
   const shotsResponse = await requestJson(
     baseUrl,
@@ -1009,6 +1130,13 @@ async function main() {
   const parallelVideoBatchSize = Number(
     process.env.REALITEST_PARALLEL_VIDEO_BATCH_SIZE ?? 1
   );
+  const parallelImageBatchSize = process.env.REALITEST_PARALLEL_IMAGE_BATCH_SIZE
+    ? Number(process.env.REALITEST_PARALLEL_IMAGE_BATCH_SIZE)
+    : null;
+  if (parallelImageBatchSize !== null) {
+    process.env.DEFAULT_IMAGE_BATCH_SIZE = String(parallelImageBatchSize);
+    process.env.MAX_IMAGE_BATCH_SIZE = String(parallelImageBatchSize);
+  }
   process.env.DEFAULT_VIDEO_BATCH_SIZE = String(parallelVideoBatchSize);
   process.env.AIGC_VIDEO_SKIP_ENV_FILE = "true";
 
@@ -1018,6 +1146,12 @@ async function main() {
   const devChild = startDev();
   await waitForHealth(baseUrl, devChild);
   const limits = await requestJson(baseUrl, "GET", "/api/config/limits");
+  if (parallelImageBatchSize !== null) {
+    assert(
+      limits.data?.defaultImageBatchSize === parallelImageBatchSize,
+      `parallel dev server must use defaultImageBatchSize=${parallelImageBatchSize}`
+    );
+  }
   assert(
     limits.data?.defaultVideoBatchSize === parallelVideoBatchSize,
     `parallel dev server must use defaultVideoBatchSize=${parallelVideoBatchSize}`

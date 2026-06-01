@@ -1,207 +1,227 @@
-# Postman Test Plan
+# Postman / Newman Test Plan
 
 更新时间：2026-05-31
 
 ## 目标
 
-Postman 用于验证后端公开契约和真实服务联调，不替代 Node test。0530 当前交付拆成两份 collection：
+Postman collection 是后端公开契约的可读测试定义；`pnpm` 脚本负责调用 Newman、启动/清理服务，并补充 DB/trace 断言。V2 第一版验收跑完整 real provider agent 链路。
 
-| Collection | 目的 | Provider |
-|---|---|---|
-| `smoke.json` | 快速确认 API path、schema、状态码、DB/storage、shot seed、Campaign/KOL；不触发 text/image/video provider | 不依赖模型 API |
-| `provider.json` | 小批量真实模型联调，覆盖 text/image/video provider、batch polling、select、final video | 依赖 `.env` 中 `TEXT_*`、`IMAGE_*`、`VIDEO_*` |
+| 测试 | 入口 | Provider | 目的 |
+|---|---|---|---|
+| 快速真实 smoke | `pnpm realitest` | real | 验证 provider credentials 与单 shot 主链路。 |
+| 多 shot 并行验收 | `pnpm realitest:parallel` | real | 验证 4-shot 图像/视频并行稳定性与 final compose。 |
+| V2 agent-chain | `pnpm test:agent-chain` | real | 按 V2 module artifact + shot set 契约端到端验证。 |
 
-注意：代码里的 `pnpm --filter @aigc-video/server test:integration:smoke` 和 `smoke:providers` 是真实 provider smoke，会读取 `.env` 并调用模型 API；不要把它们等同于 Postman local smoke。
-
-## 运行前准备
-
-推荐直接运行低成本真实 provider smoke：
-
-```bash
-pnpm realitest
-```
-
-该脚本会先执行 `pnpm reset:dev -- --yes --no-dev` 清理 Postgres / Redis 并停止旧 dev listener，再删除 `workspaceDirectory/.daireel/`，随后启动 `pnpm dev`，等待 `/api/health` 就绪后运行 provider Newman collection。它当前固定 approve one-shot shotprompt，只证明单 shot 真实图片、视频、final compose、Campaign 主链路能跑通，不承担多 shot 并行稳定性验收。
-
-多 shot 并行验收使用：
-
-```bash
-pnpm realitest:parallel
-```
-
-该脚本使用固定 4-shot approved storyboard（每个 shot 4 秒，总 16 秒），调用 `shotprompt/compile` 基于该 storyboard 编译 shotprompt，并默认 approve compile 结果。若需要彻底固定 approved shotprompt，可设置 `REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed`，但 compile 步骤仍会运行并校验它确实基于 4-shot storyboard。
-
-如需手动拆分执行：
-
-1. 新版本测试前清理 Postgres business tables：
-
-```bash
-pnpm db:clear -- --yes
-```
-
-2. 启动后端：
-
-```bash
-pnpm dev
-```
-
-3. 当前约定测试目录：
+V2 collection 建议放在：
 
 ```text
-/Users/carrick/TestWorkspace/Project-AIGC/IntegrationTest_v0/onePicture/
+docs/test/agent-chain/agent-chain.postman.json
+docs/test/agent-chain/agent-chain.env.json
+docs/test/agent-chain/agent-chain.data.json
 ```
 
-4. Postman 环境变量：
+provider secrets 继续来自 `.env` 与现有 `docs/test/provider.env.json`。`agent-chain.env.json` 只保存非敏感的测试路径、轮询参数和 collection 变量。
+
+---
+
+## 运行方式
+
+推荐脚本形态：
+
+```bash
+pnpm test:agent-chain
+```
+
+脚本职责：
+
+1. 执行 `pnpm reset:dev -- --yes`，清理 Postgres / Redis 并启动 `pnpm dev`。
+2. 删除目标 workspace 的 `.daireel/`，避免旧 trace/manifest 干扰。
+3. 合并 `.env`、`docs/test/provider.env.json`、`docs/test/agent-chain/agent-chain.env.json`。
+4. 调用 Newman 执行 `agent-chain.postman.json`。
+5. 运行 DB/trace assertions：
+   - 各 module artifact 表存在 proposed 和 approved/current。
+   - `shotprompt approve` 不创建 shots。
+   - `POST /shot-sets` 后才出现 active shot set 与 shots。
+   - `image_select_artifacts` / `video_select_artifacts` 每个 shot 只有一条 current selection。
+   - final compose 输入视频数等于 active shot set 的 shot 数。
+   - trace 中存在 prompt assembly metadata 和 provider call events。
+
+---
+
+## 环境变量
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
-| `baseUrl` | `http://localhost:3000` | 后端服务地址 |
-| `workspaceName` | `0530-postman-demo` | 托管 workspace 名称 |
-| `workspaceDirectory` | `/Users/carrick/TestWorkspace/Project-AIGC/IntegrationTest_v0/onePicture/` | local storage binding 的绝对工作目录 |
-| `workspaceId` | 空 | 创建后自动回填 |
-| `materialRef` | `display_1.png` | onePicture 场景内已有素材 ref |
-| `materialFileBase64` | collection 内置 1x1 PNG | local-smoke/provider setup 都会先上传为 `materialRef` |
-| `shotId` | 空 | single-shot smoke approve shotprompt 后自动回填 |
-| `imagePromptArtifactId` | 空 | image prompt propose 后自动回填 |
-| `imageBatchId` | 空 | image batch 创建后自动回填 |
-| `imageCandidateId` | 空 | image batch 查询后自动回填 |
-| `videoScriptArtifactId` | 空 | video script propose 后自动回填 |
-| `videoBatchId` | 空 | video batch 创建后自动回填 |
-| `videoCandidateId` | 空 | video batch 查询后自动回填 |
-| `finalVideoJobId` | 空 | final compose 创建后自动回填 |
-| `campaignPublicationId` | 空 | Campaign / KOL 发布记录创建后自动回填 |
-| `campaignPlatform` | `douyin` | 发布平台 |
-| `campaignChannelName` | `creator-alpha` | KOL / 渠道名 |
-| `campaignKolName` | `Ava` | KOL 展示名 |
-| `campaignPublishUrl` | `https://example.com/campaign/post-001` | 测试发布链接 |
-| `imagePollAttempts` | `0` | provider collection 自动轮询 image batch |
-| `videoPollAttempts` | `0` | provider collection 自动轮询 video batch |
-| `pollMaxAttempts` | `80` | provider collection 最大轮询次数 |
-| `pollIntervalMs` | `3000` | provider collection 每次轮询间隔 |
+| `baseUrl` | `http://localhost:3000` | 后端服务地址。 |
+| `workspaceName` | `agent-chain-v2` | 测试工作区名。 |
+| `workspaceDirectory` | `/Users/carrick/TestWorkspace/Project-AIGC/IntegrationTest_v0/onePicture/` | 本地 workspace 目录。 |
+| `workspaceId` | 空 | 创建后回填。 |
+| `shotSetId` | 空 | apply shotprompt 后回填。 |
+| `shotIds` | 空 | active shot set 创建后回填 JSON 数组。 |
+| `imageCandidateIds` | 空 | 图像候选选择前回填 JSON map。 |
+| `videoCandidateIds` | 空 | 视频候选选择前回填 JSON map。 |
+| `finalVideoJobId` | 空 | 成片任务创建后回填。 |
+| `pollMaxAttempts` | `100` | provider 轮询最大次数。 |
+| `pollIntervalMs` | `3000` | provider 轮询间隔。 |
+| `imageCandidateCount` | `3` | 每个 shot 图像候选数。 |
+| `videoCandidateCount` | `1` | 每个 shot 视频候选数，real provider 第一版建议为 1。 |
+| `REALITEST_PARALLEL_IMAGE_BATCH_SIZE` | 空 | `pnpm realitest:parallel` 专用；真实图片 provider 配额紧张时可设为 `1` 覆盖服务端默认图像候选数。 |
+| `REALITEST_PARALLEL_VIDEO_BATCH_SIZE` | `1` | `pnpm realitest:parallel` 专用；控制每个 shot 的视频候选数。 |
+
+---
 
 ## Collection 结构
 
 ### 1. System
 
+| 顺序 | 请求 | 断言 |
+|---|---|---|
+| 1 | `GET /api/health` | `200`；`ok === true`；`runtime` 存在。 |
+| 2 | `GET /api/config/limits` | `200`；图像/视频 batch limit 与 `aspectRatios` 存在。 |
+| 3 | `GET /api/pipeline/contracts` | `200`；包含 module id、prompt template、input/output schema 信息。 |
+
+### 2. Workspace / Storage / Material
+
+| 顺序 | 请求 | 断言 / 变量 |
+|---|---|---|
+| 1 | `POST /api/workspaces` | `200`；回填 `workspaceId`。 |
+| 2 | `POST /api/workspaces/:workspaceId/storage/bind` | `200`；绑定 `workspaceDirectory`。 |
+| 3 | `GET /api/workspaces/:workspaceId/storage` | `200`；`kind` 为 `LOCAL` 或等价小写值。 |
+| 4 | `POST /api/workspaces/:workspaceId/materials` | `200`；上传测试素材并返回 stable workspace URL。 |
+| 5 | `GET /api/workspaces/:workspaceId/status` | `200`；`modules`、`storage`、`activeShotSet` 字段存在。 |
+
+### 3. Prompt Requirements
+
+| 顺序 | 请求 | 断言 |
+|---|---|---|
+| 1 | `POST /api/workspaces/:workspaceId/prompt-requirements/propose` | `200`；`moduleId === "prompt-requirements"`；`status === "proposed"`。 |
+| 2 | `POST /api/workspaces/:workspaceId/prompt-requirements/approve` | `200`；`status === "approved"`；`isCurrent === true`。 |
+| 3 | `GET /api/workspaces/:workspaceId/prompt-requirements` | `current.id` 等于 approve 返回 id。 |
+
+测试 payload 必须覆盖：
+
+- `image`：整体图像风格要求。
+- `script`：剧本语气和营销表达要求。
+- `storyboard`：节奏和镜头结构要求。
+- `shotImage`：分镜图全局要求。
+- `shotVideo`：分镜视频全局要求。
+
+### 4. Workspace Module Artifacts
+
+对以下模块重复 `propose -> approve -> get`：
+
+| 模块 | Propose | Approve | 关键断言 |
+|---|---|---|---|
+| `material-intake` | `POST /api/workspaces/:workspaceId/material-intake/propose` | `POST /api/workspaces/:workspaceId/material-intake/approve` | 读取 workspace materials 与 prompt requirements。 |
+| `product-brief` | `POST /api/workspaces/:workspaceId/product-brief/propose` | `POST /api/workspaces/:workspaceId/product-brief/approve` | brief 字段完整；`sourceFingerprint.materialIntakeArtifactId` 存在。 |
+| `storyboard` | `POST /api/workspaces/:workspaceId/storyboard/propose` | `POST /api/workspaces/:workspaceId/storyboard/approve` | 至少 4 个 storyboard beats；总时长满足测试要求。 |
+| `shotprompt` | `POST /api/workspaces/:workspaceId/shotprompt/propose` | `POST /api/workspaces/:workspaceId/shotprompt/approve` | 每个 `shots[]` 都有 `shotImage` 和 `shotVideo` dict。 |
+
+公共断言：
+
+- propose 只返回 `status=proposed`，不改变 current。
+- approve 返回 `status=approved` 且 `isCurrent=true`。
+- 响应包含 `promptAssembly.subjectTemplateId`、`promptAssembly.contractTemplateId`、`subjectHash` 与 `contractHash`。
+- 下游模块响应的 `sourceFingerprint` 指向当前上游 artifact。
+
+### 5. Shot Set Apply
+
+| 顺序 | 请求 | 断言 / 变量 |
+|---|---|---|
+| 1 | `GET /api/workspaces/:workspaceId/shots` | 在 apply 前返回 `400 NO_ACTIVE_SHOT_SET` 或空 active 语义。 |
+| 2 | `POST /api/workspaces/:workspaceId/shot-sets` | `200`；创建 active shot set；回填 `shotSetId`。 |
+| 3 | `GET /api/workspaces/:workspaceId/shot-sets/:shotSetId/shots` | `shots.length === approvedShotPrompt.shots.length`；每个 shot 有 `requirements.shotImage` 与 `requirements.shotVideo`。 |
+| 4 | `GET /api/workspaces/:workspaceId/shot-sets` | active shot set 唯一。 |
+
+负向断言：
+
+- `shotprompt approve` 之后、`shot-sets` apply 之前，DB 中不应出现新 `storyboard_shots`。
+- 重新 propose/approve shotprompt 不应归档当前 active shot set，只应让 shot set 查询出现 `upstreamChanged=true`。
+
+### 6. Image Chain
+
+对 active shot set 的每个 shot 顺序执行：
+
+| 顺序 | 请求 | 断言 / 变量 |
+|---|---|---|
+| 1 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | `200`；返回 image prompt artifact 与 batch；artifact 有 prompt assembly metadata。 |
+| 2 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | 轮询到 batch `SUCCEEDED`；候选数达到 `imageCandidateCount`。 |
+| 3 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | `200`；返回 `imageSelectArtifact.imageCandidateId`；重复选择可覆盖。 |
+
+选择断言：
+
+- select 不会将未选候选标记为 stale。
+- DB 中每个 shot 在 `image_select_artifacts` 只有一条 selection。
+- 前端可继续从旧候选中重新选择。
+
+### 7. Video Chain
+
+全部 shot 已完成 image selection 后执行：
+
+| 顺序 | 请求 | 断言 / 变量 |
+|---|---|---|
+| 1 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | `200`；输入使用当前 selected image 和下一镜 selected image；artifact 有 prompt assembly metadata。 |
+| 2 | `GET /api/workspaces/:workspaceId/shots/:shotId/video-rounds` | 轮询到 batch `SUCCEEDED`；候选数达到 `videoCandidateCount`。 |
+| 3 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | `200`；返回 `videoSelectArtifact.videoCandidateId`；重复选择可覆盖。 |
+
+负向断言：
+
+- 未完成全部 image selection 时 propose video script 返回 `IMAGE_SELECTION_INCOMPLETE`。
+- storyboard shot 低于 4 秒时，server 创建 video script 会夹到 Seedance 允许的 4 秒下限，避免真实 provider 返回 duration boundary error。
+
+### 8. Final Compose
+
+| 顺序 | 请求 | 断言 |
+|---|---|---|
+| 1 | `POST /api/workspaces/:workspaceId/final-videos` | 必带 `Idempotency-Key`；`200`；返回 `shotSetId` 和有序 `sourceVideoCandidateIds`。 |
+| 2 | `GET /api/final-videos/:finalVideoJobId` | 轮询到 `SUCCEEDED`。 |
+| 3 | `GET /api/workspaces/:workspaceId/final-videos/:finalVideoJobId/file` | 成功后返回 `video/mp4`。 |
+
+DB 断言：
+
+- `sourceVideoCandidateIds.length === activeShotSet.shots.length`。
+- `final_video_jobs.shot_set_id === shotSetId`。
+
+### 9. Trace
+
 | 请求 | 断言 |
 |---|---|
-| `GET /api/health` | `200`；`ok === true`；`runtime` 存在。 |
-| `GET /api/config/limits` | `200`；`defaultImageBatchSize`、`defaultVideoBatchSize`、`aspectRatios` 存在。 |
+| `GET /api/workspaces/:workspaceId/traces` | 包含 module agent run、provider call、state transition。 |
+| `GET /api/shots/:shotId/traces` | 包含 image/video prompt assembly、batch events、provider request/response 摘要。 |
 
-### 2. Workspace Pipeline
+本地文件断言：
 
-| 顺序 | 请求 | 断言 / 变量 |
-|---|---|---|
-| 1 | `POST /api/workspaces` | `200`；创建 logical workspace；`storage.bound === false`；回填 `workspaceId`、`scriptId`。 |
-| 2 | `POST /api/workspaces/status` | `200`；未绑定时 `nextAction === BIND_STORAGE`。 |
-| 3 | `POST /api/workspaces/:workspaceId/storage/bind` | `200`；绑定 `workspaceDirectory`；`storage.kind === local`。 |
-| 4 | `GET /api/workspaces/:workspaceId/storage` | `200`；`storage.bound === true`。 |
-| 5 | `POST /api/workspaces/status` | `200`；`materialLibrary` 可以读取绑定目录中的测试素材。 |
+```bash
+node scripts/extract-one-picture-events.mjs
+```
 
-### 3A. Local Smoke: Shot Seed Without Models
+trace 中不应出现：
 
-`local-smoke` 不调用 propose/compile/generation 接口。它先上传一张 tiny PNG 到 bound workspace，再直接 `approve shotprompt`：
+- `provider.failed`
+- `batch.failed`
+- 缺失 `subjectTemplateId` 或 `contractTemplateId` 的 agent event
 
-| 顺序 | 请求 | 断言 / 变量 |
-|---|---|---|
-| 1 | `POST /api/workspaces/materials` | `200`；回填 `materialRef`、`materialAssetId`；URL 是 workspace stable URL。 |
-| 2 | `POST /api/workspaces/artifacts/shotprompt/approve` | `200`；固定 one-shot payload seed `storyboard_shots` + `shot_asset_refs`。 |
-| 3 | `GET /api/workspaces/:workspaceId/shots` | `200`；回填第一个 `shotId`；`referenceAssetRefs` 包含 `materialRef`。 |
-| 4 | `GET /api/workspaces/:workspaceId/shot-workflow-status` | `200`；`canComposeFinalVideo === false`。 |
-| 5 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | `200`；未生成 prompt 前为空数组。 |
-| 6 | `GET /api/workspaces/:workspaceId/shots/:shotId/video-rounds` | `200`；未生成 script 前为空数组。 |
-
-### 3B. Provider: Artifact Pipeline
-
-| 顺序 | 请求 | 断言 / 变量 |
-|---|---|---|
-| 1 | `POST /api/workspaces/material-intake` | `200`；`artifact.data.primaryProductRef` 命中 `assets[].ref`。 |
-| 2 | `POST /api/workspaces/brief/propose` | `200`；brief schema 关键字段存在。 |
-| 3 | `POST /api/workspaces/artifacts/brief/approve` | `200`；status 为 approved/active 语义一致。 |
-| 4 | `POST /api/workspaces/storyboard/propose` | `200`；`shots.length >= 1`；`totalDurationSec` 等于 shots 时长和。 |
-| 5 | `POST /api/workspaces/artifacts/storyboard/approve` | `200`。 |
-| 6 | `POST /api/workspaces/shotprompt/compile` | `200`；每个 `shots[].providerPrompt` 为中文且非空。 |
-| 7 | `POST /api/workspaces/artifacts/shotprompt/approve` | `200`；`pnpm realitest` 使用固定 one-shot payload seed 出 `storyboard_shots`，便于 Postman 单 shot 走完整 image/video/final 链路。 |
-
-### 3C. Parallel Provider Acceptance
-
-`pnpm realitest:parallel` 不使用 Newman collection；它由 `scripts/run-realitest-parallel.mjs` 直接驱动 API，避免 Postman/Newman 对动态多 shot 和并发请求的限制。
-
-固定数据：
-
-| Artifact | 策略 |
-|---|---|
-| brief | fixed approved brief |
-| storyboard | fixed approved storyboard，4 个 shot，每个 4s，总 16s |
-| shotprompt | 先调用 `POST /api/workspaces/shotprompt/compile`；默认 approve compile 结果，可用 `REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed` approve 固定 4-shot shotprompt |
-| video batch | 默认通过 `DEFAULT_VIDEO_BATCH_SIZE=1` 跑每 shot 1 个候选，避免 4-shot 并发验收一次触发过多 Seedance RPM；可用 `REALITEST_PARALLEL_VIDEO_BATCH_SIZE` 覆盖 |
-
-关键断言：
-
-| 阶段 | 断言 |
-|---|---|
-| shots | `GET /api/workspaces/:workspaceId/shots` 返回 `shots.length === 4`。 |
-| image | 每个 shot 都产生 image prompt artifact、image batch、image candidates；batch `SUCCEEDED` 且 `failedCount === 0`；candidate URL 是 `/api/workspaces/:workspaceId/...` stable URL；每个 shot 完成 image selection。 |
-| video | 全部 image selection 完成后，对 4 个 shot 使用 `Promise.allSettled` 并发发起 video script/candidate 生成；每个 shot 都产生 video script artifact、video batch、video candidates；batch `SUCCEEDED` 且 `failedCount === 0`；candidate URL 是 workspace stable URL；每个 shot 完成 video selection。 |
-| final compose | 创建 final job 后轮询到 `SUCCEEDED`；`sourceShotVideoIds.length === 4`，即 final compose 输入包含 4 个 selected videos。 |
-| audit gate | `.daireel/review/storyboard.approved.json` 至少 4 shot；trace 文件不能出现 `provider.failed` / `batch.failed`；DB trace 不能出现 failed event；DB 中 image/video batch 覆盖全部 shot；DB final compose 输入数等于 selected video shot 数。 |
-
-### 4. Shot Workflow
-
-| 顺序 | 请求 | 断言 / 变量 |
-|---|---|---|
-| 1 | `GET /api/workspaces/:workspaceId/shots` | `200`；回填第一个 `shotId`；每个 shot 有 `nextAction`。 |
-| 2 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | 只传 `{ userDirection? }`；`200`；回填 `imagePromptArtifactId`、内部 `imageBatchId`；响应包含 `candidates[]`、`context.image_ref`、`traceId`。默认候选数来自 `.env` 的 `DEFAULT_IMAGE_BATCH_SIZE`，当前应为 3。 |
-| 3 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | `200`；轮询到 `SUCCEEDED`；断言 `succeededCount === requestedCount`、`failedCount === 0`、succeeded 候选数等于 `requestedCount`，再回填 `imageCandidateId`。`PARTIAL`/`FAILED` 视为测试失败。 |
-| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | `200`；返回 `allShotsImageSelected`；不再要求非 workspace-scoped 兼容路径。 |
-| 5 | 对所有 shot 重复 2-4 | shot N>=1 必须在前一 shot 已选图后才能 propose；最后一张图选择后 `allShotsImageSelected === true`。 |
-| 6 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | 所有图已选后才 `200`；只传 `{ userDirection? }`；回填 `videoScriptArtifactId`、内部 `videoBatchId`；响应包含 `candidates[]`、`frames`、`traceId`。 |
-| 7 | `GET /api/workspaces/:workspaceId/shots/:shotId/video-rounds` | `200`；轮询到 `SUCCEEDED`；轮次包含上一步 `videoBatchId`、候选视频和首/末帧 URL；回填第一个 succeeded `videoCandidateId`。 |
-| 8 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | `200`；最后一个 shot 后 `allShotsVideoSelected === true`。 |
-
-### 5. Final Video
-
-| 请求 | 断言 |
-|---|---|
-| `POST /api/workspaces/:workspaceId/final-videos` | 必带 `Idempotency-Key`；所有 shot 已选视频时 `200`；回填 `finalVideoJobId`。 |
-| `GET /api/final-videos/:finalVideoJobId` | 返回 job 状态。 |
-| `GET /api/workspaces/:workspaceId/final-videos` | 列表包含刚创建的 job。 |
-| `GET /api/workspaces/:workspaceId/final-videos/:finalVideoJobId/file` | job 未完成返回 `404 NOT_READY`；完成后返回 `video/mp4`。 |
-
-### 6. Campaign / KOL
-
-| 顺序 | 请求 | 断言 / 变量 |
-|---|---|---|
-| 1 | `POST /api/workspaces/:workspaceId/campaign-publications` | `200`；回填 `campaignPublicationId`；`platform/channelName/status` 与请求一致。 |
-| 2 | `GET /api/workspaces/:workspaceId/campaign-publications` | `200`；列表包含刚创建的 publication；首次 `latestMetrics === null`。 |
-| 3 | `GET /api/workspaces/:workspaceId/campaign-publications/:campaignPublicationId` | `200`；publication 属于当前 workspace。 |
-| 4 | `POST /api/workspaces/:workspaceId/campaign-publications/:campaignPublicationId/metrics` | `200`；断言 `impressions/clicks/conversions/spendCents`；`ctr === clicks / impressions`。 |
-| 5 | 再次 `GET /api/workspaces/:workspaceId/campaign-publications` | `latestMetrics.clicks` 与上一步一致。 |
+---
 
 ## Regression Negative Cases
 
 | 场景 | 请求 | 期望 |
 |---|---|---|
-| 缺 workspace 标识 | `POST /api/workspaces/status {}` | `400`，message 包含 `workspaceId or directory is required`。 |
-| workspace 不存在 | `GET /api/workspaces/not-found/storage` | `404`。 |
-| 未绑定 storage 上传素材 | `POST /api/workspaces/materials` | `409 STORAGE_NOT_BOUND`。 |
-| 同一目录重复绑定到其他 workspace | `POST /api/workspaces/:workspaceId/storage/bind` | `409 STORAGE_ALREADY_BOUND`。 |
-| 上传非法文件名 | `POST /api/workspaces/materials` filename 为 `../x.png` | `400`。 |
-| 上传不支持类型 | filename 为 `.exe` | `400 Unsupported material type`。 |
-| image propose 传旧字段 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` with `referenceAssetIds` | `400`，message 包含 `referenceAssetIds`。 |
-| video propose 传旧字段 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` with `durationSec/useNeighborFrames` | `400`，message 包含旧字段名。 |
-| shot N 缺前序 selected image 就 image propose | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | `400 NO_SCENE_ANCHOR`。 |
-| 未完成全部选图就 video script | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | `400 IMAGE_SELECTION_INCOMPLETE`。 |
-| select 失败候选 | image/video candidate status 为 `FAILED` | `400 CANNOT_SELECT_FAILED_CANDIDATE`。 |
-| candidate 不属于 shot | 传其它 shot candidate | `400 INVALID_CANDIDATE`。 |
-| final compose 缺视频选择 | `POST /api/workspaces/:workspaceId/final-videos` | `409 MISSING_SELECTIONS`。 |
-| campaign publication 跨 workspace 读取 | `GET /api/workspaces/:otherWorkspaceId/campaign-publications/:campaignPublicationId` | `404`。 |
-| campaign finalVideoJobId 不属于 workspace | `POST /api/workspaces/:workspaceId/campaign-publications` | `400 FINAL_VIDEO_WORKSPACE_MISMATCH`。 |
-| 静态文件 path traversal | `GET /api/workspaces/:id/materials/../../x` | `400`。 |
+| 下游缺上游 current | 直接 `product-brief/propose` | `400 NO_CURRENT_APPROVED_ARTIFACT`。 |
+| 未 apply shot set | `GET /api/workspaces/:workspaceId/shots` | `400 NO_ACTIVE_SHOT_SET` 或空 active 语义。 |
+| candidate 不属于 shot | image/video select 传其他 shot candidate | `409 CANDIDATE_NOT_SELECTABLE`。 |
+| select 失败候选 | image/video candidate status 为 `FAILED` | `409 CANDIDATE_NOT_SELECTABLE`。 |
+| 未完成选图就视频脚本 | `video-scripts/propose` | `400 IMAGE_SELECTION_INCOMPLETE`。 |
+| 缺视频选择就成片 | `final-videos` | `409 MISSING_SELECTIONS`。 |
+| 成片缺幂等头 | `final-videos` | `400 IDEMPOTENCY_KEY_REQUIRED`。 |
+| 重复绑定 storage | `storage/bind` | `409 STORAGE_ALREADY_BOUND`。 |
+| 静态文件 path traversal | `/materials/../../x` | `400`。 |
 
-## Postman Test Script 建议
+---
 
-每个请求至少包含：
+## Newman 断言建议
+
+公共响应：
 
 ```javascript
 pm.test("status is successful", function () {
@@ -214,42 +234,37 @@ pm.test("response is json", function () {
 });
 ```
 
-关键变量回填示例：
+artifact current 断言：
 
 ```javascript
 const json = pm.response.json();
-if (json.workspace?.id) pm.collectionVariables.set("workspaceId", json.workspace.id);
-if (json.data?.[0]?.id) pm.collectionVariables.set("shotId", json.data[0].id);
-if (json.data?.batchId) pm.collectionVariables.set("imageBatchId", json.data.batchId);
+const artifact = json.data?.artifact || json.data;
+pm.expect(artifact.status).to.eql("approved");
+pm.expect(artifact.isCurrent).to.eql(true);
+pm.expect(artifact.promptAssembly.subjectTemplateId).to.be.a("string");
+pm.expect(artifact.promptAssembly.contractTemplateId).to.be.a("string");
+pm.expect(artifact.promptAssembly.subjectHash).to.match(/^[a-f0-9]{64}$/);
+pm.expect(artifact.promptAssembly.contractHash).to.match(/^[a-f0-9]{64}$/);
 ```
 
-轮询建议：
+shot requirement 断言：
 
-- 图片 batch：每 3 秒查询一次，最多 4 分钟。
-- 视频 batch：每 8 秒查询一次，mock 最多 2 分钟，real 最多 15 分钟。
-- final compose：每 3 秒查询一次，最多 3 分钟。
-
-## Provider Smoke 注意事项
-
-- 真实 provider 测试必须显式设置 `MODEL_MODE=real` 和对应 API key / endpoint。
-- provider collection 会消耗模型额度；如果 `USE_REDIS_QUEUE=true`，需要 Redis 和 worker 正常运行。
-- Seedance prompt 必须为中文；Postman 可断言 `providerPrompt` 中不包含英文脚手架词，如 `Role:`、`Task:`、`Return strict JSON`。
-- video export 阶段不应调用 Ark text provider；该项以 Node provider boundary test 为准，Postman 只检查 trace 中没有 video export text rewrite 事件。
-- Seedream / Seedance 返回的 24h URL 应由后端转存；Postman 断言 select 返回的是稳定 workspace URL，而非 provider 临时 URL。
-
-## 交付建议
-
-0530 Postman collection 已拆分输出到：
-
-```text
-docs/0530-dev/bytedancehack-0530.local-smoke.postman_collection.json
-docs/0530-dev/bytedancehack-0530.provider.postman_collection.json
+```javascript
+const shots = pm.response.json().data;
+pm.expect(shots.length).to.be.above(0);
+for (const shot of shots) {
+  pm.expect(shot.requirements.shotImage).to.be.an("object");
+  pm.expect(shot.requirements.shotVideo).to.be.an("object");
+}
 ```
 
-如果继续兼容 `docs/0529-dev/test-api/bytedancehack-api.postman_collection.json`，需要确保补齐：
+---
 
-- workspace-scoped select 路径。
-- image/video rounds 查询。
-- all-shots image-selected gate 的 negative case。
-- approved shotprompt deterministic prompt 的 trace/断言。
-- Campaign / KOL 发布记录与 metrics 回填。
+## 与旧 collection 的差异
+
+- 不再使用 `/api/workspaces/status` POST；状态查询改为 `GET /api/workspaces/:workspaceId/status`。
+- 不再使用 `/api/workspaces/materials` 全局上传；素材上传改为 `POST /api/workspaces/:workspaceId/materials`。
+- 不再使用 `/api/workspaces/artifacts/*/approve`；每个模块有自己的 `/approve`。
+- 不再使用 `shotprompt approve` seed shots；必须显式 `POST /api/workspaces/:workspaceId/shot-sets`。
+- 不再把主链路 artifact 写入 `workspace_artifact`。
+- 不再使用 `selected_shot_images` / `selected_shot_videos` 语义；选择由 `image_select_artifacts` / `video_select_artifacts` 表达。

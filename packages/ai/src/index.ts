@@ -2,6 +2,7 @@ export * from "./providers/ark-text.provider.js";
 export * from "./providers/seedance-video.provider.js";
 export * from "./prompts/feedback-route.prompt.js";
 export * from "./prompts/material-intake.prompt.js";
+export * from "./prompts/module-prompt-assembler.js";
 export * from "./prompts/product-brief.prompt.js";
 export * from "./prompts/shotprompt.prompt.js";
 export * from "./prompts/storyboard.prompt.js";

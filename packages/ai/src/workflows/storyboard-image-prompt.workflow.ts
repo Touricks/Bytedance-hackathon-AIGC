@@ -1,4 +1,5 @@
 import { isRealProviderMode, resolveTextProviderConfig } from "../providers/provider-config.js";
+import { getModulePromptAssemblyMetadata, type ModulePromptAssemblyMetadata } from "../prompts/module-prompt-assembler.js";
 import { StoryboardImagePromptOutputSchema, type StoryboardImagePromptOutput } from "../schemas/image-prompt.schema.js";
 import { buildStoryboardImagePromptAgent, STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSION } from "../agents/storyboard-image-prompt.agent.js";
 import { buildRunner, runAgent, type RunnerContext } from "../agents/runner.js";
@@ -20,6 +21,7 @@ export interface ImagePromptAgentInput {
     productAssetRef?: string;
     referenceAssetRefs?: string[];
     providerPromptFromShotPrompt?: string;
+    shotImage?: unknown;
   };
   referenceAssets: Array<{ id: string; role: string; summary: string }>;
   userHint?: string;
@@ -28,6 +30,7 @@ export interface ImagePromptAgentInput {
 
 export interface ImagePromptAgentResult {
   templateVersion: string;
+  promptAssembly: ModulePromptAssemblyMetadata;
   output: StoryboardImagePromptOutput;
 }
 
@@ -54,6 +57,7 @@ export async function runStoryboardImagePromptAgent(input: {
     ];
     return {
       templateVersion: STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSION,
+      promptAssembly: getModulePromptAssemblyMetadata("image-prompt"),
       output: StoryboardImagePromptOutputSchema.parse({
         promptText: `MOCK image prompt for shot ${input.payload.shot.index}: ${input.payload.shot.objective}`,
         negativePrompt: "商品变形、文字模糊、场景突变",
@@ -75,6 +79,7 @@ export async function runStoryboardImagePromptAgent(input: {
   });
   return {
     templateVersion: STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSION,
+    promptAssembly: getModulePromptAssemblyMetadata("image-prompt"),
     output: StoryboardImagePromptOutputSchema.parse(output),
   };
 }

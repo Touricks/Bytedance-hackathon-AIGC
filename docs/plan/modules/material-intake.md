@@ -18,7 +18,7 @@
 
 ## 3. 触发接口
 
-`POST /api/workspaces/material-intake`
+`POST /api/workspaces/:workspaceId/material-intake/propose`
 
 ## 4. 输入字段
 

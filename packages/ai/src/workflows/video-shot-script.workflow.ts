@@ -1,4 +1,5 @@
 import { isRealProviderMode, resolveTextProviderConfig } from "../providers/provider-config.js";
+import { getModulePromptAssemblyMetadata, type ModulePromptAssemblyMetadata } from "../prompts/module-prompt-assembler.js";
 import { VideoShotScriptOutputSchema, type VideoShotScriptOutput } from "../schemas/video-script.schema.js";
 import { buildVideoShotScriptAgent, VIDEO_SHOT_SCRIPT_TEMPLATE_VERSION } from "../agents/video-shot-script.agent.js";
 import { buildRunner, runAgent, type RunnerContext } from "../agents/runner.js";
@@ -18,6 +19,7 @@ export interface VideoScriptAgentInput {
     sceneDescription?: string;
     voiceover?: string;
     providerPromptFromShotPrompt?: string;
+    shotVideo?: unknown;
   };
   selectedImage: { id: string; summary: string; url: string };
   neighborImages: { prev?: { id: string; summary: string; url: string }; next?: { id: string; summary: string; url: string } };
@@ -27,6 +29,7 @@ export interface VideoScriptAgentInput {
 
 export interface VideoScriptAgentResult {
   templateVersion: string;
+  promptAssembly: ModulePromptAssemblyMetadata;
   output: VideoShotScriptOutput;
 }
 
@@ -37,6 +40,7 @@ export async function runVideoShotScriptAgent(input: {
   if (!isRealProviderMode()) {
     return {
       templateVersion: VIDEO_SHOT_SCRIPT_TEMPLATE_VERSION,
+      promptAssembly: getModulePromptAssemblyMetadata("video-script"),
       output: VideoShotScriptOutputSchema.parse({
         durationSec: input.payload.durationSec,
         shotGoal: input.payload.shot.objective,
@@ -65,6 +69,7 @@ export async function runVideoShotScriptAgent(input: {
   });
   return {
     templateVersion: VIDEO_SHOT_SCRIPT_TEMPLATE_VERSION,
+    promptAssembly: getModulePromptAssemblyMetadata("video-script"),
     output: VideoShotScriptOutputSchema.parse(output),
   };
 }

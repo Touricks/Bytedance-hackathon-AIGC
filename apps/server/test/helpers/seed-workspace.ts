@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { api } from "./api-client.js";
@@ -21,13 +22,13 @@ export interface SeedWorkspaceOptions {
 interface WorkspaceCreateResponse {
   workspace: {
     id: string;
-    localPath: string;
+    localPath: string | null;
     currentScriptId: string;
   };
 }
 
 interface ArtifactProposeResponse {
-  artifact: { id: string; data: unknown };
+  data: { id: string; data: unknown };
 }
 
 interface ShotRow {
@@ -48,65 +49,102 @@ export async function seedWorkspace(
   });
   const workspaceId = ws.workspace.id;
   const scriptId = ws.workspace.currentScriptId;
+  const localPath = await mkdtemp(path.join(os.tmpdir(), `${label}-`));
+  await api(`/api/workspaces/${workspaceId}/storage/bind`, {
+    method: "POST",
+    body: JSON.stringify({ kind: "local", localPath }),
+  });
 
   // 2) Upload one material PNG (base64 path). Returns {workspace, material: {ref, bytes, url}}
   // — there is no Asset row id on the response.
   const pngBytes = await readFile(path.join(here, "fixtures", "red-apple.png"));
   const dataBase64 = pngBytes.toString("base64");
-  await api("/api/workspaces/materials", {
+  await api(`/api/workspaces/${workspaceId}/materials`, {
     method: "POST",
     body: JSON.stringify({
-      workspaceId,
       filename: "red-apple.png",
       dataBase64,
     }),
   });
 
-  // 3) Material intake (hyphenated path).
-  await api("/api/workspaces/material-intake", {
+  // 3) Prompt requirements, then material-intake propose -> approve.
+  const requirements = await api<ArtifactProposeResponse>(
+    `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        data: {
+          image: { style: "clean ecommerce product photo" },
+          script: { tone: "direct" },
+          storyboard: { structure: "hook-benefit-proof-cta" },
+          shotImage: { continuity: "preserve product identity" },
+          shotVideo: { motion: "stable product-first movement" },
+        },
+      }),
+    },
+  );
+  await api(`/api/workspaces/${workspaceId}/prompt-requirements/approve`, {
     method: "POST",
-    body: JSON.stringify({ workspaceId }),
+    body: JSON.stringify({ artifactId: requirements.data.id }),
+  });
+
+  const material = await api<ArtifactProposeResponse>(
+    `/api/workspaces/${workspaceId}/material-intake/propose`,
+    {
+      method: "POST",
+      body: JSON.stringify({ selectedMaterialRefs: ["red-apple.png"] }),
+    },
+  );
+  await api(`/api/workspaces/${workspaceId}/material-intake/approve`, {
+    method: "POST",
+    body: JSON.stringify({ artifactId: material.data.id }),
   });
 
   // 4) Brief: propose -> approve. Approve body must round-trip the propose response's
   // artifact.data so Zod accepts it.
   const brief = await api<ArtifactProposeResponse>(
-    "/api/workspaces/brief/propose",
+    `/api/workspaces/${workspaceId}/product-brief/propose`,
     {
       method: "POST",
-      body: JSON.stringify({ workspaceId }),
+      body: JSON.stringify({}),
     },
   );
-  await api("/api/workspaces/artifacts/brief/approve", {
+  await api(`/api/workspaces/${workspaceId}/product-brief/approve`, {
     method: "POST",
-    body: JSON.stringify({ workspaceId, data: brief.artifact.data }),
+    body: JSON.stringify({ artifactId: brief.data.id }),
   });
 
   // 5) Storyboard: propose -> approve.
   const storyboard = await api<ArtifactProposeResponse>(
-    "/api/workspaces/storyboard/propose",
+    `/api/workspaces/${workspaceId}/storyboard/propose`,
     {
       method: "POST",
-      body: JSON.stringify({ workspaceId }),
+      body: JSON.stringify({}),
     },
   );
-  await api("/api/workspaces/artifacts/storyboard/approve", {
+  await api(`/api/workspaces/${workspaceId}/storyboard/approve`, {
     method: "POST",
-    body: JSON.stringify({ workspaceId, data: storyboard.artifact.data }),
+    body: JSON.stringify({ artifactId: storyboard.data.id }),
   });
 
-  // 6) Shotprompt: compile (deterministic) -> approve. Approve also seeds storyboard_shots
-  // via seedShotsFromShotPrompt internally.
+  // 6) Shotprompt: propose -> approve, then explicitly apply a shot set.
   const shotprompt = await api<ArtifactProposeResponse>(
-    "/api/workspaces/shotprompt/compile",
+    `/api/workspaces/${workspaceId}/shotprompt/propose`,
     {
       method: "POST",
-      body: JSON.stringify({ workspaceId }),
+      body: JSON.stringify({}),
     },
   );
-  await api("/api/workspaces/artifacts/shotprompt/approve", {
+  const approvedShotPrompt = await api<ArtifactProposeResponse>(
+    `/api/workspaces/${workspaceId}/shotprompt/approve`,
+    {
+      method: "POST",
+      body: JSON.stringify({ artifactId: shotprompt.data.id }),
+    },
+  );
+  await api(`/api/workspaces/${workspaceId}/shot-sets`, {
     method: "POST",
-    body: JSON.stringify({ workspaceId, data: shotprompt.artifact.data }),
+    body: JSON.stringify({ shotPromptArtifactId: approvedShotPrompt.data.id }),
   });
 
   // 7) List shots. shotWorkflowService.listShots returns { data: [...] }.
@@ -119,19 +157,12 @@ export async function seedWorkspace(
 
   return {
     workspaceId,
-    localPath: ws.workspace.localPath,
+    localPath,
     scriptId,
-    // TODO: V1 material upload returns {ref, url} — there is no V1 route that exposes the
-    // Asset row ids that approveShotPrompt's seedShotsFromShotPrompt creates internally.
-    // Returning [] means downstream tests exercise the propose/batch/select wiring without
-    // product-image conditioning; the reference-image flow itself is covered by the
-    // image.worker unit test added in Wave 2 Task 4.
     materialAssetIds: [],
     shotIds,
     cleanup: async () => {
-      // Best-effort no-op: no DELETE route exists for test workspaces. The integration
-      // runner doesn't depend on cleanup for correctness; each test creates a fresh
-      // workspace with a unique label.
+      await rm(localPath, { recursive: true, force: true });
     },
   };
 }

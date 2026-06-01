@@ -8,18 +8,11 @@ export const staleRules = {
       [shotId],
     );
   },
-  async onImageSelectionChanged(shotId: string, client: PoolClient) {
-    await client.query(
-      `update video_script_artifacts set status='STALE' where shot_id=$1 and status='ACTIVE'`,
-      [shotId],
-    );
-    await client.query(`delete from selected_shot_videos where shot_id=$1`, [shotId]);
+  async onImageSelectionChanged(_shotId: string, _client: PoolClient) {
+    // V2 selection is an explicit current choice and does not invalidate candidates.
   },
-  async onVideoScriptReplaced(shotId: string, client: PoolClient) {
-    // The new version is already inserted as ACTIVE; the previous active row is moved to STALE
-    // by the versioning helper. selected_shot_videos pointing to candidates from that old script
-    // are dropped.
-    await client.query(`delete from selected_shot_videos where shot_id=$1`, [shotId]);
+  async onVideoScriptReplaced(_shotId: string, _client: PoolClient) {
+    // V2 keeps current selections until the user explicitly chooses a replacement.
   },
 };
 

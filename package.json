@@ -13,6 +13,8 @@
     "reset:dev": "node scripts/reset-dev-session.mjs",
     "realitest": "node scripts/run-realitest.mjs",
     "realitest:parallel": "node scripts/run-realitest-parallel.mjs",
+    "agenttest:real": "node scripts/run-agent-chain-test.mjs",
+    "test:agent-chain": "pnpm agenttest:real",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "format": "prettier --write .",

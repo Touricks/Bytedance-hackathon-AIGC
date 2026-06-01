@@ -2,7 +2,7 @@
 
 ## 1. 业务目标
 
-让用户在前端从某 shot 的 N 张候选图里挑 1 张作为该 shot 的「关键帧」（`selected_shot_image`）。这一步是 **下游链路解锁的同步点**——shot N 没确认前，shot N+1 的 image-prompt 跑不起来（缺 `image_ref`）。
+让用户在前端从某 shot 的 N 张候选图里挑 1 张作为该 shot 的「关键帧」（`image_select_artifact`）。这一步是 **下游链路解锁的同步点**——shot N 没确认前，shot N+1 的 image-prompt 跑不起来（缺 `image_ref`）。
 
 > 通俗解释：image-prompt 把 N 张候选图交到用户面前，用户必须挑 1 张，整条剧本才能往后走。**换图（重新 select 到不同 candidate）不会让下游已经跑出来的内容失效**——视频链路要等所有 shot 都 image-selected 之后才统一开启，所以 select 阶段没有任何下游 artifact 需要 stale。Stale 只在用户触发 image-prompt **重新 propose**（即重新生成 N 张候选图）时才会发生。
 
@@ -14,10 +14,10 @@ image prompt propose → 用户审图 → ★ image candidate select ★ → 解
 ```
 
 - **上一步**：本 shot 已有 ACTIVE `ImagePromptArtifact` + N 张 `image_candidates`（来自 image-prompt 模块）。
-- **本步**：用户点 candidate 网格里的 1 张 → 调本接口 → 后端 UPSERT `selected_shot_images`（每 shot 一行）。**不触发任何 stale 副作用**——换图只是更新本 shot 的「关键帧」，不影响其它 shot 或下游链路。
+- **本步**：用户点 candidate 网格里的 1 张 → 调本接口 → 后端 UPSERT `image_select_artifacts`（每 shot 一行）。**不触发任何 stale 副作用**——换图只是更新本 shot 的「关键帧」，不影响其它 shot 或下游链路。
 - **下一步**：
   - 若本 shot 不是最后一个 → shot N+1 的 `image_ref` 解锁，前端可触发 shot N+1 image-prompt propose。
-  - 当 **所有 shots 都 image-selected** 后 → 全局视频生成链路解锁，前端 / 后端可以并行触发各 shot 的 video-script propose（每个 shot 的首帧 = 本 shot selected_shot_image，末帧 = 下一 shot selected_shot_image）。详见 [video-script.md](video-script.md) §2。
+  - 当 **所有 shots 都 image-selected** 后 → 全局视频生成链路解锁，前端 / 后端可以并行触发各 shot 的 video-script propose（每个 shot 的首帧 = 本 shot image_select_artifact，末帧 = 下一 shot image_select_artifact）。详见 [video-script.md](video-script.md) §2。
 
 ## 3. 触发接口
 
@@ -79,8 +79,8 @@ image prompt propose → 用户审图 → ★ image candidate select ★ → 解
 
 ## 6. 下游消费者
 
-- **Shot N+1 image-prompt agent**：读 `selected_shot_images[shot N].url` 作为本 shot 的 `image_ref`。这是场景一致性的来源。
-- **视频生成链路**：当 `allShotsImageSelected === true`，每个 shot 的 video-script propose 解锁，读 `selected_shot_images[shot]` 作为 `first_frame`、`selected_shot_images[shot+1]` 作为 `last_frame`（参见 [video-script.md](video-script.md) §4 上下文）。
+- **Shot N+1 image-prompt agent**：读 `image_select_artifacts[shot N].url` 作为本 shot 的 `image_ref`。这是场景一致性的来源。
+- **视频生成链路**：当 `allShotsImageSelected === true`，每个 shot 的 video-script propose 解锁，读 `image_select_artifacts[shot]` 作为 `first_frame`、`image_select_artifacts[shot+1]` 作为 `last_frame`（参见 [video-script.md](video-script.md) §4 上下文）。
 - **前端 focus mode**：根据 `nextShotId` 自动把 URL 切到下一 shot 的 image_prompt 步骤；`allShotsImageSelected=true` 时解锁视频生成 CTA。
 - **Trace Viewer**：记录每次 select 操作。
 
@@ -88,7 +88,7 @@ image prompt propose → 用户审图 → ★ image candidate select ★ → 解
 
 **幂等 / 一致性**
 - `candidateId` 必须存在于 `image_candidates` 表，且 `candidate.shotId === shotId`、属于该 shot 当前 ACTIVE 的 `ImagePromptArtifact`；否则 400 `INVALID_CANDIDATE`。
-- 一个 shot 在任意时刻**至多 1 个** selected_shot_image：使用 UPSERT（`ON CONFLICT (shot_id) DO UPDATE`）。
+- 一个 shot 在任意时刻**至多 1 个** image_select_artifact：使用 UPSERT（`ON CONFLICT (shot_id) DO UPDATE`）。
 - 同一 `{shotId, candidateId}` 重复调用幂等：返回相同 `selectedCandidateId` + `selectedImageUrl`。
 
 **Stale 规则（本接口不触发）**
@@ -102,16 +102,16 @@ image prompt propose → 用户审图 → ★ image candidate select ★ → 解
 **业务约束**
 - candidate 的 `status === failed`（生成失败行）→ 400 `CANNOT_SELECT_FAILED_CANDIDATE`。
 - shot 是最后一个（`shot.orderIndex === totalShots - 1`）→ `nextShotId` 返回 null。
-- `allShotsImageSelected` 计算：扫描该 workspace 所有 shots，全部都有 `selected_shot_images` 行 → `true`。
+- `allShotsImageSelected` 计算：扫描该 workspace 所有 shots，全部都有 `image_select_artifacts` 行 → `true`。
 
 ## 8. 常见失败模式
 
 | 失败现象 | 修复方向 |
 |---|---|
-| 跳过 select 就跑 shot N+1 image-prompt | shot N+1 的 image-prompt propose 在 N≥1 时强校验 `selected_shot_images[shot N-1]` 存在；否则 400 `NO_SCENE_ANCHOR` |
+| 跳过 select 就跑 shot N+1 image-prompt | shot N+1 的 image-prompt propose 在 N≥1 时强校验 `image_select_artifacts[shot N-1]` 存在；否则 400 `NO_SCENE_ANCHOR` |
 | 用户预期换图后视频自动更新，但实际没有 | 这是当前设计：select 不触发 stale。如果用户在视频生成后换图，需手动重新 propose video-script。UI 文案应明确提示 |
 | 视频链路在还未全部 image-select 时就被触发 | video-script propose 强校验 `allShotsImageSelected === true`，否则 400 `IMAGE_SELECTION_INCOMPLETE` |
-| candidate 24h URL 已过期，select 不到图 | 后端在写 selected_shot_images 之前再次下载 / 校验持久化 URL，过期就刷新；持久化失败抛 500 让用户重试 |
+| candidate 24h URL 已过期，select 不到图 | 后端在写 image_select_artifacts 之前再次下载 / 校验持久化 URL，过期就刷新；持久化失败抛 500 让用户重试 |
 | 误传 candidateId（不属于本 shot 或属于 STALE 轮次） | 强校验 `candidate.shotId === shotId` 且 `candidate.artifact.status === ACTIVE`；否则 400 |
 | 并发 select（双 tab 同时点不同候选） | UPSERT 天然按最后一次为准；前端 UI 用 optimistic + 后端权威响应纠正 |
-| `allShotsImageSelected` 误判（漏算 shot） | 统一用 `SELECT COUNT FROM storyboard_shots WHERE workspace_id = ... AND id NOT IN (SELECT shot_id FROM selected_shot_images)` ；该 query 返回 0 即所有 shots 已 select |
+| `allShotsImageSelected` 误判（漏算 shot） | 统一用 `SELECT COUNT FROM storyboard_shots WHERE workspace_id = ... AND id NOT IN (SELECT shot_id FROM image_select_artifacts)` ；该 query 返回 0 即所有 shots 已 select |

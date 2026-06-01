@@ -2,11 +2,11 @@
 
 ## 1. 业务目标
 
-为单个 shot 组装视频 prompt **并直接调用 Seedance 视频生成接口产出 `number` 个候选视频任务一并返回**。Seedance 以本 shot 的 `selected_shot_image` 作为 `first_frame`、下一 shot 的 `selected_shot_image` 作为 `last_frame`（最后一个 shot 无 last_frame），首尾帧确定 → 4-8 秒视频片段不会出现场景 / 商品漂移。用户在前端看到的是 N 段视频候选，而不是 prompt 文本。
+为单个 shot 组装视频 prompt **并直接调用 Seedance 视频生成接口产出 `number` 个候选视频任务一并返回**。Seedance 以本 shot 的 `image_select_artifact` 作为 `first_frame`、下一 shot 的 `image_select_artifact` 作为 `last_frame`（最后一个 shot 无 last_frame），首尾帧确定 → 4-8 秒视频片段不会出现场景 / 商品漂移。用户在前端看到的是 N 段视频候选，而不是 prompt 文本。
 
 > 通俗解释：每个镜头要把「这一帧静态画面」变成「这一段动起来的视频」。本 agent 把分镜信息 + 首尾帧 + userDirection 翻译成 Seedance prompt，**并直接下任务、等结果、把 M 段候选视频交付给用户挑**。
 >
-> **关键设计**：每个 shot 的视频生成 **互相独立**——本 shot 的首帧 = `selected_shot_images[shot]`、末帧 = `selected_shot_images[shot+1]`，两端都来自已经确认的分镜图，无需等前一个 shot 的视频跑完。所有 shot 可以并行调用 Seedance。
+> **关键设计**：每个 shot 的视频生成 **互相独立**——本 shot 的首帧 = `image_select_artifacts[shot]`、末帧 = `image_select_artifacts[shot+1]`，两端都来自已经确认的分镜图，无需等前一个 shot 的视频跑完。所有 shot 可以并行调用 Seedance。
 
 ## 2. 在工作流中的位置
 
@@ -22,12 +22,12 @@
                                      final compose
 ```
 
-- **上一步**：workspace 内所有 shot 都已完成 image-select，即 `selected_shot_images` 表覆盖了每一个 shot（由 [image-select.md](image-select.md) `allShotsImageSelected=true` 标记解锁）。
+- **上一步**：workspace 内所有 shot 都已完成 image-select，即 `image_select_artifacts` 表覆盖了每一个 shot（由 [image-select.md](image-select.md) `allShotsImageSelected=true` 标记解锁）。
 - **本步**：用户点「生成视频」（或前端 auto-trigger，可批量并行触发所有 shot），本 agent 对每个 shot 在一次调用里完成：
   1. 读取 shot 上下文 + first_frame + last_frame + userDirection → 组装 Seedance prompt（写入 `VideoScriptArtifact`，status=ACTIVE）。
   2. 用该 prompt 调 Seedance 视频生成接口 → 拿到 `number` 个 async **task ID**。
   3. 轮询 Seedance task 状态直至 succeeded / failed → 把候选视频 URL 写入 `video_candidates`，在响应里一并返回前端。
-- **下一步**：用户在前端 video candidate 网格挑 1 段 → [video-select.md](video-select.md) 写入 `selected_shot_videos`。所有 shot 都 video-selected 后，final compose 解锁。
+- **下一步**：用户在前端 video candidate 网格挑 1 段 → [video-select.md](video-select.md) 写入 `video_select_artifacts`。所有 shot 都 video-selected 后，final compose 解锁。
 
 ## 3. 触发接口
 
@@ -48,8 +48,8 @@
 | `shotId` | 镜头 ID | 字符串 (uuid) | 是 | 路径参数 |
 | `userDirection` | 用户对运动 / 节奏的自由文本指示。例：「镜头慢推」「最后定格在胶囊」 | 字符串 | 否 | 请求 |
 | `number` | 要求生成的候选视频数量。默认从 `.env`（如 `DEFAULT_VIDEO_BATCH_SIZE=3`）提取 | 整数 | 是 | 环境变量 |
-| `first_frame_url` | 本 shot 的关键帧 URL，作为 Seedance `role=first_frame` 的输入。**必填，由后端基于 shotId 自动注入**（来自 `selected_shot_images[shot]`） | 字符串 (URL) | 是 | 后端注入 |
-| `last_frame_url` | 下一 shot 的关键帧 URL，作为 Seedance `role=last_frame` 的输入。**若本 shot 是最后一个，传 null**（Seedance 仅取 first_frame）。后端自动注入（来自 `selected_shot_images[shot+1]`） | 字符串 (URL) \| null | 是 | 后端注入 |
+| `first_frame_url` | 本 shot 的关键帧 URL，作为 Seedance `role=first_frame` 的输入。**必填，由后端基于 shotId 自动注入**（来自 `image_select_artifacts[shot]`） | 字符串 (URL) | 是 | 后端注入 |
+| `last_frame_url` | 下一 shot 的关键帧 URL，作为 Seedance `role=last_frame` 的输入。**若本 shot 是最后一个，传 null**（Seedance 仅取 first_frame）。后端自动注入（来自 `image_select_artifacts[shot+1]`） | 字符串 (URL) \| null | 是 | 后端注入 |
 | `durationSec` | 本 shot 视频时长（秒），1-8。直接来自 storyboard | 整数 | 是 | 后端注入（storyboard.shots[].durationSec） |
 
 ### 模型实际看到的上下文（由后端拼装注入）
@@ -60,9 +60,9 @@
 | `shot.objective` | 镜头作用（hook / benefit / proof / cta） | shotprompt + storyboard |
 | `shot.voiceover` | 该镜头预设的口播台词 | storyboard |
 | `shot.providerPromptFromShotPrompt` | shotprompt 编译出的镜头级 prompt（语境锚点） | shotprompt |
-| `firstFrame.imageUrl` | 首帧图 URL，对应 `first_frame_url` | selected_shot_images[shot] |
+| `firstFrame.imageUrl` | 首帧图 URL，对应 `first_frame_url` | image_select_artifacts[shot] |
 | `firstFrame.basedOnImagePromptText` | 当初生成首帧用的 prompt（保留语境） | image_prompt_artifacts |
-| `lastFrame.imageUrl` | 末帧图 URL（若为最后一个 shot 则为 null） | selected_shot_images[shot+1] |
+| `lastFrame.imageUrl` | 末帧图 URL（若为最后一个 shot 则为 null） | image_select_artifacts[shot+1] |
 | `brief.brandTone` | 品牌语气 | productBrief |
 | `previousVideoScript` | 该 shot 上一版脚本（若存在），用于增量修改 | video_script_artifacts |
 
@@ -189,16 +189,16 @@
 
 - **本模块自调度**：本 agent **直接**调 Seedance（不再依赖独立 worker 触发）。Worker 剩余职责：（a）把 `candidates[]` 持久化到 `video_candidates`；（b）下载 24h `videoUrl` 到本地存储，对外暴露持久化 URL。
 - **前端 video candidates 选择页**：渲染 `candidates[]` 的视频网格让用户挑 1 段。Prompt 元数据默认不展示。
-- **video-select**：用户从 candidates 里挑 1 段 → 写入 `selected_shot_videos`（详见 [video-select.md](video-select.md)）。
-- **Final Compose Worker**：当所有 shot 都 video-selected → 按 `order_index` 拼接所有 `selected_shot_videos` → ffmpeg concat 输出最终 MP4（参见 arc_v6 §3 `final-compose.worker.ts`）。
+- **video-select**：用户从 candidates 里挑 1 段 → 写入 `video_select_artifacts`（详见 [video-select.md](video-select.md)）。
+- **Final Compose Worker**：当所有 shot 都 video-selected → 按 `order_index` 拼接所有 `video_select_artifacts` → ffmpeg concat 输出最终 MP4（参见 arc_v6 §3 `final-compose.worker.ts`）。
 - **Trace Viewer**：记录每次 propose、每个 task 的 createdAt / status / tokens，方便追溯失败和成本。Seedance 自带元信息（duration / resolution / seed 等）可通过 `taskId` 现查现用，不入 trace 数据库。
 
 ## 7. 验收标准
 
 **前置条件**
-- 本接口被调用前，workspace 内所有 shots 必须已 image-selected（即 `selected_shot_images` 覆盖所有 `storyboard_shots`）；否则 400 `IMAGE_SELECTION_INCOMPLETE`。
-- `first_frame_url` 必须等于 `selected_shot_images[shotId].url`；不允许由前端 / 用户直接传任意 URL。
-- 若本 shot 非最后一个：`last_frame_url` 必须等于 `selected_shot_images[next shot].url`；为最后一个：`last_frame_url` 必须为 `null`。
+- 本接口被调用前，workspace 内所有 shots 必须已 image-selected（即 `image_select_artifacts` 覆盖所有 `storyboard_shots`）；否则 400 `IMAGE_SELECTION_INCOMPLETE`。
+- `first_frame_url` 必须等于 `image_select_artifacts[shotId].url`；不允许由前端 / 用户直接传任意 URL。
+- 若本 shot 非最后一个：`last_frame_url` 必须等于 `image_select_artifacts[next shot].url`；为最后一个：`last_frame_url` 必须为 `null`。
 
 **候选视频相关（用户可见）**
 - `candidates.length` 必须等于输入 `number`。Seedance 短缺时（task 全部失败）用 status=failed 行补齐。
@@ -229,7 +229,7 @@
 
 | 失败现象 | 修复方向 |
 |---|---|
-| 还没所有 shot 都 image-selected 就调本接口 | 后端在 propose 前用一句 SQL 统一校验 `selected_shot_images` 覆盖度；缺一个就 400 `IMAGE_SELECTION_INCOMPLETE`，前端 UI 把视频生成 CTA 默认置灰 |
+| 还没所有 shot 都 image-selected 就调本接口 | 后端在 propose 前用一句 SQL 统一校验 `image_select_artifacts` 覆盖度；缺一个就 400 `IMAGE_SELECTION_INCOMPLETE`，前端 UI 把视频生成 CTA 默认置灰 |
 | 生成的视频与首帧不一致（商品突变） | `providerPrompt` 必须显式复述 first_frame 的视觉关键点；Seedance 通常会以 first_frame 为强约束，但 prompt 仍要明确「保持首帧外观一致」 |
 | 中间过渡帧 1-2 秒突然变形 | 首末帧色调 / 构图差异过大时容易发生。`riskNotes` 显式提示；用户可调整 image-select 让相邻 shot 视觉更近 |
 | Seedance task 长时间 running（> 5 分钟） | 后端轮询设上限（如 600 秒），超时则记 failed + reason="provider_timeout"，写入 `usage` 为 null |
