@@ -210,9 +210,14 @@ export interface WorkspaceMaterialLibrary extends Omit<
   primaryProductRef?: string;
 }
 
+export interface DiscoveredWorkspace {
+  localPath: string;
+  workspaceId: string | null;
+}
+
 export interface WorkspaceListDetail {
-  workspaceRoot: string;
   workspaces: CreativeWorkspace[];
+  discovered: DiscoveredWorkspace[];
 }
 
 export interface WorkspaceMaterialUploadDetail {

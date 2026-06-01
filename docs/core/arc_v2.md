@@ -59,18 +59,18 @@ server  ──────────────► shared, ai
 
 V2 把链路显式拆成 prompt modules 与同步点 modules。
 
-| 类型 | Module | 输出 |
-|---|---|---|
-| LLM | material-intake | 生效/待审素材解读 artifact |
-| LLM | product-brief | 生效/待审商品 brief artifact |
-| LLM | storyboard | 生效/待审 storyboard artifact |
-| LLM | shotprompt | 生效/待审 shot prompt artifact，含每个 shot 的 `shotImage` / `shotVideo` dict |
-| Apply | shot-set | 根据生效 shot prompt 创建分镜链路实例 |
-| LLM + Media | image-prompt | per-shot 图像 prompt artifact + image candidates |
-| Sync | image-select | per-shot 当前分镜图选择 |
-| LLM + Media | video-script | per-shot 视频脚本 artifact + video candidates |
-| Sync | video-select | per-shot 当前分镜视频选择 |
-| Media | final-compose | 按当前分镜视频选择拼接成片 |
+| 类型        | Module          | 输出                                                                          |
+| ----------- | --------------- | ----------------------------------------------------------------------------- |
+| LLM         | material-intake | 生效/待审素材解读 artifact                                                    |
+| LLM         | product-brief   | 生效/待审商品 brief artifact                                                  |
+| LLM         | storyboard      | 生效/待审 storyboard artifact                                                 |
+| LLM         | shotprompt      | 生效/待审 shot prompt artifact，含每个 shot 的 `shotImage` / `shotVideo` dict |
+| Apply       | shot-set        | 根据生效 shot prompt 创建分镜链路实例                                         |
+| LLM + Media | image-prompt    | per-shot 图像 prompt artifact + image candidates                              |
+| Sync        | image-select    | per-shot 当前分镜图选择                                                       |
+| LLM + Media | video-script    | per-shot 视频脚本 artifact + video candidates                                 |
+| Sync        | video-select    | per-shot 当前分镜视频选择                                                     |
+| Media       | final-compose   | 按当前分镜视频选择拼接成片                                                    |
 
 主流程：
 
@@ -91,21 +91,21 @@ material-intake
 
 V2 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module 有自己的表和 schema。
 
-| Module | 目标表 | 保存策略 |
-|---|---|---|
-| 创作要求 | `prompt_requirements_artifacts` | append；业务只读 current approved。 |
-| material-intake | `material_intake_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
-| product-brief | `product_brief_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
-| storyboard | `storyboard_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
-| shotprompt | `shot_prompt_artifacts` | append；业务只读 current approved，UI 可读 latest proposed。 |
-| shot-set | `shot_sets` + `storyboard_shots` | active/archived 分镜链路实例；不物理删除旧实例。 |
-| image-prompt | `image_prompt_artifacts` | per-shot propose round；保留生成事实。 |
-| image generation | `image_generation_batches` + `image_candidates` | per-round 候选事实。 |
-| image-select | `image_select_artifacts` | 每 shot current-only；UPSERT 覆盖当前选择。 |
-| video-script | `video_script_artifacts` | per-shot propose round；保留生成事实。 |
-| video generation | `video_generation_batches` + `video_candidates` | per-round 候选事实。 |
-| video-select | `video_select_artifacts` | 每 shot current-only；UPSERT 覆盖当前选择。 |
-| final-compose | `final_video_jobs` | 每次 compose 一条 job。 |
+| Module           | 目标表                                          | 保存策略                                                     |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| 创作要求         | `prompt_requirements_artifacts`                 | append；业务只读 current approved。                          |
+| material-intake  | `material_intake_artifacts`                     | append；业务只读 current approved，UI 可读 latest proposed。 |
+| product-brief    | `product_brief_artifacts`                       | append；业务只读 current approved，UI 可读 latest proposed。 |
+| storyboard       | `storyboard_artifacts`                          | append；业务只读 current approved，UI 可读 latest proposed。 |
+| shotprompt       | `shot_prompt_artifacts`                         | append；业务只读 current approved，UI 可读 latest proposed。 |
+| shot-set         | `shot_sets` + `storyboard_shots`                | active/archived 分镜链路实例；不物理删除旧实例。             |
+| image-prompt     | `image_prompt_artifacts`                        | per-shot propose round；保留生成事实。                       |
+| image generation | `image_generation_batches` + `image_candidates` | per-round 候选事实。                                         |
+| image-select     | `image_select_artifacts`                        | 每 shot current-only；UPSERT 覆盖当前选择。                  |
+| video-script     | `video_script_artifacts`                        | per-shot propose round；保留生成事实。                       |
+| video generation | `video_generation_batches` + `video_candidates` | per-round 候选事实。                                         |
+| video-select     | `video_select_artifacts`                        | 每 shot current-only；UPSERT 覆盖当前选择。                  |
+| final-compose    | `final_video_jobs`                              | 每次 compose 一条 job。                                      |
 
 ### 4.1 Workspace Module Artifact 通用字段
 
@@ -176,14 +176,14 @@ packages/ai/src/prompts/modules/<module>/
 
 业务或剧本同学要自定义“主体生成 prompt”时，只改对应 module 的 `subject.md`：
 
-| 业务目标 | 修改文件 |
-|---|---|
-| 素材清点/标签策略 | `packages/ai/src/prompts/modules/material-intake/subject.md` |
-| 商品 brief 写法 | `packages/ai/src/prompts/modules/product-brief/subject.md` |
-| 分镜叙事/节奏 | `packages/ai/src/prompts/modules/storyboard/subject.md` |
-| 主剧本 / shotprompt 生成 | `packages/ai/src/prompts/modules/shotprompt/subject.md` |
-| 单个 shot 的分镜图 prompt | `packages/ai/src/prompts/modules/image-prompt/subject.md` |
-| 单个 shot 的分镜视频脚本 / 运镜脚本 | `packages/ai/src/prompts/modules/video-script/subject.md` |
+| 业务目标                            | 修改文件                                                     |
+| ----------------------------------- | ------------------------------------------------------------ |
+| 素材清点/标签策略                   | `packages/ai/src/prompts/modules/material-intake/subject.md` |
+| 商品 brief 写法                     | `packages/ai/src/prompts/modules/product-brief/subject.md`   |
+| 分镜叙事/节奏                       | `packages/ai/src/prompts/modules/storyboard/subject.md`      |
+| 主剧本 / shotprompt 生成            | `packages/ai/src/prompts/modules/shotprompt/subject.md`      |
+| 单个 shot 的分镜图 prompt           | `packages/ai/src/prompts/modules/image-prompt/subject.md`    |
+| 单个 shot 的分镜视频脚本 / 运镜脚本 | `packages/ai/src/prompts/modules/video-script/subject.md`    |
 
 `contract.md` 属于工程契约：只在输入 artifact、输出 schema、JSON 格式、provider 限制发生变化时由工程侧修改。业务自定义不应修改 `contract.md`，否则会改变 agent 可见输入和输出结构。
 
@@ -342,16 +342,23 @@ video_select_artifacts
 
 运行时仍保留 `generation_v2` 队列：
 
-| kind | 用途 |
-|---|---|
-| `generate_image_candidate` | image-prompt 创建每个 image candidate job。 |
-| `generate_videos` | video retry / recovery 路径；主线 video-script 可直接等待 `runVideoGenerationBatch()`。 |
-| `compose_final_video` | final compose。 |
+| kind                       | 用途                                                                     |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `generate_image_candidate` | image-prompt 创建每个 image candidate job。                              |
+| `generate_video_candidate` | video-script 创建每个 video candidate job（每 job 一次 Seedance 调用）。 |
+| `generate_videos`          | 旧版 video 批任务，仅保留给历史 job 的 recovery；主线已不再使用。        |
+| `compose_final_video`      | final compose。                                                          |
+
+worker 并发：`generate_image_candidate` 与 `generate_video_candidate` 都是「每候选一个 job、每 job 一次 provider 调用」。`generation_v2` worker 的 `concurrency` 由 `GENERATION_WORKER_CONCURRENCY` 调控；它只决定队列执行池大小，不再承担候选数量或 provider 配额含义。
+
+provider 走独立配额：text/image/video provider 调用分别由 `TEXT_PROVIDER_CONCURRENCY`、`IMAGE_PROVIDER_CONCURRENCY`、`VIDEO_PROVIDER_CONCURRENCY` 的进程级信号量限制（authoritative 上限，覆盖任何 caller），与 worker `concurrency` 无关。`video-script propose` 不再内联 `await runVideoGenerationBatch()`：它入队 `generate_video_candidate` 后立即返回 PENDING，由 worker 异步出片，客户端轮询 `video-rounds`。
 
 真实 provider 限制：
 
 - Seedance 单 clip `durationSec` 必须 4-12 秒。
+- video 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。多会话共享账号时实际可用名额可能更少，因此 Seedance 调用对 429/5xx/超时做指数退避重试（`ARK_MAX_RETRIES` / `ARK_RETRY_BASE_MS`，遵循 `Retry-After`），把瞬时限流转成等待而非候选失败。
 - real-provider acceptance 应控制 video candidate 数量，避免把架构问题和 RPM/TPM 限流混在一起。
+- image provider 同时在飞调用数 ≤ `IMAGE_PROVIDER_CONCURRENCY`；调高该值前需确认 image provider 的 TPM 余量。
 
 ---
 
@@ -395,3 +402,35 @@ pnpm agenttest:real
 - 混在单个 prompt builder 中的主体 prompt 与 schema/contract prompt。
 
 迁移允许不兼容旧数据；以新 schema、新接口、新测试链路为准。
+
+---
+
+## 13. 工作区身份与本地草稿发现
+
+工作区身份有两层：**磁盘 manifest 是持久身份，DB row 是可丢弃的业务状态。**
+
+- 每个创作工作目录下的 `.daireel/workspace.json` 保存该工作区的 `workspaceId`，是工作区的**持久身份**。
+- DB `creative_workspace` 行承载业务状态（artifact、shot set、候选、选择等），可被 `reset:dev` 清空；磁盘 `.daireel/`（manifest、trace、媒体）不被 reset 删除。
+
+因此 DB 被清后，磁盘上仍存在但「未登记」的工作区要能被重新发现并接回原始身份：
+
+```text
+GET /api/workspaces
+  -> workspaces[]:  DB 已登记工作区 + active storage binding
+  -> discovered[]:  扫描 WORKSPACE_DISCOVERY_ROOTS（逗号分隔根目录，有界深度）
+                    下存在 .daireel/workspace.json 但 DB 无对应行的工作区
+                    （已登记路径从 discovered 去重剔除）
+
+POST /api/workspaces/init  { directory }
+  -> DB 有行：find
+  -> DB 无行但磁盘 manifest 存在且其 workspaceId 未被占用：
+       复用该原始 workspaceId 重新登记（不新建、不覆盖 manifest）
+  -> 否则：新建 workspaceId 并写 manifest
+```
+
+边界：
+
+- `reset:dev` 清空业务表后，草稿通过 `discovered` 重新出现，点击经 `init` 以**原始 id** 重新打开。
+- 复用的是身份，不是业务数据：被 reset 清掉的 DB 侧 artifact（brief/storyboard/shotprompt/选择等）不会自动恢复；磁盘媒体与 trace 仍在。
+- 前端首页除 DB 工作区外，单列「本地草稿（未登记）」区呈现 `discovered`。
+- `WORKSPACE_DISCOVERY_ROOTS` 是配置项（`.env`），未设置则不扫描磁盘草稿。

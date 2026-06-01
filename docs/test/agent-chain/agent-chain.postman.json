@@ -92,8 +92,8 @@
                   "pm.response.to.have.status(200);",
                   "var data = pm.response.json().data;",
                   "pm.test(\"generation limits exist\", function () {",
-                  "  pm.expect(data.defaultImageBatchSize).to.be.a(\"number\");",
-                  "  pm.expect(data.defaultVideoBatchSize).to.be.a(\"number\");",
+                  "  pm.expect(data.defaultImageCandidates).to.be.a(\"number\");",
+                  "  pm.expect(data.defaultVideoCandidates).to.be.a(\"number\");",
                   "  pm.expect(data.aspectRatios).to.include(\"9:16\");",
                   "});"
                 ]
@@ -110,9 +110,7 @@
           "name": "Create Workspace",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces",
             "body": {
               "mode": "raw",
@@ -141,9 +139,7 @@
           "name": "Bind Local Storage",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storage/bind",
             "body": {
               "mode": "raw",
@@ -172,9 +168,7 @@
           "name": "Upload Workspace Material",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/materials",
             "body": {
               "mode": "raw",
@@ -208,9 +202,7 @@
           "name": "Propose Prompt Requirements",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/prompt-requirements/propose",
             "body": {
               "mode": "raw",
@@ -243,9 +235,7 @@
           "name": "Approve Prompt Requirements",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/prompt-requirements/approve",
             "body": {
               "mode": "raw",
@@ -308,9 +298,7 @@
           "name": "Propose Material Intake",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/material-intake/propose",
             "body": {
               "mode": "raw",
@@ -341,9 +329,7 @@
           "name": "Approve Material Intake",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/material-intake/approve",
             "body": {
               "mode": "raw",
@@ -405,9 +391,7 @@
           "name": "Propose Product Brief",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/product-brief/propose",
             "body": {
               "mode": "raw",
@@ -438,9 +422,7 @@
           "name": "Approve Product Brief",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/product-brief/approve",
             "body": {
               "mode": "raw",
@@ -502,9 +484,7 @@
           "name": "Propose Storyboard",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storyboard/propose",
             "body": {
               "mode": "raw",
@@ -536,9 +516,7 @@
           "name": "Approve Storyboard",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storyboard/approve",
             "body": {
               "mode": "raw",
@@ -600,9 +578,7 @@
           "name": "Propose Shot Prompt",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shotprompt/propose",
             "body": {
               "mode": "raw",
@@ -640,9 +616,7 @@
           "name": "Approve Shot Prompt",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shotprompt/approve",
             "body": {
               "mode": "raw",
@@ -727,9 +701,7 @@
           "name": "Apply Shot Set",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-sets",
             "body": {
               "mode": "raw",

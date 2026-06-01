@@ -313,6 +313,118 @@ function providerTemporaryUrl(row: { providerResponse: unknown; imageUrl?: strin
     : row.imageUrl ?? null;
 }
 
+function videoScriptVoiceover(scriptJson: unknown) {
+  if (!scriptJson || typeof scriptJson !== "object") return "";
+  const value = (scriptJson as { voiceover?: unknown }).voiceover;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function buildSeedanceShotVideoPrompt(input: {
+  providerPrompt: string;
+  scriptJson: unknown;
+}) {
+  const basePrompt = input.providerPrompt.trim();
+  const voiceover = videoScriptVoiceover(input.scriptJson);
+  if (!voiceover) return basePrompt;
+  return [
+    basePrompt,
+    [
+      "音频/旁白要求：generate_audio=true。",
+      "请生成自然清晰的中文短视频旁白音频，并完整朗读以下口播。",
+      `口播文案：“${voiceover}”`,
+      "不要在画面里生成字幕、标题或任何可读文字。",
+    ].join(" "),
+  ].join("\n\n");
+}
+
+export async function runVideoGenerationCandidate(input: {
+  batchId: string;
+  candidateId: string;
+  aspectRatio: "9:16" | "16:9" | "1:1";
+  failCandidateOnError?: boolean;
+  adapter?: Adapter;
+}) {
+  const adapter = input.adapter ?? db.db2;
+  const batch = await adapter.getVideoBatch(input.batchId);
+  const candidate = await adapter.getVideoCandidate(input.candidateId);
+  if (candidate.status !== "PENDING" && candidate.status !== "RUNNING") {
+    return { batch, candidate, result: null };
+  }
+
+  await adapter.updateVideoCandidate(candidate.id, { status: "RUNNING" });
+  const script = await adapter.getVideoScriptArtifact(batch.videoScriptArtifactId);
+  if (script.status !== "ACTIVE") {
+    const failed =
+      input.failCandidateOnError === false
+        ? candidate
+        : await adapter.updateVideoCandidate(candidate.id, {
+            status: "FAILED",
+            errorMessage: "STALE_SCRIPT",
+          });
+    throw Object.assign(new Error("STALE_SCRIPT"), { batch, candidate: failed });
+  }
+
+  const startImage = await adapter.getImageCandidate(script.basedOnImageCandidateId);
+  const firstFrameUrl = providerTemporaryUrl(startImage);
+  if (!firstFrameUrl) throw new Error("MISSING_START_IMAGE_URL");
+  const endImage = script.basedOnNextImageCandidateId
+    ? await adapter.getImageCandidate(script.basedOnNextImageCandidateId)
+    : null;
+  const lastFrameUrl = endImage ? providerTemporaryUrl(endImage) : null;
+  if (script.basedOnNextImageCandidateId && !lastFrameUrl) {
+    throw new Error("MISSING_LAST_FRAME_URL");
+  }
+
+  const provider = videoProviderOverride ?? defaultVideoProvider;
+  const prompt = buildSeedanceShotVideoPrompt({
+    providerPrompt: script.providerPrompt,
+    scriptJson: script.scriptJson,
+  });
+  try {
+    const result = await provider({
+      imageUrl: firstFrameUrl,
+      lastFrameUrl,
+      prompt,
+      durationSec: script.durationSec,
+      aspectRatio: input.aspectRatio,
+      generateAudio: true,
+    });
+    const persisted = await (generatedAssetPersisterOverride ?? persistGeneratedAsset)({
+      workspaceId: batch.workspaceId,
+      sourceUrl: result.videoUrl,
+      kind: "video",
+      batchId: batch.id,
+      candidateId: candidate.id,
+    });
+    const updated = await adapter.updateVideoCandidate(candidate.id, {
+      videoUrl: persisted.stableUrl,
+      objectKey: persisted.objectKey,
+      durationSec: script.durationSec,
+      provider: result.provider,
+      providerResponse: {
+        ...result,
+        providerTemporaryUrl: persisted.providerTemporaryUrl,
+      },
+      status: "SUCCEEDED",
+      errorMessage: null,
+    });
+    return { batch, candidate: updated, result };
+  } catch (err) {
+    const msg = String((err as Error).message ?? err);
+    const failed =
+      input.failCandidateOnError === false
+        ? candidate
+        : await adapter.updateVideoCandidate(candidate.id, {
+            status: "FAILED",
+            errorMessage: msg,
+          });
+    throw Object.assign(err instanceof Error ? err : new Error(msg), {
+      batch,
+      candidate: failed,
+    });
+  }
+}
+
 export async function runVideoGenerationBatch(input: {
   batchId: string;
   count: number;
@@ -348,11 +460,15 @@ export async function runVideoGenerationBatch(input: {
   }
 
   const provider = videoProviderOverride ?? defaultVideoProvider;
+  const prompt = buildSeedanceShotVideoPrompt({
+    providerPrompt: script.providerPrompt,
+    scriptJson: script.scriptJson,
+  });
   const tasks = Array.from({ length: input.count }, () =>
     provider({
       imageUrl: firstFrameUrl,
       lastFrameUrl,
-      prompt: script.providerPrompt,
+      prompt,
       durationSec: script.durationSec,
       aspectRatio: input.aspectRatio,
       generateAudio: true,

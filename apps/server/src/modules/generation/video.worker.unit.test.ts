@@ -31,7 +31,8 @@ function makeFakeDb() {
       id: "art-vid-1",
       status: "ACTIVE",
       durationSec: 4,
-      providerPrompt: "p",
+      scriptJson: { voiceover: "整理桌面，从一盏好灯开始。" },
+      providerPrompt: "镜头从已选择的商品首帧开始，缓慢推进展示桌面灯具，保持产品形状和光线稳定。",
       basedOnImageCandidateId: "imc-1",
       basedOnNextImageCandidateId: "imc-2",
     }),
@@ -118,6 +119,10 @@ describe("processGenerateVideos", () => {
     assert.equal(fakeDb.videoCandidates.length, 2);
     assert.equal(fakeDb.shotPatches.at(-1)?.status, "VIDEO_CANDIDATES_READY");
     assert.equal(fake.calls[0]?.lastFrameUrl, "https://cdn.example/img-2.png");
+    assert.equal(fake.calls[0]?.generateAudio, true);
+    assert.match(fake.calls[0]?.prompt, /音频\/旁白要求/);
+    assert.match(fake.calls[0]?.prompt, /整理桌面，从一盏好灯开始。/);
+    assert.match(fake.calls[0]?.prompt, /不要在画面里生成字幕/);
   });
 
   it("returns early if batch is not PENDING (idempotent)", async () => {

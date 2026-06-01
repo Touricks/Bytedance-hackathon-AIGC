@@ -128,7 +128,10 @@ export const generationService = {
     idempotencyKey: string;
   }) {
     const existing = await db.db2.getVideoBatchByIdempotencyKey(input.idempotencyKey);
-    if (existing) return { data: existing, deduped: true };
+    if (existing) {
+      const candidates = await db.db2.listVideoCandidatesByBatch(existing.id);
+      return { data: existing, batch: existing, candidates, deduped: true };
+    }
     const script = await db.db2.getVideoScriptArtifact(input.videoScriptArtifactId);
     if (script.status !== "ACTIVE") {
       throw new HttpError(409, "STALE_SCRIPT", "Cannot generate video on stale script");
@@ -149,43 +152,85 @@ export const generationService = {
       errorMessage: null,
       idempotencyKey: input.idempotencyKey,
     });
-    const job = await jobRepository.insert({
-      id: "job_" + nanoid(10),
-      workspaceId: input.workspaceId,
-      shotId: input.shotId,
-      jobType: "generate_videos",
-      status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
-      queueJobId: null,
-      relatedBatchType: "video_generation_batch",
-      relatedBatchId: batch.id,
-      payload: {},
-      progress: 0,
-      attemptCount: 0,
-      maxAttempts: 3,
-      errorMessage: null,
-      startedAt: null,
-      completedAt: null,
-    });
+    // One job per candidate, exactly like images: the single shared worker's
+    // concurrency plus the VIDEO_PROVIDER_CONCURRENCY semaphore bound
+    // how many Seedance calls run at once, and each candidate retries on its own.
+    const candidates = [];
+    const jobIds = [];
+    const queueJobIds = [];
+    for (let candidateIndex = 0; candidateIndex < count; candidateIndex += 1) {
+      const candidate = await db.db2.insertVideoCandidate({
+        id: "vcd_" + nanoid(10),
+        batchId: batch.id,
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        videoUrl: null,
+        objectKey: null,
+        thumbnailUrl: null,
+        durationSec: null,
+        width: null,
+        height: null,
+        provider: "seedance",
+        providerResponse: { candidateIndex },
+        status: "PENDING",
+        errorMessage: null,
+      });
+      candidates.push(candidate);
+      const job = await jobRepository.insert({
+        id: "job_" + nanoid(10),
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        jobType: "generate_video_candidate",
+        status: "PENDING",
+        queueName: GENERATION_V2_QUEUE_NAME,
+        queueJobId: null,
+        relatedBatchType: "video_candidate",
+        relatedBatchId: candidate.id,
+        payload: {
+          batchId: batch.id,
+          candidateId: candidate.id,
+          candidateIndex,
+          shotId: input.shotId,
+          workspaceId: input.workspaceId,
+          videoScriptArtifactId: input.videoScriptArtifactId,
+          aspectRatio: input.aspectRatio,
+        },
+        progress: 0,
+        attemptCount: 0,
+        maxAttempts: 3,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+      });
+      const queueJobId = await enqueueGenerationV2({
+        kind: "generate_video_candidate",
+        jobId: job.id,
+        batchId: batch.id,
+        candidateId: candidate.id,
+        candidateIndex,
+        shotId: input.shotId,
+        workspaceId: input.workspaceId,
+        videoScriptArtifactId: input.videoScriptArtifactId,
+        aspectRatio: input.aspectRatio,
+        traceId: nanoid(),
+      });
+      jobIds.push(job.id);
+      if (queueJobId) {
+        queueJobIds.push(queueJobId);
+        await jobRepository.update(job.id, { queueJobId });
+      }
+    }
     await db.db2.updateShot(input.shotId, { status: "VIDEO_GENERATING" });
-    await enqueueGenerationV2({
-      kind: "generate_videos",
-      jobId: job.id,
-      batchId: batch.id,
-      shotId: input.shotId,
-      workspaceId: input.workspaceId,
-      videoScriptArtifactId: input.videoScriptArtifactId,
-      count,
-      aspectRatio: input.aspectRatio,
-      traceId: nanoid(),
-    });
     return {
       data: {
         batchId: batch.id,
-        jobId: job.id,
+        jobIds,
+        queueJobIds,
         status: batch.status,
         requestedCount: count,
       },
+      batch,
+      candidates,
     };
   },
 

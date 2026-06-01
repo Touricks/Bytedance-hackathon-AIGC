@@ -1,4 +1,5 @@
 import type { TaskProviderConfig } from "./provider-config.js";
+import { runWithProviderSlot } from "../concurrency/provider-concurrency.js";
 import type { FileTraceLogger } from "../trace/trace-log.js";
 
 // Ark Seedream image generation is a synchronous OpenAI-compatible style API
@@ -67,7 +68,7 @@ async function readJson(res: Response): Promise<unknown> {
     return JSON.parse(t);
   } catch {
     throw new Error(
-      `Ark image response was not valid JSON (status ${res.status}): ${t.slice(0, 240)}`,
+      `Ark image response was not valid JSON (status ${res.status}): ${t.slice(0, 240)}`
     );
   }
 }
@@ -89,10 +90,10 @@ function defaultSizeFor(aspectRatio: ArkImageAspectRatio): string {
   }
 }
 
-export async function generateImagesWithArk(
+async function generateImagesWithArkInner(
   req: ArkImageRequest,
   cfg: TaskProviderConfig,
-  opts: ArkImageProviderOptions = {},
+  opts: ArkImageProviderOptions = {}
 ): Promise<ArkImageResult> {
   const fetchImpl = opts.fetch ?? fetch;
 
@@ -111,7 +112,7 @@ export async function generateImagesWithArk(
     prompt: req.prompt,
     size: req.size ?? defaultSizeFor(req.aspectRatio),
     response_format: "url",
-    watermark: req.watermark ?? false,
+    watermark: req.watermark ?? false
   };
   if (imageField !== undefined) body.image = imageField;
   if (req.negativePrompt) body.negative_prompt = req.negativePrompt;
@@ -136,8 +137,8 @@ export async function generateImagesWithArk(
       count: req.count,
       aspectRatio: req.aspectRatio,
       size: body.size,
-      hasReferenceImages: referenceImages.length > 0,
-    },
+      hasReferenceImages: referenceImages.length > 0
+    }
   });
 
   const startedAt = Date.now();
@@ -145,9 +146,9 @@ export async function generateImagesWithArk(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${cfg.apiKey}`,
+      Authorization: `Bearer ${cfg.apiKey}`
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {
@@ -159,11 +160,9 @@ export async function generateImagesWithArk(
       jobId: opts.jobId,
       provider: cfg.provider,
       model: cfg.endpointId,
-      meta: { statusCode: res.status, body: text.slice(0, 240) },
+      meta: { statusCode: res.status, body: text.slice(0, 240) }
     });
-    throw new Error(
-      `Ark image generation failed (${res.status}): ${text.slice(0, 240)}`,
-    );
+    throw new Error(`Ark image generation failed (${res.status}): ${text.slice(0, 240)}`);
   }
 
   const payload = (await readJson(res)) as {
@@ -194,7 +193,7 @@ export async function generateImagesWithArk(
       jobId: opts.jobId,
       provider: cfg.provider,
       model: cfg.endpointId,
-      meta: { code: payload.error.code, message: msg },
+      meta: { code: payload.error.code, message: msg }
     });
     throw new Error(`Ark image generation error: ${msg}`);
   }
@@ -207,13 +206,13 @@ export async function generateImagesWithArk(
     if (entry?.url) {
       candidates.push({
         imageUrl: entry.url,
-        ...(entry.size ? { size: entry.size } : {}),
+        ...(entry.size ? { size: entry.size } : {})
       });
     } else if (entry?.error) {
       candidateErrors.push({
         index: i,
         ...(entry.error.code ? { code: entry.error.code } : {}),
-        ...(entry.error.message ? { message: entry.error.message } : {}),
+        ...(entry.error.message ? { message: entry.error.message } : {})
       });
     }
   }
@@ -230,8 +229,8 @@ export async function generateImagesWithArk(
       requested: req.count,
       returned: candidates.length,
       failed: candidateErrors.length,
-      usage: payload.usage,
-    },
+      usage: payload.usage
+    }
   });
 
   return {
@@ -251,9 +250,17 @@ export async function generateImagesWithArk(
               : {}),
             ...(payload.usage.total_tokens !== undefined
               ? { totalTokens: payload.usage.total_tokens }
-              : {}),
-          },
+              : {})
+          }
         }
-      : {}),
+      : {})
   };
+}
+
+export async function generateImagesWithArk(
+  req: ArkImageRequest,
+  cfg: TaskProviderConfig,
+  opts: ArkImageProviderOptions = {}
+): Promise<ArkImageResult> {
+  return runWithProviderSlot("image", () => generateImagesWithArkInner(req, cfg, opts));
 }

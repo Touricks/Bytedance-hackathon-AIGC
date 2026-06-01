@@ -248,7 +248,6 @@ describe("api client", () => {
 
       return new Response(
         JSON.stringify({
-          workspaceRoot: "/tmp/uploads/workspaces",
           workspaces: [
             {
               id: "workspace_123",
@@ -260,6 +259,9 @@ describe("api client", () => {
               updatedAt: "2026-05-25T00:00:00.000Z",
               lastSeenAt: "2026-05-25T00:00:00.000Z"
             }
+          ],
+          discovered: [
+            { localPath: "/Users/demo/Drafts/IntegrationTest_v1", workspaceId: "VBuy2YQUO9cwRY42fdcy8" }
           ]
         }),
         { status: 200 }
@@ -270,8 +272,9 @@ describe("api client", () => {
     const listed = await listWorkspaces();
 
     assert.equal(created.workspace.id, "workspace_123");
-    assert.equal(listed.workspaceRoot, "/tmp/uploads/workspaces");
     assert.equal(listed.workspaces[0]?.id, "workspace_123");
+    assert.equal(listed.discovered[0]?.localPath, "/Users/demo/Drafts/IntegrationTest_v1");
+    assert.equal(listed.discovered[0]?.workspaceId, "VBuy2YQUO9cwRY42fdcy8");
     assert.deepEqual(calls, [
       "POST http://localhost:3000/api/workspaces",
       "GET http://localhost:3000/api/workspaces"

@@ -3,6 +3,7 @@ import {
   getWorkspaceStatus,
   toWorkspaceMaterialUrl,
 } from "../../../lib/api/client.js";
+import { materialAssetFilename } from "../../../lib/materials.js";
 import { useFocusStore } from "../state/focusStore.js";
 import { useShotAssetRefs } from "../hooks/useShotAssetRefs.js";
 import { AssetTile } from "./AssetTile.js";
@@ -63,7 +64,8 @@ export function AssetRail({ workspaceId }: { workspaceId: string }) {
               key={a.ref}
               assetId={a.ref}
               url={toWorkspaceMaterialUrl(workspaceId, a.ref)}
-              label={a.description}
+              label={materialAssetFilename(a.ref)}
+              title={a.description}
               selected={refs.some((r) => r.assetId === a.ref)}
               onToggle={() => {
                 if (!activeShotId) return;

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
+import { __setProviderConcurrencyForTests } from "../concurrency/provider-concurrency.js";
 import { generateTextWithArk } from "./ark-text.provider.js";
+
+afterEach(() => {
+  __setProviderConcurrencyForTests("text", undefined);
+});
 
 describe("generateTextWithArk", () => {
   it("sends text-only content through an OpenAI-compatible Ark client", async () => {
@@ -337,5 +342,47 @@ describe("generateTextWithArk", () => {
     assert.deepEqual((events as Array<{ meta: { error: string } }>)[1]?.meta, {
       error: "Bad image data:image/<redacted>;base64,<redacted> with Bearer <redacted>"
     });
+  });
+
+  it("caps concurrent text provider calls", async () => {
+    __setProviderConcurrencyForTests("text", 2);
+    let active = 0;
+    let maxInFlight = 0;
+
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        generateTextWithArk(
+          {
+            prompt: `Create a creative blueprint ${index}.`,
+            content: `Create a creative blueprint ${index}.`
+          },
+          {
+            provider: "ark",
+            apiKey: "test-key",
+            model: "doubao-seed-endpoint",
+            baseURL: "https://ark.example/api/v3"
+          },
+          {
+            createClient: () => ({
+              chat: {
+                completions: {
+                  create: async () => {
+                    active += 1;
+                    maxInFlight = Math.max(maxInFlight, active);
+                    await new Promise((resolve) => setTimeout(resolve, 10));
+                    active -= 1;
+                    return {
+                      choices: [{ message: { content: "blueprint json" } }]
+                    };
+                  }
+                }
+              }
+            })
+          }
+        )
+      )
+    );
+
+    assert.equal(maxInFlight, 2);
   });
 });

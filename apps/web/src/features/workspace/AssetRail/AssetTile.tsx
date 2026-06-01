@@ -2,6 +2,7 @@ export interface AssetTileProps {
   assetId: string;
   url: string;
   label: string;
+  title?: string;
   selected?: boolean;
   onToggle?(): void;
 }
@@ -10,6 +11,7 @@ export function AssetTile({
   assetId,
   url,
   label,
+  title,
   selected,
   onToggle,
 }: AssetTileProps) {
@@ -22,7 +24,7 @@ export function AssetTile({
         e.dataTransfer.setData("application/x-asset-id", assetId);
       }}
       onClick={onToggle}
-      title={label}
+      title={title ?? label}
     >
       <img src={url} alt={label} />
     </button>

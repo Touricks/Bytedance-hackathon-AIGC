@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
+import { __setProviderConcurrencyForTests } from "../concurrency/provider-concurrency.js";
 import { generateImagesWithArk } from "./ark-image.provider.js";
 
 const cfg = {
@@ -7,7 +8,7 @@ const cfg = {
   provider: "ark-seedream",
   apiKey: "test-key",
   endpointId: "ep-image",
-  baseURL: "https://ark.example/v3",
+  baseURL: "https://ark.example/v3"
 };
 
 interface CapturedCall {
@@ -32,6 +33,10 @@ function makeFetch(response: Response, captured: CapturedCall[]) {
   };
 }
 
+afterEach(() => {
+  __setProviderConcurrencyForTests("image", undefined);
+});
+
 describe("generateImagesWithArk", () => {
   it("POSTs to /images/generations and returns candidates from data[]", async () => {
     const captured: CapturedCall[] = [];
@@ -42,25 +47,29 @@ describe("generateImagesWithArk", () => {
         data: [
           { url: "https://cdn.example/1.png", size: "1600x2848" },
           { url: "https://cdn.example/2.png", size: "1600x2848" },
-          { url: "https://cdn.example/3.png", size: "1600x2848" },
+          { url: "https://cdn.example/3.png", size: "1600x2848" }
         ],
-        usage: { generated_images: 3, output_tokens: 1234, total_tokens: 1234 },
+        usage: { generated_images: 3, output_tokens: 1234, total_tokens: 1234 }
       }),
-      { status: 200 },
+      { status: 200 }
     );
     const fetchImpl = makeFetch(response, captured);
 
     const result = await generateImagesWithArk(
       { prompt: "a cinematic close-up", count: 3, aspectRatio: "9:16" },
       cfg,
-      { fetch: fetchImpl as typeof fetch },
+      { fetch: fetchImpl as typeof fetch }
     );
 
     assert.equal(result.provider, "ark-seedream");
     assert.equal(result.model, "ep-image");
     assert.deepEqual(
       result.candidates.map((c) => c.imageUrl),
-      ["https://cdn.example/1.png", "https://cdn.example/2.png", "https://cdn.example/3.png"],
+      [
+        "https://cdn.example/1.png",
+        "https://cdn.example/2.png",
+        "https://cdn.example/3.png"
+      ]
     );
     assert.equal(result.candidateErrors.length, 0);
     assert.equal(result.usage?.generatedImages, 3);
@@ -81,14 +90,14 @@ describe("generateImagesWithArk", () => {
     const captured: CapturedCall[] = [];
     const response = new Response(
       JSON.stringify({ data: [{ url: "https://cdn.example/only.png" }] }),
-      { status: 200 },
+      { status: 200 }
     );
     const fetchImpl = makeFetch(response, captured);
 
     const result = await generateImagesWithArk(
       { prompt: "single shot", count: 1, aspectRatio: "16:9" },
       cfg,
-      { fetch: fetchImpl as typeof fetch },
+      { fetch: fetchImpl as typeof fetch }
     );
 
     assert.equal(result.candidates.length, 1);
@@ -101,14 +110,21 @@ describe("generateImagesWithArk", () => {
   it("passes a single reference image as a string and multiple as an array", async () => {
     const capturedSingle: CapturedCall[] = [];
     await generateImagesWithArk(
-      { prompt: "p", count: 1, aspectRatio: "1:1", referenceImageUrls: ["https://r/1.png"] },
+      {
+        prompt: "p",
+        count: 1,
+        aspectRatio: "1:1",
+        referenceImageUrls: ["https://r/1.png"]
+      },
       cfg,
       {
         fetch: makeFetch(
-          new Response(JSON.stringify({ data: [{ url: "https://cdn.example/x.png" }] }), { status: 200 }),
-          capturedSingle,
-        ) as typeof fetch,
-      },
+          new Response(JSON.stringify({ data: [{ url: "https://cdn.example/x.png" }] }), {
+            status: 200
+          }),
+          capturedSingle
+        ) as typeof fetch
+      }
     );
     assert.equal(capturedSingle[0]!.body?.image, "https://r/1.png");
 
@@ -118,17 +134,22 @@ describe("generateImagesWithArk", () => {
         prompt: "p",
         count: 1,
         aspectRatio: "1:1",
-        referenceImageUrls: ["https://r/1.png", "https://r/2.png"],
+        referenceImageUrls: ["https://r/1.png", "https://r/2.png"]
       },
       cfg,
       {
         fetch: makeFetch(
-          new Response(JSON.stringify({ data: [{ url: "https://cdn.example/y.png" }] }), { status: 200 }),
-          capturedMulti,
-        ) as typeof fetch,
-      },
+          new Response(JSON.stringify({ data: [{ url: "https://cdn.example/y.png" }] }), {
+            status: 200
+          }),
+          capturedMulti
+        ) as typeof fetch
+      }
     );
-    assert.deepEqual(capturedMulti[0]!.body?.image, ["https://r/1.png", "https://r/2.png"]);
+    assert.deepEqual(capturedMulti[0]!.body?.image, [
+      "https://r/1.png",
+      "https://r/2.png"
+    ]);
   });
 
   it("collects per-item errors from data[] without throwing", async () => {
@@ -137,17 +158,17 @@ describe("generateImagesWithArk", () => {
       JSON.stringify({
         data: [
           { url: "https://cdn.example/ok.png" },
-          { error: { code: "ContentReviewFailed", message: "blocked" } },
-        ],
+          { error: { code: "ContentReviewFailed", message: "blocked" } }
+        ]
       }),
-      { status: 200 },
+      { status: 200 }
     );
     const fetchImpl = makeFetch(response, captured);
 
     const result = await generateImagesWithArk(
       { prompt: "p", count: 2, aspectRatio: "9:16" },
       cfg,
-      { fetch: fetchImpl as typeof fetch },
+      { fetch: fetchImpl as typeof fetch }
     );
 
     assert.equal(result.candidates.length, 1);
@@ -163,9 +184,9 @@ describe("generateImagesWithArk", () => {
     await assert.rejects(
       () =>
         generateImagesWithArk({ prompt: "p", count: 1, aspectRatio: "9:16" }, cfg, {
-          fetch: fetchImpl as typeof fetch,
+          fetch: fetchImpl as typeof fetch
         }),
-      /Ark image generation failed \(500\)/,
+      /Ark image generation failed \(500\)/
     );
   });
 
@@ -173,16 +194,45 @@ describe("generateImagesWithArk", () => {
     const captured: CapturedCall[] = [];
     const response = new Response(
       JSON.stringify({ error: { code: "InvalidRequest", message: "bad prompt" } }),
-      { status: 200 },
+      { status: 200 }
     );
     const fetchImpl = makeFetch(response, captured);
 
     await assert.rejects(
       () =>
         generateImagesWithArk({ prompt: "p", count: 1, aspectRatio: "9:16" }, cfg, {
-          fetch: fetchImpl as typeof fetch,
+          fetch: fetchImpl as typeof fetch
         }),
-      /bad prompt/,
+      /bad prompt/
     );
+  });
+
+  it("caps concurrent image provider calls", async () => {
+    __setProviderConcurrencyForTests("image", 2);
+    let active = 0;
+    let maxInFlight = 0;
+
+    const fetchImpl = async (): Promise<Response> => {
+      active += 1;
+      maxInFlight = Math.max(maxInFlight, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return new Response(
+        JSON.stringify({ data: [{ url: "https://cdn.example/x.png" }] }),
+        { status: 200 }
+      );
+    };
+
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        generateImagesWithArk(
+          { prompt: `p${index}`, count: 1, aspectRatio: "9:16" },
+          cfg,
+          { fetch: fetchImpl as typeof fetch }
+        )
+      )
+    );
+
+    assert.equal(maxInFlight, 2);
   });
 });

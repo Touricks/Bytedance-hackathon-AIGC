@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { parseDiscoveryRoots } from "../modules/workspace/workspace.discovery.js";
 
 function parseDotEnvLine(line: string): [string, string] | null {
   const trimmed = line.trim();
@@ -110,6 +111,11 @@ function normalizeUploadUrlPrefix(input: string): string {
   return prefix;
 }
 
+function positiveIntEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
+}
+
 const envFileRoot = loadWorkspaceEnv() ?? process.cwd();
 const databaseUrl = requireEnv(
   "DATABASE_URL",
@@ -131,6 +137,26 @@ const uploadDir = legacyUploadDir
 const uploadUrlPrefix = legacyUploadUrlPrefix
   ? normalizeUploadUrlPrefix(legacyUploadUrlPrefix)
   : undefined;
+const maxImageCandidatesPerShot = positiveIntEnv("MAX_IMAGE_CANDIDATES_PER_SHOT", 6);
+const defaultImageCandidates = Math.min(
+  positiveIntEnv("DEFAULT_IMAGE_CANDIDATES", 3),
+  maxImageCandidatesPerShot
+);
+const maxVideoCandidatesPerShot = positiveIntEnv("MAX_VIDEO_CANDIDATES_PER_SHOT", 5);
+const defaultVideoCandidates = Math.min(
+  positiveIntEnv("DEFAULT_VIDEO_CANDIDATES", 2),
+  maxVideoCandidatesPerShot
+);
+const textProviderConcurrency = positiveIntEnv("TEXT_PROVIDER_CONCURRENCY", 20);
+const imageProviderConcurrency = positiveIntEnv(
+  "IMAGE_PROVIDER_CONCURRENCY",
+  maxImageCandidatesPerShot * 2
+);
+const videoProviderConcurrency = positiveIntEnv("VIDEO_PROVIDER_CONCURRENCY", 5);
+const generationWorkerConcurrency = positiveIntEnv(
+  "GENERATION_WORKER_CONCURRENCY",
+  imageProviderConcurrency + videoProviderConcurrency
+);
 
 export const config = {
   port: Number(process.env.SERVER_PORT ?? 3000),
@@ -140,10 +166,15 @@ export const config = {
   runtime: process.env.SERVER_RUNTIME ?? "all",
   uploadDir,
   uploadUrlPrefix,
-  defaultImageBatchSize: Number(process.env.DEFAULT_IMAGE_BATCH_SIZE ?? 3),
-  maxImageBatchSize: Number(process.env.MAX_IMAGE_BATCH_SIZE ?? 6),
-  defaultVideoBatchSize: Number(process.env.DEFAULT_VIDEO_BATCH_SIZE ?? 5),
-  maxVideoBatchSize: Number(process.env.MAX_VIDEO_BATCH_SIZE ?? 10)
+  defaultImageCandidates,
+  maxImageCandidatesPerShot,
+  defaultVideoCandidates,
+  maxVideoCandidatesPerShot,
+  generationWorkerConcurrency,
+  textProviderConcurrency,
+  imageProviderConcurrency,
+  videoProviderConcurrency,
+  workspaceDiscoveryRoots: parseDiscoveryRoots(process.env.WORKSPACE_DISCOVERY_ROOTS)
 };
 
 export function shouldStartApi(): boolean {

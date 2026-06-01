@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { ArrowRight, FolderOpen, Plus, RotateCcw } from "lucide-react";
 import {
-  createWorkspace,
   initializeWorkspace,
   listWorkspaces,
   selectWorkspaceDirectory
 } from "../lib/api/client.js";
+import type { DiscoveredWorkspace } from "../lib/api/client.js";
 import type { CreativeWorkspace } from "@aigc-video/shared";
 
 function openWorkspace(id: string) {
@@ -15,6 +15,7 @@ function openWorkspace(id: string) {
 
 export function App() {
   const [workspaces, setWorkspaces] = useState<CreativeWorkspace[]>([]);
+  const [discovered, setDiscovered] = useState<DiscoveredWorkspace[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [directory, setDirectory] = useState("");
@@ -30,10 +31,21 @@ export function App() {
     try {
       const result = await listWorkspaces();
       setWorkspaces(result.workspaces);
+      setDiscovered(result.discovered ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openDirectory = async (path: string) => {
+    setError(null);
+    try {
+      const detail = await initializeWorkspace(path);
+      openWorkspace(detail.workspace.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -63,23 +75,11 @@ export function App() {
       setError("请输入工作目录路径。");
       return;
     }
-    setError(null);
-    try {
-      const detail = await initializeWorkspace(trimmed);
-      openWorkspace(detail.workspace.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    await openDirectory(trimmed);
   };
 
   const onCreateManaged = async () => {
-    setError(null);
-    try {
-      const detail = await createWorkspace();
-      openWorkspace(detail.workspace.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    await onChooseDirectory();
   };
 
   return (
@@ -97,7 +97,7 @@ export function App() {
           <div className="workspaces-launcher__primary">
             <span>新会话</span>
             <strong>启动创作会话</strong>
-            <p>创建一个托管工作区，直接进入创作审核台。</p>
+            <p>选择工作目录后进入创作审核台。</p>
           </div>
           <button
             type="button"
@@ -132,7 +132,7 @@ export function App() {
             <input
               value={directory}
               onChange={(event) => setDirectory(event.target.value)}
-              placeholder="/Users/carrick/TestWorkspace/Project-AIGC/0526v1"
+              placeholder="输入工作目录的绝对路径，例如 …/Project-AIGC/my-draft"
             />
           </label>
           <div className="workspaces-landing__form-actions">
@@ -158,6 +158,24 @@ export function App() {
             ))}
           </ul>
         )}
+        {discovered.length > 0 ? (
+          <section className="workspaces-discovered" aria-label="本地草稿">
+            <h2>本地草稿（未登记）</h2>
+            <p>
+              在磁盘上发现了 .daireel 工作区，但未登记到数据库（例如数据库被重置）。点击可重新打开并复用原工作区
+              id。
+            </p>
+            <ul className="workspaces-list">
+              {discovered.map((d) => (
+                <li key={d.localPath}>
+                  <button onClick={() => openDirectory(d.localPath)}>
+                    <FolderOpen size={14} /> {d.localPath}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </main>
     </div>
   );

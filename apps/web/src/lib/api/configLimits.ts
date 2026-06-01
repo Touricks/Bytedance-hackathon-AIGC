@@ -1,10 +1,16 @@
 import { fetchJson } from "./client.js";
 
 export interface ConfigLimits {
-  defaultImageBatchSize: number;
-  maxImageBatchSize: number;
-  defaultVideoBatchSize: number;
-  maxVideoBatchSize: number;
+  defaultImageCandidates: number;
+  maxImageCandidatesPerShot: number;
+  defaultVideoCandidates: number;
+  maxVideoCandidatesPerShot: number;
+  generationWorkerConcurrency?: number;
+  providerConcurrency?: {
+    text: number;
+    image: number;
+    video: number;
+  };
   aspectRatios: Array<"9:16" | "16:9" | "1:1">;
 }
 

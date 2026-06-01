@@ -9,7 +9,10 @@ import {
 } from "./modules/job/job.queue.js";
 import { processGenerateImages } from "./modules/generation/image.worker.js";
 import { processGenerateImageCandidate } from "./modules/generation/image.worker.js";
-import { processGenerateVideos } from "./modules/generation/video.worker.js";
+import {
+  processGenerateVideos,
+  processGenerateVideoCandidate,
+} from "./modules/generation/video.worker.js";
 import { processComposeFinalVideo } from "./modules/generation/final-compose.worker.js";
 import { assertFfmpegAvailable } from "./modules/generation/ffmpeg.js";
 
@@ -21,6 +24,9 @@ registerGenerationV2Processor(async (data, meta) => {
     return processGenerateImageCandidate(data, db.db2, meta);
   }
   if (data.kind === "generate_videos") return processGenerateVideos(data);
+  if (data.kind === "generate_video_candidate") {
+    return processGenerateVideoCandidate(data, db.db2, meta);
+  }
   if (data.kind === "compose_final_video") return processComposeFinalVideo(data);
 });
 startGenerationV2Worker();

@@ -17,6 +17,7 @@
 - **上游变更只提示，不级联重置**：下游已生成内容保留可用；通过 `source_fingerprint` 对比暴露 `upstreamChanged`。
 - **shot set 是分镜链路实例**：approved shot prompt 只有在显式 apply 后才创建新的 active `shot_sets`。旧 shot set 归档但候选、选择、trace 继续保留。
 - **选择是 current 指针**：每个 shot 至多一个 selected image 和 selected video，写入 `image_select_artifacts` / `video_select_artifacts`。重复选择用 UPSERT 覆盖，不使未选候选 stale。
+- **工作区身份持久于磁盘**：`.daireel/workspace.json` 保存 `workspaceId` 作为持久身份；DB `creative_workspace` 行是可被 `reset:dev` 清空的业务状态。DB 行缺失时 `POST /api/workspaces/init` 复用磁盘 manifest 的原始 `workspaceId` 重新登记（不新建），`GET /api/workspaces` 经 `WORKSPACE_DISCOVERY_ROOTS` 扫描出磁盘有 manifest 但 DB 无行的草稿（`discovered`）。详见 `arc_v2.md` §13。
 
 ---
 

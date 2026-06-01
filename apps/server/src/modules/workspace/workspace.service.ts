@@ -33,6 +33,11 @@ import {
   type WorkspaceDirectoryRequest,
   type WorkspaceManifest,
 } from "./workspace.schema.js";
+import {
+  chooseInitWorkspaceId,
+  filterUnregisteredDiscovered,
+  type DiscoveredWorkspace,
+} from "./workspace.discovery.js";
 
 const workspaceManifestRelativePath = path.join(".daireel", "workspace.json");
 const workspaceTraceFile = ".daireel/trace/events.jsonl" as const;
@@ -87,6 +92,21 @@ function workspaceMaterialsPath(directory: string) {
 function isInsideDirectory(filePath: string, rootPath: string) {
   const relativePath = path.relative(rootPath, filePath);
   return !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
+}
+
+function isWorkspaceVisibleInConfiguredRoots(localPath: string) {
+  const trimmed = localPath.trim();
+  if (!trimmed) return false;
+  if (config.workspaceDiscoveryRoots.length === 0) return true;
+
+  const normalizedPath = normalizeWorkspacePath(trimmed);
+  return config.workspaceDiscoveryRoots.some((root) => {
+    const normalizedRoot = normalizeWorkspacePath(root);
+    return (
+      normalizedPath === normalizedRoot ||
+      isInsideDirectory(normalizedPath, normalizedRoot)
+    );
+  });
 }
 
 function managedWorkspaceName(input?: string) {
@@ -198,6 +218,79 @@ export async function writeReviewSnapshot(input: {
 async function readManifest(directory: string) {
   const raw = await readFile(manifestPath(directory), "utf8");
   return workspaceManifestSchema.parse(JSON.parse(raw));
+}
+
+async function readManifestSafe(
+  directory: string,
+): Promise<WorkspaceManifest | null> {
+  try {
+    return await readManifest(directory);
+  } catch {
+    return null;
+  }
+}
+
+async function workspaceIdInUse(workspaceId: string): Promise<boolean> {
+  try {
+    await db.getWorkspace(workspaceId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const discoveryIgnoredDirs = new Set([
+  "node_modules",
+  ".git",
+  ".daireel",
+  ".turbo",
+  "dist",
+  "coverage",
+]);
+
+/**
+ * Scan each configured root (bounded depth) for directories that contain a
+ * `.daireel/workspace.json` manifest. A directory holding a manifest is treated
+ * as a workspace and is not descended into.
+ */
+async function scanForWorkspaceManifests(
+  roots: string[],
+  maxDepth: number,
+): Promise<DiscoveredWorkspace[]> {
+  const found: DiscoveredWorkspace[] = [];
+  const visited = new Set<string>();
+
+  async function walk(directory: string, depth: number): Promise<void> {
+    const normalized = normalizeWorkspacePath(directory);
+    if (visited.has(normalized)) return;
+    visited.add(normalized);
+
+    const manifest = await readManifestSafe(normalized);
+    if (manifest) {
+      found.push({ localPath: normalized, workspaceId: manifest.workspaceId });
+      return;
+    }
+    if (depth >= maxDepth) return;
+
+    let entries;
+    try {
+      entries = await readdir(normalized, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || discoveryIgnoredDirs.has(entry.name)) {
+        continue;
+      }
+      await walk(path.join(normalized, entry.name), depth + 1);
+    }
+  }
+
+  for (const root of roots) {
+    await walk(root, 0);
+  }
+  return found;
 }
 
 async function resolveWorkspaceLocalPath(
@@ -1118,17 +1211,26 @@ export const workspaceService = {
   },
 
   async listManagedWorkspaces() {
-    const workspaces = await db.listWorkspaces();
-    return {
-      workspaces: await Promise.all(
-        workspaces.map(async (workspace) => ({
-          ...workspace,
-          storage: storageBindingView(
-            await db.getActiveWorkspaceStorage(workspace.id),
-          ),
-        })),
-      ),
-    };
+    const workspaces = (await db.listWorkspaces()).filter((workspace) =>
+      isWorkspaceVisibleInConfiguredRoots(workspace.localPath),
+    );
+    const withStorage = await Promise.all(
+      workspaces.map(async (workspace) => ({
+        ...workspace,
+        storage: storageBindingView(
+          await db.getActiveWorkspaceStorage(workspace.id),
+        ),
+      })),
+    );
+    const dbPaths = workspaces.map((workspace) =>
+      normalizeWorkspacePath(workspace.localPath),
+    );
+    const scanned = await scanForWorkspaceManifests(
+      config.workspaceDiscoveryRoots,
+      3,
+    );
+    const discovered = filterUnregisteredDiscovered(dbPaths, scanned);
+    return { workspaces: withStorage, discovered };
   },
 
   async getWorkspaceDirectory(workspaceId: string) {
@@ -1215,15 +1317,26 @@ export const workspaceService = {
   async initialize(directory: string) {
     const localPath = normalizeWorkspacePath(directory);
     const existing = await db.findWorkspaceByLocalPath(localPath);
-    const workspace =
-      existing ??
-      (await db.createWorkspace({
-        id: nanoid(),
+    let workspace = existing;
+    if (!workspace) {
+      // No DB row for this directory. If an on-disk manifest survives (e.g. the
+      // DB was reset but `.daireel/` was kept), reconnect the original
+      // workspace id instead of orphaning the draft under a fresh id.
+      const manifest = await readManifestSafe(localPath);
+      const reuseId = chooseInitWorkspaceId({
+        manifestWorkspaceId: manifest?.workspaceId,
+        manifestIdInUse: manifest?.workspaceId
+          ? await workspaceIdInUse(manifest.workspaceId)
+          : false,
+      });
+      workspace = await db.createWorkspace({
+        id: reuseId ?? nanoid(),
         localPath,
-        currentScriptId: nanoid(),
+        currentScriptId: manifest?.currentScriptId ?? nanoid(),
         status: "draft",
         traceFile: workspaceTraceFile,
-      }));
+      });
+    }
     const touched = existing ? await db.touchWorkspace(existing.id) : workspace;
     await db.bindWorkspaceLocalStorage({
       workspaceId: touched.id,

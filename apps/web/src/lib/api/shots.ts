@@ -29,6 +29,7 @@ export interface WorkflowStatus {
     nextAction: NextAction;
     activeImagePromptArtifactId: string | null;
     selectedImageId: string | null;
+    selectedImageUrl?: string | null;
     activeVideoScriptArtifactId: string | null;
     selectedVideoId: string | null;
     activeImageBatchId?: string | null;

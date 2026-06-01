@@ -170,11 +170,11 @@ function extractShotsArray(resp: unknown): ShotRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// 1) Backend shell — fast. Verifies real backend reachable, managed workspace
-//    creation works, and the focus mode shell mounts. No provider calls.
+// 1) Backend shell — fast. Verifies real backend reachable, local workspace
+//    initialization works, and the focus mode shell mounts. No provider calls.
 // ---------------------------------------------------------------------------
 
-test("creates a managed workspace via real backend and lands on focus mode", async ({
+test("opens a local workspace via real backend and lands on focus mode", async ({
   page,
   request
 }) => {
@@ -194,7 +194,9 @@ test("creates a managed workspace via real backend and lands on focus mode", asy
   );
 
   await page.goto("/");
-  await page.getByRole("button", { name: /启动创作会话/ }).click();
+  const workspaceDirectory = await mkdtemp(path.join(os.tmpdir(), "web-shell-"));
+  await page.getByLabel("工作目录路径").fill(workspaceDirectory);
+  await page.getByRole("button", { name: "打开" }).click();
 
   await expect(page).toHaveURL(/\/workspaces\/[a-zA-Z0-9_-]+/, {
     timeout: 30_000

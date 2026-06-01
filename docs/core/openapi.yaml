@@ -85,7 +85,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
     ModuleArtifactEnvelope:
       description: 模块 artifact 响应。
       content:
@@ -95,7 +95,7 @@ components:
             required: [data]
             properties:
               data:
-                $ref: '#/components/schemas/ModuleArtifact'
+                $ref: "#/components/schemas/ModuleArtifact"
 
   schemas:
     Error:
@@ -108,8 +108,8 @@ components:
 
     AspectRatio:
       type: string
-      enum: ['9:16', '16:9', '1:1']
-      default: '9:16'
+      enum: ["9:16", "16:9", "1:1"]
+      default: "9:16"
 
     ArtifactStatus:
       type: string
@@ -164,18 +164,32 @@ components:
     PromptAssemblyMetadata:
       type: object
       additionalProperties: true
-      required: [moduleId, assemblerVersion, subjectTemplateId, contractTemplateId, subjectHash, contractHash]
+      required:
+        [
+          moduleId,
+          assemblerVersion,
+          subjectTemplateId,
+          contractTemplateId,
+          subjectHash,
+          contractHash
+        ]
       properties:
         moduleId: { type: string }
-        subjectTemplateId: { type: string, description: 主体创作 prompt 模板，例如 shotprompt/subject.md。 }
-        contractTemplateId: { type: string, description: 输入 artifact 与输出 schema 契约模板。 }
+        subjectTemplateId:
+          {
+            type: string,
+            description: 主体创作 prompt 模板，例如 shotprompt/subject.md。
+          }
+        contractTemplateId:
+          { type: string, description: 输入 artifact 与输出 schema 契约模板。 }
         subjectHash: { type: string, description: subject.md 内容 SHA-256。 }
         contractHash: { type: string, description: contract.md 内容 SHA-256。 }
         assemblerVersion: { type: string }
         requirementArtifactId: { type: string }
         provider: { type: string }
         model: { type: string }
-        preview: { type: string, description: 短 preview；完整 assembled prompt 写 trace。 }
+        preview:
+          { type: string, description: 短 preview；完整 assembled prompt 写 trace。 }
 
     ModuleArtifact:
       type: object
@@ -185,15 +199,16 @@ components:
         workspaceId: { type: string }
         moduleId:
           type: string
-          enum: [prompt-requirements, material-intake, product-brief, storyboard, shotprompt]
+          enum:
+            [prompt-requirements, material-intake, product-brief, storyboard, shotprompt]
         status:
-          $ref: '#/components/schemas/ArtifactStatus'
+          $ref: "#/components/schemas/ArtifactStatus"
         isCurrent: { type: boolean }
         data: {}
         sourceFingerprint:
-          $ref: '#/components/schemas/SourceFingerprint'
+          $ref: "#/components/schemas/SourceFingerprint"
         promptAssembly:
-          $ref: '#/components/schemas/PromptAssemblyMetadata'
+          $ref: "#/components/schemas/PromptAssemblyMetadata"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         approvedAt: { type: string, format: date-time, nullable: true }
@@ -205,14 +220,14 @@ components:
         moduleId: { type: string }
         proposed:
           anyOf:
-            - $ref: '#/components/schemas/ModuleArtifact'
-            - type: 'null'
+            - $ref: "#/components/schemas/ModuleArtifact"
+            - type: "null"
         current:
           anyOf:
-            - $ref: '#/components/schemas/ModuleArtifact'
-            - type: 'null'
+            - $ref: "#/components/schemas/ModuleArtifact"
+            - type: "null"
         upstream:
-          $ref: '#/components/schemas/UpstreamChange'
+          $ref: "#/components/schemas/UpstreamChange"
 
     PromptRequirementData:
       type: object
@@ -233,7 +248,7 @@ components:
           type: array
           items: { type: string }
         aspectRatio:
-          $ref: '#/components/schemas/AspectRatio'
+          $ref: "#/components/schemas/AspectRatio"
 
     ApproveArtifactRequest:
       type: object
@@ -274,19 +289,19 @@ components:
       type: object
       properties:
         workspace:
-          $ref: '#/components/schemas/Workspace'
+          $ref: "#/components/schemas/Workspace"
         storage:
           anyOf:
-            - $ref: '#/components/schemas/StorageBinding'
-            - type: 'null'
+            - $ref: "#/components/schemas/StorageBinding"
+            - type: "null"
         modules:
           type: object
           additionalProperties:
-            $ref: '#/components/schemas/ModuleState'
+            $ref: "#/components/schemas/ModuleState"
         activeShotSet:
           anyOf:
-            - $ref: '#/components/schemas/ShotSet'
-            - type: 'null'
+            - $ref: "#/components/schemas/ShotSet"
+            - type: "null"
         nextAction:
           type: object
           additionalProperties: true
@@ -324,9 +339,9 @@ components:
         endSec: { type: number }
         visualPrompt: { type: string }
         shotImage:
-          $ref: '#/components/schemas/ShotImageRequirement'
+          $ref: "#/components/schemas/ShotImageRequirement"
         shotVideo:
-          $ref: '#/components/schemas/ShotVideoRequirement'
+          $ref: "#/components/schemas/ShotVideoRequirement"
 
     ShotSet:
       type: object
@@ -337,9 +352,9 @@ components:
         shotPromptArtifactId: { type: string }
         status: { type: string, enum: [active, archived] }
         sourceFingerprint:
-          $ref: '#/components/schemas/SourceFingerprint'
+          $ref: "#/components/schemas/SourceFingerprint"
         upstream:
-          $ref: '#/components/schemas/UpstreamChange'
+          $ref: "#/components/schemas/UpstreamChange"
         createdAt: { type: string, format: date-time }
         archivedAt: { type: string, format: date-time, nullable: true }
 
@@ -348,9 +363,9 @@ components:
       required: [shotImage, shotVideo]
       properties:
         shotImage:
-          $ref: '#/components/schemas/ShotImageRequirement'
+          $ref: "#/components/schemas/ShotImageRequirement"
         shotVideo:
-          $ref: '#/components/schemas/ShotVideoRequirement'
+          $ref: "#/components/schemas/ShotVideoRequirement"
         sourceShotPromptArtifactId: { type: string }
 
     Shot:
@@ -365,19 +380,19 @@ components:
         objective: { type: string }
         defaultDurationSec: { type: integer }
         status:
-          $ref: '#/components/schemas/ShotStatus'
+          $ref: "#/components/schemas/ShotStatus"
         requirements:
-          $ref: '#/components/schemas/ShotRequirements'
+          $ref: "#/components/schemas/ShotRequirements"
         selectedImage:
           anyOf:
-            - $ref: '#/components/schemas/ImageSelectArtifact'
-            - type: 'null'
+            - $ref: "#/components/schemas/ImageSelectArtifact"
+            - type: "null"
         selectedVideo:
           anyOf:
-            - $ref: '#/components/schemas/VideoSelectArtifact'
-            - type: 'null'
+            - $ref: "#/components/schemas/VideoSelectArtifact"
+            - type: "null"
         upstream:
-          $ref: '#/components/schemas/UpstreamChange'
+          $ref: "#/components/schemas/UpstreamChange"
         nextAction:
           type: object
           additionalProperties: true
@@ -395,9 +410,9 @@ components:
         negativePrompt: { type: string }
         promptJson: { type: object, additionalProperties: true }
         sourceFingerprint:
-          $ref: '#/components/schemas/SourceFingerprint'
+          $ref: "#/components/schemas/SourceFingerprint"
         promptAssembly:
-          $ref: '#/components/schemas/PromptAssemblyMetadata'
+          $ref: "#/components/schemas/PromptAssemblyMetadata"
         createdAt: { type: string, format: date-time }
 
     VideoScriptArtifact:
@@ -414,9 +429,9 @@ components:
         basedOnPrevImageCandidateId: { type: string, nullable: true }
         basedOnNextImageCandidateId: { type: string, nullable: true }
         sourceFingerprint:
-          $ref: '#/components/schemas/SourceFingerprint'
+          $ref: "#/components/schemas/SourceFingerprint"
         promptAssembly:
-          $ref: '#/components/schemas/PromptAssemblyMetadata'
+          $ref: "#/components/schemas/PromptAssemblyMetadata"
         createdAt: { type: string, format: date-time }
 
     GenerationBatch:
@@ -426,13 +441,13 @@ components:
         workspaceId: { type: string }
         shotId: { type: string }
         status:
-          $ref: '#/components/schemas/BatchStatus'
+          $ref: "#/components/schemas/BatchStatus"
         requestedCount: { type: integer }
         succeededCount: { type: integer }
         failedCount: { type: integer }
         provider: { type: string }
         aspectRatio:
-          $ref: '#/components/schemas/AspectRatio'
+          $ref: "#/components/schemas/AspectRatio"
         providerRequest: { type: object, additionalProperties: true }
         errorMessage: { type: string, nullable: true }
 
@@ -450,7 +465,7 @@ components:
         provider: { type: string }
         providerResponse: { type: object, additionalProperties: true }
         status:
-          $ref: '#/components/schemas/CandidateStatus'
+          $ref: "#/components/schemas/CandidateStatus"
         errorMessage: { type: string, nullable: true }
 
     VideoCandidate:
@@ -469,7 +484,7 @@ components:
         provider: { type: string }
         providerResponse: { type: object, additionalProperties: true }
         status:
-          $ref: '#/components/schemas/CandidateStatus'
+          $ref: "#/components/schemas/CandidateStatus"
         errorMessage: { type: string, nullable: true }
 
     ImageSelectArtifact:
@@ -498,33 +513,33 @@ components:
       type: object
       properties:
         artifact:
-          $ref: '#/components/schemas/ImagePromptArtifact'
+          $ref: "#/components/schemas/ImagePromptArtifact"
         batch:
-          $ref: '#/components/schemas/GenerationBatch'
+          $ref: "#/components/schemas/GenerationBatch"
         candidates:
           type: array
           items:
-            $ref: '#/components/schemas/ImageCandidate'
+            $ref: "#/components/schemas/ImageCandidate"
         selected:
           anyOf:
-            - $ref: '#/components/schemas/ImageSelectArtifact'
-            - type: 'null'
+            - $ref: "#/components/schemas/ImageSelectArtifact"
+            - type: "null"
 
     VideoRound:
       type: object
       properties:
         artifact:
-          $ref: '#/components/schemas/VideoScriptArtifact'
+          $ref: "#/components/schemas/VideoScriptArtifact"
         batch:
-          $ref: '#/components/schemas/GenerationBatch'
+          $ref: "#/components/schemas/GenerationBatch"
         candidates:
           type: array
           items:
-            $ref: '#/components/schemas/VideoCandidate'
+            $ref: "#/components/schemas/VideoCandidate"
         selected:
           anyOf:
-            - $ref: '#/components/schemas/VideoSelectArtifact'
-            - type: 'null'
+            - $ref: "#/components/schemas/VideoSelectArtifact"
+            - type: "null"
 
     FinalVideoJob:
       type: object
@@ -534,7 +549,7 @@ components:
         shotSetId: { type: string }
         status: { type: string, enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
         outputAspectRatio:
-          $ref: '#/components/schemas/AspectRatio'
+          $ref: "#/components/schemas/AspectRatio"
         sourceVideoCandidateIds:
           type: array
           items: { type: string }
@@ -580,7 +595,7 @@ paths:
       tags: [Platform]
       summary: 健康检查
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -593,9 +608,9 @@ paths:
   /api/config/limits:
     get:
       tags: [Platform]
-      summary: 获取批量大小与宽高比限制
+      summary: 获取候选数量、并发和宽高比限制
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -605,21 +620,28 @@ paths:
                   data:
                     type: object
                     properties:
-                      defaultImageBatchSize: { type: integer }
-                      maxImageBatchSize: { type: integer }
-                      defaultVideoBatchSize: { type: integer }
-                      maxVideoBatchSize: { type: integer }
+                      defaultImageCandidates: { type: integer }
+                      maxImageCandidatesPerShot: { type: integer }
+                      defaultVideoCandidates: { type: integer }
+                      maxVideoCandidatesPerShot: { type: integer }
+                      generationWorkerConcurrency: { type: integer }
+                      providerConcurrency:
+                        type: object
+                        properties:
+                          text: { type: integer }
+                          image: { type: integer }
+                          video: { type: integer }
                       aspectRatios:
                         type: array
                         items:
-                          $ref: '#/components/schemas/AspectRatio'
+                          $ref: "#/components/schemas/AspectRatio"
 
   /api/pipeline/contracts:
     get:
       tags: [Platform]
       summary: 获取 agent/prompt/schema 契约元数据
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -632,9 +654,9 @@ paths:
       tags: [Platform]
       summary: 测试清理专用
       parameters:
-        - $ref: '#/components/parameters/RunId'
+        - $ref: "#/components/parameters/RunId"
       responses:
-        '200':
+        "200":
           description: Deleted
           content:
             application/json:
@@ -645,8 +667,8 @@ paths:
                     type: object
                     properties:
                       deleted: { type: integer }
-        '403':
-          $ref: '#/components/responses/Error'
+        "403":
+          $ref: "#/components/responses/Error"
 
   /api/materials:
     post:
@@ -662,7 +684,7 @@ paths:
               properties:
                 imageUrl: { type: string }
       responses:
-        '200':
+        "200":
           description: Asset
           content:
             application/json:
@@ -686,7 +708,7 @@ paths:
                 contentType: { type: string }
                 dataBase64: { type: string }
       responses:
-        '200':
+        "200":
           description: Asset
           content:
             application/json:
@@ -697,22 +719,38 @@ paths:
   /api/workspaces:
     get:
       tags: [Workspace]
-      summary: 列出工作区
+      summary: 列出可见工作区（DB 已登记 + 磁盘发现的未登记草稿）
       responses:
-        '200':
+        "200":
           description: Workspaces
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data:
+                  workspaces:
                     type: array
+                    description: >-
+                      DB 已登记且有有效本地路径的工作区（含 active storage binding）。
+                      配置 WORKSPACE_DISCOVERY_ROOTS 时，仅展示这些 roots 下的 workspace。
                     items:
-                      $ref: '#/components/schemas/Workspace'
+                      $ref: "#/components/schemas/Workspace"
+                  discovered:
+                    type: array
+                    description: >-
+                      WORKSPACE_DISCOVERY_ROOTS 下扫描到的、磁盘存在 .daireel/workspace.json
+                      但 DB 无对应行的工作区（已按路径去重剔除已登记项）。点击经 init 重新打开会复用其原始 workspaceId。
+                    items:
+                      type: object
+                      properties:
+                        localPath: { type: string }
+                        workspaceId:
+                          type: string
+                          nullable: true
+                      required: [localPath]
     post:
       tags: [Workspace]
-      summary: 创建工作区
+      summary: 创建逻辑工作区
       requestBody:
         required: false
         content:
@@ -722,7 +760,7 @@ paths:
               properties:
                 name: { type: string, maxLength: 80 }
       responses:
-        '200':
+        "200":
           description: Workspace
           content:
             application/json:
@@ -730,7 +768,7 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/Workspace'
+                    $ref: "#/components/schemas/Workspace"
 
   /api/workspaces/init:
     post:
@@ -746,7 +784,7 @@ paths:
               properties:
                 directory: { type: string }
       responses:
-        '200':
+        "200":
           description: Workspace
           content:
             application/json:
@@ -754,30 +792,30 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/Workspace'
+                    $ref: "#/components/schemas/Workspace"
 
   /api/workspaces/{workspaceId}/status:
     get:
       tags: [Workspace]
       summary: 获取工作区状态、artifact 摘要和 active shot set
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Workspace status
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceStatus'
+                $ref: "#/components/schemas/WorkspaceStatus"
 
   /api/workspaces/{workspaceId}/storage:
     get:
       tags: [Workspace]
       summary: 获取存储绑定
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Storage binding
           content:
             application/json:
@@ -786,15 +824,15 @@ paths:
                 properties:
                   data:
                     anyOf:
-                      - $ref: '#/components/schemas/StorageBinding'
-                      - type: 'null'
+                      - $ref: "#/components/schemas/StorageBinding"
+                      - type: "null"
 
   /api/workspaces/{workspaceId}/storage/bind:
     post:
       tags: [Workspace]
       summary: 绑定 LOCAL 或 S3 storage
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
@@ -815,7 +853,7 @@ paths:
                     region: { type: string }
                     endpoint: { type: string }
       responses:
-        '200':
+        "200":
           description: Storage binding
           content:
             application/json:
@@ -823,16 +861,16 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/StorageBinding'
-        '409':
-          $ref: '#/components/responses/Error'
+                    $ref: "#/components/schemas/StorageBinding"
+        "409":
+          $ref: "#/components/responses/Error"
 
   /api/workspaces/{workspaceId}/materials:
     post:
       tags: [Material]
       summary: 上传工作区素材
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
@@ -852,7 +890,7 @@ paths:
                   type: string
                   format: binary
       responses:
-        '200':
+        "200":
           description: Uploaded asset
           content:
             application/json:
@@ -865,9 +903,9 @@ paths:
       tags: [ModuleArtifacts]
       summary: 获取 prompt requirements 状态
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Requirements state
           content:
             application/json:
@@ -875,14 +913,14 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ModuleState'
+                    $ref: "#/components/schemas/ModuleState"
 
   /api/workspaces/{workspaceId}/prompt-requirements/propose:
     post:
       tags: [ModuleArtifacts]
       summary: 提交待审 prompt requirements
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
@@ -892,35 +930,35 @@ paths:
               required: [data]
               properties:
                 data:
-                  $ref: '#/components/schemas/PromptRequirementData'
+                  $ref: "#/components/schemas/PromptRequirementData"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/prompt-requirements/approve:
     post:
       tags: [ModuleArtifacts]
       summary: 批准 prompt requirements 为 current
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApproveArtifactRequest'
+              $ref: "#/components/schemas/ApproveArtifactRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/material-intake:
     get:
       tags: [ModuleArtifacts]
       summary: 获取 material-intake 模块状态
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Module state
           content:
             application/json:
@@ -928,48 +966,48 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ModuleState'
+                    $ref: "#/components/schemas/ModuleState"
 
   /api/workspaces/{workspaceId}/material-intake/propose:
     post:
       tags: [ModuleArtifacts]
       summary: 运行物料解读 agent，生成 proposed artifact
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProposeRequest'
+              $ref: "#/components/schemas/ProposeRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/material-intake/approve:
     post:
       tags: [ModuleArtifacts]
       summary: 批准 material-intake artifact
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApproveArtifactRequest'
+              $ref: "#/components/schemas/ApproveArtifactRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/product-brief:
     get:
       tags: [ModuleArtifacts]
       summary: 获取 product-brief 模块状态
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Module state
           content:
             application/json:
@@ -977,48 +1015,48 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ModuleState'
+                    $ref: "#/components/schemas/ModuleState"
 
   /api/workspaces/{workspaceId}/product-brief/propose:
     post:
       tags: [ModuleArtifacts]
       summary: 运行产品 brief agent，生成 proposed artifact
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProposeRequest'
+              $ref: "#/components/schemas/ProposeRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/product-brief/approve:
     post:
       tags: [ModuleArtifacts]
       summary: 批准 product-brief artifact
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApproveArtifactRequest'
+              $ref: "#/components/schemas/ApproveArtifactRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/storyboard:
     get:
       tags: [ModuleArtifacts]
       summary: 获取 storyboard 模块状态
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Module state
           content:
             application/json:
@@ -1026,48 +1064,48 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ModuleState'
+                    $ref: "#/components/schemas/ModuleState"
 
   /api/workspaces/{workspaceId}/storyboard/propose:
     post:
       tags: [ModuleArtifacts]
       summary: 运行故事板 agent，生成 proposed artifact
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProposeRequest'
+              $ref: "#/components/schemas/ProposeRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/storyboard/approve:
     post:
       tags: [ModuleArtifacts]
       summary: 批准 storyboard artifact
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApproveArtifactRequest'
+              $ref: "#/components/schemas/ApproveArtifactRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/shotprompt:
     get:
       tags: [ModuleArtifacts]
       summary: 获取 shotprompt 模块状态
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Module state
           content:
             application/json:
@@ -1075,7 +1113,7 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ModuleState'
+                    $ref: "#/components/schemas/ModuleState"
 
   /api/workspaces/{workspaceId}/shotprompt/propose:
     post:
@@ -1083,16 +1121,16 @@ paths:
       summary: 运行分镜 prompt agent，生成 proposed artifact
       description: 输出 shots，每个 shot 包含 shotImage 与 shotVideo dict。
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProposeRequest'
+              $ref: "#/components/schemas/ProposeRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/shotprompt/approve:
     post:
@@ -1100,29 +1138,29 @@ paths:
       summary: 批准 shotprompt artifact
       description: 只更新 approved/current 指针，不创建或重建 shots。
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApproveArtifactRequest'
+              $ref: "#/components/schemas/ApproveArtifactRequest"
       responses:
-        '200':
-          $ref: '#/components/responses/ModuleArtifactEnvelope'
+        "200":
+          $ref: "#/components/responses/ModuleArtifactEnvelope"
 
   /api/workspaces/{workspaceId}/shot-sets:
     get:
       tags: [ShotSet]
       summary: 列出 shot sets
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
         - name: includeArchived
           in: query
           required: false
           schema: { type: boolean, default: false }
       responses:
-        '200':
+        "200":
           description: Shot sets
           content:
             application/json:
@@ -1132,12 +1170,12 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ShotSet'
+                      $ref: "#/components/schemas/ShotSet"
     post:
       tags: [ShotSet]
       summary: 将当前 approved shotprompt apply 为新的 active shot set
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: false
         content:
@@ -1147,7 +1185,7 @@ paths:
               properties:
                 shotPromptArtifactId: { type: string }
       responses:
-        '200':
+        "200":
           description: Created active shot set
           content:
             application/json:
@@ -1155,19 +1193,19 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ShotSet'
-        '400':
-          $ref: '#/components/responses/Error'
+                    $ref: "#/components/schemas/ShotSet"
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/workspaces/{workspaceId}/shot-sets/{shotSetId}/shots:
     get:
       tags: [ShotSet, Shot]
       summary: 获取指定 shot set 下的 shots
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotSetId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotSetId"
       responses:
-        '200':
+        "200":
           description: Shots
           content:
             application/json:
@@ -1177,16 +1215,16 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Shot'
+                      $ref: "#/components/schemas/Shot"
 
   /api/workspaces/{workspaceId}/shots:
     get:
       tags: [Shot]
       summary: 获取 active shot set 下的 shots
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Shots
           content:
             application/json:
@@ -1196,18 +1234,18 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Shot'
-        '400':
-          $ref: '#/components/responses/Error'
+                      $ref: "#/components/schemas/Shot"
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/shots/{shotId}:
     get:
       tags: [Shot]
       summary: 获取单个 shot
       parameters:
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/ShotId"
       responses:
-        '200':
+        "200":
           description: Shot
           content:
             application/json:
@@ -1215,15 +1253,15 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/Shot'
+                    $ref: "#/components/schemas/Shot"
 
   /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/propose:
     post:
       tags: [Shot]
       summary: 运行图像 prompt agent 并创建图像候选 batch
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
       requestBody:
         required: false
         content:
@@ -1234,9 +1272,9 @@ paths:
                 userDirection: { type: string }
                 candidateCount: { type: integer, minimum: 1 }
                 aspectRatio:
-                  $ref: '#/components/schemas/AspectRatio'
+                  $ref: "#/components/schemas/AspectRatio"
       responses:
-        '200':
+        "200":
           description: Image prompt artifact and batch
           content:
             application/json:
@@ -1247,18 +1285,18 @@ paths:
                     type: object
                     properties:
                       artifact:
-                        $ref: '#/components/schemas/ImagePromptArtifact'
+                        $ref: "#/components/schemas/ImagePromptArtifact"
                       batch:
-                        $ref: '#/components/schemas/GenerationBatch'
+                        $ref: "#/components/schemas/GenerationBatch"
 
   /api/shots/{shotId}/image-prompts:
     get:
       tags: [Shot]
       summary: 列出 shot 图像 prompt artifacts
       parameters:
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/ShotId"
       responses:
-        '200':
+        "200":
           description: Image prompt artifacts
           content:
             application/json:
@@ -1268,17 +1306,17 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ImagePromptArtifact'
+                      $ref: "#/components/schemas/ImagePromptArtifact"
 
   /api/workspaces/{workspaceId}/shots/{shotId}/image-rounds:
     get:
       tags: [Shot]
       summary: 获取图像生成轮次
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
       responses:
-        '200':
+        "200":
           description: Image rounds
           content:
             application/json:
@@ -1288,7 +1326,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ImageRound'
+                      $ref: "#/components/schemas/ImageRound"
 
   /api/workspaces/{workspaceId}/shots/{shotId}/image-candidates/select:
     post:
@@ -1296,8 +1334,8 @@ paths:
       summary: 选择当前图像候选
       description: UPSERT image_select_artifacts，不 stale 未选候选。
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
       requestBody:
         required: true
         content:
@@ -1308,7 +1346,7 @@ paths:
               properties:
                 candidateId: { type: string }
       responses:
-        '200':
+        "200":
           description: Current image selection
           content:
             application/json:
@@ -1316,17 +1354,22 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/ImageSelectArtifact'
-        '409':
-          $ref: '#/components/responses/Error'
+                    $ref: "#/components/schemas/ImageSelectArtifact"
+        "409":
+          $ref: "#/components/responses/Error"
 
   /api/workspaces/{workspaceId}/shots/{shotId}/video-scripts/propose:
     post:
       tags: [Shot]
-      summary: 运行视频脚本 agent 并创建视频候选 batch
+      summary: 运行视频脚本 agent，异步入队每候选一个视频生成 job
+      description: >
+        写 ACTIVE video_script_artifacts 后，每个候选入队一个 generate_video_candidate
+        job 并立即返回 PENDING batch + PENDING candidates；shot 进入 VIDEO_GENERATING。
+        客户端轮询 video-rounds 直到 VIDEO_CANDIDATES_READY。video 同时在飞的 Seedance
+        调用数被进程级信号量限制为 VIDEO_PROVIDER_CONCURRENCY，并对 429/限流做退避重试。
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
       requestBody:
         required: false
         content:
@@ -1337,33 +1380,44 @@ paths:
                 userDirection: { type: string }
                 candidateCount: { type: integer, minimum: 1 }
                 aspectRatio:
-                  $ref: '#/components/schemas/AspectRatio'
+                  $ref: "#/components/schemas/AspectRatio"
       responses:
-        '200':
-          description: Video script artifact and batch
+        "200":
+          description: Video script artifact plus a PENDING batch with PENDING candidates (poll video-rounds)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
+                    $ref: "#/components/schemas/VideoScriptArtifact"
+                  artifact:
+                    $ref: "#/components/schemas/VideoScriptArtifact"
+                  batch:
+                    $ref: "#/components/schemas/GenerationBatch"
+                  candidates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VideoCandidate"
+                  shotStatus:
+                    type: string
+                    example: VIDEO_GENERATING
+                  poll:
                     type: object
                     properties:
-                      artifact:
-                        $ref: '#/components/schemas/VideoScriptArtifact'
-                      batch:
-                        $ref: '#/components/schemas/GenerationBatch'
-        '400':
-          $ref: '#/components/responses/Error'
+                      videoRoundsUrl: { type: string }
+                      batchId: { type: string }
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/shots/{shotId}/video-scripts:
     get:
       tags: [Shot]
       summary: 列出 shot 视频脚本 artifacts
       parameters:
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/ShotId"
       responses:
-        '200':
+        "200":
           description: Video script artifacts
           content:
             application/json:
@@ -1373,17 +1427,17 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/VideoScriptArtifact'
+                      $ref: "#/components/schemas/VideoScriptArtifact"
 
   /api/workspaces/{workspaceId}/shots/{shotId}/video-rounds:
     get:
       tags: [Shot]
       summary: 获取视频生成轮次
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
       responses:
-        '200':
+        "200":
           description: Video rounds
           content:
             application/json:
@@ -1393,7 +1447,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/VideoRound'
+                      $ref: "#/components/schemas/VideoRound"
 
   /api/workspaces/{workspaceId}/shots/{shotId}/video-candidates/select:
     post:
@@ -1401,8 +1455,8 @@ paths:
       summary: 选择当前视频候选
       description: UPSERT video_select_artifacts，不 stale 未选候选。
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/ShotId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
       requestBody:
         required: true
         content:
@@ -1413,7 +1467,7 @@ paths:
               properties:
                 candidateId: { type: string }
       responses:
-        '200':
+        "200":
           description: Current video selection
           content:
             application/json:
@@ -1421,17 +1475,17 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/VideoSelectArtifact'
-        '409':
-          $ref: '#/components/responses/Error'
+                    $ref: "#/components/schemas/VideoSelectArtifact"
+        "409":
+          $ref: "#/components/responses/Error"
 
   /api/shots/{shotId}/retry:
     post:
       tags: [Shot]
       summary: 对当前 active prompt/script 重试生成 batch
       parameters:
-        - $ref: '#/components/parameters/ShotId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: "#/components/parameters/ShotId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1442,7 +1496,7 @@ paths:
               properties:
                 what: { type: string, enum: [image_batch, video_batch] }
       responses:
-        '200':
+        "200":
           description: Generation batch
           content:
             application/json:
@@ -1450,35 +1504,73 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/GenerationBatch'
-        '400':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
+                    $ref: "#/components/schemas/GenerationBatch"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
 
   /api/workspaces/{workspaceId}/shot-workflow-status:
     get:
       tags: [Shot]
       summary: 获取 active shot set 的整体工作流状态
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Workflow status
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      workspaceId: { type: string }
+                      canComposeFinalVideo: { type: boolean }
+                      shots:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            shotId: { type: string }
+                            orderIndex: { type: integer }
+                            status: { type: string }
+                            nextAction: { type: string }
+                            activeImagePromptArtifactId:
+                              type: string
+                              nullable: true
+                            selectedImageId:
+                              type: string
+                              nullable: true
+                            selectedImageUrl:
+                              type: string
+                              nullable: true
+                              description: >-
+                                当前 shot 已选分镜图候选的图片 URL；未选择或候选尚无 URL 时为 null。
+                                供创作审核台分镜列表直接渲染缩略图，无需逐 shot 调用 image-rounds。
+                            activeVideoScriptArtifactId:
+                              type: string
+                              nullable: true
+                            selectedVideoId:
+                              type: string
+                              nullable: true
+                            activeImageBatchId:
+                              type: string
+                              nullable: true
+                            activeVideoBatchId:
+                              type: string
+                              nullable: true
 
   /api/workspaces/{workspaceId}/final-videos:
     get:
       tags: [Generation]
       summary: 列出成片作业
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Final video jobs
           content:
             application/json:
@@ -1488,13 +1580,13 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/FinalVideoJob'
+                      $ref: "#/components/schemas/FinalVideoJob"
     post:
       tags: [Generation]
       summary: 基于当前视频选择创建成片作业
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: false
         content:
@@ -1504,9 +1596,9 @@ paths:
               properties:
                 shotSetId: { type: string }
                 outputAspectRatio:
-                  $ref: '#/components/schemas/AspectRatio'
+                  $ref: "#/components/schemas/AspectRatio"
       responses:
-        '200':
+        "200":
           description: Final video job
           content:
             application/json:
@@ -1514,18 +1606,18 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/FinalVideoJob'
-        '409':
-          $ref: '#/components/responses/Error'
+                    $ref: "#/components/schemas/FinalVideoJob"
+        "409":
+          $ref: "#/components/responses/Error"
 
   /api/final-videos/{finalVideoJobId}:
     get:
       tags: [Generation]
       summary: 获取成片作业
       parameters:
-        - $ref: '#/components/parameters/FinalVideoJobId'
+        - $ref: "#/components/parameters/FinalVideoJobId"
       responses:
-        '200':
+        "200":
           description: Final video job
           content:
             application/json:
@@ -1533,34 +1625,34 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/FinalVideoJob'
+                    $ref: "#/components/schemas/FinalVideoJob"
 
   /api/workspaces/{workspaceId}/final-videos/{finalVideoJobId}/file:
     get:
       tags: [Generation]
       summary: 流式返回成片文件
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/FinalVideoJobId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/FinalVideoJobId"
       responses:
-        '200':
+        "200":
           description: MP4 file
           content:
             video/mp4:
               schema:
                 type: string
                 format: binary
-        '404':
-          $ref: '#/components/responses/Error'
+        "404":
+          $ref: "#/components/responses/Error"
 
   /api/workspaces/{workspaceId}/campaign-publications:
     get:
       tags: [Campaign]
       summary: 列出发布记录
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       responses:
-        '200':
+        "200":
           description: Publications
           content:
             application/json:
@@ -1570,12 +1662,12 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/CampaignPublication'
+                      $ref: "#/components/schemas/CampaignPublication"
     post:
       tags: [Campaign]
       summary: 登记一次成片发布
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
         required: true
         content:
@@ -1592,7 +1684,7 @@ paths:
                 status: { type: string, default: planned }
                 notes: { type: string }
       responses:
-        '200':
+        "200":
           description: Publication
           content:
             application/json:
@@ -1600,17 +1692,17 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/CampaignPublication'
+                    $ref: "#/components/schemas/CampaignPublication"
 
   /api/workspaces/{workspaceId}/campaign-publications/{publicationId}:
     get:
       tags: [Campaign]
       summary: 获取单条发布记录
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/PublicationId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
       responses:
-        '200':
+        "200":
           description: Publication
           content:
             application/json:
@@ -1618,15 +1710,15 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/CampaignPublication'
+                    $ref: "#/components/schemas/CampaignPublication"
 
   /api/workspaces/{workspaceId}/campaign-publications/{publicationId}/metrics:
     post:
       tags: [Campaign]
       summary: 写入发布指标
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/PublicationId'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
       requestBody:
         required: true
         content:
@@ -1642,7 +1734,7 @@ paths:
                 source: { type: string, default: manual }
                 metadata: { type: object, additionalProperties: true }
       responses:
-        '200':
+        "200":
           description: Metric
           content:
             application/json:
@@ -1650,18 +1742,18 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/CampaignMetric'
+                    $ref: "#/components/schemas/CampaignMetric"
 
   /api/workspaces/{workspaceId}/traces:
     get:
       tags: [Trace]
       summary: 分页列工作区 trace events
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       responses:
-        '200':
+        "200":
           description: Trace events
           content:
             application/json:
@@ -1674,11 +1766,11 @@ paths:
       tags: [Trace]
       summary: 分页列 shot trace events
       parameters:
-        - $ref: '#/components/parameters/ShotId'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
+        - $ref: "#/components/parameters/ShotId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       responses:
-        '200':
+        "200":
           description: Trace events
           content:
             application/json:
@@ -1691,10 +1783,10 @@ paths:
       tags: [Workspace]
       summary: 流式返回工作区视频文件
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/Wildcard'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Wildcard"
       responses:
-        '200':
+        "200":
           description: Video file
           content:
             video/mp4:
@@ -1707,10 +1799,10 @@ paths:
       tags: [Workspace]
       summary: 流式返回工作区素材文件
       parameters:
-        - $ref: '#/components/parameters/WorkspaceId'
-        - $ref: '#/components/parameters/Wildcard'
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Wildcard"
       responses:
-        '200':
+        "200":
           description: Material file
           content:
             application/octet-stream:

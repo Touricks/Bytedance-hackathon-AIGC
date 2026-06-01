@@ -13,6 +13,7 @@ export type GenerationV2JobName =
   | "generate_images"
   | "generate_image_candidate"
   | "generate_videos"
+  | "generate_video_candidate"
   | "compose_final_video";
 
 export interface GenerateImagesJobData {
@@ -53,6 +54,19 @@ export interface GenerateVideosJobData {
   traceId: string;
 }
 
+export interface GenerateVideoCandidateJobData {
+  kind: "generate_video_candidate";
+  jobId: string;
+  batchId: string;
+  candidateId: string;
+  candidateIndex: number;
+  shotId: string;
+  workspaceId: string;
+  videoScriptArtifactId: string;
+  aspectRatio: "9:16" | "16:9" | "1:1";
+  traceId: string;
+}
+
 export interface ComposeFinalVideoJobData {
   kind: "compose_final_video";
   jobId: string;
@@ -65,4 +79,5 @@ export type GenerationV2JobData =
   | GenerateImagesJobData
   | GenerateImageCandidateJobData
   | GenerateVideosJobData
+  | GenerateVideoCandidateJobData
   | ComposeFinalVideoJobData;

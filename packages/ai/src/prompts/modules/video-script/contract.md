@@ -19,5 +19,6 @@ Required output behavior:
 3. cameraMotion must use provider-friendly lower_snake_case vocabulary such as static, push_in, pull_out, pan, tilt, handheld, or orbit.
 4. providerPrompt must explicitly describe the first frame and, when last_frame_url is present, the intended ending frame.
 5. voiceover must equal shot.voiceover exactly when shot.voiceover is present.
-6. negativePrompt must include product deformation, camera shake, and unnatural motion constraints.
-7. Do not invent product attributes not present in approved upstream artifacts.
+6. When voiceover is non-empty, providerPrompt must include the exact voiceover line as an audio/narration requirement, not as on-screen text.
+7. negativePrompt must include product deformation, camera shake, and unnatural motion constraints.
+8. Do not invent product attributes not present in approved upstream artifacts.

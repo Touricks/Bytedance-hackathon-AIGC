@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock3,
+  Download,
   FileText,
   Film,
   Image as ImageIcon,
@@ -22,22 +23,18 @@ import {
   toWorkspaceMaterialUrl,
   type PromptRequirementsData,
 } from "../../lib/api/client.js";
+import { materialAssetFilename } from "../../lib/materials.js";
 import type { WorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
 import { useWorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
+import {
+  canConfirmSelection,
+  isSelectableCandidate,
+  stageCandidate,
+} from "./imageSelection.js";
 
 function backToWorkspaces() {
   window.history.pushState({}, "", "/");
   window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-function openDebugWorkbench(workspaceId: string) {
-  window.history.pushState({}, "", `/debug/workbenches/${workspaceId}`);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-function shortId(value: string | null | undefined) {
-  if (!value) return "未生成";
-  return value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
 }
 
 function statusTone(value: string | null | undefined) {
@@ -133,11 +130,13 @@ function StepRail({
   active,
   defaultStep,
   onSelect,
+  onShotSelect,
 }: {
   vm: WorkbenchViewModel;
   active: ReviewStepId;
   defaultStep: ReviewStepId;
   onSelect: (step: ReviewStepId) => void;
+  onShotSelect: (shotId: string) => void;
 }) {
   const moduleUpstreamChanged = (moduleId: ReviewModuleId) =>
     Boolean(vm.workspaceStatus?.modules?.[moduleId]?.upstream?.upstreamChanged);
@@ -195,7 +194,6 @@ function StepRail({
         <Layers3 size={18} />
         <div>
           <span>创作审核台</span>
-          <strong>{shortId(vm.workspaceId)}</strong>
         </div>
       </div>
       <ol className="review-steps">
@@ -236,9 +234,21 @@ function StepRail({
                   ? "review-shot-nav__item review-shot-nav__item--active"
                   : "review-shot-nav__item"
               }
-              onClick={() => vm.actions.setSelectedShotId(shot.shotId)}
+              onClick={() => onShotSelect(shot.shotId)}
             >
-              <span>{shot.orderIndex + 1}</span>
+              <span className="review-shot-nav__index">{shot.orderIndex + 1}</span>
+              {shot.selectedImageUrl ? (
+                <img
+                  className="review-shot-nav__thumb"
+                  src={toAbsoluteAssetUrl(shot.selectedImageUrl)}
+                  alt={`Shot ${shot.orderIndex + 1} 已选分镜图`}
+                />
+              ) : (
+                <span
+                  className="review-shot-nav__thumb review-shot-nav__thumb--empty"
+                  aria-hidden="true"
+                />
+              )}
               <strong>{shot.status}</strong>
             </button>
           ))}
@@ -261,19 +271,26 @@ function RightRail({ vm }: { vm: WorkbenchViewModel }) {
           <p className="review-muted">还没有上传素材。</p>
         ) : (
           <div className="review-assets">
-            {assets.map((asset) => (
-              <div key={asset.ref} className="review-asset">
-                {asset.kind === "image" ? (
-                  <img
-                    src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
-                    alt={asset.description}
-                  />
-                ) : (
-                  <FileText size={18} />
-                )}
-                <span>{asset.description}</span>
-              </div>
-            ))}
+            {assets.map((asset) => {
+              const filename = materialAssetFilename(asset.ref);
+              return (
+                <div
+                  key={asset.ref}
+                  className="review-asset"
+                  title={asset.description}
+                >
+                  {asset.kind === "image" ? (
+                    <img
+                      src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
+                      alt={filename}
+                    />
+                  ) : (
+                    <FileText size={18} />
+                  )}
+                  <span title={filename}>{filename}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -1434,12 +1451,24 @@ function ShotPromptReview({
   );
 }
 
-function ImageSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
+function ImageSelectionPanel({
+  vm,
+  manualShotSelectionId,
+  onAutoSelectShot,
+  onImageSelectionConfirmed,
+}: {
+  vm: WorkbenchViewModel;
+  manualShotSelectionId: string | null;
+  onAutoSelectShot: (shotId: string) => void;
+  onImageSelectionConfirmed: () => void;
+}) {
   const nextImageShot = vm.shots.find((shot) => !shot.selectedImageId) ?? null;
   const shot = vm.selectedWorkflowShot ?? nextImageShot;
   const round = vm.latestImageRound;
   const batchId = round?.batch?.id ?? null;
   const mustSelectNext = nextImageShot && shot?.shotId !== nextImageShot.shotId;
+  const selectedWasManual =
+    manualShotSelectionId !== null && manualShotSelectionId === vm.selectedShotId;
   const canGenerate =
     shot !== null &&
     !mustSelectNext &&
@@ -1447,10 +1476,19 @@ function ImageSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
     !["IMAGE_GENERATING", "IMAGE_PROMPT_PROPOSING"].includes(shot.status);
 
   useEffect(() => {
-    if (nextImageShot && (!vm.selectedShotId || vm.selectedWorkflowShot?.selectedImageId)) {
-      vm.actions.setSelectedShotId(nextImageShot.shotId);
+    if (
+      nextImageShot &&
+      (!vm.selectedShotId ||
+        (!selectedWasManual && vm.selectedWorkflowShot?.selectedImageId))
+    ) {
+      onAutoSelectShot(nextImageShot.shotId);
     }
-  }, [nextImageShot?.shotId, vm.selectedShotId, vm.selectedWorkflowShot?.selectedImageId]);
+  }, [
+    nextImageShot?.shotId,
+    selectedWasManual,
+    vm.selectedShotId,
+    vm.selectedWorkflowShot?.selectedImageId,
+  ]);
 
   return (
     <section className="review-panel">
@@ -1488,10 +1526,14 @@ function ImageSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
           </div>
           {round ? (
             <CandidateImages
+              key={shot.shotId}
               round={round}
               batchId={batchId}
               busy={vm.busy}
-              onSelect={vm.actions.selectImageCandidate}
+              onSelect={(candidateId, selectedBatchId) => {
+                vm.actions.selectImageCandidate(candidateId, selectedBatchId);
+                onImageSelectionConfirmed();
+              }}
             />
           ) : (
             <div className="review-empty-state">
@@ -1517,6 +1559,23 @@ function CandidateImages({
   busy: boolean;
   onSelect: (candidateId: string, batchId: string) => void;
 }) {
+  const committedId = round.selection?.selectedCandidateId ?? null;
+  const [stagedId, setStagedId] = useState<string | null>(committedId);
+  useEffect(() => {
+    setStagedId(committedId);
+  }, [committedId]);
+
+  const confirmEnabled =
+    Boolean(batchId) && canConfirmSelection({ stagedId, committedId, busy });
+
+  const confirmNote = committedId
+    ? stagedId === committedId
+      ? "已确认当前分镜图，点选其他候选可改选。"
+      : "已选中新候选，点击确认以更新当前分镜图。"
+    : stagedId
+      ? "点击确认以选定当前分镜图。"
+      : "先点选一张成功生成的候选图，再确认。";
+
   return (
     <div className="review-round">
       <div className="review-round__head">
@@ -1528,21 +1587,54 @@ function CandidateImages({
         </span>
       </div>
       <div className="review-image-grid">
-        {round.candidates.map((candidate) => (
-          <button
-            key={candidate.id}
-            type="button"
-            disabled={busy || !batchId || candidate.status !== "SUCCEEDED"}
-            className={`review-candidate review-candidate--${statusTone(candidate.status)}`}
-            onClick={() => batchId && onSelect(candidate.id, batchId)}
-          >
-            {candidate.imageUrl ? (
-              <img src={toAbsoluteAssetUrl(candidate.imageUrl)} alt={candidate.id} />
-            ) : (
-              <span>{candidate.errorMessage ?? candidate.status}</span>
-            )}
-          </button>
-        ))}
+        {round.candidates.map((candidate) => {
+          const isStaged = candidate.id === stagedId;
+          const isCommitted = candidate.id === committedId;
+          return (
+            <button
+              key={candidate.id}
+              type="button"
+              disabled={busy || !isSelectableCandidate(candidate.status)}
+              aria-pressed={isStaged}
+              className={[
+                "review-candidate",
+                `review-candidate--${statusTone(candidate.status)}`,
+                isStaged ? "review-candidate--staged" : "",
+                isCommitted ? "review-candidate--committed" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() =>
+                setStagedId((current) =>
+                  stageCandidate(current, candidate.id, round.candidates),
+                )
+              }
+            >
+              {candidate.imageUrl ? (
+                <img src={toAbsoluteAssetUrl(candidate.imageUrl)} alt={candidate.id} />
+              ) : (
+                <span>{candidate.errorMessage ?? candidate.status}</span>
+              )}
+              {isCommitted ? (
+                <span className="review-candidate__badge">当前选择</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="review-panel__actions">
+        <button
+          type="button"
+          className="review-primary"
+          disabled={!confirmEnabled}
+          onClick={() => {
+            if (batchId && stagedId) onSelect(stagedId, batchId);
+          }}
+        >
+          <CheckCircle2 size={16} />
+          确认选择
+        </button>
+        <span className="review-action-note">{confirmNote}</span>
       </div>
     </div>
   );
@@ -1656,6 +1748,7 @@ function CandidateVideos({
 
 function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
   const job = vm.finalVideo;
+  const finalUrl = job?.localUrl ? toAbsoluteAssetUrl(job.localUrl) : null;
   return (
     <section className="review-panel">
       <div className="review-panel__header">
@@ -1679,8 +1772,14 @@ function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
           <span className={`review-status review-status--${statusTone(job.status)}`}>
             {job.status}
           </span>
-          {job.localUrl ? (
-            <video src={toAbsoluteAssetUrl(job.localUrl)} controls />
+          {finalUrl ? (
+            <>
+              <video src={finalUrl} controls />
+              <a className="download-link" href={finalUrl} download>
+                <Download size={14} />
+                下载 MP4
+              </a>
+            </>
           ) : (
             <p className="review-muted">成片任务仍在处理中。</p>
           )}
@@ -1695,10 +1794,16 @@ function MainPanel({
   vm,
   active,
   onActionComplete,
+  manualShotSelectionId,
+  onAutoSelectShot,
+  onImageSelectionConfirmed,
 }: {
   vm: WorkbenchViewModel;
   active: ReviewStepId;
   onActionComplete: () => void;
+  manualShotSelectionId: string | null;
+  onAutoSelectShot: (shotId: string) => void;
+  onImageSelectionConfirmed: () => void;
 }) {
   switch (active) {
     case "requirements":
@@ -1710,7 +1815,14 @@ function MainPanel({
     case "shotprompt":
       return <ShotPromptReview vm={vm} onActionComplete={onActionComplete} />;
     case "image":
-      return <ImageSelectionPanel vm={vm} />;
+      return (
+        <ImageSelectionPanel
+          vm={vm}
+          manualShotSelectionId={manualShotSelectionId}
+          onAutoSelectShot={onAutoSelectShot}
+          onImageSelectionConfirmed={onImageSelectionConfirmed}
+        />
+      );
     case "video":
       return <VideoSelectionPanel vm={vm} />;
     case "final":
@@ -1722,6 +1834,9 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
   const vm = useWorkbenchViewModel(workspaceId);
   const defaultStep = deriveActiveStep(vm);
   const [selectedStep, setSelectedStep] = useState<ReviewStepId | null>(null);
+  const [manualShotSelectionId, setManualShotSelectionId] = useState<string | null>(
+    null,
+  );
   const active = selectedStep ?? defaultStep;
 
   useEffect(() => {
@@ -1752,13 +1867,6 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
         </div>
         <button
           type="button"
-          className="review-debug-link"
-          onClick={() => openDebugWorkbench(vm.workspaceId)}
-        >
-          调试台
-        </button>
-        <button
-          type="button"
           className="review-icon-button"
           onClick={() => void vm.actions.refresh()}
           title="刷新"
@@ -1780,11 +1888,21 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
             active={active}
             defaultStep={defaultStep}
             onSelect={setSelectedStep}
+            onShotSelect={(shotId) => {
+              setManualShotSelectionId(shotId);
+              vm.actions.setSelectedShotId(shotId);
+            }}
           />
           <MainPanel
             vm={vm}
             active={active}
             onActionComplete={() => setSelectedStep(null)}
+            manualShotSelectionId={manualShotSelectionId}
+            onAutoSelectShot={(shotId) => {
+              setManualShotSelectionId(null);
+              vm.actions.setSelectedShotId(shotId);
+            }}
+            onImageSelectionConfirmed={() => setManualShotSelectionId(null)}
           />
           <RightRail vm={vm} />
         </main>

@@ -3,10 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import {
-  createFileTraceLogger,
-  getDefaultTraceBatchId
-} from "../trace/trace-log.js";
+import { createFileTraceLogger, getDefaultTraceBatchId } from "../trace/trace-log.js";
 import { generateVideoWithSeedance } from "./seedance-video.provider.js";
 
 describe("generateVideoWithSeedance", () => {
@@ -55,10 +52,7 @@ describe("generateVideoWithSeedance", () => {
     assert.equal(result.provider, "seedance");
     assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
     assert.equal(calls.length, 1);
-    assert.equal(
-      calls[0]!.url,
-      "https://ark.example/api/v3/contents/generations/tasks"
-    );
+    assert.equal(calls[0]!.url, "https://ark.example/api/v3/contents/generations/tasks");
     assert.equal(calls[0]!.authorization, "Bearer test-key");
     assert.deepEqual(calls[0]!.body, {
       model: "ark-video-endpoint",
@@ -110,10 +104,7 @@ describe("generateVideoWithSeedance", () => {
 
     assert.equal((calls[0]!.body as { duration: unknown }).duration, 8);
     assert.equal((calls[0]!.body as { ratio: unknown }).ratio, "1:1");
-    assert.equal(
-      (calls[0]!.body as { generate_audio: unknown }).generate_audio,
-      false
-    );
+    assert.equal((calls[0]!.body as { generate_audio: unknown }).generate_audio, false);
   });
 
   it("fails loudly when Seedance duration is outside the shared supported range", async () => {
@@ -164,20 +155,16 @@ describe("generateVideoWithSeedance", () => {
           }
         },
         fetch: async () =>
-          new Response(
-            JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
-            { status: 200 }
-          )
+          new Response(JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }), {
+            status: 200
+          })
       }
     );
 
     assert.equal(result.provider, "seedance");
     assert.equal(result.model, "ark-video-endpoint");
     assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
-    assert.equal(
-      result.prompt,
-      "Create a vertical ecommerce product showcase video",
-    );
+    assert.equal(result.prompt, "Create a vertical ecommerce product showcase video");
     assert.equal(typeof result.createdAt, "number");
     assert.deepEqual(
       events.map((event) => (event as { kind: string }).kind),
@@ -202,39 +189,39 @@ describe("generateVideoWithSeedance", () => {
       {
         imageUrl: "https://cdn.example/start.png",
         lastFrameUrl: "https://cdn.example/end.png",
-        prompt: "生成首尾帧一致的商品过渡视频",
+        prompt: "生成首尾帧一致的商品过渡视频"
       },
       {
         baseURL: "https://ark.example/api/v3",
         env: {
           ARK_API_KEY: "test-key",
-          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
         },
         fetch: async (_url, init) => {
           requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
           return new Response(
             JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
-            { status: 200 },
+            { status: 200 }
           );
-        },
-      },
+        }
+      }
     );
 
     assert.deepEqual(requestBody?.content, [
       {
         type: "text",
-        text: "生成首尾帧一致的商品过渡视频",
+        text: "生成首尾帧一致的商品过渡视频"
       },
       {
         type: "image_url",
         image_url: { url: "https://cdn.example/start.png" },
-        role: "first_frame",
+        role: "first_frame"
       },
       {
         type: "image_url",
         image_url: { url: "https://cdn.example/end.png" },
-        role: "last_frame",
-      },
+        role: "last_frame"
+      }
     ]);
   });
 
@@ -375,10 +362,7 @@ describe("generateVideoWithSeedance", () => {
     const content = requestBody?.content as Array<{
       image_url?: { url: string };
     }>;
-    assert.equal(
-      content[1]?.image_url?.url,
-      "data:image/png;base64,cHJvZHVjdA=="
-    );
+    assert.equal(content[1]?.image_url?.url, "data:image/png;base64,cHJvZHVjdA==");
   });
 
   it("includes sanitized Ark failure diagnostics without leaking base64 payloads", async () => {
@@ -400,8 +384,7 @@ describe("generateVideoWithSeedance", () => {
                 JSON.stringify({
                   error: {
                     code: "InvalidImageURL",
-                    message:
-                      "invalid image data:image/png;base64,c2Vuc2l0aXZlLWltYWdl"
+                    message: "invalid image data:image/png;base64,c2Vuc2l0aXZlLWltYWdl"
                   },
                   request_id: "req-123"
                 }),
@@ -456,6 +439,115 @@ describe("generateVideoWithSeedance", () => {
     );
 
     assert.equal(queryCount, 20);
+  });
+
+  it("retries on 429 then succeeds, honoring a bounded backoff", async () => {
+    let attempts = 0;
+    const sleeps: number[] = [];
+
+    const result = await generateVideoWithSeedance(
+      {
+        imageUrl: "https://cdn.example/product.png",
+        prompt: "Create a vertical ecommerce product showcase video"
+      },
+      {
+        baseURL: "https://ark.example/api/v3",
+        env: {
+          ARK_API_KEY: "test-key",
+          ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+        },
+        maxRetries: 3,
+        retryBaseMs: 10,
+        random: () => 0,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        fetch: async () => {
+          attempts += 1;
+          if (attempts < 3) {
+            return new Response(
+              JSON.stringify({ error: { code: "RateLimitExceeded", message: "tpm" } }),
+              { status: 429, headers: { "retry-after": "0" } }
+            );
+          }
+          return new Response(
+            JSON.stringify({ videoUrl: "https://cdn.example/video.mp4" }),
+            { status: 200 }
+          );
+        }
+      }
+    );
+
+    assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
+    assert.equal(attempts, 3);
+    assert.equal(sleeps.length, 2);
+    assert.deepEqual(sleeps, [0, 0]);
+  });
+
+  it("throws a sanitized failure after exhausting retries on repeated 429", async () => {
+    let attempts = 0;
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "https://cdn.example/product.png",
+            prompt: "Create a vertical ecommerce product showcase video"
+          },
+          {
+            baseURL: "https://ark.example/api/v3",
+            env: {
+              ARK_API_KEY: "test-key",
+              ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+            },
+            maxRetries: 2,
+            retryBaseMs: 1,
+            random: () => 0,
+            sleep: async () => undefined,
+            fetch: async () => {
+              attempts += 1;
+              return new Response(
+                JSON.stringify({
+                  error: { code: "RateLimitExceeded", message: "tpm exceeded" }
+                }),
+                { status: 429 }
+              );
+            }
+          }
+        ),
+      /status 429/
+    );
+    assert.equal(attempts, 3);
+  });
+
+  it("does not retry non-retryable 4xx responses", async () => {
+    let attempts = 0;
+    await assert.rejects(
+      () =>
+        generateVideoWithSeedance(
+          {
+            imageUrl: "https://cdn.example/product.png",
+            prompt: "Create a vertical ecommerce product showcase video"
+          },
+          {
+            baseURL: "https://ark.example/api/v3",
+            env: {
+              ARK_API_KEY: "test-key",
+              ARK_VIDEO_ENDPOINT_ID: "ark-video-endpoint"
+            },
+            maxRetries: 5,
+            sleep: async () => undefined,
+            fetch: async () => {
+              attempts += 1;
+              return new Response(
+                JSON.stringify({ error: { code: "InvalidRequest", message: "bad" } }),
+                { status: 400 }
+              );
+            }
+          }
+        ),
+      /status 400/
+    );
+    assert.equal(attempts, 1);
   });
 
   it("fails loudly in real-provider mode when Ark video config is missing", async () => {

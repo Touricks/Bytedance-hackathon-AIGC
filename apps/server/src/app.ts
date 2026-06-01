@@ -13,7 +13,7 @@ import { registerScriptController } from "./modules/script/script.controller.js"
 import { registerWorkspaceController } from "./modules/workspace/workspace.controller.js";
 import {
   maxWorkspaceMaterialBytes,
-  resolveWorkspaceStorageLocalPath,
+  resolveWorkspaceStorageLocalPath
 } from "./modules/workspace/workspace.service.js";
 import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
@@ -39,7 +39,7 @@ async function sendWorkspaceFile(
   relativePath: string,
   directoryName: "materials" | "videos",
   invalidPathMessage: string,
-  reply: FastifyReply,
+  reply: FastifyReply
 ) {
   const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(workspaceId);
   const root = path.resolve(workspaceLocalPath, ".daireel", directoryName);
@@ -60,8 +60,8 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await app.register(multipart, {
     limits: {
       fileSize: maxWorkspaceMaterialBytes + 1,
-      files: 1,
-    },
+      files: 1
+    }
   });
 
   app.addHook("onClose", async () => {
@@ -70,17 +70,23 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
   app.get("/api/health", async () => ({
     ok: true,
-    runtime: config.runtime,
+    runtime: config.runtime
   }));
 
   app.get("/api/config/limits", async () => ({
     data: {
-      defaultImageBatchSize: config.defaultImageBatchSize,
-      maxImageBatchSize: config.maxImageBatchSize,
-      defaultVideoBatchSize: config.defaultVideoBatchSize,
-      maxVideoBatchSize: config.maxVideoBatchSize,
-      aspectRatios: ["9:16", "16:9", "1:1"],
-    },
+      defaultImageCandidates: config.defaultImageCandidates,
+      maxImageCandidatesPerShot: config.maxImageCandidatesPerShot,
+      defaultVideoCandidates: config.defaultVideoCandidates,
+      maxVideoCandidatesPerShot: config.maxVideoCandidatesPerShot,
+      generationWorkerConcurrency: config.generationWorkerConcurrency,
+      providerConcurrency: {
+        text: config.textProviderConcurrency,
+        image: config.imageProviderConcurrency,
+        video: config.videoProviderConcurrency
+      },
+      aspectRatios: ["9:16", "16:9", "1:1"]
+    }
   }));
 
   app.get("/api/workspaces/:workspaceId/videos/*", async (request, reply) => {
@@ -90,7 +96,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
       params["*"],
       "videos",
       "Invalid workspace video path",
-      reply,
+      reply
     );
   });
 
@@ -101,7 +107,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
       params["*"],
       "materials",
       "Invalid workspace material path",
-      reply,
+      reply
     );
   });
 
@@ -121,9 +127,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
           params["*"],
           "videos",
           "Invalid workspace video path",
-          reply,
+          reply
         );
-      },
+      }
     );
 
     app.get(
@@ -135,9 +141,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
           params["*"],
           "materials",
           "Invalid workspace material path",
-          reply,
+          reply
         );
-      },
+      }
     );
 
     app.get(`${legacyUploadUrlPrefix}/*`, async (request, reply) => {
@@ -158,7 +164,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerPipelineController(app);
   await registerScriptController(app);
   await registerWorkspaceController(app, {
-    selectWorkspaceDirectory: options.selectWorkspaceDirectory,
+    selectWorkspaceDirectory: options.selectWorkspaceDirectory
   });
   await registerShotController(app);
   await registerGenerationController(app);
@@ -173,7 +179,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
     const pool = db.db2.pool();
     // Wipe creative_workspace rows by id-prefix; cascade handles downstream.
     await pool.query("delete from creative_workspace where id like $1", [
-      `%${params.runId}%`,
+      `%${params.runId}%`
     ]);
     return { data: { ok: true } };
   });

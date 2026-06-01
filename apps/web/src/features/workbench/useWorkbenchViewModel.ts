@@ -32,6 +32,7 @@ import { listVideoRounds } from "../../lib/api/videoBatch.js";
 import { proposeVideoScript } from "../../lib/api/videoScript.js";
 import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "../workspace/hooks/useFinalVideo.js";
+import { roundPollingInterval } from "./roundPolling.js";
 
 const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);
 
@@ -105,16 +106,24 @@ export function useWorkbenchViewModel(workspaceId: string) {
     queryKey: ["image-rounds", workspaceId, selectedShotId],
     queryFn: () => listImageRounds(workspaceId, selectedShotId!),
     enabled: Boolean(selectedShotId),
-    refetchInterval: () =>
-      selectedWorkflowShot?.status === "IMAGE_GENERATING" ? 3_000 : false,
+    refetchInterval: (query) =>
+      roundPollingInterval({
+        activeBatchId: selectedWorkflowShot?.activeImageBatchId,
+        rounds: query.state.data?.data,
+        intervalMs: 3_000,
+      }),
   });
 
   const videoRounds = useQuery({
     queryKey: ["video-rounds", workspaceId, selectedShotId],
     queryFn: () => listVideoRounds(workspaceId, selectedShotId!),
     enabled: Boolean(selectedShotId),
-    refetchInterval: () =>
-      selectedWorkflowShot?.status === "VIDEO_GENERATING" ? 5_000 : false,
+    refetchInterval: (query) =>
+      roundPollingInterval({
+        activeBatchId: selectedWorkflowShot?.activeVideoBatchId,
+        rounds: query.state.data?.data,
+        intervalMs: 5_000,
+      }),
   });
 
   const traces = useQuery({

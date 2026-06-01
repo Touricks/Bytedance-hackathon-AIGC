@@ -3,7 +3,7 @@ import { runStoryboardImagePromptAgent, runVideoShotScriptAgent } from "@aigc-vi
 import {
   materialIntakeArtifactSchema,
   productBriefArtifactSchema,
-  shotPromptArtifactSchema,
+  shotPromptArtifactSchema
 } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { config } from "../../common/config.js";
@@ -12,13 +12,11 @@ import {
   createImagePromptVersionAtomic,
   createVideoScriptVersionAtomic
 } from "../artifact/artifact.versioning.js";
-import {
-  runVideoGenerationBatch,
-} from "../generation/direct-generation.js";
 import { generationService } from "../generation/generation.service.js";
 import { traceService } from "../trace/trace.service.js";
 import { shotSetService } from "../workspace/shot-set.service.js";
 import { getNextAction, type ShotStatus } from "./shot.state.js";
+import { buildWorkflowShotRow } from "./shot.view.js";
 
 async function neighborImagesFor(workspaceId: string, shotId: string) {
   const shots = (await db.db2.listShotsByWorkspace(workspaceId)).sort(
@@ -40,8 +38,11 @@ async function neighborImagesFor(workspaceId: string, shotId: string) {
 
 function resolveBatchCount(kind: "image" | "video", requested?: number): number {
   const def =
-    kind === "image" ? config.defaultImageBatchSize : config.defaultVideoBatchSize;
-  const max = kind === "image" ? config.maxImageBatchSize : config.maxVideoBatchSize;
+    kind === "image" ? config.defaultImageCandidates : config.defaultVideoCandidates;
+  const max =
+    kind === "image"
+      ? config.maxImageCandidatesPerShot
+      : config.maxVideoCandidatesPerShot;
   const n = requested ?? def;
   if (n < 1 || n > max) {
     throw new HttpError(400, "COUNT_EXCEEDS_LIMIT", `count must be between 1 and ${max}`);
@@ -49,21 +50,27 @@ function resolveBatchCount(kind: "image" | "video", requested?: number): number 
   return n;
 }
 
-function assertShotInWorkspace(shot: { id: string; workspaceId: string }, workspaceId: string) {
+function assertShotInWorkspace(
+  shot: { id: string; workspaceId: string },
+  workspaceId: string
+) {
   if (shot.workspaceId !== workspaceId) {
-    throw new HttpError(404, "SHOT_NOT_FOUND", `Shot ${shot.id} is not in workspace ${workspaceId}`);
+    throw new HttpError(
+      404,
+      "SHOT_NOT_FOUND",
+      `Shot ${shot.id} is not in workspace ${workspaceId}`
+    );
   }
 }
 
 function promptArtifactView<T extends Record<string, unknown>>(artifact: T) {
-  const promptAssembly =
-    artifact.promptAssembly ?? artifact.prompt_assembly ?? {};
+  const promptAssembly = artifact.promptAssembly ?? artifact.prompt_assembly ?? {};
   const sourceFingerprint =
     artifact.sourceFingerprint ?? artifact.source_fingerprint ?? {};
   return {
     ...artifact,
     promptAssembly,
-    sourceFingerprint,
+    sourceFingerprint
   };
 }
 
@@ -74,7 +81,7 @@ type CurrentModuleArtifactTable =
 
 async function getCurrentModuleArtifact(
   workspaceId: string,
-  table: CurrentModuleArtifactTable,
+  table: CurrentModuleArtifactTable
 ) {
   const result = await db.db2.pool().query(
     `select id, data
@@ -84,7 +91,7 @@ async function getCurrentModuleArtifact(
        and is_current = true
      order by approved_at desc, created_at desc, id desc
      limit 1`,
-    [workspaceId],
+    [workspaceId]
   );
   const row = result.rows[0];
   return row ? { id: String(row.id), data: row.data } : null;
@@ -96,7 +103,7 @@ async function getShotPromptRequirement(shotId: string) {
      from shot_prompt_requirements
      where shot_id = $1
      limit 1`,
-    [shotId],
+    [shotId]
   );
   const row = result.rows[0];
   return row
@@ -104,7 +111,7 @@ async function getShotPromptRequirement(shotId: string) {
         id: String(row.id),
         shotPromptArtifactId: String(row.shot_prompt_artifact_id),
         shotImage: row.shot_image,
-        shotVideo: row.shot_video,
+        shotVideo: row.shot_video
       }
     : null;
 }
@@ -128,7 +135,7 @@ async function listShotAssetRefs(shotId: string) {
      join asset a on a.id = sar.asset_id
      where sar.shot_id = $1
      order by sar.position asc, sar.created_at asc`,
-    [shotId],
+    [shotId]
   );
   return result.rows.map((row) => ({
     assetId: String(row.asset_id),
@@ -136,7 +143,7 @@ async function listShotAssetRefs(shotId: string) {
     position: Number(row.position ?? 0),
     ref: refFromAssetRow({ url: String(row.url), metadata: row.metadata }),
     url: String(row.url),
-    metadata: row.metadata as Record<string, unknown> | null,
+    metadata: row.metadata as Record<string, unknown> | null
   }));
 }
 
@@ -147,12 +154,14 @@ async function selectedVideoForShot(shotId: string) {
 async function latestBatchIdForArtifact(
   table: "image_generation_batches" | "video_generation_batches",
   artifactColumn: "image_prompt_artifact_id" | "video_script_artifact_id",
-  artifactId: string,
+  artifactId: string
 ) {
-  const result = await db.db2.pool().query(
-    `select id from ${table} where ${artifactColumn} = $1 order by created_at desc, id desc limit 1`,
-    [artifactId],
-  );
+  const result = await db.db2
+    .pool()
+    .query(
+      `select id from ${table} where ${artifactColumn} = $1 order by created_at desc, id desc limit 1`,
+      [artifactId]
+    );
   return typeof result.rows[0]?.id === "string" ? result.rows[0].id : null;
 }
 
@@ -167,18 +176,19 @@ async function hydratePromptContext(input: {
     shotPromptArtifact,
     shotRequirement,
     shotAssetRefs,
-    shots,
-  ] =
-    await Promise.all([
-      getCurrentModuleArtifact(input.workspaceId, "product_brief_artifacts"),
-      getCurrentModuleArtifact(input.workspaceId, "material_intake_artifacts"),
-      getCurrentModuleArtifact(input.workspaceId, "shot_prompt_artifacts"),
-      getShotPromptRequirement(input.shot.id),
-      listShotAssetRefs(input.shot.id),
-      db.db2.listShotsByWorkspace(input.workspaceId),
-    ]);
+    shots
+  ] = await Promise.all([
+    getCurrentModuleArtifact(input.workspaceId, "product_brief_artifacts"),
+    getCurrentModuleArtifact(input.workspaceId, "material_intake_artifacts"),
+    getCurrentModuleArtifact(input.workspaceId, "shot_prompt_artifacts"),
+    getShotPromptRequirement(input.shot.id),
+    listShotAssetRefs(input.shot.id),
+    db.db2.listShotsByWorkspace(input.workspaceId)
+  ]);
 
-  const brief = briefArtifact ? productBriefArtifactSchema.parse(briefArtifact.data) : null;
+  const brief = briefArtifact
+    ? productBriefArtifactSchema.parse(briefArtifact.data)
+    : null;
   const material = materialArtifact
     ? materialIntakeArtifactSchema.parse(materialArtifact.data)
     : null;
@@ -186,24 +196,24 @@ async function hydratePromptContext(input: {
     ? shotPromptArtifactSchema.parse(shotPromptArtifact.data)
     : null;
   const shotPromptShotBase = shotPrompt?.shots.find(
-    (shot) => shot.index === input.shot.orderIndex,
+    (shot) => shot.index === input.shot.orderIndex
   );
   const shotPromptShot = shotPromptShotBase
     ? {
         ...shotPromptShotBase,
         shotImage: shotRequirement?.shotImage ?? {},
-        shotVideo: shotRequirement?.shotVideo ?? {},
+        shotVideo: shotRequirement?.shotVideo ?? {}
       }
     : undefined;
   const materialDescriptions = new Map(
-    material?.assets.map((asset) => [asset.ref, asset.description]) ?? [],
+    material?.assets.map((asset) => [asset.ref, asset.description]) ?? []
   );
   const referenceAssets = shotAssetRefs.map((asset) => ({
     id: asset.assetId,
     role: asset.role,
     ref: asset.ref,
     url: asset.url,
-    summary: materialDescriptions.get(asset.ref) ?? asset.ref,
+    summary: materialDescriptions.get(asset.ref) ?? asset.ref
   }));
   const orderedShots = [...shots].sort((a, b) => a.orderIndex - b.orderIndex);
   const shotIndex = orderedShots.findIndex((shot) => shot.id === input.shot.id);
@@ -232,15 +242,15 @@ async function hydratePromptContext(input: {
     : null;
   const primaryRef = material?.primaryProductRef;
   const primaryAsset = primaryRef
-    ? referenceAssets.find((asset) => asset.ref === primaryRef) ?? referenceAssets[0]
+    ? (referenceAssets.find((asset) => asset.ref === primaryRef) ?? referenceAssets[0])
     : referenceAssets[0];
   const imageSceneAnchorUrl =
     shotIndex <= 0
-      ? primaryAsset?.url ?? null
-      : previousImageCandidate?.imageUrl ?? null;
+      ? (primaryAsset?.url ?? null)
+      : (previousImageCandidate?.imageUrl ?? null);
   const sceneAnchorImageUrl =
     input.kind === "video"
-      ? currentImageCandidate?.imageUrl ?? imageSceneAnchorUrl
+      ? (currentImageCandidate?.imageUrl ?? imageSceneAnchorUrl)
       : imageSceneAnchorUrl;
   const summary = {
     approvedBriefArtifactId: briefArtifact?.id ?? null,
@@ -249,7 +259,7 @@ async function hydratePromptContext(input: {
     shotPromptRequirementsId: shotRequirement?.id ?? null,
     referenceAssetRefs: referenceAssets.map((asset) => asset.ref),
     sceneAnchorImageUrl,
-    previousPromptArtifactId: previousPrompt?.id ?? null,
+    previousPromptArtifactId: previousPrompt?.id ?? null
   };
 
   return {
@@ -264,11 +274,14 @@ async function hydratePromptContext(input: {
     previousShot,
     nextShot,
     shots: orderedShots,
-    summary,
+    summary
   };
 }
 
-function durationForVideoScript(shot: { defaultDurationSec: number | null }, requested?: number) {
+function durationForVideoScript(
+  shot: { defaultDurationSec: number | null },
+  requested?: number
+) {
   const value = requested ?? shot.defaultDurationSec ?? 4;
   return Math.min(8, Math.max(4, value));
 }
@@ -285,10 +298,10 @@ async function allVideosSelected(workspaceId: string) {
 
 async function nextShotId(workspaceId: string, shotId: string) {
   const shots = (await db.db2.listShotsByWorkspace(workspaceId)).sort(
-    (a, b) => a.orderIndex - b.orderIndex,
+    (a, b) => a.orderIndex - b.orderIndex
   );
   const index = shots.findIndex((shot) => shot.id === shotId);
-  return index >= 0 ? shots[index + 1]?.id ?? null : null;
+  return index >= 0 ? (shots[index + 1]?.id ?? null) : null;
 }
 
 async function getImageCandidateMaybe(candidateId: string | null | undefined) {
@@ -301,11 +314,13 @@ async function getImageCandidateMaybe(candidateId: string | null | undefined) {
   }
 }
 
-function providerTemporaryUrl(row: { providerResponse: unknown; imageUrl?: string | null } | null | undefined) {
+function providerTemporaryUrl(
+  row: { providerResponse: unknown; imageUrl?: string | null } | null | undefined
+) {
   const response = row?.providerResponse as Record<string, unknown> | null | undefined;
   return typeof response?.providerTemporaryUrl === "string"
     ? response.providerTemporaryUrl
-    : row?.imageUrl ?? null;
+    : (row?.imageUrl ?? null);
 }
 
 export const shotWorkflowService = {
@@ -339,22 +354,18 @@ export const shotWorkflowService = {
     const shots = await db.db2.listShotsByWorkspace(workspaceId);
     const enriched = await Promise.all(
       shots.map(async (s) => {
-        const [imageBatch, videoBatch] = await Promise.all([
+        const [imageBatch, videoBatch, selectedImageCandidate] = await Promise.all([
           db.db2.getLatestImageBatchForShot(s.id),
-          db.db2.getLatestVideoBatchForShot(s.id)
+          db.db2.getLatestVideoBatchForShot(s.id),
+          s.selectedImageId
+            ? db.db2.getImageCandidate(s.selectedImageId).catch(() => null)
+            : Promise.resolve(null)
         ]);
-        return {
-          shotId: s.id,
-          orderIndex: s.orderIndex,
-          status: s.status,
-          nextAction: getNextAction(s.status as ShotStatus),
-          activeImagePromptArtifactId: s.activeImagePromptArtifactId,
-          selectedImageId: s.selectedImageId,
-          activeVideoScriptArtifactId: s.activeVideoScriptArtifactId,
-          selectedVideoId: s.selectedVideoId,
+        return buildWorkflowShotRow(s, {
           activeImageBatchId: imageBatch?.id ?? null,
-          activeVideoBatchId: videoBatch?.id ?? null
-        };
+          activeVideoBatchId: videoBatch?.id ?? null,
+          selectedImageCandidate
+        });
       })
     );
     const canComposeFinalVideo =
@@ -372,7 +383,7 @@ export const shotWorkflowService = {
     const hydrated = await hydratePromptContext({
       workspaceId: args.workspaceId,
       shot,
-      kind: "image",
+      kind: "image"
     });
     const referenceAssetIds = hydrated.referenceAssets.map((asset) => asset.id);
     const imageRef = hydrated.summary.sceneAnchorImageUrl;
@@ -380,14 +391,14 @@ export const shotWorkflowService = {
       throw new HttpError(
         400,
         "NO_SCENE_ANCHOR",
-        "Previous shot must have a selected image before proposing this image prompt",
+        "Previous shot must have a selected image before proposing this image prompt"
       );
     }
     if (!imageRef) {
       throw new HttpError(
         400,
         "NO_SCENE_ANCHOR",
-        "No product or previous-shot image is available as scene anchor",
+        "No product or previous-shot image is available as scene anchor"
       );
     }
     const imageRefProviderUrl =
@@ -410,7 +421,7 @@ export const shotWorkflowService = {
             productAssetRef: hydrated.shotPromptShot?.referenceAssetRefs[0],
             referenceAssetRefs: hydrated.shotPromptShot?.referenceAssetRefs ?? [],
             providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
-            shotImage: hydrated.shotPromptShot?.shotImage,
+            shotImage: hydrated.shotPromptShot?.shotImage
           },
           workspaceId: args.workspaceId,
           shotId: args.shotId,
@@ -428,10 +439,9 @@ export const shotWorkflowService = {
               hydrated.referenceAssets.find((asset) => asset.id === id)?.role ??
               "product_identity",
             summary:
-              hydrated.referenceAssets.find((asset) => asset.id === id)?.summary ??
-              ""
+              hydrated.referenceAssets.find((asset) => asset.id === id)?.summary ?? ""
           })),
-          userHint: args.userDirection,
+          userHint: args.userDirection
         },
         context: {
           workspaceId: args.workspaceId,
@@ -444,7 +454,7 @@ export const shotWorkflowService = {
       const sourceFingerprint = {
         ...hydrated.summary,
         image_ref: imageRef,
-        number: count,
+        number: count
       };
       const artifact = await createImagePromptVersionAtomic({
         shotId: args.shotId,
@@ -455,7 +465,7 @@ export const shotWorkflowService = {
         promptAssembly: result.promptAssembly,
         promptJson: {
           ...result.output,
-          context: sourceFingerprint,
+          context: sourceFingerprint
         },
         createdBy: "agent",
         agentName: "StoryboardImagePromptAgent",
@@ -475,14 +485,13 @@ export const shotWorkflowService = {
           negativePrompt: result.output.negativePrompt ?? null,
           image_ref: imageRef,
           count,
-          aspectRatio,
+          aspectRatio
         },
-        referenceImageUrls: imageRefProviderUrl ? [imageRefProviderUrl] : [],
+        referenceImageUrls: imageRefProviderUrl ? [imageRefProviderUrl] : []
       });
       const batchId =
         "batchId" in enqueued.data ? enqueued.data.batchId : enqueued.data.id;
-      const batch =
-        enqueued.batch ?? (await db.db2.getImageBatch(batchId));
+      const batch = enqueued.batch ?? (await db.db2.getImageBatch(batchId));
       const candidates =
         enqueued.candidates ?? (await db.db2.listImageCandidatesByBatch(batchId));
       await db.db2.updateShot(args.shotId, {
@@ -500,7 +509,7 @@ export const shotWorkflowService = {
           promptAssembly: result.promptAssembly,
           context: sourceFingerprint,
           batchId: batch.id,
-          candidates: candidates.map((candidate) => candidate.id),
+          candidates: candidates.map((candidate) => candidate.id)
         }
       });
       return {
@@ -512,7 +521,7 @@ export const shotWorkflowService = {
         shotStatus: "IMAGE_GENERATING",
         nextAction: getNextAction("IMAGE_GENERATING"),
         traceId,
-        context: sourceFingerprint,
+        context: sourceFingerprint
       };
     } catch (err) {
       await db.db2.updateShot(args.shotId, {
@@ -539,17 +548,18 @@ export const shotWorkflowService = {
       assertShotInWorkspace(shot, args.workspaceId);
     }
     const candidate = await db.db2.getImageCandidate(args.imageCandidateId);
-    if (
-      candidate.shotId !== args.shotId ||
-      candidate.workspaceId !== shot.workspaceId
-    ) {
-      throw new HttpError(400, "INVALID_CANDIDATE", "Candidate does not belong to this shot");
+    if (candidate.shotId !== args.shotId || candidate.workspaceId !== shot.workspaceId) {
+      throw new HttpError(
+        400,
+        "INVALID_CANDIDATE",
+        "Candidate does not belong to this shot"
+      );
     }
     if (candidate.status !== "SUCCEEDED" || !candidate.imageUrl) {
       throw new HttpError(
         400,
         "CANNOT_SELECT_FAILED_CANDIDATE",
-        "Only succeeded image candidates can be selected",
+        "Only succeeded image candidates can be selected"
       );
     }
     const batch = await db.db2.getImageBatch(candidate.batchId);
@@ -557,7 +567,7 @@ export const shotWorkflowService = {
       throw new HttpError(
         409,
         "IMAGE_BATCH_INCOMPLETE",
-        "Image batch must fully succeed before selecting a candidate",
+        "Image batch must fully succeed before selecting a candidate"
       );
     }
     if (
@@ -578,7 +588,7 @@ export const shotWorkflowService = {
       throw new HttpError(
         409,
         "STALE_CANDIDATE",
-        "Candidate is not from the active image round",
+        "Candidate is not from the active image round"
       );
     }
 
@@ -600,15 +610,15 @@ export const shotWorkflowService = {
       metadata: {
         imageCandidateId: args.imageCandidateId,
         imageGenerationBatchId: candidate.batchId,
-        selectedBy: args.selectedBy ?? "user",
-      },
+        selectedBy: args.selectedBy ?? "user"
+      }
     });
     const selection = {
       shotId: args.shotId,
       selectedCandidateId: args.imageCandidateId,
       selectedImageUrl: candidate.imageUrl,
       nextShotId: await nextShotId(shot.workspaceId, args.shotId),
-      allShotsImageSelected: await allImagesSelected(shot.workspaceId),
+      allShotsImageSelected: await allImagesSelected(shot.workspaceId)
     };
     return {
       ...selection,
@@ -633,7 +643,7 @@ export const shotWorkflowService = {
       throw new HttpError(
         400,
         "IMAGE_SELECTION_INCOMPLETE",
-        `All shots must have selected images before video scripting: ${missingImageSelections.join(", ")}`,
+        `All shots must have selected images before video scripting: ${missingImageSelections.join(", ")}`
       );
     }
     const selected = await db.db2.getSelectedImage(args.shotId);
@@ -641,14 +651,14 @@ export const shotWorkflowService = {
       throw new HttpError(
         400,
         "IMAGE_SELECTION_INCOMPLETE",
-        "Cannot propose video script without a selected image",
+        "Cannot propose video script without a selected image"
       );
     }
     const selectedImage = await db.db2.getImageCandidate(selected.imageCandidateId);
     const hydrated = await hydratePromptContext({
       workspaceId: args.workspaceId,
       shot,
-      kind: "video",
+      kind: "video"
     });
     const frameNeighbors = await neighborImagesFor(args.workspaceId, args.shotId);
     const neighbors = { prev: undefined, next: frameNeighbors.next };
@@ -668,7 +678,7 @@ export const shotWorkflowService = {
             sceneDescription: hydrated.shotPromptShot?.providerPrompt ?? undefined,
             voiceover: hydrated.shotPromptShot?.voiceover ?? "",
             providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
-            shotVideo: hydrated.shotPromptShot?.shotVideo,
+            shotVideo: hydrated.shotPromptShot?.shotVideo
           },
           workspaceId: args.workspaceId,
           shotId: args.shotId,
@@ -687,7 +697,7 @@ export const shotWorkflowService = {
           previousVideoScript:
             typeof hydrated.summary.previousPromptArtifactId === "string"
               ? (await db.db2.listVideoScriptArtifacts(args.shotId))[0]?.scriptJson
-              : undefined,
+              : undefined
         },
         context: {
           workspaceId: args.workspaceId,
@@ -701,7 +711,7 @@ export const shotWorkflowService = {
         ...hydrated.summary,
         firstFrameCandidateId: selectedImage.id,
         lastFrameCandidateId: neighbors.next?.id ?? null,
-        number: count,
+        number: count
       };
       const artifact = await createVideoScriptVersionAtomic({
         shotId: args.shotId,
@@ -719,31 +729,22 @@ export const shotWorkflowService = {
       });
       const artifactView = promptArtifactView(artifact);
 
-      const batch = await db.db2.insertVideoBatch({
-        id: "vbb_" + nanoid(10),
+      // Async like the image pipeline: enqueue one job per video candidate and
+      // return immediately with the PENDING batch. The shared worker's
+      // concurrency + the VIDEO_PROVIDER_CONCURRENCY semaphore bound how
+      // many Seedance calls run at once; the client polls `video-rounds` until
+      // the shot reaches VIDEO_CANDIDATES_READY. (Was: synchronous inline
+      // runVideoGenerationBatch fan-out that blew past the provider rate limit.)
+      await db.db2.updateShot(args.shotId, {
+        activeVideoScriptArtifactId: artifact.id
+      });
+      const enqueued = await generationService.createVideoBatch({
         workspaceId: args.workspaceId,
         shotId: args.shotId,
         videoScriptArtifactId: artifact.id,
-        status: "PENDING",
-        requestedCount: count,
-        succeededCount: 0,
-        failedCount: 0,
-        provider: "seedance",
+        count,
         aspectRatio,
-        providerRequest: {
-          providerPrompt: result.output.providerPrompt,
-          first_frame_url: selectedImage.imageUrl ?? null,
-          last_frame_url: neighbors.next?.url ?? null,
-          durationSec: result.output.durationSec,
-          count,
-          aspectRatio,
-        },
-        errorMessage: null,
-        idempotencyKey: null,
-      });
-      await db.db2.updateShot(args.shotId, {
-        status: "VIDEO_GENERATING",
-        activeVideoScriptArtifactId: artifact.id
+        idempotencyKey: `video:${artifact.id}:${traceId}`
       });
       await traceService.record({
         workspaceId: args.workspaceId,
@@ -759,53 +760,31 @@ export const shotWorkflowService = {
             firstFrameCandidateId: selectedImage.id,
             lastFrameCandidateId: neighbors.next?.id ?? null,
             firstFrameUrl: selectedImage.imageUrl ?? null,
-            lastFrameUrl: neighbors.next?.url ?? null,
+            lastFrameUrl: neighbors.next?.url ?? null
           },
-          batchId: batch.id,
-        }
-      });
-      const generated = await runVideoGenerationBatch({
-        batchId: batch.id,
-        count,
-        aspectRatio,
-      });
-      const finalStatus = generated.finalBatch.status === "FAILED" ? "FAILED" : "VIDEO_CANDIDATES_READY";
-      await db.db2.updateShot(args.shotId, {
-        status: finalStatus,
-        activeVideoScriptArtifactId: artifact.id
-      });
-      await traceService.record({
-        workspaceId: args.workspaceId,
-        shotId: args.shotId,
-        traceType: "provider_call",
-        name: "video_generation_completed",
-        metadata: {
-          batchId: batch.id,
-          batchStatus: generated.finalBatch.status,
-          succeededCount: generated.candidates.filter(
-            (candidate) => candidate.status === "SUCCEEDED",
-          ).length,
-          failedCount: generated.candidates.filter(
-            (candidate) => candidate.status === "FAILED",
-          ).length,
-          candidates: generated.candidates.map((candidate) => candidate.id),
+          batchId: enqueued.batch.id,
+          requestedCount: count
         }
       });
       return {
         data: artifactView,
         artifact: artifactView,
-        batch: generated.finalBatch,
-        candidates: generated.candidates,
-        shotStatus: finalStatus,
-        nextAction: getNextAction(finalStatus),
+        batch: enqueued.batch,
+        candidates: enqueued.candidates,
+        shotStatus: "VIDEO_GENERATING" as const,
+        nextAction: getNextAction("VIDEO_GENERATING"),
         traceId,
         context: sourceFingerprint,
         frames: {
           firstFrameCandidateId: selectedImage.id,
           lastFrameCandidateId: neighbors.next?.id ?? null,
           firstFrameUrl: selectedImage.imageUrl ?? null,
-          lastFrameUrl: neighbors.next?.url ?? null,
+          lastFrameUrl: neighbors.next?.url ?? null
         },
+        poll: {
+          videoRoundsUrl: `/api/workspaces/${args.workspaceId}/shots/${args.shotId}/video-rounds`,
+          batchId: enqueued.batch.id
+        }
       };
     } catch (err) {
       await db.db2.updateShot(args.shotId, {
@@ -831,17 +810,18 @@ export const shotWorkflowService = {
       assertShotInWorkspace(shot, args.workspaceId);
     }
     const candidate = await db.db2.getVideoCandidate(args.videoCandidateId);
-    if (
-      candidate.shotId !== args.shotId ||
-      candidate.workspaceId !== shot.workspaceId
-    ) {
-      throw new HttpError(400, "INVALID_CANDIDATE", "Candidate does not belong to this shot");
+    if (candidate.shotId !== args.shotId || candidate.workspaceId !== shot.workspaceId) {
+      throw new HttpError(
+        400,
+        "INVALID_CANDIDATE",
+        "Candidate does not belong to this shot"
+      );
     }
     if (candidate.status !== "SUCCEEDED" || !candidate.videoUrl) {
       throw new HttpError(
         400,
         "CANNOT_SELECT_FAILED_CANDIDATE",
-        "Only succeeded video candidates can be selected",
+        "Only succeeded video candidates can be selected"
       );
     }
     const batch = await db.db2.getVideoBatch(candidate.batchId);
@@ -863,14 +843,14 @@ export const shotWorkflowService = {
       throw new HttpError(
         409,
         "STALE_CANDIDATE",
-        "Candidate is not from the active video round",
+        "Candidate is not from the active video round"
       );
     }
 
     await db.db2.upsertSelectedVideo({
       shotId: args.shotId,
       videoCandidateId: args.videoCandidateId,
-      videoGenerationBatchId: candidate.batchId,
+      videoGenerationBatchId: candidate.batchId
     });
     await db.db2.updateShot(args.shotId, {
       status: "VIDEO_SELECTED",
@@ -884,15 +864,15 @@ export const shotWorkflowService = {
       outputPreview: candidate.videoUrl,
       metadata: {
         videoCandidateId: args.videoCandidateId,
-        videoGenerationBatchId: candidate.batchId,
-      },
+        videoGenerationBatchId: candidate.batchId
+      }
     });
     const selection = {
       shotId: args.shotId,
       selectedCandidateId: args.videoCandidateId,
       selectedVideoUrl: candidate.videoUrl,
       duration: shot.defaultDurationSec ?? candidate.durationSec ?? 0,
-      allShotsVideoSelected: await allVideosSelected(shot.workspaceId),
+      allShotsVideoSelected: await allVideosSelected(shot.workspaceId)
     };
     return {
       ...selection,
@@ -908,19 +888,17 @@ export const shotWorkflowService = {
     const [artifacts, selected, hydrated] = await Promise.all([
       db.db2.listImagePromptArtifacts(args.shotId),
       db.db2.getSelectedImage(args.shotId),
-      hydratePromptContext({ workspaceId: args.workspaceId, shot, kind: "image" }),
+      hydratePromptContext({ workspaceId: args.workspaceId, shot, kind: "image" })
     ]);
     const rounds = await Promise.all(
       artifacts.map(async (artifact) => {
         const batchId = await latestBatchIdForArtifact(
           "image_generation_batches",
           "image_prompt_artifact_id",
-          artifact.id,
+          artifact.id
         );
         const batch = batchId ? await db.db2.getImageBatch(batchId) : null;
-        const candidates = batch
-          ? await db.db2.listImageCandidatesByBatch(batch.id)
-          : [];
+        const candidates = batch ? await db.db2.listImageCandidatesByBatch(batch.id) : [];
         const selectedCandidate = selected
           ? candidates.find((candidate) => candidate.id === selected.imageCandidateId)
           : undefined;
@@ -930,7 +908,7 @@ export const shotWorkflowService = {
               selectedCandidateId: selectedCandidate.id,
               selectedImageUrl: selectedCandidate.imageUrl,
               nextShotId: await nextShotId(args.workspaceId, args.shotId),
-              allShotsImageSelected: await allImagesSelected(args.workspaceId),
+              allShotsImageSelected: await allImagesSelected(args.workspaceId)
             }
           : null;
         const promptJson = artifact.promptJson as { context?: unknown } | null;
@@ -939,9 +917,9 @@ export const shotWorkflowService = {
           batch,
           candidates,
           selection,
-          context: promptJson?.context ?? hydrated.summary,
+          context: promptJson?.context ?? hydrated.summary
         };
-      }),
+      })
     );
     return { data: rounds };
   },
@@ -952,19 +930,17 @@ export const shotWorkflowService = {
     const [artifacts, selected, hydrated] = await Promise.all([
       db.db2.listVideoScriptArtifacts(args.shotId),
       selectedVideoForShot(args.shotId),
-      hydratePromptContext({ workspaceId: args.workspaceId, shot, kind: "video" }),
+      hydratePromptContext({ workspaceId: args.workspaceId, shot, kind: "video" })
     ]);
     const rounds = await Promise.all(
       artifacts.map(async (artifact) => {
         const batchId = await latestBatchIdForArtifact(
           "video_generation_batches",
           "video_script_artifact_id",
-          artifact.id,
+          artifact.id
         );
         const batch = batchId ? await db.db2.getVideoBatch(batchId) : null;
-        const candidates = batch
-          ? await db.db2.listVideoCandidatesByBatch(batch.id)
-          : [];
+        const candidates = batch ? await db.db2.listVideoCandidatesByBatch(batch.id) : [];
         const selectedCandidate = selected
           ? candidates.find((candidate) => candidate.id === selected.videoCandidateId)
           : undefined;
@@ -974,12 +950,12 @@ export const shotWorkflowService = {
               selectedCandidateId: selectedCandidate.id,
               selectedVideoUrl: selectedCandidate.videoUrl,
               duration: shot.defaultDurationSec ?? selectedCandidate.durationSec ?? 0,
-              allShotsVideoSelected: await allVideosSelected(args.workspaceId),
+              allShotsVideoSelected: await allVideosSelected(args.workspaceId)
             }
           : null;
         const [firstFrame, lastFrame] = await Promise.all([
           getImageCandidateMaybe(artifact.basedOnImageCandidateId),
-          getImageCandidateMaybe(artifact.basedOnNextImageCandidateId),
+          getImageCandidateMaybe(artifact.basedOnNextImageCandidateId)
         ]);
         const scriptJson = artifact.scriptJson as { context?: unknown } | null;
         return {
@@ -991,11 +967,11 @@ export const shotWorkflowService = {
             firstFrameUrl: firstFrame?.imageUrl ?? null,
             lastFrameUrl: lastFrame?.imageUrl ?? null,
             firstFrameCandidateId: firstFrame?.id ?? artifact.basedOnImageCandidateId,
-            lastFrameCandidateId: lastFrame?.id ?? null,
+            lastFrameCandidateId: lastFrame?.id ?? null
           },
-          context: scriptJson?.context ?? hydrated.summary,
+          context: scriptJson?.context ?? hydrated.summary
         };
-      }),
+      })
     );
     return { data: rounds };
   },

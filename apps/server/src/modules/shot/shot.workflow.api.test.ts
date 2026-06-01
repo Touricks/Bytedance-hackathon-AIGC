@@ -25,7 +25,7 @@ function assertPromptAssembly(value: unknown, moduleId: string) {
 async function seedApprovedShotPromptWorkspace(
   app: FastifyInstance,
   shotCount = 1,
-  options: { registerMaterialAsset?: boolean } = {},
+  options: { registerMaterialAsset?: boolean } = {}
 ) {
   const createResponse = await app.inject({
     method: "POST",
@@ -73,13 +73,21 @@ async function seedApprovedShotPromptWorkspace(
       }
     }
   });
-  assert.equal(requirementsProposeResponse.statusCode, 200, requirementsProposeResponse.body);
+  assert.equal(
+    requirementsProposeResponse.statusCode,
+    200,
+    requirementsProposeResponse.body
+  );
   const requirementsApproveResponse = await app.inject({
     method: "POST",
     url: `/api/workspaces/${workspace.id}/prompt-requirements/approve`,
     payload: { artifactId: requirementsProposeResponse.json().data.id }
   });
-  assert.equal(requirementsApproveResponse.statusCode, 200, requirementsApproveResponse.body);
+  assert.equal(
+    requirementsApproveResponse.statusCode,
+    200,
+    requirementsApproveResponse.body
+  );
 
   const materialResponse = await app.inject({
     method: "POST",
@@ -170,7 +178,7 @@ async function seedApprovedShotPromptWorkspace(
   return {
     workspaceId: workspace.id,
     shotId: shot.id,
-    shotIds: shots.map((item) => item.id),
+    shotIds: shots.map((item) => item.id)
   };
 }
 
@@ -198,10 +206,7 @@ describe("shot workflow API", () => {
     });
     assert.equal(imagePromptResponse.statusCode, 200, imagePromptResponse.body);
     const imagePromptId = imagePromptResponse.json().data.id as string;
-    assertPromptAssembly(
-      imagePromptResponse.json().data.promptAssembly,
-      "image-prompt",
-    );
+    assertPromptAssembly(imagePromptResponse.json().data.promptAssembly, "image-prompt");
     const imageBatchId = imagePromptResponse.json().batch.id as string;
     const imageCandidates = imagePromptResponse.json().candidates as Array<{
       id: string;
@@ -209,10 +214,10 @@ describe("shot workflow API", () => {
       status: string;
     }>;
     assert.equal(imagePromptResponse.json().shotStatus, "IMAGE_GENERATING");
-    assert.equal(imageCandidates.length, config.defaultImageBatchSize);
+    assert.equal(imageCandidates.length, config.defaultImageCandidates);
     assert.ok(
       imageCandidates.every((candidate) => candidate.status === "PENDING"),
-      "image candidates should be queued as individual jobs",
+      "image candidates should be queued as individual jobs"
     );
     assert.deepEqual(imagePromptResponse.json().context.referenceAssetRefs, [
       "product.png"
@@ -237,18 +242,20 @@ describe("shot workflow API", () => {
       await db.db2.updateImageCandidate(candidate.id, {
         status: "SUCCEEDED",
         imageUrl: `/api/workspaces/${workspaceId}/materials/generated-images/${candidate.id}.png`,
-        objectKey: `materials/generated-images/${candidate.id}.png`,
+        objectKey: `materials/generated-images/${candidate.id}.png`
       });
     }
     await db.db2.updateImageBatch(imageBatchId, {
       status: "SUCCEEDED",
       succeededCount: imageCandidates.length,
-      failedCount: 0,
+      failedCount: 0
     });
     await db.db2.updateShot(shotId, { status: "IMAGE_CANDIDATES_READY" });
     const completedImageCandidates =
       await db.db2.listImageCandidatesByBatch(imageBatchId);
-    const imageCandidate = completedImageCandidates.find((candidate) => candidate.status === "SUCCEEDED" && candidate.imageUrl);
+    const imageCandidate = completedImageCandidates.find(
+      (candidate) => candidate.status === "SUCCEEDED" && candidate.imageUrl
+    );
     assert.ok(imageCandidate);
     const failedImageCandidate = await db.db2.insertImageCandidate({
       id: `imc_failed_${Date.now()}`,
@@ -272,10 +279,7 @@ describe("shot workflow API", () => {
       payload: { candidateId: failedImageCandidate.id }
     });
     assert.equal(failedSelectImageResponse.statusCode, 400);
-    assert.equal(
-      failedSelectImageResponse.json().code,
-      "CANNOT_SELECT_FAILED_CANDIDATE"
-    );
+    assert.equal(failedSelectImageResponse.json().code, "CANNOT_SELECT_FAILED_CANDIDATE");
 
     const selectImageResponse = await app.inject({
       method: "POST",
@@ -301,7 +305,10 @@ describe("shot workflow API", () => {
     });
     assert.equal(imageRoundsResponse.statusCode, 200, imageRoundsResponse.body);
     assert.equal(imageRoundsResponse.json().data[0].batch.id, imageBatchId);
-    assert.equal(imageRoundsResponse.json().data[0].selection.selectedCandidateId, imageCandidate.id);
+    assert.equal(
+      imageRoundsResponse.json().data[0].selection.selectedCandidateId,
+      imageCandidate.id
+    );
 
     const videoScriptResponse = await app.inject({
       method: "POST",
@@ -309,18 +316,19 @@ describe("shot workflow API", () => {
       payload: {}
     });
     assert.equal(videoScriptResponse.statusCode, 200, videoScriptResponse.body);
-    assertPromptAssembly(
-      videoScriptResponse.json().data.promptAssembly,
-      "video-script",
-    );
+    assertPromptAssembly(videoScriptResponse.json().data.promptAssembly, "video-script");
     const videoBatchId = videoScriptResponse.json().batch.id as string;
     const videoCandidates = videoScriptResponse.json().candidates as Array<{
       id: string;
       videoUrl: string | null;
       status: string;
     }>;
-    assert.equal(videoScriptResponse.json().shotStatus, "VIDEO_CANDIDATES_READY");
-    assert.equal(videoCandidates.length, config.defaultVideoBatchSize);
+    assert.equal(videoScriptResponse.json().shotStatus, "VIDEO_GENERATING");
+    assert.equal(videoCandidates.length, config.defaultVideoCandidates);
+    assert.ok(
+      videoCandidates.every((candidate) => candidate.status === "PENDING"),
+      "video candidates should be queued as individual jobs"
+    );
     assert.equal(
       videoScriptResponse.json().context.sceneAnchorImageUrl,
       imageCandidate.imageUrl
@@ -336,8 +344,29 @@ describe("shot workflow API", () => {
       .data.shots.find((s: { shotId: string }) => s.shotId === shotId);
     assert.equal(videoStatusShot.activeImageBatchId, imageBatchId);
     assert.equal(videoStatusShot.activeVideoBatchId, videoBatchId);
+    assert.equal(videoStatusShot.selectedImageUrl, imageCandidate.imageUrl);
 
-    const videoCandidate = videoCandidates.find((candidate) => candidate.status === "SUCCEEDED" && candidate.videoUrl);
+    // The video pipeline is now async: propose enqueues one job per candidate
+    // and returns PENDING. Simulate the worker draining (USE_REDIS_QUEUE=false
+    // in tests) by driving the candidates to SUCCEEDED, mirroring images above.
+    for (const candidate of videoCandidates) {
+      await db.db2.updateVideoCandidate(candidate.id, {
+        status: "SUCCEEDED",
+        videoUrl: `/api/workspaces/${workspaceId}/videos/${candidate.id}.mp4`,
+        objectKey: `videos/${candidate.id}.mp4`
+      });
+    }
+    await db.db2.updateVideoBatch(videoBatchId, {
+      status: "SUCCEEDED",
+      succeededCount: videoCandidates.length,
+      failedCount: 0
+    });
+    await db.db2.updateShot(shotId, { status: "VIDEO_CANDIDATES_READY" });
+    const completedVideoCandidates =
+      await db.db2.listVideoCandidatesByBatch(videoBatchId);
+    const videoCandidate = completedVideoCandidates.find(
+      (candidate) => candidate.status === "SUCCEEDED" && candidate.videoUrl
+    );
     assert.ok(videoCandidate);
     const failedVideoCandidate = await db.db2.insertVideoCandidate({
       id: `vcd_failed_${Date.now()}`,
@@ -362,10 +391,7 @@ describe("shot workflow API", () => {
       payload: { candidateId: failedVideoCandidate.id }
     });
     assert.equal(failedSelectVideoResponse.statusCode, 400);
-    assert.equal(
-      failedSelectVideoResponse.json().code,
-      "CANNOT_SELECT_FAILED_CANDIDATE"
-    );
+    assert.equal(failedSelectVideoResponse.json().code, "CANNOT_SELECT_FAILED_CANDIDATE");
 
     const selectVideoResponse = await app.inject({
       method: "POST",
@@ -385,7 +411,10 @@ describe("shot workflow API", () => {
     });
     assert.equal(videoRoundsResponse.statusCode, 200, videoRoundsResponse.body);
     assert.equal(videoRoundsResponse.json().data[0].batch.id, videoBatchId);
-    assert.equal(videoRoundsResponse.json().data[0].selection.selectedCandidateId, videoCandidate.id);
+    assert.equal(
+      videoRoundsResponse.json().data[0].selection.selectedCandidateId,
+      videoCandidate.id
+    );
 
     const selectedVideoResult = await db.db2.pool().query(
       `select video_candidate_id, video_generation_batch_id
@@ -398,20 +427,19 @@ describe("shot workflow API", () => {
 
     const traceResponse = await app.inject({
       method: "GET",
-      url: `/api/workspaces/${workspaceId}/traces?limit=100`,
+      url: `/api/workspaces/${workspaceId}/traces?limit=100`
     });
     assert.equal(traceResponse.statusCode, 200, traceResponse.body);
     const traceNames = new Set(
       (traceResponse.json() as Array<{ name: string; shotId?: string }>)
         .filter((event) => event.shotId === shotId)
-        .map((event) => event.name),
+        .map((event) => event.name)
     );
     const missingTraceEvents = [
       "image_prompt_proposed",
       "image_candidate_selected",
       "video_script_proposed",
-      "video_generation_completed",
-      "video_candidate_selected",
+      "video_candidate_selected"
     ].filter((name) => !traceNames.has(name));
     assert.deepEqual(missingTraceEvents, []);
   });
@@ -475,13 +503,13 @@ describe("shot workflow API", () => {
       await db.db2.updateImageCandidate(candidate.id, {
         status: "SUCCEEDED",
         imageUrl: `/api/workspaces/${workspaceId}/materials/generated-images/${candidate.id}.png`,
-        objectKey: `materials/generated-images/${candidate.id}.png`,
+        objectKey: `materials/generated-images/${candidate.id}.png`
       });
     }
     await db.db2.updateImageBatch(imageBatchId, {
       status: "SUCCEEDED",
       succeededCount: imageCandidates.length,
-      failedCount: 0,
+      failedCount: 0
     });
     await db.db2.updateShot(firstShotId, { status: "IMAGE_CANDIDATES_READY" });
 
@@ -504,7 +532,7 @@ describe("shot workflow API", () => {
 
   it("keeps directly managed material files resolvable when applying a shot set", async () => {
     const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 1, {
-      registerMaterialAsset: false,
+      registerMaterialAsset: false
     });
 
     const result = await db.db2.pool().query(
@@ -515,11 +543,9 @@ describe("shot workflow API", () => {
        where s.workspace_id = $1
        order by sar.position
        limit 1`,
-      [workspaceId],
+      [workspaceId]
     );
-    const metadata = result.rows[0]?.metadata as
-      | Record<string, unknown>
-      | undefined;
+    const metadata = result.rows[0]?.metadata as Record<string, unknown> | undefined;
     assert.equal(metadata?.ref, "product.png");
     assert.equal(metadata?.contentType, "image/png");
     assert.match(String(metadata?.storagePath ?? ""), /product\.png$/);

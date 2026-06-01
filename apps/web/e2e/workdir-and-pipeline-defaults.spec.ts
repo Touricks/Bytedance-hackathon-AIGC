@@ -6,24 +6,35 @@ const shotId = "shot-1";
 const now = new Date(0).toISOString();
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-  "base64",
+  "base64"
 );
 
 function json(route: Route, body: unknown) {
   return route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   });
 }
 
-async function mockWorkbenchApi(page: Page) {
+async function mockCreativeReviewApi(
+  page: Page,
+  options: {
+    readyForFinal?: boolean;
+    shot1ImageSelectedInitially?: boolean;
+    shot2ImageSelectedInitially?: boolean;
+  } = {}
+) {
   let imageProposed = false;
-  let imageSelected = false;
+  let imageSelected =
+    options.shot1ImageSelectedInitially ?? options.readyForFinal ?? false;
+  const shot2ImageSelected = options.shot2ImageSelectedInitially ?? true;
   let videoProposed = false;
+  let finalStarted = false;
   const requests: {
     imagePropose?: unknown;
     imageSelect?: unknown;
     videoPropose?: unknown;
+    finalCompose?: unknown;
   } = {};
 
   const workspace = {
@@ -34,7 +45,7 @@ async function mockWorkbenchApi(page: Page) {
     traceFile: ".daireel/trace/events.jsonl",
     createdAt: now,
     updatedAt: now,
-    lastSeenAt: now,
+    lastSeenAt: now
   };
 
   const artifact = (moduleId: string, data: unknown) => ({
@@ -49,11 +60,11 @@ async function mockWorkbenchApi(page: Page) {
     promptAssembly: {
       moduleId,
       subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64),
+      contractHash: "b".repeat(64)
     },
     createdAt: now,
     updatedAt: now,
-    approvedAt: now,
+    approvedAt: now
   });
 
   const statusBody = () => ({
@@ -62,7 +73,7 @@ async function mockWorkbenchApi(page: Page) {
       schemaVersion: 1,
       workspaceId,
       currentScriptId: "script-e2e",
-      traceFile: ".daireel/trace/events.jsonl",
+      traceFile: ".daireel/trace/events.jsonl"
     },
     nextAction: {
       stage: "shotprompt",
@@ -71,7 +82,7 @@ async function mockWorkbenchApi(page: Page) {
       actionType: "human_approval",
       requiresHumanApproval: false,
       willCallProvider: false,
-      requiresProviderConfig: false,
+      requiresProviderConfig: false
     },
     materialLibrary: {
       scannedAt: now,
@@ -87,10 +98,10 @@ async function mockWorkbenchApi(page: Page) {
           description: "hero product frame",
           relevance: "high",
           usable: true,
-          included: true,
-        },
+          included: true
+        }
       ],
-      rejected: [],
+      rejected: []
     },
     activeShotSet: {
       id: "shotset-1",
@@ -99,7 +110,7 @@ async function mockWorkbenchApi(page: Page) {
       status: "active",
       sourceFingerprint: {},
       createdAt: now,
-      archivedAt: null,
+      archivedAt: null
     },
     artifacts: {
       promptRequirements: artifact("prompt-requirements", {
@@ -107,43 +118,43 @@ async function mockWorkbenchApi(page: Page) {
         script: { tone: "clear" },
         storyboard: { rhythm: "fast" },
         shotImage: { global: "preserve scene" },
-        shotVideo: { global: "smooth motion" },
+        shotVideo: { global: "smooth motion" }
       }),
       material: artifact("material-intake", {
         scannedAt: now,
         primaryProductRef: "product.png",
         assets: [],
-        rejected: [],
+        rejected: []
       }),
       brief: artifact("product-brief", {
-          product: { name: "Desk Lamp", category: "lighting", keyFacts: [], assets: [] },
-          audience: { who: "home workers", painOrDesire: "clean desk light" },
-          coreSellingPoint: "soft adjustable light",
-          proof: [],
-          offer: null,
-          platform: "douyin",
-          brandTone: "clear",
-          bannedExpressions: [],
-          landingInfo: null,
-          assumptions: [],
+        product: { name: "Desk Lamp", category: "lighting", keyFacts: [], assets: [] },
+        audience: { who: "home workers", painOrDesire: "clean desk light" },
+        coreSellingPoint: "soft adjustable light",
+        proof: [],
+        offer: null,
+        platform: "douyin",
+        brandTone: "clear",
+        bannedExpressions: [],
+        landingInfo: null,
+        assumptions: []
       }),
       storyboard: artifact("storyboard", {
         narrative: "show product",
         totalDurationSec: 8,
         shots: [],
-        assumptions: [],
+        assumptions: []
       }),
       shotPrompt: artifact("shotprompt", {
-          targetProvider: "seedance",
-          durationSec: 8,
-          aspectRatio: "9:16",
-          prompt: "two shot sequence",
-          negativePrompt: "",
-          shots: [],
-          tts: { enabled: false, source: "shots.voiceover", voiceover: "" },
-          assumptions: [],
-      }),
-    },
+        targetProvider: "seedance",
+        durationSec: 8,
+        aspectRatio: "9:16",
+        prompt: "two shot sequence",
+        negativePrompt: "",
+        shots: [],
+        tts: { enabled: false, source: "shots.voiceover", voiceover: "" },
+        assumptions: []
+      })
+    }
   });
 
   const workflowStatus = () => ({
@@ -153,14 +164,18 @@ async function mockWorkbenchApi(page: Page) {
         {
           shotId,
           orderIndex: 0,
-          status: videoProposed
+          status: options.readyForFinal
+            ? "VIDEO_SELECTED"
+            : videoProposed
             ? "VIDEO_CANDIDATES_READY"
             : imageSelected
               ? "IMAGE_SELECTED"
               : imageProposed
                 ? "IMAGE_CANDIDATES_READY"
                 : "DRAFT",
-          nextAction: videoProposed
+          nextAction: options.readyForFinal
+            ? "READY_FOR_FINAL_COMPOSE"
+            : videoProposed
             ? "SELECT_VIDEO"
             : imageSelected
               ? "GENERATE_VIDEO_SCRIPT"
@@ -170,25 +185,27 @@ async function mockWorkbenchApi(page: Page) {
           activeImagePromptArtifactId: imageProposed ? "imgp-1" : null,
           selectedImageId: imageSelected ? "imc-1" : null,
           activeVideoScriptArtifactId: videoProposed ? "vsa-1" : null,
-          selectedVideoId: null,
+          selectedVideoId: options.readyForFinal ? "vdc-1" : null,
           activeImageBatchId: imageProposed ? "imb-1" : null,
-          activeVideoBatchId: videoProposed ? "vbb-1" : null,
+          activeVideoBatchId: videoProposed ? "vbb-1" : null
         },
         {
           shotId: "shot-2",
           orderIndex: 1,
-          status: "IMAGE_SELECTED",
-          nextAction: "GENERATE_VIDEO_SCRIPT",
-          activeImagePromptArtifactId: "imgp-2",
-          selectedImageId: "imc-2",
+          status: shot2ImageSelected ? "IMAGE_SELECTED" : "DRAFT",
+          nextAction: shot2ImageSelected
+            ? "GENERATE_VIDEO_SCRIPT"
+            : "GENERATE_IMAGE_PROMPT",
+          activeImagePromptArtifactId: shot2ImageSelected ? "imgp-2" : null,
+          selectedImageId: shot2ImageSelected ? "imc-2" : null,
           activeVideoScriptArtifactId: null,
-          selectedVideoId: null,
-          activeImageBatchId: "imb-2",
-          activeVideoBatchId: null,
-        },
+          selectedVideoId: options.readyForFinal ? "vdc-2" : null,
+          activeImageBatchId: shot2ImageSelected ? "imb-2" : null,
+          activeVideoBatchId: null
+        }
       ],
-      canComposeFinalVideo: false,
-    },
+      canComposeFinalVideo: options.readyForFinal ?? false
+    }
   });
 
   const handleApiRoute = async (route: Route) => {
@@ -199,9 +216,24 @@ async function mockWorkbenchApi(page: Page) {
     if (path.endsWith(".png")) {
       return route.fulfill({ contentType: "image/png", body: png });
     }
+    if (path.endsWith("/file")) {
+      return route.fulfill({ contentType: "video/mp4", body: "" });
+    }
 
     if (request.method() === "GET" && path === "/api/workspaces") {
-      return json(route, { workspaceRoot: "storage/workspaces", workspaces: [] });
+      return json(route, {
+        workspaceRoot: "storage/workspaces",
+        workspaces: [],
+        discovered: []
+      });
+    }
+
+    if (request.method() === "POST" && path === "/api/workspaces/directory/select") {
+      return json(route, {
+        directory: "/tmp/daireel-e2e",
+        cancelled: false,
+        method: "linux"
+      });
     }
 
     if (request.method() === "POST" && path === "/api/workspaces") {
@@ -211,8 +243,8 @@ async function mockWorkbenchApi(page: Page) {
           schemaVersion: 1,
           workspaceId,
           currentScriptId: "script-e2e",
-          traceFile: ".daireel/trace/events.jsonl",
-        },
+          traceFile: ".daireel/trace/events.jsonl"
+        }
       });
     }
 
@@ -223,27 +255,26 @@ async function mockWorkbenchApi(page: Page) {
           schemaVersion: 1,
           workspaceId,
           currentScriptId: "script-e2e",
-          traceFile: ".daireel/trace/events.jsonl",
-        },
+          traceFile: ".daireel/trace/events.jsonl"
+        }
       });
     }
 
     if (request.method() === "GET" && path === "/api/config/limits") {
       return json(route, {
         data: {
-          defaultImageBatchSize: 3,
-          maxImageBatchSize: 6,
-          defaultVideoBatchSize: 1,
-          maxVideoBatchSize: 10,
-          aspectRatios: ["9:16", "16:9", "1:1"],
-        },
+          defaultImageCandidates: 3,
+          maxImageCandidatesPerShot: 6,
+          defaultVideoCandidates: 1,
+          maxVideoCandidatesPerShot: 10,
+          generationWorkerConcurrency: 17,
+          providerConcurrency: { text: 20, image: 12, video: 5 },
+          aspectRatios: ["9:16", "16:9", "1:1"]
+        }
       });
     }
 
-    if (
-      request.method() === "GET" &&
-      path === `/api/workspaces/${workspaceId}/status`
-    ) {
+    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/status`) {
       return json(route, statusBody());
     }
 
@@ -269,9 +300,9 @@ async function mockWorkbenchApi(page: Page) {
             activeImagePromptArtifactId: imageProposed ? "imgp-1" : null,
             selectedImageId: imageSelected ? "imc-1" : null,
             activeVideoScriptArtifactId: videoProposed ? "vsa-1" : null,
-            selectedVideoId: null,
-          },
-        ],
+            selectedVideoId: null
+          }
+        ]
       });
     }
 
@@ -280,7 +311,7 @@ async function mockWorkbenchApi(page: Page) {
       path === `/api/workspaces/${workspaceId}/shots/${shotId}/image-rounds`
     ) {
       return json(route, {
-        data: imageProposed
+        data: imageProposed || imageSelected
           ? [
               {
                 artifact: {
@@ -292,7 +323,7 @@ async function mockWorkbenchApi(page: Page) {
                   negativePrompt: "",
                   referenceAssetIds: [],
                   createdBy: "agent",
-                  createdAt: now,
+                  createdAt: now
                 },
                 batch: {
                   id: "imb-1",
@@ -308,20 +339,25 @@ async function mockWorkbenchApi(page: Page) {
                   errorMessage: null,
                   idempotencyKey: "internal",
                   createdAt: now,
-                  updatedAt: now,
+                  updatedAt: now
                 },
                 candidates: [
                   {
                     id: "imc-1",
                     imageUrl: `/api/workspaces/${workspaceId}/materials/generated-images/imc-1.png`,
-                    status: "SUCCEEDED",
-                  },
+                    status: "SUCCEEDED"
+                  }
                 ],
-                selection: null,
-                context: {},
-              },
+                selection: imageSelected
+                  ? {
+                      selectedCandidateId: "imc-1",
+                      selectedAt: now
+                    }
+                  : null,
+                context: {}
+              }
             ]
-          : [],
+          : []
       });
     }
 
@@ -345,7 +381,7 @@ async function mockWorkbenchApi(page: Page) {
                   basedOnPrevImageCandidateId: null,
                   basedOnNextImageCandidateId: null,
                   createdBy: "agent",
-                  createdAt: now,
+                  createdAt: now
                 },
                 batch: {
                   id: "vbb-1",
@@ -361,7 +397,7 @@ async function mockWorkbenchApi(page: Page) {
                   errorMessage: null,
                   idempotencyKey: null,
                   createdAt: now,
-                  updatedAt: now,
+                  updatedAt: now
                 },
                 candidates: [],
                 selection: null,
@@ -369,12 +405,12 @@ async function mockWorkbenchApi(page: Page) {
                   firstFrameUrl: `/api/workspaces/${workspaceId}/materials/generated-images/imc-1.png`,
                   lastFrameUrl: null,
                   firstFrameCandidateId: "imc-1",
-                  lastFrameCandidateId: null,
+                  lastFrameCandidateId: null
                 },
-                context: {},
-              },
+                context: {}
+              }
             ]
-          : [],
+          : []
       });
     }
 
@@ -390,9 +426,38 @@ async function mockWorkbenchApi(page: Page) {
             inputPreview: null,
             outputPreview: "ok",
             metadata: {},
-            createdAt: now,
-          },
-        ],
+            createdAt: now
+          }
+        ]
+      });
+    }
+
+    if (request.method() === "POST" && path === `/api/workspaces/${workspaceId}/final-videos`) {
+      finalStarted = true;
+      requests.finalCompose = request.postDataJSON();
+      return json(route, {
+        data: {
+          finalVideoJobId: "fvj-1",
+          jobId: "job-final-1",
+          status: "PENDING"
+        }
+      });
+    }
+
+    if (request.method() === "GET" && path === "/api/final-videos/fvj-1") {
+      return json(route, {
+        data: {
+          id: "fvj-1",
+          workspaceId,
+          status: finalStarted ? "SUCCEEDED" : "PENDING",
+          localUrl: finalStarted
+            ? `/api/workspaces/${workspaceId}/final-videos/fvj-1/file`
+            : null,
+          durationSec: finalStarted ? 8 : null,
+          compiledManifestHash: finalStarted ? "abc123" : null,
+          errorMessage: null,
+          createdAt: now
+        }
       });
     }
 
@@ -408,7 +473,7 @@ async function mockWorkbenchApi(page: Page) {
         batch: { id: "imb-1", status: "PENDING" },
         candidates: [{ id: "imc-1", status: "PENDING" }],
         shotStatus: "IMAGE_GENERATING",
-        traceId: "trace-image",
+        traceId: "trace-image"
       });
     }
 
@@ -420,7 +485,7 @@ async function mockWorkbenchApi(page: Page) {
       requests.imageSelect = request.postDataJSON();
       return json(route, {
         data: { selectedImageId: "imc-1" },
-        shotStatus: "IMAGE_SELECTED",
+        shotStatus: "IMAGE_SELECTED"
       });
     }
 
@@ -436,7 +501,7 @@ async function mockWorkbenchApi(page: Page) {
         batch: { id: "vbb-1", status: "SUCCEEDED" },
         candidates: [],
         shotStatus: "VIDEO_CANDIDATES_READY",
-        traceId: "trace-video",
+        traceId: "trace-video"
       });
     }
 
@@ -466,10 +531,14 @@ async function mockReviewStartApi(page: Page) {
     traceFile: ".daireel/trace/events.jsonl",
     createdAt: now,
     updatedAt: now,
-    lastSeenAt: now,
+    lastSeenAt: now
   };
 
-  const artifact = (moduleId: string, data: unknown, status: "proposed" | "approved") => ({
+  const artifact = (
+    moduleId: string,
+    data: unknown,
+    status: "proposed" | "approved"
+  ) => ({
     id: `${moduleId}-${status}`,
     workspaceId,
     moduleId,
@@ -481,25 +550,25 @@ async function mockReviewStartApi(page: Page) {
     promptAssembly: {
       moduleId,
       subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64),
+      contractHash: "b".repeat(64)
     },
     createdAt: now,
     updatedAt: now,
-    approvedAt: status === "approved" ? now : null,
+    approvedAt: status === "approved" ? now : null
   });
 
   const materialData = {
     scannedAt: now,
     primaryProductRef: "product.png",
     assets: [],
-    rejected: [],
+    rejected: []
   };
   const briefData = {
     product: {
       name: "Desk Lamp",
       category: "lighting",
       keyFacts: ["soft light"],
-      assets: [{ ref: "product.png", useAs: "primary" }],
+      assets: [{ ref: "product.png", useAs: "primary" }]
     },
     audience: { who: "home workers", painOrDesire: "clean desk light" },
     coreSellingPoint: "soft adjustable light",
@@ -509,7 +578,7 @@ async function mockReviewStartApi(page: Page) {
     brandTone: "clear",
     bannedExpressions: [],
     landingInfo: "old decorative product detail page",
-    assumptions: ["old decorative wall art assumption"],
+    assumptions: ["old decorative wall art assumption"]
   };
 
   const statusBody = () => ({
@@ -518,7 +587,7 @@ async function mockReviewStartApi(page: Page) {
       schemaVersion: 1,
       workspaceId,
       currentScriptId: "script-e2e",
-      traceFile: ".daireel/trace/events.jsonl",
+      traceFile: ".daireel/trace/events.jsonl"
     },
     nextAction: {
       stage: "requirements",
@@ -527,7 +596,7 @@ async function mockReviewStartApi(page: Page) {
       actionType: "human_approval",
       requiresHumanApproval: true,
       willCallProvider: false,
-      requiresProviderConfig: false,
+      requiresProviderConfig: false
     },
     materialLibrary: {
       scannedAt: now,
@@ -544,11 +613,11 @@ async function mockReviewStartApi(page: Page) {
               description: "hero product frame",
               relevance: "high",
               usable: true,
-              included: true,
-            },
+              included: true
+            }
           ]
         : [],
-      rejected: [],
+      rejected: []
     },
     artifacts: {
       promptRequirements: requirementsApproved
@@ -557,21 +626,19 @@ async function mockReviewStartApi(page: Page) {
             {
               image: { style: "clean" },
               shotImage: { global: "consistent scene" },
-              shotVideo: { global: "smooth motion" },
+              shotVideo: { global: "smooth motion" }
             },
-            "approved",
+            "approved"
           )
         : null,
       material: materialApproved
         ? artifact("material-intake", materialData, "approved")
         : null,
-      brief: briefProposed
-        ? artifact("product-brief", briefData, "proposed")
-        : null,
+      brief: briefProposed ? artifact("product-brief", briefData, "proposed") : null,
       storyboard: null,
-      shotPrompt: null,
+      shotPrompt: null
     },
-    activeShotSet: null,
+    activeShotSet: null
   });
 
   const handleApiRoute = async (route: Route) => {
@@ -581,10 +648,7 @@ async function mockReviewStartApi(page: Page) {
     if (request.method() === "GET" && path === "/api/workspaces") {
       return json(route, { workspaceRoot: "storage/workspaces", workspaces: [] });
     }
-    if (
-      request.method() === "GET" &&
-      path === `/api/workspaces/${workspaceId}/status`
-    ) {
+    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/status`) {
       return json(route, statusBody());
     }
     if (
@@ -592,13 +656,16 @@ async function mockReviewStartApi(page: Page) {
       path === `/api/workspaces/${workspaceId}/shot-workflow-status`
     ) {
       return json(route, {
-        data: { workspaceId, shots: [], canComposeFinalVideo: false },
+        data: { workspaceId, shots: [], canComposeFinalVideo: false }
       });
     }
     if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
       return json(route, { data: [] });
     }
-    if (request.method() === "POST" && path === `/api/workspaces/${workspaceId}/materials`) {
+    if (
+      request.method() === "POST" &&
+      path === `/api/workspaces/${workspaceId}/materials`
+    ) {
       materialUploaded = true;
       calls.push("upload-material");
       return json(route, {
@@ -606,8 +673,8 @@ async function mockReviewStartApi(page: Page) {
         material: {
           ref: "product.png",
           bytes: 100,
-          url: `/api/workspaces/${workspaceId}/materials/product.png`,
-        },
+          url: `/api/workspaces/${workspaceId}/materials/product.png`
+        }
       });
     }
     if (
@@ -616,7 +683,7 @@ async function mockReviewStartApi(page: Page) {
     ) {
       calls.push("propose-requirements");
       return json(route, {
-        data: artifact("prompt-requirements", request.postDataJSON().data, "proposed"),
+        data: artifact("prompt-requirements", request.postDataJSON().data, "proposed")
       });
     }
     if (
@@ -626,7 +693,11 @@ async function mockReviewStartApi(page: Page) {
       requirementsApproved = true;
       calls.push("approve-requirements");
       return json(route, {
-        data: artifact("prompt-requirements", { image: {}, shotImage: {}, shotVideo: {} }, "approved"),
+        data: artifact(
+          "prompt-requirements",
+          { image: {}, shotImage: {}, shotVideo: {} },
+          "approved"
+        )
       });
     }
     if (
@@ -635,7 +706,7 @@ async function mockReviewStartApi(page: Page) {
     ) {
       calls.push("propose-material");
       return json(route, {
-        data: artifact("material-intake", materialData, "proposed"),
+        data: artifact("material-intake", materialData, "proposed")
       });
     }
     if (
@@ -645,7 +716,7 @@ async function mockReviewStartApi(page: Page) {
       materialApproved = true;
       calls.push("approve-material");
       return json(route, {
-        data: artifact("material-intake", materialData, "approved"),
+        data: artifact("material-intake", materialData, "approved")
       });
     }
     if (
@@ -655,7 +726,7 @@ async function mockReviewStartApi(page: Page) {
       briefProposed = true;
       calls.push("propose-brief");
       return json(route, {
-        data: artifact("product-brief", briefData, "proposed"),
+        data: artifact("product-brief", briefData, "proposed")
       });
     }
 
@@ -692,10 +763,14 @@ async function mockLayeredReviewApi(page: Page) {
     traceFile: ".daireel/trace/events.jsonl",
     createdAt: now,
     updatedAt: now,
-    lastSeenAt: now,
+    lastSeenAt: now
   };
 
-  const artifact = (moduleId: string, data: unknown, status: "proposed" | "approved") => ({
+  const artifact = (
+    moduleId: string,
+    data: unknown,
+    status: "proposed" | "approved"
+  ) => ({
     id: `${moduleId}-${status}`,
     workspaceId,
     moduleId,
@@ -707,11 +782,11 @@ async function mockLayeredReviewApi(page: Page) {
     promptAssembly: {
       moduleId,
       subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64),
+      contractHash: "b".repeat(64)
     },
     createdAt: now,
     updatedAt: now,
-    approvedAt: status === "approved" ? now : null,
+    approvedAt: status === "approved" ? now : null
   });
 
   const briefData = {
@@ -719,7 +794,7 @@ async function mockLayeredReviewApi(page: Page) {
       name: "Desk Lamp",
       category: "lighting",
       keyFacts: ["soft light"],
-      assets: [{ ref: "product.png", useAs: "primary" }],
+      assets: [{ ref: "product.png", useAs: "primary" }]
     },
     audience: { who: "home workers", painOrDesire: "clean desk light" },
     coreSellingPoint: "soft adjustable light",
@@ -729,7 +804,7 @@ async function mockLayeredReviewApi(page: Page) {
     brandTone: "clear",
     bannedExpressions: [],
     landingInfo: null,
-    assumptions: [],
+    assumptions: []
   };
   const storyboardData = {
     narrative: "show the product in a consistent workspace",
@@ -743,7 +818,7 @@ async function mockLayeredReviewApi(page: Page) {
         visualDirection: "slow push toward the product",
         productAssetRef: "product.png",
         voiceover: "整理桌面，从一盏好灯开始。",
-        transition: "cut",
+        transition: "cut"
       },
       {
         index: 1,
@@ -753,10 +828,10 @@ async function mockLayeredReviewApi(page: Page) {
         visualDirection: "hold product hero angle",
         productAssetRef: "product.png",
         voiceover: "现在就把光线调到舒服。",
-        transition: "fade",
-      },
+        transition: "fade"
+      }
     ],
-    assumptions: [],
+    assumptions: []
   };
   const shotPromptData = {
     targetProvider: "seedance",
@@ -771,7 +846,7 @@ async function mockLayeredReviewApi(page: Page) {
         endSec: 4,
         providerPrompt: "clean desk slow push",
         referenceAssetRefs: ["product.png"],
-        voiceover: "整理桌面，从一盏好灯开始。",
+        voiceover: "整理桌面，从一盏好灯开始。"
       },
       {
         index: 1,
@@ -779,11 +854,15 @@ async function mockLayeredReviewApi(page: Page) {
         endSec: 8,
         providerPrompt: "same desk hero hold",
         referenceAssetRefs: ["product.png"],
-        voiceover: "现在就把光线调到舒服。",
-      },
+        voiceover: "现在就把光线调到舒服。"
+      }
     ],
-    tts: { enabled: true, source: "shots.voiceover", voiceover: "整理桌面，从一盏好灯开始。现在就把光线调到舒服。" },
-    assumptions: [],
+    tts: {
+      enabled: true,
+      source: "shots.voiceover",
+      voiceover: "整理桌面，从一盏好灯开始。现在就把光线调到舒服。"
+    },
+    assumptions: []
   };
 
   const statusBody = () => ({
@@ -792,7 +871,7 @@ async function mockLayeredReviewApi(page: Page) {
       schemaVersion: 1,
       workspaceId,
       currentScriptId: "script-e2e",
-      traceFile: ".daireel/trace/events.jsonl",
+      traceFile: ".daireel/trace/events.jsonl"
     },
     nextAction: {
       stage: "brief",
@@ -801,32 +880,44 @@ async function mockLayeredReviewApi(page: Page) {
       actionType: "human_approval",
       requiresHumanApproval: true,
       willCallProvider: false,
-      requiresProviderConfig: false,
+      requiresProviderConfig: false
     },
     materialLibrary: {
       scannedAt: now,
       primaryProductRef: "product.png",
       assets: [],
-      rejected: [],
+      rejected: []
     },
     artifacts: {
       promptRequirements: artifact(
         "prompt-requirements",
         { image: {}, shotImage: {}, shotVideo: {} },
-        "approved",
+        "approved"
       ),
       material: artifact(
         "material-intake",
         { scannedAt: now, primaryProductRef: "product.png", assets: [], rejected: [] },
-        "approved",
+        "approved"
       ),
-      brief: artifact("product-brief", briefData, briefApproved ? "approved" : "proposed"),
+      brief: artifact(
+        "product-brief",
+        briefData,
+        briefApproved ? "approved" : "proposed"
+      ),
       storyboard: storyboardProposed
-        ? artifact("storyboard", storyboardData, storyboardApproved ? "approved" : "proposed")
+        ? artifact(
+            "storyboard",
+            storyboardData,
+            storyboardApproved ? "approved" : "proposed"
+          )
         : null,
       shotPrompt: shotPromptProposed
-        ? artifact("shotprompt", shotPromptData, shotPromptApproved ? "approved" : "proposed")
-        : null,
+        ? artifact(
+            "shotprompt",
+            shotPromptData,
+            shotPromptApproved ? "approved" : "proposed"
+          )
+        : null
     },
     activeShotSet: shotSetApplied
       ? {
@@ -836,19 +927,16 @@ async function mockLayeredReviewApi(page: Page) {
           status: "active",
           sourceFingerprint: {},
           createdAt: now,
-          archivedAt: null,
+          archivedAt: null
         }
-      : null,
+      : null
   });
 
   const handleApiRoute = async (route: Route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
 
-    if (
-      request.method() === "GET" &&
-      path === `/api/workspaces/${workspaceId}/status`
-    ) {
+    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/status`) {
       return json(route, statusBody());
     }
     if (
@@ -868,12 +956,12 @@ async function mockLayeredReviewApi(page: Page) {
                   activeImagePromptArtifactId: null,
                   selectedImageId: null,
                   activeVideoScriptArtifactId: null,
-                  selectedVideoId: null,
-                },
+                  selectedVideoId: null
+                }
               ]
             : [],
-          canComposeFinalVideo: false,
-        },
+          canComposeFinalVideo: false
+        }
       });
     }
     if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/shots`) {
@@ -892,10 +980,10 @@ async function mockLayeredReviewApi(page: Page) {
                 activeImagePromptArtifactId: null,
                 selectedImageId: null,
                 activeVideoScriptArtifactId: null,
-                selectedVideoId: null,
-              },
+                selectedVideoId: null
+              }
             ]
-          : [],
+          : []
       });
     }
     if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
@@ -958,8 +1046,8 @@ async function mockLayeredReviewApi(page: Page) {
           status: "active",
           sourceFingerprint: {},
           createdAt: now,
-          archivedAt: null,
-        },
+          archivedAt: null
+        }
       });
     }
 
@@ -974,10 +1062,8 @@ async function mockLayeredReviewApi(page: Page) {
   return state;
 }
 
-test("user can start a managed creative session from the root URL", async ({
-  page,
-}) => {
-  await mockWorkbenchApi(page);
+test("user can start a managed creative session from the root URL", async ({ page }) => {
+  await mockCreativeReviewApi(page);
   await page.goto("/");
 
   await page.getByRole("button", { name: /启动创作会话/ }).click();
@@ -987,7 +1073,7 @@ test("user can start a managed creative session from the root URL", async ({
 });
 
 test("user can open a chosen working directory", async ({ page }) => {
-  await mockWorkbenchApi(page);
+  await mockCreativeReviewApi(page);
   await page.goto("/");
 
   await page.getByLabel("工作目录路径").fill("/tmp/daireel-e2e");
@@ -998,7 +1084,7 @@ test("user can open a chosen working directory", async ({ page }) => {
 });
 
 test("review desk starts from requirements and stops at product brief review", async ({
-  page,
+  page
 }) => {
   const calls = await mockReviewStartApi(page);
 
@@ -1007,7 +1093,7 @@ test("review desk starts from requirements and stops at product brief review", a
   await page.getByLabel("上传素材").setInputFiles({
     name: "product.png",
     mimeType: "image/png",
-    buffer: png,
+    buffer: png
   });
   await expect(page.getByRole("button", { name: /提交创作要求/ })).toBeEnabled();
   await page.getByRole("button", { name: /提交创作要求/ }).click();
@@ -1018,13 +1104,11 @@ test("review desk starts from requirements and stops at product brief review", a
     "approve-requirements",
     "propose-material",
     "approve-material",
-    "propose-brief",
+    "propose-brief"
   ]);
 });
 
-test("product brief review edits business fields before approving", async ({
-  page,
-}) => {
+test("product brief review edits business fields before approving", async ({ page }) => {
   const state = await mockLayeredReviewApi(page);
 
   await page.goto(`/workspaces/${workspaceId}`);
@@ -1033,7 +1117,9 @@ test("product brief review edits business fields before approving", async ({
   await page.getByLabel("商品名称").fill("海滨装饰画");
   await page.getByLabel("核心卖点").fill("自然海滨色调适配客厅");
   await page.getByLabel("落地页信息").fill("旅行详情页提供路线、住宿和价格说明");
-  await page.getByLabel("关键假设").fill("用户已确认这是旅行服务\n素材可用于加州路线展示");
+  await page
+    .getByLabel("关键假设")
+    .fill("用户已确认这是旅行服务\n素材可用于加州路线展示");
   await page.getByRole("button", { name: "提交表单到结构化内容" }).click();
 
   const payloadView = page.getByLabel("后端 payload（只读）");
@@ -1051,8 +1137,8 @@ test("product brief review edits business fields before approving", async ({
       product: { name: "海滨装饰画" },
       coreSellingPoint: "自然海滨色调适配客厅",
       landingInfo: "旅行详情页提供路线、住宿和价格说明",
-      assumptions: ["用户已确认这是旅行服务", "素材可用于加州路线展示"],
-    },
+      assumptions: ["用户已确认这是旅行服务", "素材可用于加州路线展示"]
+    }
   });
 });
 
@@ -1064,7 +1150,9 @@ test("storyboard review edits form fields before approving", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "分镜规划" })).toBeVisible();
 
   await expect(page.getByText("编辑结构化内容")).toHaveCount(0);
-  await page.getByLabel("分镜叙事").fill("先展示旅行目的地，再证明路线体验，最后引导咨询");
+  await page
+    .getByLabel("分镜叙事")
+    .fill("先展示旅行目的地，再证明路线体验，最后引导咨询");
   await page.getByLabel("总时长").fill("12");
   await page.getByLabel("Shot 1 场景").fill("加州海岸公路清晨远景");
   await page.getByLabel("Shot 1 画面方向").fill("航拍沿海岸线推进，突出路线辽阔感");
@@ -1090,12 +1178,12 @@ test("storyboard review edits form fields before approving", async ({ page }) =>
   expect(storyboardBody.data).toMatchObject({
     narrative: "先展示旅行目的地，再证明路线体验，最后引导咨询",
     totalDurationSec: 12,
-    assumptions: ["用户已确认旅行服务方向"],
+    assumptions: ["用户已确认旅行服务方向"]
   });
   expect(storyboardBody.data.shots[0]).toMatchObject({
     scene: "加州海岸公路清晨远景",
     visualDirection: "航拍沿海岸线推进，突出路线辽阔感",
-    voiceover: "三天时间，把加州海岸线走进你的假期里。",
+    voiceover: "三天时间，把加州海岸线走进你的假期里。"
   });
 });
 
@@ -1108,7 +1196,9 @@ test("shotprompt review edits form fields before approving", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "分镜生成要求" })).toBeVisible();
 
   await expect(page.getByText("编辑结构化内容")).toHaveCount(0);
-  await page.getByLabel("全局视频提示词").fill("保持真实旅行 vlog 质感，海岸线和车辆连续");
+  await page
+    .getByLabel("全局视频提示词")
+    .fill("保持真实旅行 vlog 质感，海岸线和车辆连续");
   await page.getByLabel("负向提示词").fill("不要出现装饰画、墙面、室内陈列");
   await page.getByLabel("Shot 1 生成提示词").fill("沿海公路航拍推进，车辆沿右侧车道前进");
   await page.getByLabel("Shot 1 参考素材").fill("DSC03391.JPG\nDSC03407.JPG");
@@ -1142,18 +1232,16 @@ test("shotprompt review edits form fields before approving", async ({ page }) =>
     prompt: "保持真实旅行 vlog 质感，海岸线和车辆连续",
     negativePrompt: "不要出现装饰画、墙面、室内陈列",
     assumptions: ["用户需要旅行服务视频，而不是装饰画视频"],
-    tts: { voiceover: "从海边出发，三天看完整条路线。" },
+    tts: { voiceover: "从海边出发，三天看完整条路线。" }
   });
   expect(shotPromptBody.data.shots[0]).toMatchObject({
     providerPrompt: "沿海公路航拍推进，车辆沿右侧车道前进",
     referenceAssetRefs: ["DSC03391.JPG", "DSC03407.JPG"],
-    voiceover: "从海边出发，三天看完整条路线。",
+    voiceover: "从海边出发，三天看完整条路线。"
   });
 });
 
-test("review desk advances layered approvals into shot production", async ({
-  page,
-}) => {
+test("review desk advances layered approvals into shot production", async ({ page }) => {
   const state = await mockLayeredReviewApi(page);
 
   await page.goto(`/workspaces/${workspaceId}`);
@@ -1167,7 +1255,7 @@ test("review desk advances layered approvals into shot production", async ({
   await page.getByRole("button", { name: /批准分镜生成要求/ }).click();
   await expect.poll(() => state.calls.includes("apply-shot-set")).toBe(true);
   await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible({
-    timeout: 15_000,
+    timeout: 15_000
   });
   expect(state.calls).toEqual([
     "approve-brief",
@@ -1175,12 +1263,12 @@ test("review desk advances layered approvals into shot production", async ({
     "approve-storyboard",
     "propose-shotprompt",
     "approve-shotprompt",
-    "apply-shot-set",
+    "apply-shot-set"
   ]);
 });
 
 test("review desk lets users revisit upstream steps after advancing", async ({
-  page,
+  page
 }) => {
   const state = await mockLayeredReviewApi(page);
 
@@ -1204,26 +1292,26 @@ test("review desk lets users revisit upstream steps after advancing", async ({
     .toBe(2);
   expect(state.approveBriefBody).toMatchObject({
     data: {
-      product: { name: "回退修改商品" },
-    },
+      product: { name: "回退修改商品" }
+    }
   });
 });
 
 test("review desk drives image selection and batch video generation", async ({
-  page,
+  page
 }) => {
-  const requests = await mockWorkbenchApi(page);
+  const requests = await mockCreativeReviewApi(page);
 
   await page.goto(`/workspaces/${workspaceId}`);
   await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible();
   const materialImage = page.locator(".review-asset img").first();
   await expect(materialImage).toHaveJSProperty(
     "src",
-    `http://localhost:3000/api/workspaces/${workspaceId}/materials/product.png`,
+    `http://localhost:3000/api/workspaces/${workspaceId}/materials/product.png`
   );
   await expect
     .poll(() =>
-      materialImage.evaluate((image) => (image as HTMLImageElement).naturalWidth),
+      materialImage.evaluate((image) => (image as HTMLImageElement).naturalWidth)
     )
     .toBeGreaterThan(0);
 
@@ -1232,10 +1320,13 @@ test("review desk drives image selection and batch video generation", async ({
   expect(requests.imagePropose).toEqual({});
 
   await page.locator(".review-candidate").first().click();
-  await expect.poll(() => requests.imageSelect).toEqual({
-    imageCandidateId: "imc-1",
-    imageGenerationBatchId: "imb-1",
-  });
+  await page.getByRole("button", { name: /确认选择/ }).click();
+  await expect
+    .poll(() => requests.imageSelect)
+    .toEqual({
+      imageCandidateId: "imc-1",
+      imageGenerationBatchId: "imb-1"
+    });
 
   await expect(page.getByRole("button", { name: /批量生成分镜视频候选/ })).toBeEnabled();
   await page.getByRole("button", { name: /批量生成分镜视频候选/ }).click();
@@ -1243,9 +1334,42 @@ test("review desk drives image selection and batch video generation", async ({
   await expect(page.getByText("SUCCEEDED")).toBeVisible();
 });
 
-test("debug workbench remains available under the debug route", async ({ page }) => {
-  await mockWorkbenchApi(page);
-  await page.goto(`/debug/workbenches/${workspaceId}`);
-  await expect(page.getByRole("heading", { name: "Artifact Pipeline" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Shot Workbench" })).toBeVisible();
+test("review desk keeps a manually selected previous image shot visible", async ({
+  page
+}) => {
+  await mockCreativeReviewApi(page, {
+    shot1ImageSelectedInitially: true,
+    shot2ImageSelectedInitially: false
+  });
+
+  await page.goto(`/workspaces/${workspaceId}`);
+  await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible();
+  const currentShot = page.locator(".review-current-shot strong");
+  await expect(currentShot).toHaveText("Shot 2");
+
+  await page.locator(".review-shot-nav__item").first().click();
+  await expect(currentShot).toHaveText("Shot 1");
+  await page.waitForTimeout(150);
+  await expect(currentShot).toHaveText("Shot 1");
+});
+
+test("review desk exposes a final video download link after compose succeeds", async ({
+  page
+}) => {
+  const requests = await mockCreativeReviewApi(page, { readyForFinal: true });
+
+  await page.goto(`/workspaces/${workspaceId}`);
+  await expect(page.getByRole("heading", { name: "生成成片" })).toBeVisible();
+
+  await page.getByRole("button", { name: "生成成片", exact: true }).click();
+  await expect.poll(() => requests.finalCompose).toEqual({
+    outputAspectRatio: "9:16"
+  });
+
+  const download = page.getByRole("link", { name: /下载 MP4/ });
+  await expect(download).toBeVisible();
+  await expect(download).toHaveAttribute(
+    "href",
+    `http://localhost:3000/api/workspaces/${workspaceId}/final-videos/fvj-1/file`
+  );
 });

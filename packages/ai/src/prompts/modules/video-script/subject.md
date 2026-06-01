@@ -11,3 +11,4 @@ Subject rules:
 5. last_frame_url, when present, defines the intended ending continuity toward the next selected still.
 6. Keep the script physically plausible for the requested duration.
 7. If userHint is present, apply it only when it does not conflict with approved upstream artifacts.
+8. Seedance has no separate narration field in the create request. If shot.voiceover is present, providerPrompt must include an explicit audio/voiceover instruction telling Seedance to generate natural spoken narration for that exact line while avoiding on-screen subtitles/text.

@@ -338,6 +338,10 @@ export interface Db2Adapter {
   insertVideoCandidate(
     input: Omit<VideoCandidateRow, "createdAt">
   ): Promise<VideoCandidateRow>;
+  updateVideoCandidate(
+    id: string,
+    patch: Partial<VideoCandidateRow>
+  ): Promise<VideoCandidateRow>;
   listVideoCandidatesByBatch(batchId: string): Promise<VideoCandidateRow[]>;
   getVideoCandidate(id: string): Promise<VideoCandidateRow>;
   // Selected videos
@@ -2031,6 +2035,41 @@ class PostgresDb2Adapter implements Db2Adapter {
         input.status,
         input.errorMessage ?? null
       ]
+    );
+    return firstRow(result.rows, "VideoCandidate", toVideoCandidateRow);
+  }
+
+  async updateVideoCandidate(
+    id: string,
+    patch: Partial<VideoCandidateRow>
+  ): Promise<VideoCandidateRow> {
+    const colMap: Record<string, string> = {
+      videoUrl: "video_url",
+      objectKey: "object_key",
+      thumbnailUrl: "thumbnail_url",
+      durationSec: "duration_sec",
+      width: "width",
+      height: "height",
+      provider: "provider",
+      providerResponse: "provider_response",
+      status: "status",
+      errorMessage: "error_message"
+    };
+    const keys = Object.keys(patch).filter((k) => k in colMap);
+    if (keys.length === 0) {
+      return this.getVideoCandidate(id);
+    }
+    const setClauses = keys.map((k, i) => `${colMap[k]} = $${i + 2}`);
+    const values = keys.map((k) => {
+      const v = (patch as Record<string, unknown>)[k];
+      return k === "providerResponse" ? jsonbParam(v) : v;
+    });
+    const result = await this._pool.query(
+      `update video_candidates
+       set ${setClauses.join(", ")}
+       where id = $1
+       returning *`,
+      [id, ...values]
     );
     return firstRow(result.rows, "VideoCandidate", toVideoCandidateRow);
   }

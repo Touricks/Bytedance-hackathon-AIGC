@@ -39,32 +39,33 @@
 ## 4. 输入字段
 
 > **设计原则**：用户只需输入 `userDirection`（可选）；其它由后端 / 环境变量补齐。
+>
 > - `first_frame_url`、`last_frame_url`、`number`、`durationSec` 都由后端基于 shotId + 全局 storyboard 自动注入。
 > - 用户不需要勾选首尾帧、不需要选时长、不需要选生成张数。
 
-| 字段 | 含义（白话） | 类型 | 必须 | 来源 |
-|---|---|---|---|---|
-| `workspaceId` | 工作区 ID | 字符串 (uuid) | 是 | 路径参数 |
-| `shotId` | 镜头 ID | 字符串 (uuid) | 是 | 路径参数 |
-| `userDirection` | 用户对运动 / 节奏的自由文本指示。例：「镜头慢推」「最后定格在胶囊」 | 字符串 | 否 | 请求 |
-| `number` | 要求生成的候选视频数量。默认从 `.env`（如 `DEFAULT_VIDEO_BATCH_SIZE=3`）提取 | 整数 | 是 | 环境变量 |
-| `first_frame_url` | 本 shot 的关键帧 URL，作为 Seedance `role=first_frame` 的输入。**必填，由后端基于 shotId 自动注入**（来自 `image_select_artifacts[shot]`） | 字符串 (URL) | 是 | 后端注入 |
-| `last_frame_url` | 下一 shot 的关键帧 URL，作为 Seedance `role=last_frame` 的输入。**若本 shot 是最后一个，传 null**（Seedance 仅取 first_frame）。后端自动注入（来自 `image_select_artifacts[shot+1]`） | 字符串 (URL) \| null | 是 | 后端注入 |
-| `durationSec` | 本 shot 视频时长（秒），1-8。直接来自 storyboard | 整数 | 是 | 后端注入（storyboard.shots[].durationSec） |
+| 字段              | 含义（白话）                                                                                                                                                                          | 类型                 | 必须 | 来源                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ---- | ------------------------------------------ |
+| `workspaceId`     | 工作区 ID                                                                                                                                                                             | 字符串 (uuid)        | 是   | 路径参数                                   |
+| `shotId`          | 镜头 ID                                                                                                                                                                               | 字符串 (uuid)        | 是   | 路径参数                                   |
+| `userDirection`   | 用户对运动 / 节奏的自由文本指示。例：「镜头慢推」「最后定格在胶囊」                                                                                                                   | 字符串               | 否   | 请求                                       |
+| `number`          | 要求生成的候选视频数量。默认从 `.env`（如 `DEFAULT_VIDEO_CANDIDATES=2`）提取                                                                                                          | 整数                 | 是   | 环境变量                                   |
+| `first_frame_url` | 本 shot 的关键帧 URL，作为 Seedance `role=first_frame` 的输入。**必填，由后端基于 shotId 自动注入**（来自 `image_select_artifacts[shot]`）                                            | 字符串 (URL)         | 是   | 后端注入                                   |
+| `last_frame_url`  | 下一 shot 的关键帧 URL，作为 Seedance `role=last_frame` 的输入。**若本 shot 是最后一个，传 null**（Seedance 仅取 first_frame）。后端自动注入（来自 `image_select_artifacts[shot+1]`） | 字符串 (URL) \| null | 是   | 后端注入                                   |
+| `durationSec`     | 本 shot 视频时长（秒），1-8。直接来自 storyboard                                                                                                                                      | 整数                 | 是   | 后端注入（storyboard.shots[].durationSec） |
 
 ### 模型实际看到的上下文（由后端拼装注入）
 
-| 字段 | 含义（白话） | 来源 |
-|---|---|---|
-| `shot.orderIndex` | 镜头序号 | `storyboard_shots` |
-| `shot.objective` | 镜头作用（hook / benefit / proof / cta） | shotprompt + storyboard |
-| `shot.voiceover` | 该镜头预设的口播台词 | storyboard |
-| `shot.providerPromptFromShotPrompt` | shotprompt 编译出的镜头级 prompt（语境锚点） | shotprompt |
-| `firstFrame.imageUrl` | 首帧图 URL，对应 `first_frame_url` | image_select_artifacts[shot] |
-| `firstFrame.basedOnImagePromptText` | 当初生成首帧用的 prompt（保留语境） | image_prompt_artifacts |
-| `lastFrame.imageUrl` | 末帧图 URL（若为最后一个 shot 则为 null） | image_select_artifacts[shot+1] |
-| `brief.brandTone` | 品牌语气 | productBrief |
-| `previousVideoScript` | 该 shot 上一版脚本（若存在），用于增量修改 | video_script_artifacts |
+| 字段                                | 含义（白话）                                 | 来源                           |
+| ----------------------------------- | -------------------------------------------- | ------------------------------ |
+| `shot.orderIndex`                   | 镜头序号                                     | `storyboard_shots`             |
+| `shot.objective`                    | 镜头作用（hook / benefit / proof / cta）     | shotprompt + storyboard        |
+| `shot.voiceover`                    | 该镜头预设的口播台词                         | storyboard                     |
+| `shot.providerPromptFromShotPrompt` | shotprompt 编译出的镜头级 prompt（语境锚点） | shotprompt                     |
+| `firstFrame.imageUrl`               | 首帧图 URL，对应 `first_frame_url`           | image_select_artifacts[shot]   |
+| `firstFrame.basedOnImagePromptText` | 当初生成首帧用的 prompt（保留语境）          | image_prompt_artifacts         |
+| `lastFrame.imageUrl`                | 末帧图 URL（若为最后一个 shot 则为 null）    | image_select_artifacts[shot+1] |
+| `brief.brandTone`                   | 品牌语气                                     | productBrief                   |
+| `previousVideoScript`               | 该 shot 上一版脚本（若存在），用于增量修改   | video_script_artifacts         |
 
 ### 输入示例
 
@@ -105,36 +106,36 @@
 1. **候选视频相关**（用户在前端看到的）：`candidates[]`——结构对齐 Seedance API 返回（参考 [docs/reference/video/POST.md](../../reference/video/POST.md) 和 [GET.md](../../reference/video/GET.md)）。
 2. **Prompt 元数据**（trace / 复用用）：`providerPrompt` 等——写入 `VideoScriptArtifact`，前端默认不展示。
 
-| 字段 | 含义（白话） | 类型 | 必须 |
-|---|---|---|---|
-| `candidates[]` | 候选视频列表，结构对齐 Seedance task `content` + 后端补的 `candidateId` / 状态 | 对象数组 | 是 |
-| `providerPrompt` | 实际喂给 Seedance 的 prompt 文本（trace 用） | 字符串 | 是 |
-| `negativePrompt` | 负向 prompt（trace 用） | 字符串 \| null | 否 |
-| `cameraMotion` | 镜头运动描述（trace 用） | 字符串 | 是 |
-| `subjectMotion` | 主体动作描述（trace 用） | 字符串 | 是 |
-| `productVisibility` | 商品可见性约束（trace 用） | 字符串 | 是 |
-| `voiceover` | 该镜头口播文本。沿用 storyboard 同 index voiceover，不做改写 | 字符串 \| null | 否 |
+| 字段                | 含义（白话）                                                                   | 类型           | 必须 |
+| ------------------- | ------------------------------------------------------------------------------ | -------------- | ---- |
+| `candidates[]`      | 候选视频列表，结构对齐 Seedance task `content` + 后端补的 `candidateId` / 状态 | 对象数组       | 是   |
+| `providerPrompt`    | 实际喂给 Seedance 的 prompt 文本（trace 用）                                   | 字符串         | 是   |
+| `negativePrompt`    | 负向 prompt（trace 用）                                                        | 字符串 \| null | 否   |
+| `cameraMotion`      | 镜头运动描述（trace 用）                                                       | 字符串         | 是   |
+| `subjectMotion`     | 主体动作描述（trace 用）                                                       | 字符串         | 是   |
+| `productVisibility` | 商品可见性约束（trace 用）                                                     | 字符串         | 是   |
+| `voiceover`         | 该镜头口播文本。沿用 storyboard 同 index voiceover，不做改写                   | 字符串 \| null | 否   |
 
 ### `candidates[]` 子结构
 
-| 字段 | 含义（白话） | 类型 | 必须 |
-|---|---|---|---|
-| `candidateId` | 后端为该候选生成的 UUID。用户选视频 / 持久化 / final compose 引用都用它 | 字符串 (uuid) | 是 |
-| `taskId` | Seedance 返回的 task ID（如 `cgt-20260529230027-skhsc`），用于轮询 / 重试 / 调试 | 字符串 | 是 |
-| `status` | 任务终态 | 枚举: `succeeded` \| `failed` | 是 |
-| `videoUrl` | 视频可访问 URL，对应 Seedance `content.video_url`（**24 小时有效**，后端通常下载并替换为持久化 URL） | 字符串 \| null | 否（status=succeeded 时必填） |
-| `usage` | Seedance 返回的 tokens 用量 | 对象 \| null | 否 |
-| `createdAt` | task 创建时的 unix 时间戳 | 整数 | 是 |
-| `failureReason` | 失败原因（status=failed 时必填，前端展示给用户） | 字符串 \| null | 否 |
+| 字段            | 含义（白话）                                                                                         | 类型                          | 必须                          |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------- |
+| `candidateId`   | 后端为该候选生成的 UUID。用户选视频 / 持久化 / final compose 引用都用它                              | 字符串 (uuid)                 | 是                            |
+| `taskId`        | Seedance 返回的 task ID（如 `cgt-20260529230027-skhsc`），用于轮询 / 重试 / 调试                     | 字符串                        | 是                            |
+| `status`        | 任务终态                                                                                             | 枚举: `succeeded` \| `failed` | 是                            |
+| `videoUrl`      | 视频可访问 URL，对应 Seedance `content.video_url`（**24 小时有效**，后端通常下载并替换为持久化 URL） | 字符串 \| null                | 否（status=succeeded 时必填） |
+| `usage`         | Seedance 返回的 tokens 用量                                                                          | 对象 \| null                  | 否                            |
+| `createdAt`     | task 创建时的 unix 时间戳                                                                            | 整数                          | 是                            |
+| `failureReason` | 失败原因（status=failed 时必填，前端展示给用户）                                                     | 字符串 \| null                | 否                            |
 
 > `candidates.length` 应等于输入 `number`。若部分 task 失败（内容审核 / 超时），用 status=failed 行补齐。
 
 ### `usage` 子结构（对齐 Seedance）
 
-| 字段 | 含义 | 类型 |
-|---|---|---|
+| 字段                | 含义          | 类型 |
+| ------------------- | ------------- | ---- |
 | `completion_tokens` | 输出 token 数 | 整数 |
-| `total_tokens` | 总 token 数 | 整数 |
+| `total_tokens`      | 总 token 数   | 整数 |
 
 ### 输出示例
 
@@ -196,11 +197,13 @@
 ## 7. 验收标准
 
 **前置条件**
+
 - 本接口被调用前，workspace 内所有 shots 必须已 image-selected（即 `image_select_artifacts` 覆盖所有 `storyboard_shots`）；否则 400 `IMAGE_SELECTION_INCOMPLETE`。
 - `first_frame_url` 必须等于 `image_select_artifacts[shotId].url`；不允许由前端 / 用户直接传任意 URL。
 - 若本 shot 非最后一个：`last_frame_url` 必须等于 `image_select_artifacts[next shot].url`；为最后一个：`last_frame_url` 必须为 `null`。
 
 **候选视频相关（用户可见）**
+
 - `candidates.length` 必须等于输入 `number`。Seedance 短缺时（task 全部失败）用 status=failed 行补齐。
 - `candidates[i].videoUrl`（status=succeeded 时）必须是可访问的视频 URL。
 - `candidates[i].taskId` 必须是 Seedance 返回的真实 task ID，便于后续重试 / 调试。
@@ -208,6 +211,7 @@
 - 视频实际属性（`duration` / `ratio` / `resolution` / `framespersecond` / `seed` 等）不在 artifact 输出里——它们是 Seedance 自带的元信息，可由前端按需通过 `taskId` 查 [GET.md](../../reference/video/GET.md) 获取，不污染候选列表给前端。
 
 **Seedance 调用约束**
+
 - 调用时 `content[]` 必须包含：
   - `{type: "text", text: providerPrompt}`
   - `{type: "image_url", image_url: {url: first_frame_url}, role: "first_frame"}`
@@ -217,25 +221,27 @@
 - 调用模式：异步 task → 轮询 GET `/api/v3/contents/generations/tasks/:id`（参考 [GET.md](../../reference/video/GET.md)）直至 status ∈ {`succeeded`, `failed`}。
 
 **Prompt 元数据**
+
 - `providerPrompt` ≥ 30 字符；推荐 100-400 字符；硬上限 ≤ 600 字符。
 - `providerPrompt` 中必须明确描述首帧画面（与 `first_frame_url` 视觉一致）；若有 last_frame，必须描述末帧画面（与 `last_frame_url` 视觉一致）。
 - `voiceover` 必须等于 storyboard 同 index 的 voiceover，不允许模型改写。
 - `negativePrompt` 应至少包含：`商品变形`、`相机抖动`、`不自然运动`。
 
 **Schema 合法性**
+
 - 输出 JSON 必须能被 `videoScriptArtifactSchema.parse()` 解析。
 
 ## 8. 常见失败模式
 
-| 失败现象 | 修复方向 |
-|---|---|
+| 失败现象                                   | 修复方向                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 还没所有 shot 都 image-selected 就调本接口 | 后端在 propose 前用一句 SQL 统一校验 `image_select_artifacts` 覆盖度；缺一个就 400 `IMAGE_SELECTION_INCOMPLETE`，前端 UI 把视频生成 CTA 默认置灰 |
-| 生成的视频与首帧不一致（商品突变） | `providerPrompt` 必须显式复述 first_frame 的视觉关键点；Seedance 通常会以 first_frame 为强约束，但 prompt 仍要明确「保持首帧外观一致」 |
-| 中间过渡帧 1-2 秒突然变形 | 首末帧色调 / 构图差异过大时容易发生。`riskNotes` 显式提示；用户可调整 image-select 让相邻 shot 视觉更近 |
-| Seedance task 长时间 running（> 5 分钟） | 后端轮询设上限（如 600 秒），超时则记 failed + reason="provider_timeout"，写入 `usage` 为 null |
-| Seedance 部分 task 失败 | 用 status=failed 行补齐到 `number`；前端在网格上对 failed 候选灰显，显示 `failureReason` |
-| 24h URL 在用户审视频前过期 | 后端在写 `video_candidates` 前立即下载视频文件到本地 / MinIO，对外暴露持久化 URL |
-| Seedance 调用时 `duration` 被模型擅自调整 | 调用层强约束：传入 Seedance 的 `duration` 必须等于注入的 `durationSec`，不允许模型路径自行更改 |
-| `providerPrompt` 太长 Seedance 截断 | system prompt 限定 ≤ 600 字符；超出时优先保留首末帧描述 + 镜头运动 |
-| 模型自作主张改写 voiceover | system prompt 锁死 voiceover 必须 byte-equal 于 storyboard 同 index voiceover |
-| 用户在视频生成后回去换 image-select | 后端策略（按当前设计）：select 不触发 stale，旧视频保留。如果用户希望视频跟着新图重生成，必须手动重新 propose video-script。UI 文案应明确这一点 |
+| 生成的视频与首帧不一致（商品突变）         | `providerPrompt` 必须显式复述 first_frame 的视觉关键点；Seedance 通常会以 first_frame 为强约束，但 prompt 仍要明确「保持首帧外观一致」           |
+| 中间过渡帧 1-2 秒突然变形                  | 首末帧色调 / 构图差异过大时容易发生。`riskNotes` 显式提示；用户可调整 image-select 让相邻 shot 视觉更近                                          |
+| Seedance task 长时间 running（> 5 分钟）   | 后端轮询设上限（如 600 秒），超时则记 failed + reason="provider_timeout"，写入 `usage` 为 null                                                   |
+| Seedance 部分 task 失败                    | 用 status=failed 行补齐到 `number`；前端在网格上对 failed 候选灰显，显示 `failureReason`                                                         |
+| 24h URL 在用户审视频前过期                 | 后端在写 `video_candidates` 前立即下载视频文件到本地 / MinIO，对外暴露持久化 URL                                                                 |
+| Seedance 调用时 `duration` 被模型擅自调整  | 调用层强约束：传入 Seedance 的 `duration` 必须等于注入的 `durationSec`，不允许模型路径自行更改                                                   |
+| `providerPrompt` 太长 Seedance 截断        | system prompt 限定 ≤ 600 字符；超出时优先保留首末帧描述 + 镜头运动                                                                               |
+| 模型自作主张改写 voiceover                 | system prompt 锁死 voiceover 必须 byte-equal 于 storyboard 同 index voiceover                                                                    |
+| 用户在视频生成后回去换 image-select        | 后端策略（按当前设计）：select 不触发 stale，旧视频保留。如果用户希望视频跟着新图重生成，必须手动重新 propose video-script。UI 文案应明确这一点  |

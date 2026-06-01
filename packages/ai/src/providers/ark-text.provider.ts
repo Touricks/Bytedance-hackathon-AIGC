@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { TextProviderConfig } from "./provider-config.js";
+import { runWithProviderSlot } from "../concurrency/provider-concurrency.js";
 import {
   redactTraceValue,
   type FileTraceLogger,
@@ -89,9 +90,7 @@ function toArkResponseFormat(responseFormat?: ArkJsonSchemaResponseFormat) {
     type: responseFormat.type,
     json_schema: {
       name: responseFormat.name,
-      ...(responseFormat.description
-        ? { description: responseFormat.description }
-        : {}),
+      ...(responseFormat.description ? { description: responseFormat.description } : {}),
       strict: responseFormat.strict ?? true,
       schema: responseFormat.schema
     }
@@ -112,7 +111,7 @@ function responseFormatTraceSummary(responseFormat?: ArkJsonSchemaResponseFormat
   };
 }
 
-export async function generateTextWithArk(
+async function generateTextWithArkInner(
   request: ArkTextProviderRequest,
   config: TextProviderConfig,
   options: ArkTextProviderOptions = {}
@@ -202,4 +201,14 @@ export async function generateTextWithArk(
     model: config.model,
     output
   };
+}
+
+export async function generateTextWithArk(
+  request: ArkTextProviderRequest,
+  config: TextProviderConfig,
+  options: ArkTextProviderOptions = {}
+): Promise<ArkTextProviderResult> {
+  return runWithProviderSlot("text", () =>
+    generateTextWithArkInner(request, config, options)
+  );
 }
