@@ -1,0 +1,37 @@
+{
+  "info": {
+    "name": "P0 structured output image prompt responses",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Image prompt propose returns strict structured fields",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-prompts/propose",
+        "body": { "mode": "raw", "raw": "{}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('structured output has required strict fields', function () {",
+              "  const artifact = pm.response.json().data;",
+              "  const prompt = artifact.promptJson;",
+              "  ['promptText', 'negativePrompt', 'visualStyle', 'composition', 'lighting', 'productVisibilityRule', 'referenceImageUsage', 'qualityChecklist'].forEach(function (key) {",
+              "    pm.expect(prompt).to.have.property(key);",
+              "  });",
+              "  pm.expect(prompt.referenceImageUsage).to.be.an('array');",
+              "  pm.expect(prompt.qualityChecklist).to.be.an('array');",
+              "  pm.expect(artifact.promptAssembly.moduleId).to.eql('image-prompt');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

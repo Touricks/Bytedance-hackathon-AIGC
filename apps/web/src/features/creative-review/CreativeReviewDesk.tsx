@@ -10,6 +10,7 @@ import {
   Layers3,
   Play,
   RefreshCw,
+  Trash2,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -21,8 +22,14 @@ import type {
 import {
   toAbsoluteAssetUrl,
   toWorkspaceMaterialUrl,
+  deleteWorkspaceMaterial,
+  importReferenceVideoRequirements,
   type PromptRequirementsData,
+  type ReferenceVideoRequirementsImportResult,
+  uploadWorkspaceMaterial,
+  workspaceMaterialFileRejectionReason,
 } from "../../lib/api/client.js";
+import type { ImagePromptJson } from "../../lib/api/imagePrompt.js";
 import { materialAssetFilename } from "../../lib/materials.js";
 import type { WorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
 import { useWorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
@@ -260,6 +267,23 @@ function StepRail({
 
 function RightRail({ vm }: { vm: WorkbenchViewModel }) {
   const assets = vm.materialLibrary?.assets ?? [];
+  const [deletingRef, setDeletingRef] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const materialApproved = Boolean(vm.artifacts.material?.isCurrent);
+
+  const deleteMaterial = async (ref: string) => {
+    setDeletingRef(ref);
+    setDeleteError(null);
+    try {
+      await deleteWorkspaceMaterial({ workspaceId: vm.workspaceId, ref });
+      await vm.actions.refresh();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDeletingRef(null);
+    }
+  };
+
   return (
     <aside className="review-side">
       <section className="review-side__section">
@@ -288,11 +312,30 @@ function RightRail({ vm }: { vm: WorkbenchViewModel }) {
                     <FileText size={18} />
                   )}
                   <span title={filename}>{filename}</span>
+                  <button
+                    type="button"
+                    className="review-secondary"
+                    disabled={deletingRef === asset.ref || materialApproved}
+                    title={
+                      materialApproved
+                        ? "素材已进入审核链路，如需更换请回到创作要求重新提交"
+                        : `删除 ${filename}`
+                    }
+                    onClick={() => deleteMaterial(asset.ref)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               );
             })}
           </div>
         )}
+        {deleteError ? <p className="review-error">{deleteError}</p> : null}
+        {materialApproved ? (
+          <p className="review-muted">
+            素材已进入审核链路，如需更换请回到创作要求重新提交。
+          </p>
+        ) : null}
       </section>
       <section className="review-side__section">
         <div className="review-side__head">
@@ -331,7 +374,19 @@ function requirementSection(
     : {};
 }
 
-function requirementFormFromArtifact(data: PromptRequirementsData | null) {
+export type RequirementsFormState = {
+  imageStyle: string;
+  imageComposition: string;
+  imageAvoid: string;
+  scriptTone: string;
+  storyboardRhythm: string;
+  shotImageGlobal: string;
+  shotVideoGlobal: string;
+};
+
+export function requirementFormFromArtifact(
+  data: PromptRequirementsData | null,
+): RequirementsFormState {
   const image = requirementSection(data, "image");
   const script = requirementSection(data, "script");
   const storyboard = requirementSection(data, "storyboard");
@@ -366,6 +421,38 @@ function requirementFormFromArtifact(data: PromptRequirementsData | null) {
   };
 }
 
+export function requirementFormFromImportedDraft(
+  data: PromptRequirementsData,
+  fallback: RequirementsFormState,
+): RequirementsFormState {
+  const image = requirementSection(data, "image");
+  const script = requirementSection(data, "script");
+  const storyboard = requirementSection(data, "storyboard");
+  const shotImage = requirementSection(data, "shotImage");
+  const shotVideo = requirementSection(data, "shotVideo");
+  return {
+    imageStyle: stringifyRequirementValue(image.style, fallback.imageStyle),
+    imageComposition: stringifyRequirementValue(
+      image.composition,
+      fallback.imageComposition,
+    ),
+    imageAvoid: stringifyRequirementValue(image.avoid, fallback.imageAvoid),
+    scriptTone: stringifyRequirementValue(script.tone, fallback.scriptTone),
+    storyboardRhythm: stringifyRequirementValue(
+      storyboard.rhythm,
+      fallback.storyboardRhythm,
+    ),
+    shotImageGlobal: stringifyRequirementValue(
+      shotImage.global,
+      fallback.shotImageGlobal,
+    ),
+    shotVideoGlobal: stringifyRequirementValue(
+      shotVideo.global,
+      fallback.shotVideoGlobal,
+    ),
+  };
+}
+
 function RequirementsStart({
   vm,
   onActionComplete,
@@ -383,6 +470,15 @@ function RequirementsStart({
     [requirementsArtifact?.id, requirementsArtifact?.data],
   );
   const [form, setForm] = useState(initialForm);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [referenceUrl, setReferenceUrl] = useState("");
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [referenceImporting, setReferenceImporting] = useState(false);
+  const [referenceMessage, setReferenceMessage] = useState<string | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [referenceAnalysis, setReferenceAnalysis] =
+    useState<ReferenceVideoRequirementsImportResult["analysis"] | null>(null);
 
   useEffect(() => {
     setForm(initialForm);
@@ -390,6 +486,69 @@ function RequirementsStart({
 
   const update = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
+
+  const uploadFiles = async (files: File[]) => {
+    const rejected = files
+      .map((file) => ({
+        file,
+        reason: workspaceMaterialFileRejectionReason(file),
+      }))
+      .filter((item): item is { file: File; reason: string } =>
+        Boolean(item.reason),
+      );
+    const accepted = files.filter(
+      (file) => !workspaceMaterialFileRejectionReason(file),
+    );
+    setUploadMessage(
+      rejected.length > 0
+        ? rejected
+            .map((item) => `${item.file.name}: ${item.reason}`)
+            .join("；")
+        : null,
+    );
+    if (accepted.length === 0) return;
+
+    setUploading(true);
+    try {
+      for (const file of accepted) {
+        await uploadWorkspaceMaterial({ workspaceId: vm.workspaceId, file });
+      }
+      await vm.actions.refresh();
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const importReferenceVideo = async () => {
+    const trimmedUrl = referenceUrl.trim();
+    if (!referenceFile && !trimmedUrl) {
+      setReferenceError("请上传参考视频，或粘贴可直接下载的视频链接。");
+      return;
+    }
+
+    setReferenceImporting(true);
+    setReferenceError(null);
+    setReferenceMessage(null);
+    try {
+      const imported = await importReferenceVideoRequirements({
+        workspaceId: vm.workspaceId,
+        source: referenceFile
+          ? { type: "file", file: referenceFile }
+          : { type: "url", url: trimmedUrl },
+      });
+      setForm((current) =>
+        requirementFormFromImportedDraft(imported.draft, current),
+      );
+      setReferenceAnalysis(imported.analysis);
+      setReferenceMessage("导入内容已填入表单，请确认后提交创作要求。");
+    } catch (error) {
+      setReferenceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReferenceImporting(false);
+    }
+  };
 
   const data: PromptRequirementsData = useMemo(
     () => ({
@@ -426,6 +585,60 @@ function RequirementsStart({
           先确认商家的创作要求和商品素材。提交后系统会自动完成素材理解，并停在商品卖点审核。
         </p>
       </div>
+      {!requirementsArtifact?.isCurrent ? (
+        <div className="reference-video-import">
+          <div className="reference-video-import__main">
+            <label>
+              参考视频导入
+              <textarea
+                rows={2}
+                value={referenceUrl}
+                onChange={(event) => setReferenceUrl(event.target.value)}
+                placeholder="粘贴可直接下载的视频链接，或上传参考视频"
+              />
+            </label>
+            <div className="reference-video-import__actions">
+              <label className="review-secondary">
+                <Upload size={16} />
+                上传参考视频
+                <input
+                  type="file"
+                  accept="video/*"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    event.currentTarget.value = "";
+                    setReferenceFile(file);
+                    setReferenceError(null);
+                    setReferenceMessage(
+                      file ? `已选择 ${file.name}` : null,
+                    );
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="review-primary"
+                disabled={vm.busy || referenceImporting}
+                onClick={() => {
+                  void importReferenceVideo();
+                }}
+              >
+                <Wand2 size={16} />
+                {referenceImporting ? "正在导入..." : "导入创作要求"}
+              </button>
+            </div>
+          </div>
+          {referenceError ? <p className="review-error">{referenceError}</p> : null}
+          {referenceMessage ? <p className="review-muted">{referenceMessage}</p> : null}
+          {referenceAnalysis ? (
+            <div className="reference-video-import__analysis">
+              <strong>导入分析摘要</strong>
+              <p>{referenceAnalysis.summary}</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="review-upload-row">
         <label className="review-upload">
           <Upload size={16} />
@@ -433,16 +646,24 @@ function RequirementsStart({
           <input
             type="file"
             accept="image/*,video/*,.txt,.md"
+            multiple
             hidden
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) vm.actions.uploadMaterial(file);
+              const files = Array.from(event.target.files ?? []);
               event.currentTarget.value = "";
+              if (files.length > 0) void uploadFiles(files);
             }}
           />
         </label>
-        <span>{assets.length > 0 ? `已上传 ${assets.length} 个素材` : "请先上传至少一个商品素材"}</span>
+        <span>
+          {uploading
+            ? "正在上传素材..."
+            : assets.length > 0
+              ? `已上传 ${assets.length} 个素材`
+              : "请先上传至少一个商品素材"}
+        </span>
       </div>
+      {uploadMessage ? <p className="review-error">{uploadMessage}</p> : null}
       <div className="review-form-grid">
         <label>
           图像风格
@@ -505,7 +726,7 @@ function RequirementsStart({
         <button
           type="button"
           className="review-primary"
-          disabled={vm.busy || assets.length === 0}
+          disabled={vm.busy || uploading || assets.length === 0}
           onClick={() => {
             vm.actions.startCreativeReview(data);
             onActionComplete();
@@ -1525,16 +1746,29 @@ function ImageSelectionPanel({
             </button>
           </div>
           {round ? (
-            <CandidateImages
-              key={shot.shotId}
-              round={round}
-              batchId={batchId}
-              busy={vm.busy}
-              onSelect={(candidateId, selectedBatchId) => {
-                vm.actions.selectImageCandidate(candidateId, selectedBatchId);
-                onImageSelectionConfirmed();
-              }}
-            />
+            <>
+              <CandidateImages
+                key={shot.shotId}
+                round={round}
+                batchId={batchId}
+                busy={vm.busy}
+                onSelect={(candidateId, selectedBatchId) => {
+                  vm.actions.selectImageCandidate(candidateId, selectedBatchId);
+                  onImageSelectionConfirmed();
+                }}
+              />
+              <ImagePromptRegenerationForm
+                key={round.artifact.id}
+                artifact={round.artifact}
+                busy={vm.busy || Boolean(vm.hasActiveGeneration)}
+                onSubmit={(prompt) =>
+                  vm.actions.regenerateImage({
+                    baseArtifactId: round.artifact.id,
+                    prompt,
+                  })
+                }
+              />
+            </>
           ) : (
             <div className="review-empty-state">
               <ImageIcon size={22} />
@@ -1545,6 +1779,176 @@ function ImageSelectionPanel({
         </>
       )}
     </section>
+  );
+}
+
+function promptJsonFromArtifact(
+  artifact: NonNullable<WorkbenchViewModel["latestImageRound"]>["artifact"],
+): ImagePromptJson {
+  const value =
+    artifact.promptJson && typeof artifact.promptJson === "object"
+      ? (artifact.promptJson as Partial<ImagePromptJson>)
+      : {};
+  return {
+    promptText:
+      typeof value.promptText === "string" ? value.promptText : artifact.promptText,
+    negativePrompt:
+      typeof value.negativePrompt === "string"
+        ? value.negativePrompt
+        : artifact.negativePrompt,
+    visualStyle: typeof value.visualStyle === "string" ? value.visualStyle : null,
+    composition: typeof value.composition === "string" ? value.composition : null,
+    lighting: typeof value.lighting === "string" ? value.lighting : null,
+    productVisibilityRule:
+      typeof value.productVisibilityRule === "string"
+        ? value.productVisibilityRule
+        : "商品完整、清晰、自然可见，不变形，不被遮挡。",
+    referenceImageUsage: Array.isArray(value.referenceImageUsage)
+      ? value.referenceImageUsage
+      : [],
+    qualityChecklist: Array.isArray(value.qualityChecklist)
+      ? value.qualityChecklist.filter((item): item is string => typeof item === "string")
+      : [],
+    context: value.context,
+  };
+}
+
+function ImagePromptRegenerationForm({
+  artifact,
+  busy,
+  onSubmit,
+}: {
+  artifact: NonNullable<WorkbenchViewModel["latestImageRound"]>["artifact"];
+  busy: boolean;
+  onSubmit: (prompt: ImagePromptJson) => void;
+}) {
+  const initial = useMemo(() => promptJsonFromArtifact(artifact), [artifact]);
+  const [promptText, setPromptText] = useState(initial.promptText);
+  const [negativePrompt, setNegativePrompt] = useState(initial.negativePrompt ?? "");
+  const [visualStyle, setVisualStyle] = useState(initial.visualStyle ?? "");
+  const [composition, setComposition] = useState(initial.composition ?? "");
+  const [lighting, setLighting] = useState(initial.lighting ?? "");
+  const [productVisibilityRule, setProductVisibilityRule] = useState(
+    initial.productVisibilityRule,
+  );
+  const [qualityChecklistText, setQualityChecklistText] = useState(
+    initial.qualityChecklist.join("\n"),
+  );
+
+  useEffect(() => {
+    setPromptText(initial.promptText);
+    setNegativePrompt(initial.negativePrompt ?? "");
+    setVisualStyle(initial.visualStyle ?? "");
+    setComposition(initial.composition ?? "");
+    setLighting(initial.lighting ?? "");
+    setProductVisibilityRule(initial.productVisibilityRule);
+    setQualityChecklistText(initial.qualityChecklist.join("\n"));
+  }, [initial]);
+
+  const referenceUsage = initial.referenceImageUsage;
+  const canSubmit = promptText.trim().length > 0 && productVisibilityRule.trim().length > 0;
+
+  return (
+    <form
+      className="review-image-prompt-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!canSubmit || busy) return;
+        onSubmit({
+          promptText: promptText.trim(),
+          negativePrompt: negativePrompt.trim() || null,
+          visualStyle: visualStyle.trim() || null,
+          composition: composition.trim() || null,
+          lighting: lighting.trim() || null,
+          productVisibilityRule: productVisibilityRule.trim(),
+          referenceImageUsage: referenceUsage,
+          qualityChecklist: qualityChecklistText
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          context: initial.context,
+        });
+      }}
+    >
+      <div className="review-round__head">
+        <span className="review-status">调整生成要求</span>
+        <span>基于 v{artifact.version} 重新生成候选图，不会替换当前选择。</span>
+      </div>
+      <div className="review-form-grid">
+        <label className="review-form-grid__wide">
+          画面描述
+          <textarea
+            value={promptText}
+            onChange={(event) => setPromptText(event.target.value)}
+          />
+        </label>
+        <label>
+          负向约束
+          <textarea
+            value={negativePrompt}
+            onChange={(event) => setNegativePrompt(event.target.value)}
+          />
+        </label>
+        <label>
+          视觉风格
+          <textarea
+            value={visualStyle}
+            onChange={(event) => setVisualStyle(event.target.value)}
+          />
+        </label>
+        <label>
+          构图
+          <textarea
+            value={composition}
+            onChange={(event) => setComposition(event.target.value)}
+          />
+        </label>
+        <label>
+          光线
+          <textarea
+            value={lighting}
+            onChange={(event) => setLighting(event.target.value)}
+          />
+        </label>
+        <label className="review-form-grid__wide">
+          商品呈现规则
+          <textarea
+            value={productVisibilityRule}
+            onChange={(event) => setProductVisibilityRule(event.target.value)}
+          />
+        </label>
+        <label className="review-form-grid__wide">
+          质量检查项（每行一条）
+          <textarea
+            value={qualityChecklistText}
+            onChange={(event) => setQualityChecklistText(event.target.value)}
+          />
+        </label>
+      </div>
+      {referenceUsage.length > 0 ? (
+        <div className="review-reference-usage">
+          <span>参考图用途</span>
+          {referenceUsage.map((item) => (
+            <code key={`${item.assetId}:${item.usage}`}>
+              {item.assetId} · {item.usage} · {item.instruction}
+            </code>
+          ))}
+        </div>
+      ) : null}
+      <div className="review-panel__actions">
+        <button
+          type="submit"
+          className="review-secondary"
+          disabled={busy || !canSubmit}
+        >
+          <RefreshCw size={16} />
+          重新生成候选图
+        </button>
+        <span className="review-action-note">
+          原 current image 会保留，只有确认新候选后才会更新。
+        </span>
+      </div>
+    </form>
   );
 }
 
@@ -1622,6 +2026,20 @@ function CandidateImages({
           );
         })}
       </div>
+      {committedId &&
+      !round.candidates.some((candidate) => candidate.id === committedId) &&
+      round.selection?.selectedImageUrl ? (
+        <div className="review-current-image">
+          <img
+            src={toAbsoluteAssetUrl(round.selection.selectedImageUrl)}
+            alt="当前已确认分镜图"
+          />
+          <div>
+            <strong>当前选择</strong>
+            <span>来自旧候选轮次；重新生成不会自动替换它。</span>
+          </div>
+        </div>
+      ) : null}
       <div className="review-panel__actions">
         <button
           type="button"

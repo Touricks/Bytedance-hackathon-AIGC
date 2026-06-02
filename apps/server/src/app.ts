@@ -19,6 +19,7 @@ import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
 import { registerCampaignController } from "./modules/campaign/campaign.controller.js";
 import { registerTraceController } from "./modules/trace/trace.routes.js";
+import { registerReferenceVideoController } from "./modules/reference-video/reference-video.controller.js";
 import type { WorkspaceDirectorySelectResponse } from "./modules/workspace/workdir-picker.js";
 
 interface BuildServerOptions {
@@ -170,6 +171,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerGenerationController(app);
   await registerCampaignController(app);
   await registerTraceController(app);
+  await registerReferenceVideoController(app);
 
   app.delete("/api/test-runs/:runId", async (req, reply) => {
     if (process.env.ALLOW_TEST_CLEANUP !== "true") {

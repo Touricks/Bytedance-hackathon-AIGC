@@ -9,8 +9,30 @@ export interface ImagePromptArtifact {
   promptText: string;
   negativePrompt: string | null;
   referenceAssetIds: string[];
+  promptJson?: ImagePromptJson | null;
+  sourceFingerprint?: unknown;
+  promptAssembly?: unknown;
+  baseArtifactId?: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+export interface ImagePromptReferenceUsage {
+  assetId: string;
+  usage: "product_identity" | "style_reference" | "scene_reference";
+  instruction: string;
+}
+
+export interface ImagePromptJson {
+  promptText: string;
+  negativePrompt: string | null;
+  visualStyle: string | null;
+  composition: string | null;
+  lighting: string | null;
+  productVisibilityRule: string;
+  referenceImageUsage: ImagePromptReferenceUsage[];
+  qualityChecklist: string[];
+  context?: unknown;
 }
 
 export function proposeImagePrompt(
@@ -31,6 +53,27 @@ export function proposeImagePrompt(
     }
   >(
     `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function regenerateImagePrompt(
+  workspaceId: string,
+  shotId: string,
+  body: {
+    baseArtifactId: string;
+    prompt: ImagePromptJson;
+  },
+) {
+  return fetchJson<
+    WorkflowEnvelope<ImagePromptArtifact> & {
+      artifact: ImagePromptArtifact;
+      batch: ImageBatchDetail;
+      candidates: ImageCandidate[];
+      context?: unknown;
+    }
+  >(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/regenerate`,
     { method: "POST", body: JSON.stringify(body) },
   );
 }

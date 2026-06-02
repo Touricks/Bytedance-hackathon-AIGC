@@ -13,6 +13,7 @@ import {
   persistGeneratedAsset,
   type GeneratedAssetPersister,
 } from "./generated-asset-storage.js";
+import { seedanceVoiceProfilePrompt } from "./voice-profile.js";
 
 type Adapter = typeof db.db2;
 
@@ -330,7 +331,7 @@ export function buildSeedanceShotVideoPrompt(input: {
     basePrompt,
     [
       "音频/旁白要求：generate_audio=true。",
-      "请生成自然清晰的中文短视频旁白音频，并完整朗读以下口播。",
+      seedanceVoiceProfilePrompt,
       `口播文案：“${voiceover}”`,
       "不要在画面里生成字幕、标题或任何可读文字。",
     ].join(" "),

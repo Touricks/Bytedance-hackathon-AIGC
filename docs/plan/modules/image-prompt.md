@@ -4,7 +4,7 @@
 
 为单个镜头（shot）组装图像 prompt **并直接调用 Ark 图像生成接口产出 `number` 张候选图（image candidates）一并返回**。用户在前端看到的是 N 张图片，而不是 prompt 文本——因为用户在意的是图像效果，不在意 prompt 长什么样。
 
-> 通俗解释：每个镜头都要先定下「这一帧画面长什么样」再去做视频。本 agent 把分镜的 `visualDirection`、商品素材、**前序 shot 的已选首帧 `image_ref`**（场景一致性锚点）翻译成图像 prompt，**并在同一次调用里跑完生成、直接交付 N 张候选图**。Prompt 文本仍写入 artifact 用作 trace / 复用，但不是给用户看的。
+> 通俗解释：每个镜头都要先定下「这一帧画面长什么样」再去做视频。本 agent 把 `shotImage`、商品素材、**前序 shot 的已选首帧 `image_ref`**（场景一致性锚点）翻译成图像 prompt，**并在同一次调用里跑完生成、直接交付 N 张候选图**。Prompt 文本仍写入 artifact 用作 trace / 复用；2026-06-02 起，用户可通过表单化字段编辑已有 image prompt 并重新生成候选图，但不会编辑 raw system prompt。
 
 ## 2. 在工作流中的位置
 
@@ -24,12 +24,13 @@ shot prompt approved → storyboard_shots seeded
 
 ## 3. 触发接口
 
-- 提议新一轮：`POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`
+- Agent 提议新一轮：`POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`
+- 用户编辑后重新生成：`POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate`
 - 列出历史轮次：`GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds`
 
 > 配套同步点 `POST .../image-candidates/select`（用户从 N 张候选里挑 1 张并解锁下游）独立成模块，见 [image-select.md](image-select.md)。
 >
-> **去掉** `POST .../image-prompts/edit`：用户不再直接编辑 prompt 文本，所有意图通过 `userDirection` 走 propose，与「用户不在意 prompt」的设计原则一致。
+> `regenerate` 不是 raw prompt edit：前端展示结构化字段（`promptText`、`negativePrompt`、`visualStyle`、`composition`、`lighting`、`productVisibilityRule`、`qualityChecklist`），后端直接保存 user-edited artifact 并创建新 image batch。当前 `selected_image_id` 保留，只有用户确认新候选后才更新 current image。
 
 每次 propose 都会生成新的 `ImagePromptArtifact` + 一组 `image_candidates`；旧轮次被标记为 `STALE`，新轮次是 `ACTIVE`。`GET .../image-rounds` 返回结构按「一轮 propose = 一组候选图」组织，前端用来查看 / 回看历史轮次（如果该接口不暴露给前端用户，MVP 可只保留为内部 debug 端点）。
 

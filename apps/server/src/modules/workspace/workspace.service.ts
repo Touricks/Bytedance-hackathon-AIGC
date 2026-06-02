@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -38,12 +39,14 @@ import {
   filterUnregisteredDiscovered,
   type DiscoveredWorkspace,
 } from "./workspace.discovery.js";
+import { compareSourceFingerprint } from "./upstream-drift-v2.service.js";
 
 const workspaceManifestRelativePath = path.join(".daireel", "workspace.json");
 const workspaceTraceFile = ".daireel/trace/events.jsonl" as const;
 const workspaceMaterialsRelativePath = path.join(".daireel", "materials");
 const workspaceReviewRelativePath = path.join(".daireel", "review");
 export const maxWorkspaceMaterialBytes = 50 * 1024 * 1024;
+export const maxModelImageMaterialBytes = 10 * 1024 * 1024;
 
 const mimeByExtension: Record<string, string> = {
   ".bmp": "image/bmp",
@@ -129,6 +132,18 @@ function safeWorkspaceFilename(filename: string) {
     throw new Error("Workspace material filename must not be hidden");
   }
   return baseName;
+}
+
+function safeWorkspaceMaterialRef(ref: string) {
+  try {
+    return safeWorkspaceFilename(ref);
+  } catch {
+    throw new HttpError(
+      400,
+      "INVALID_MATERIAL_REF",
+      "Workspace material ref must be a filename",
+    );
+  }
 }
 
 function workspaceMaterialMime(filename: string) {
@@ -1126,11 +1141,44 @@ async function hydrateWorkspaceModuleState(
     moduleId: module.moduleId,
     proposed,
     current,
-    upstream: {
-      upstreamChanged: false,
-      changedSources: [],
-    },
+    upstream: { upstreamChanged: false, changedSources: [] },
   };
+}
+
+function upstreamSourcesForModule(
+  moduleId: WorkspaceModuleId,
+  modules: Record<
+    WorkspaceModuleId,
+    Awaited<ReturnType<typeof hydrateWorkspaceModuleState>>
+  >,
+) {
+  const sources = {
+    promptRequirementsArtifactId: modules["prompt-requirements"].current?.id,
+    materialIntakeArtifactId: modules["material-intake"].current?.id,
+    productBriefArtifactId: modules["product-brief"].current?.id,
+    storyboardArtifactId: modules.storyboard.current?.id,
+  };
+  switch (moduleId) {
+    case "material-intake":
+      return {
+        promptRequirementsArtifactId: sources.promptRequirementsArtifactId,
+      };
+    case "product-brief":
+      return {
+        promptRequirementsArtifactId: sources.promptRequirementsArtifactId,
+        materialIntakeArtifactId: sources.materialIntakeArtifactId,
+      };
+    case "storyboard":
+      return {
+        promptRequirementsArtifactId: sources.promptRequirementsArtifactId,
+        materialIntakeArtifactId: sources.materialIntakeArtifactId,
+        productBriefArtifactId: sources.productBriefArtifactId,
+      };
+    case "shotprompt":
+      return sources;
+    case "prompt-requirements":
+      return {};
+  }
 }
 
 async function hydrateWorkspaceModules(workspaceId: string) {
@@ -1140,10 +1188,25 @@ async function hydrateWorkspaceModules(workspaceId: string) {
       await hydrateWorkspaceModuleState(workspaceId, module),
     ]),
   );
-  return Object.fromEntries(entries) as Record<
+  const modules = Object.fromEntries(entries) as Record<
     WorkspaceModuleId,
     Awaited<ReturnType<typeof hydrateWorkspaceModuleState>>
   >;
+  return Object.fromEntries(
+    Object.entries(modules).map(([moduleId, state]) => {
+      const typedModuleId = moduleId as WorkspaceModuleId;
+      return [
+        typedModuleId,
+        {
+          ...state,
+          upstream: compareSourceFingerprint(
+            state.current?.sourceFingerprint,
+            upstreamSourcesForModule(typedModuleId, modules),
+          ),
+        },
+      ];
+    }),
+  ) as typeof modules;
 }
 
 function hydrateWorkspaceArtifacts(
@@ -1162,31 +1225,55 @@ function hydrateWorkspaceArtifacts(
   };
 }
 
-function shotSetView(row: Record<string, unknown>) {
+function shotSetView(
+  row: Record<string, unknown>,
+  currentShotPromptArtifactId?: string | null,
+) {
+  const sourceFingerprint =
+    row.source_fingerprint && typeof row.source_fingerprint === "object"
+      ? row.source_fingerprint
+      : {};
   return {
     id: String(row.id),
     workspaceId: String(row.workspace_id),
     shotPromptArtifactId: String(row.shot_prompt_artifact_id),
     status: String(row.status),
-    sourceFingerprint:
-      row.source_fingerprint && typeof row.source_fingerprint === "object"
-        ? row.source_fingerprint
-        : {},
+    sourceFingerprint,
+    upstream: compareSourceFingerprint(sourceFingerprint, {
+      shotPromptArtifactId: currentShotPromptArtifactId,
+    }),
     createdAt: toIsoString(row.created_at),
     archivedAt: row.archived_at ? toIsoString(row.archived_at) : null,
   };
 }
 
 async function getActiveWorkspaceShotSet(workspaceId: string) {
-  const result = await db.db2.pool().query(
-    `select *
-     from shot_sets
-     where workspace_id = $1 and status = 'active'
-     order by created_at desc, id desc
-     limit 1`,
-    [workspaceId],
-  );
-  return result.rows[0] ? shotSetView(result.rows[0]) : null;
+  const [shotSetResult, currentShotPromptResult] = await Promise.all([
+    db.db2.pool().query(
+      `select *
+       from shot_sets
+       where workspace_id = $1 and status = 'active'
+       order by created_at desc, id desc
+       limit 1`,
+      [workspaceId],
+    ),
+    db.db2.pool().query(
+      `select id
+       from shot_prompt_artifacts
+       where workspace_id = $1 and status = 'approved' and is_current = true
+       order by approved_at desc, created_at desc, id desc
+       limit 1`,
+      [workspaceId],
+    ),
+  ]);
+  return shotSetResult.rows[0]
+    ? shotSetView(
+        shotSetResult.rows[0],
+        typeof currentShotPromptResult.rows[0]?.id === "string"
+          ? currentShotPromptResult.rows[0].id
+          : null,
+      )
+    : null;
 }
 
 export const workspaceService = {
@@ -1369,6 +1456,16 @@ export const workspaceService = {
     if (input.bytes.byteLength > maxWorkspaceMaterialBytes) {
       throw new Error("Material file exceeds 50MB limit");
     }
+    if (
+      requestedMime.startsWith("image/") &&
+      input.bytes.byteLength > maxModelImageMaterialBytes
+    ) {
+      throw new HttpError(
+        400,
+        "IMAGE_TOO_LARGE_FOR_MODEL",
+        "Image material exceeds 10MB model input limit",
+      );
+    }
     const bytes = Buffer.from(input.bytes);
 
     const materialDirectory = workspaceMaterialsPath(localPath);
@@ -1403,6 +1500,70 @@ export const workspaceService = {
         mime,
         sha256: digest,
         url: workspaceAssetUrl(workspace.id, filename),
+      },
+    };
+  },
+
+  async deleteMaterial(input: { workspaceId: string; ref: string }) {
+    const workspace = await db.getWorkspace(input.workspaceId);
+    const localPath = await resolveWorkspaceStorageLocalPath(workspace.id);
+    const ref = safeWorkspaceMaterialRef(input.ref);
+    const materialDirectory = workspaceMaterialsPath(localPath);
+    const storagePath = path.resolve(materialDirectory, ref);
+    const materialRoot = path.resolve(materialDirectory);
+
+    if (!isInsideDirectory(storagePath, materialRoot)) {
+      throw new HttpError(
+        400,
+        "INVALID_MATERIAL_REF",
+        "Workspace material ref must stay inside the materials directory",
+      );
+    }
+    if (!(await fileExists(storagePath))) {
+      throw new HttpError(404, "MATERIAL_NOT_FOUND", "Material not found");
+    }
+
+    await unlink(storagePath);
+
+    const url = workspaceAssetUrl(workspace.id, ref);
+    const client = await db.db2.pool().connect();
+    try {
+      await client.query("begin");
+      const assetIds = await client.query<{ id: string }>(
+        `select id
+         from asset
+         where source = 'upload'
+           and (
+             (metadata->>'workspaceId' = $1 and metadata->>'ref' = $2)
+             or url = $3
+           )`,
+        [workspace.id, ref, url],
+      );
+      const ids = assetIds.rows.map((row) => row.id);
+      if (ids.length > 0) {
+        await client.query(
+          `delete from shot_asset_refs where asset_id = any($1::text[])`,
+          [ids],
+        );
+        await client.query(`delete from asset where id = any($1::text[])`, [
+          ids,
+        ]);
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    await db.touchWorkspace(workspace.id);
+
+    return {
+      data: {
+        workspaceId: workspace.id,
+        ref,
+        deleted: true,
       },
     };
   },

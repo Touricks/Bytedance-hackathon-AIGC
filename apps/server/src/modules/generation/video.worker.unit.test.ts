@@ -121,6 +121,8 @@ describe("processGenerateVideos", () => {
     assert.equal(fake.calls[0]?.lastFrameUrl, "https://cdn.example/img-2.png");
     assert.equal(fake.calls[0]?.generateAudio, true);
     assert.match(fake.calls[0]?.prompt, /音频\/旁白要求/);
+    assert.match(fake.calls[0]?.prompt, /本片所有镜头必须使用同一个旁白说话人/);
+    assert.match(fake.calls[0]?.prompt, /自然清晰普通话/);
     assert.match(fake.calls[0]?.prompt, /整理桌面，从一盏好灯开始。/);
     assert.match(fake.calls[0]?.prompt, /不要在画面里生成字幕/);
   });

@@ -43,14 +43,14 @@ export async function runStoryboardImagePromptAgent(input: {
       ...input.payload.referenceAssets.map((a) => ({
         assetId: a.id,
         usage: "product_identity" as const,
-        instruction: "Use as primary product reference",
+        instruction: "作为主商品身份和外观参考",
       })),
       ...(input.payload.image_ref && input.payload.shot.index > 0
         ? [
             {
               assetId: input.payload.image_ref,
               usage: "scene_reference" as const,
-              instruction: "Preserve scene, lighting, and composition continuity from image_ref",
+              instruction: "保留 image_ref 的静态场景、光线、色调和构图连续性",
             },
           ]
         : []),
@@ -59,17 +59,20 @@ export async function runStoryboardImagePromptAgent(input: {
       templateVersion: STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSION,
       promptAssembly: getModulePromptAssemblyMetadata("image-prompt"),
       output: StoryboardImagePromptOutputSchema.parse({
-        promptText: `MOCK image prompt for shot ${input.payload.shot.index}: ${input.payload.shot.objective}`,
+        promptText: `第 ${input.payload.shot.index} 镜静态关键帧：${input.payload.shot.objective}。清晰呈现商品主体、环境、构图、光线和参考图一致性。`,
         negativePrompt: "商品变形、文字模糊、场景突变",
-        productVisibilityRule: "hero product clearly visible",
+        visualStyle: null,
+        composition: null,
+        lighting: null,
+        productVisibilityRule: "商品主体清晰可见，外形、材质和包装细节不得变形",
         referenceImageUsage,
-        qualityChecklist: ["mock", "deterministic"],
+        qualityChecklist: ["静态关键帧", "商品不变形"],
       }),
     };
   }
   const cfg = resolveTextProviderConfig();
   if (!cfg) throw new Error("TEXT provider not configured (TEXT_API_KEY / TEXT_ENDPOINT_ID)");
-  const runner = buildRunner(cfg);
+  const runner = buildRunner(cfg, { useResponses: true });
   const agent = buildStoryboardImagePromptAgent(cfg.endpointId);
   const output = await runAgent<ImagePromptAgentInput, StoryboardImagePromptOutput>({
     agent,

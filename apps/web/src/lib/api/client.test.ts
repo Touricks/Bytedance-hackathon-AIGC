@@ -4,14 +4,17 @@ import {
   approveWorkspacePromptRequirements,
   approveWorkspaceBrief,
   createWorkspace,
+  deleteWorkspaceMaterial,
   getWorkspaceStatus,
+  importReferenceVideoRequirements,
   listWorkspaces,
   proposeWorkspacePromptRequirements,
   runWorkspaceMaterialIntake,
   selectWorkspaceDirectory,
   toWorkspaceMaterialUrl,
   uploadWorkspaceMaterial,
-  uploadProductImage
+  uploadProductImage,
+  workspaceMaterialFileRejectionReason
 } from "./client.js";
 
 const originalFetch = globalThis.fetch;
@@ -217,6 +220,123 @@ describe("api client", () => {
     ]);
   });
 
+  it("imports reference video requirements from a URL without proposing requirements", async () => {
+    const calls: unknown[] = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url),
+        headers: init?.headers,
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return new Response(
+        JSON.stringify({
+          data: {
+            source: {
+              type: "url",
+              url: "https://cdn.example.com/reference.mp4",
+              downloaded: true,
+              contentType: "video/mp4",
+              sizeBytes: 16
+            },
+            draft: {
+              image: { style: "真实电商产品摄影" },
+              script: { tone: "直接可信" },
+              storyboard: { rhythm: "快节奏卖点证明" },
+              shotImage: { global: "场景连续" },
+              shotVideo: { global: "运动平滑" }
+            },
+            analysis: {
+              summary: "参考视频采用快节奏卖点证明结构。",
+              confidence: "medium"
+            }
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const imported = await importReferenceVideoRequirements({
+      workspaceId: "workspace_123",
+      source: {
+        type: "url",
+        url: "https://cdn.example.com/reference.mp4"
+      }
+    });
+
+    assert.equal(imported.draft.image?.style, "真实电商产品摄影");
+    assert.equal(imported.analysis.summary, "参考视频采用快节奏卖点证明结构。");
+    assert.deepEqual(calls, [
+      {
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/reference-video/import",
+        headers: { "Content-Type": "application/json" },
+        body: {
+          source: {
+            type: "url",
+            url: "https://cdn.example.com/reference.mp4"
+          }
+        }
+      }
+    ]);
+  });
+
+  it("imports reference video requirements from an uploaded file", async () => {
+    const calls: unknown[] = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url),
+        bodyIsFormData: init?.body instanceof FormData,
+        headers: init?.headers ?? null
+      });
+      return new Response(
+        JSON.stringify({
+          data: {
+            source: {
+              type: "file",
+              filename: "reference.mp4",
+              contentType: "video/mp4",
+              sizeBytes: 16
+            },
+            draft: {
+              image: { style: "真实电商产品摄影" },
+              script: { tone: "直接可信" },
+              storyboard: { rhythm: "快节奏卖点证明" },
+              shotImage: { global: "场景连续" },
+              shotVideo: { global: "运动平滑" }
+            },
+            analysis: {
+              summary: "参考视频采用快节奏卖点证明结构。",
+              confidence: "medium"
+            }
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const imported = await importReferenceVideoRequirements({
+      workspaceId: "workspace_123",
+      source: {
+        type: "file",
+        file: new File(["fake mp4 bytes"], "reference.mp4", {
+          type: "video/mp4"
+        })
+      }
+    });
+
+    assert.equal(imported.draft.shotVideo?.global, "运动平滑");
+    assert.deepEqual(calls, [
+      {
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/reference-video/import",
+        bodyIsFormData: true,
+        headers: null
+      }
+    ]);
+  });
+
   it("creates and lists Fastify-managed workspaces", async () => {
     const calls: string[] = [];
     globalThis.fetch = async (url, init) => {
@@ -371,6 +491,48 @@ describe("api client", () => {
         }),
       /Material file exceeds 50MB limit/
     );
+  });
+
+  it("detects image files that exceed the 10MB model input limit", () => {
+    const tooLarge = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.png", {
+      type: "image/png"
+    });
+    const largeText = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.txt", {
+      type: "text/plain"
+    });
+
+    assert.match(
+      workspaceMaterialFileRejectionReason(tooLarge) ?? "",
+      /图片超过 10MB/
+    );
+    assert.equal(workspaceMaterialFileRejectionReason(largeText), null);
+  });
+
+  it("deletes workspace materials by ref", async () => {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(
+        String(url),
+        "http://localhost:3000/api/workspaces/workspace_123/materials/product%201.png"
+      );
+      assert.equal(init?.method, "DELETE");
+      return new Response(
+        JSON.stringify({
+          data: {
+            workspaceId: "workspace_123",
+            ref: "product 1.png",
+            deleted: true
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const deleted = await deleteWorkspaceMaterial({
+      workspaceId: "workspace_123",
+      ref: "product 1.png"
+    });
+
+    assert.equal(deleted.data.deleted, true);
   });
 
   it("does not surface raw Zod issue JSON to form users", async () => {

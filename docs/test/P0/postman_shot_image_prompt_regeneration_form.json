@@ -1,0 +1,60 @@
+{
+  "info": {
+    "name": "P0 shot image prompt regeneration form",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List image rounds with editable prompt json",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-rounds"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('round exposes prompt fields', function () {",
+              "  const round = pm.response.json().data[0];",
+              "  pm.expect(round.artifact.promptText).to.be.a('string');",
+              "  pm.expect(round.artifact.promptJson).to.be.an('object');",
+              "  pm.environment.set('baseImagePromptArtifactId', round.artifact.id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Regenerate image candidates from edited prompt",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-prompts/regenerate",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"baseArtifactId\": \"{{baseImagePromptArtifactId}}\",\n  \"prompt\": {\n    \"promptText\": \"清爽真实摄影风格，商品完整居中展示，背景延续上一轮场景。\",\n    \"negativePrompt\": \"商品变形、文字乱码、手部遮挡\",\n    \"visualStyle\": \"清爽真实摄影\",\n    \"composition\": \"主体居中，轻微低机位\",\n    \"lighting\": \"柔和自然光\",\n    \"productVisibilityRule\": \"商品完整可见，logo 清晰，不裁切。\",\n    \"referenceImageUsage\": [],\n    \"qualityChecklist\": [\"商品不变形\", \"背景保持连续\"]\n  }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('regenerate creates user edited artifact and batch', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "  pm.expect(json.data.baseArtifactId).to.eql(pm.environment.get('baseImagePromptArtifactId'));",
+              "  pm.expect(json.data.createdBy).to.eql('user');",
+              "  pm.expect(json.batch.providerRequest.prompt).to.include('清爽真实摄影');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

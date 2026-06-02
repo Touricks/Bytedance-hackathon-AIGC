@@ -1,0 +1,102 @@
+{
+  "info": {
+    "name": "P0 material upload multiselect delete size guard",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Reject 10MB+ image material",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/materials",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"filename\": \"oversized.png\",\n  \"dataBase64\": \"{{oversizedImageBase64}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('rejects large image for model', function () {",
+              "  pm.expect(pm.response.code).to.eql(400);",
+              "  pm.expect(pm.response.json().code).to.eql('IMAGE_TOO_LARGE_FOR_MODEL');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Upload legal workspace material",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/materials",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"filename\": \"p0-material.png\",\n  \"dataBase64\": \"{{smallImageBase64}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('uploads legal material', function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "  pm.expect(pm.response.json().material.ref).to.eql('p0-material.png');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delete workspace material",
+      "request": {
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/materials/p0-material.png"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('deletes material', function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "  pm.expect(pm.response.json().data.deleted).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject material ref traversal",
+      "request": {
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/materials/..%2Fsecret.png"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('rejects traversal', function () {",
+              "  pm.expect(pm.response.code).to.eql(400);",
+              "  pm.expect(pm.response.json().code).to.eql('INVALID_MATERIAL_REF');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

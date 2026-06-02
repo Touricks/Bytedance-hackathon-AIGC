@@ -2,7 +2,7 @@
 
 ## 1. 业务目标
 
-把审核过的 storyboard 扩写成下游 shot workflow 的「种子」结构（`ShotPromptArtifact`）：为每个镜头编排「拍摄任务卡」，并**跨 shot 锚定环境 / 背景一致性**，让后续 image-prompt → image-batch → video-batch 在 4-8 秒视频里保持场景稳定。同一事务里把每个 shot seed 到 `storyboard_shots` 表。
+把审核过的 storyboard 扩写成下游 shot workflow 的「种子」结构（`ShotPromptArtifact`）：为每个镜头编排「拍摄任务卡」，并**跨 shot 锚定环境 / 背景一致性**，让后续 image-prompt → image-batch → video-batch 在 4-8 秒视频里保持场景稳定。Approve 只批准 artifact；必须显式调用 shot-set apply 才会把当前 approved shotprompt 固化为 active `storyboard_shots`。
 
 > 通俗解释：storyboard 是给人看的「分镜剧本」；shotPrompt 是给模型 / 下游 agent 看的「拍摄任务卡」，每个镜头一张。**关键责任**：shot 0 建立基准场景；shot 1+ 在 prompt 里显式继承前序 shot 的环境（背景、光线、布景、构图基调），防止 4-8 秒视频里出现「下一个镜头突然换了一个陌生房间」这种场景漂移。
 
@@ -14,14 +14,16 @@ storyboard (approved) → ★ shot prompt compile ★ → storyboard_shots seede
 ```
 
 - **上一步**：用户在前端 approve 了 `StoryboardArtifact`。
-- **本步**：本 **LLM agent** 读取 storyboard + brief + 素材，跨 shot 一致地生成每条「任务卡」（`providerPrompt`、起止秒、参考素材列表、口播等），重点是为 shot 1+ 编排「继承 shot 0 的场景 / 背景」的延续策略。同一事务里 seed `storyboard_shots`（status=`DRAFT`、order_index 与 storyboard.shots[].index 一致）。
-- **下一步**：用户进入 focus mode，对每个 shot 触发 image-prompt → image-batch → video-script → video-batch → final compose。下游 image-prompt agent 会读取本模块产出的 `providerPrompt`，并在生成 shot N（N≥1）的首帧时**自动把 shot 0 的已选首帧作为 scene_reference 注入**，由本模块的 `providerPrompt` 文本指引该过程。
+- **本步**：本 **LLM agent** 读取 storyboard + brief + 素材 + 创作要求，跨 shot 一致地生成每条「任务卡」。每个 shot 必须拆出三层职责：`providerPrompt` 是镜头语境锚点，`shotImage` 是静态关键帧要求，`shotVideo` 是动态视频运动要求。
+- **下一步**：用户显式 apply shot set 后进入 focus mode，对每个 shot 触发 image-prompt → image-batch → video-script → video-batch → final compose。下游 image-prompt agent 以 `shotImage` 为主，video-script agent 以 `shotVideo` 为主，`providerPrompt` 仅作为背景语境，不直接复制为最终 prompt。
 
 ## 3. 触发接口
 
-`POST /api/workspaces/shotprompt/propose`
+`POST /api/workspaces/:workspaceId/shotprompt/propose`
 
-紧接着的 approve 接口（会触发 shot seeding）：`POST /api/workspaces/shotprompt/approve`
+紧接着的 approve 接口（不触发 shot seeding）：`POST /api/workspaces/:workspaceId/shotprompt/approve`
+
+显式创建 active shot set：`POST /api/workspaces/:workspaceId/shot-sets`
 
 ## 4. 输入字段
 
@@ -68,9 +70,11 @@ storyboard (approved) → ★ shot prompt compile ★ → storyboard_shots seede
 | `index` | 镜头序号，与 storyboard.shots[].index 一致 | 整数 | 是 |
 | `startSec` | 本镜头在全片中的起始秒。模型基于前序 shots 累加得出 | 整数 | 是 |
 | `endSec` | 本镜头在全片中的结束秒 | 整数 | 是 |
-| `providerPrompt` | 给下游 image-prompt / video provider 的镜头级 prompt。**核心责任**：shot 0 建立基准场景；shot N（N≥1）必须在文本里显式锚定「保持与 shot 0 一致的背景 / 光线 / 布景」 | 字符串 | 是 |
+| `providerPrompt` | 镜头级语境锚点。**核心责任**：说明本镜目标、商品、场景和上下文；不是最终 image prompt，也不是最终 video provider prompt。 | 字符串 | 是 |
 | `referenceAssetRefs[]` | 本镜头首帧图片会引用的素材 ref 列表。每项必须来自 `materialIntake.assets[].ref`。模型应优先把 `primaryProductRef` 放在首位 | 字符串数组 | 是 |
 | `voiceover` | 本镜头口播台词。沿用 storyboard 同 index 的 voiceover，不做改写（可空字符串） | 字符串 | 是 |
+| `shotImage` | 静态关键帧要求。必须写 scene、composition、lighting、productVisibility、referenceUsage、negative 等静态画面信息；禁止 camera motion、duration、first/last frame、voiceover、transition。 | 对象 | 是 |
+| `shotVideo` | 动态视频运动要求。必须写 cameraMotion、subjectMotion、firstFrameIntent、lastFrameIntent、durationIntent、continuity、negative 等动态信息；不得只是复述 `providerPrompt` 或 `shotImage`。 | 对象 | 是 |
 
 ### `tts` 子结构
 

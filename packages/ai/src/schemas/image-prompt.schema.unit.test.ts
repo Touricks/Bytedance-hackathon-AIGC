@@ -5,6 +5,10 @@ import { StoryboardImagePromptOutputSchema } from "./image-prompt.schema.js";
 describe("StoryboardImagePromptOutputSchema", () => {
   const valid = {
     promptText: "A cinematic close-up of the product on a marble counter",
+    negativePrompt: null,
+    visualStyle: null,
+    composition: null,
+    lighting: null,
     productVisibilityRule: "hero",
     referenceImageUsage: [],
     qualityChecklist: [],
@@ -18,16 +22,25 @@ describe("StoryboardImagePromptOutputSchema", () => {
     assert.deepEqual(out.qualityChecklist, valid.qualityChecklist);
   });
 
-  it("rejects when promptText too short", () => {
-    assert.throws(() =>
-      StoryboardImagePromptOutputSchema.parse({ ...valid, promptText: "tiny" }),
-    );
+  it("requires nullable soft fields instead of defaulting optional fields", () => {
+    const { negativePrompt: _negativePrompt, ...withoutNegativePrompt } = valid;
+    assert.throws(() => StoryboardImagePromptOutputSchema.parse(withoutNegativePrompt));
+
+    const { referenceImageUsage: _referenceImageUsage, ...withoutReferenceUsage } = valid;
+    assert.throws(() => StoryboardImagePromptOutputSchema.parse(withoutReferenceUsage));
   });
 
-  it("defaults referenceImageUsage to []", () => {
-    const { promptText, productVisibilityRule } = valid;
-    const out = StoryboardImagePromptOutputSchema.parse({ promptText, productVisibilityRule });
-    assert.deepEqual(out.referenceImageUsage, []);
-    assert.deepEqual(out.qualityChecklist, []);
+  it("allows soft fields to be JSON null", () => {
+    const out = StoryboardImagePromptOutputSchema.parse({
+      ...valid,
+      negativePrompt: null,
+      visualStyle: null,
+      composition: null,
+      lighting: null,
+    });
+    assert.equal(out.negativePrompt, null);
+    assert.equal(out.visualStyle, null);
+    assert.equal(out.composition, null);
+    assert.equal(out.lighting, null);
   });
 });

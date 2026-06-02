@@ -239,6 +239,61 @@ components:
         shotImage: { type: object, additionalProperties: true }
         shotVideo: { type: object, additionalProperties: true }
 
+    ReferenceVideoImportRequest:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: object
+          required: [type, url]
+          properties:
+            type: { type: string, enum: [url] }
+            url:
+              type: string
+              description: 可直接下载的视频 URL；平台落地页/HTML 不支持。
+
+    ReferenceVideoImportSource:
+      oneOf:
+        - type: object
+          required: [type, url, downloaded, contentType, sizeBytes]
+          properties:
+            type: { type: string, enum: [url] }
+            url: { type: string }
+            downloaded: { type: boolean }
+            contentType: { type: string }
+            sizeBytes: { type: integer }
+        - type: object
+          required: [type, filename, contentType, sizeBytes]
+          properties:
+            type: { type: string, enum: [file] }
+            filename: { type: string }
+            contentType: { type: string }
+            sizeBytes: { type: integer }
+
+    ReferenceVideoImportAnalysis:
+      type: object
+      required: [summary, confidence]
+      properties:
+        summary: { type: string }
+        confidence: { type: string, enum: [low, medium, high] }
+        detectedBeats:
+          type: array
+          items: { type: string }
+        risks:
+          type: array
+          items: { type: string }
+
+    ReferenceVideoImportResult:
+      type: object
+      required: [source, draft, analysis]
+      properties:
+        source:
+          $ref: "#/components/schemas/ReferenceVideoImportSource"
+        draft:
+          $ref: "#/components/schemas/PromptRequirementData"
+        analysis:
+          $ref: "#/components/schemas/ReferenceVideoImportAnalysis"
+
     ProposeRequest:
       type: object
       additionalProperties: true
@@ -408,12 +463,58 @@ components:
         status: { type: string, enum: [DRAFT, ACTIVE, APPROVED, STALE, ARCHIVED] }
         promptText: { type: string }
         negativePrompt: { type: string }
+        referenceAssetIds:
+          type: array
+          items: { type: string }
         promptJson: { type: object, additionalProperties: true }
         sourceFingerprint:
           $ref: "#/components/schemas/SourceFingerprint"
         promptAssembly:
           $ref: "#/components/schemas/PromptAssemblyMetadata"
+        createdBy: { type: string, enum: [agent, user, system] }
+        agentName: { type: string, nullable: true }
+        baseArtifactId: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+
+    ImagePromptRegenerateRequest:
+      type: object
+      required: [baseArtifactId, prompt]
+      properties:
+        baseArtifactId: { type: string }
+        prompt:
+          type: object
+          required:
+            [
+              promptText,
+              negativePrompt,
+              visualStyle,
+              composition,
+              lighting,
+              productVisibilityRule,
+              referenceImageUsage,
+              qualityChecklist
+            ]
+          properties:
+            promptText: { type: string }
+            negativePrompt: { type: string, nullable: true }
+            visualStyle: { type: string, nullable: true }
+            composition: { type: string, nullable: true }
+            lighting: { type: string, nullable: true }
+            productVisibilityRule: { type: string }
+            referenceImageUsage:
+              type: array
+              items:
+                type: object
+                required: [assetId, usage, instruction]
+                properties:
+                  assetId: { type: string }
+                  usage:
+                    type: string
+                    enum: [product_identity, style_reference, scene_reference]
+                  instruction: { type: string }
+            qualityChecklist:
+              type: array
+              items: { type: string }
 
     VideoScriptArtifact:
       type: object
@@ -520,10 +621,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ImageCandidate"
-        selected:
+        selection:
           anyOf:
             - $ref: "#/components/schemas/ImageSelectArtifact"
             - type: "null"
+        context: {}
 
     VideoRound:
       type: object
@@ -869,6 +971,7 @@ paths:
     post:
       tags: [Material]
       summary: 上传工作区素材
+      description: image/* 文件超过 10MB 返回 400 IMAGE_TOO_LARGE_FOR_MODEL；非图片仍使用通用 50MB 上限。
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
@@ -897,6 +1000,8 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/workspaces/{workspaceId}/prompt-requirements:
     get:
@@ -950,6 +1055,54 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ModuleArtifactEnvelope"
+
+  /api/workspaces/{workspaceId}/reference-video/import:
+    post:
+      tags: [ModuleArtifacts]
+      summary: 从参考视频导入 prompt requirements 草稿
+      description: >
+        只生成 requirements draft 并返回给前端填表；不会创建 prompt_requirements_artifacts、
+        不会 approve requirements，也不会把参考视频登记到素材库。仅当 workspace 尚无
+        current approved prompt requirements 时可调用。
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReferenceVideoImportRequest"
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Reference video requirements draft
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ReferenceVideoImportResult"
+        "400":
+          description: Unsupported URL/file, non-direct video URL, unsafe URL, or size/type violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Current approved prompt requirements already exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/workspaces/{workspaceId}/material-intake:
     get:
@@ -1289,6 +1442,39 @@ paths:
                       batch:
                         $ref: "#/components/schemas/GenerationBatch"
 
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/regenerate:
+    post:
+      tags: [Shot]
+      summary: 用户编辑 image prompt 后重新生成候选图
+      description: >-
+        基于 base image prompt artifact 创建新的 user-edited image prompt artifact 和 image batch。
+        不调用 text agent，不清空当前 selected image，旧候选仍保留可回看。
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImagePromptRegenerateRequest"
+      responses:
+        "200":
+          description: User-edited image prompt artifact and new batch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ImagePromptArtifact"
+                  artifact:
+                    $ref: "#/components/schemas/ImagePromptArtifact"
+                  batch:
+                    $ref: "#/components/schemas/GenerationBatch"
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/shots/{shotId}/image-prompts:
     get:
       tags: [Shot]
@@ -1514,6 +1700,7 @@ paths:
     get:
       tags: [Shot]
       summary: 获取 active shot set 的整体工作流状态
+      description: Workspace 存在但尚未生成 active shot set 时返回空 shots 和 canComposeFinalVideo=false；shot 级操作仍要求 active shot set。
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       responses:
@@ -1809,3 +1996,29 @@ paths:
               schema:
                 type: string
                 format: binary
+    delete:
+      tags: [Material]
+      summary: 删除工作区素材
+      description: 删除 workspace `.daireel/materials/:ref` 文件、对应 asset 记录和 shot asset refs；不会自动重跑下游链路。
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Wildcard"
+      responses:
+        "200":
+          description: Deleted material
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [workspaceId, ref, deleted]
+                    properties:
+                      workspaceId: { type: string }
+                      ref: { type: string }
+                      deleted: { type: boolean }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"

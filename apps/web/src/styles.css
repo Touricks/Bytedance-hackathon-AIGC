@@ -2069,6 +2069,65 @@ button:disabled {
   font-size: 13px;
 }
 
+.reference-video-import {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8e1ef;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+
+.reference-video-import__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.reference-video-import__main label {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.reference-video-import__main textarea {
+  width: 100%;
+  min-height: 64px;
+  border: 1px solid #cfd7e6;
+  border-radius: 7px;
+  padding: 9px 10px;
+  color: #17202c;
+  background: #ffffff;
+  resize: vertical;
+}
+
+.reference-video-import__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.reference-video-import__analysis {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid #e5eaf3;
+  padding-top: 10px;
+  color: #526071;
+  font-size: 13px;
+}
+
+.reference-video-import__analysis strong {
+  color: #344054;
+}
+
+.reference-video-import__analysis p {
+  margin: 0;
+}
+
 .review-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2326,6 +2385,29 @@ button:disabled {
   gap: 12px;
 }
 
+.review-image-prompt-form {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #e5eaf2;
+  padding-top: 12px;
+}
+
+.review-reference-usage {
+  display: grid;
+  gap: 6px;
+  color: #475467;
+  font-size: 13px;
+}
+
+.review-reference-usage code {
+  overflow-wrap: anywhere;
+  border: 1px solid #e5eaf2;
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #344054;
+  background: #f8fafc;
+}
+
 .review-round__head {
   display: flex;
   flex-wrap: wrap;
@@ -2372,6 +2454,34 @@ button:disabled {
 
 .review-candidate--committed {
   border-color: #15803d;
+}
+
+.review-current-image {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 8px;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.review-current-image img {
+  width: 48px;
+  height: 64px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.review-current-image div {
+  display: grid;
+  gap: 2px;
+}
+
+.review-current-image span {
+  color: #3f6212;
+  font-size: 13px;
 }
 
 .review-candidate__badge {
@@ -2598,6 +2708,7 @@ button:disabled {
   .review-grid,
   .review-loading,
   .review-form-grid,
+  .reference-video-import__main,
   .review-business-form,
   .review-shot-form,
   .review-brief,

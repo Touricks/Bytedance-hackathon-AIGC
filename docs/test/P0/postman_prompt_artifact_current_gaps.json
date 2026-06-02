@@ -1,0 +1,82 @@
+{
+  "info": {
+    "name": "P0 prompt artifact current gaps",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Propose prompt requirements with upstream sections",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/prompt-requirements/propose",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": {\n    \"script\": { \"tone\": \"可信、直接、中文口播\" },\n    \"storyboard\": { \"structure\": \"hook-benefit-proof-cta\" },\n    \"shotImage\": { \"global\": \"静态关键帧必须保留商品身份\" },\n    \"shotVideo\": { \"global\": \"视频只描述运动与连续性\" }\n  }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('requirements proposed', function () {",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.moduleId).to.eql('prompt-requirements');",
+              "  pm.environment.set('requirementsArtifactId', data.id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Workspace status exposes upstream drift fields",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('module upstream fields exist', function () {",
+              "  const modules = pm.response.json().modules;",
+              "  ['product-brief', 'storyboard', 'shotprompt'].forEach(function (id) {",
+              "    pm.expect(modules[id].upstream).to.have.property('upstreamChanged');",
+              "    pm.expect(modules[id].upstream.changedSources).to.be.an('array');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shot workflow status is active set scoped",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-workflow-status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('workflow rows are active shot set rows', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json.data.shots).to.be.an('array');",
+              "  const unique = new Set(json.data.shots.map(function (s) { return s.shotId; }));",
+              "  pm.expect(unique.size).to.eql(json.data.shots.length);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

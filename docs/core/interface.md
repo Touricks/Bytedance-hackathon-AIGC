@@ -38,7 +38,8 @@
 | ---- | ---------------------------------------- | ----------------------------------------------------- | --------------------------------------- |
 | POST | `/api/materials`                         | 登记外部商品图为 `asset`。                            | `{ imageUrl }`                          |
 | POST | `/api/materials/product-image`           | 上传 base64 商品图，写入本地上传目录并登记 `asset`。  | `{ filename, contentType, dataBase64 }` |
-| POST | `/api/workspaces/:workspaceId/materials` | 上传工作区素材，写入 workspace storage 并登记 asset。 | multipart file 或 JSON base64           |
+| POST | `/api/workspaces/:workspaceId/materials` | 上传工作区素材，写入 workspace storage 并登记 asset；`image/*` 超过 10MB 直接返回 `IMAGE_TOO_LARGE_FOR_MODEL`，非图片仍受通用 50MB 上限保护。 | multipart file 或 JSON base64           |
+| DELETE | `/api/workspaces/:workspaceId/materials/:ref` | 删除工作区素材文件、对应 asset 记录和 shot asset refs；`ref` 只允许安全文件名，不允许路径穿越。删除不会自动重跑 material-intake 或下游链路。 | 无 |
 
 ---
 
@@ -68,6 +69,7 @@ Prompt requirements 是用户可编辑的结构化创作要求。用户可以分
 | GET  | `/api/workspaces/:workspaceId/prompt-requirements`         | 返回当前 proposed 和 approved/current requirements。 | 无                        |
 | POST | `/api/workspaces/:workspaceId/prompt-requirements/propose` | 保存一份待审 requirements。通常不调用 provider。     | `{ data }`                |
 | POST | `/api/workspaces/:workspaceId/prompt-requirements/approve` | 将指定或内联 requirements 置为 approved/current。    | `{ artifactId? , data? }` |
+| POST | `/api/workspaces/:workspaceId/reference-video/import`      | 从参考视频 URL 或上传文件生成 requirements draft；不创建 artifact、不 approve、不进入素材库。仅在 current approved requirements 不存在时可调用。 | JSON `{ source:{ type:"url", url } }` 或 multipart `file` |
 
 响应包含：
 
@@ -83,6 +85,41 @@ Prompt requirements 是用户可编辑的结构化创作要求。用户可以分
   }
 }
 ```
+
+Reference video import 成功响应形如：
+
+```json
+{
+  "data": {
+    "source": {
+      "type": "url",
+      "url": "https://cdn.example.com/reference.mp4",
+      "downloaded": true,
+      "contentType": "video/mp4",
+      "sizeBytes": 12345678
+    },
+    "draft": {
+      "image": { "style": "真实电商产品摄影" },
+      "script": { "tone": "直接、可信、卖点清晰" },
+      "storyboard": { "rhythm": "开场快，卖点集中" },
+      "shotImage": { "global": "分镜图保持主体和场景连续" },
+      "shotVideo": { "global": "镜头运动平滑" }
+    },
+    "analysis": {
+      "summary": "参考视频采用快节奏卖点证明结构。",
+      "confidence": "medium"
+    }
+  }
+}
+```
+
+导入边界：
+
+- 参考视频只用于分析剧本结构、节奏、镜头组织和表达风格。
+- 导入结果只回填首屏 7 个创作要求字段；用户提交后才走 `prompt-requirements/propose`。
+- 参考视频不写入 `prompt_requirements_artifacts`，不写 `asset`，不参与 `material-intake.assets[]`。
+- 如果 workspace 已有 current approved requirements，返回 `409 REQUIREMENTS_ALREADY_APPROVED`。
+- URL 只支持可直接下载的视频资源；HTML/平台落地页返回 `REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD`。
 
 ---
 
@@ -149,8 +186,9 @@ apply 行为：
 | ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | GET  | `/api/shots/:shotId`                                                 | 返回单个 shot、requirements、active prompt/script、当前选择、下一步建议。                                                                                                                                                       | 无                                                  |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`   | 运行图像 prompt agent。输入包含 current prompt requirements、当前 shot 的 `shotImage` dict、产品/素材、前序选择。写 ACTIVE `image_prompt_artifacts`、保存 `image-prompt` subject/contract assembly metadata，并创建图像 batch。 | `{ userDirection?, candidateCount?, aspectRatio? }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | 用户基于已有 image prompt artifact 编辑结构化 prompt 字段后重新生成该 shot 候选图。直接写新的 ACTIVE `image_prompt_artifacts(created_by='user', base_artifact_id=...)` 和新的 image batch，不调用 text agent，不清空当前 `selected_image_id`。 | `{ baseArtifactId, prompt }` |
 | GET  | `/api/shots/:shotId/image-prompts`                                   | 列出该 shot 的图像 prompt artifacts。                                                                                                                                                                                           | 无                                                  |
-| GET  | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds`            | 按 prompt artifact 聚合图像生成轮次、候选和当前选择。                                                                                                                                                                           | 无                                                  |
+| GET  | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds`            | 按 prompt artifact 聚合图像生成轮次、候选和当前选择；即使当前选择来自旧轮次，也会返回 current selection 供前端提示“当前选择仍保留”。                                                                                                                                                                           | 无                                                  |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | 选择一张候选图。UPSERT `image_select_artifacts`，不 stale 其他候选。                                                                                                                                                            | `{ candidateId }`                                   |
 
 图像选择校验：
@@ -170,11 +208,14 @@ apply 行为：
 | GET  | `/api/workspaces/:workspaceId/shots/:shotId/video-rounds`            | 按 video script artifact 聚合视频生成轮次、候选和当前选择。                                                                                                                                                                                                                                                                                                                                                                                                      | 无                                                  |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | 选择一个候选视频。UPSERT `video_select_artifacts`，不 stale 其他候选。                                                                                                                                                                                                                                                                                                                                                                                           | `{ candidateId }`                                   |
 
-视频脚本 propose 前置条件：
+视频脚本 propose 前置条件与一致性约束：
 
+- 只读取当前 active shot set；archived shot set 的 selected images 不参与 `first_frame` / `last_frame`、next shot、完成度或批量视频前置检查。
 - active shot set 内全部需要的视频锚点图已选择；否则返回 `IMAGE_SELECTION_INCOMPLETE`。
+- Shot N 的 `first_frame` 来自 Shot N 的 current selected image；非最后一个 Shot N 的 `last_frame` 来自 Shot N+1 的 current selected image；最后一个 shot 的 `last_frame` 为 `null`。
 - Seedance 单个候选视频时长必须在 4-12 秒范围内。server 会在创建 video script 时把 shot 默认时长夹到 provider 允许范围内，避免 3 秒 storyboard shot 直接传入 Seedance。
 - video provider 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。命中 429/限流时按 `Retry-After` / 指数退避重试，而不是直接失败候选。
+- Seedance prompt 固定追加统一旁白 voice profile：同一说话人、自然清晰普通话、统一语速/情绪/电商短视频播报风格。每个 shot 只朗读本镜头 `voiceover`，并禁止字幕/标题/可读文字。`video_script_artifacts.source_fingerprint` 记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfileHash` 和本镜 `voiceover`。
 
 ---
 
@@ -183,11 +224,11 @@ apply 行为：
 | 方法    | 路径                                                | 业务逻辑                                                                 | 请求                   |
 | ------- | --------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------- | ---------------- |
 | POST 🔑 | `/api/shots/:shotId/retry`                          | 对当前 active image prompt 或 video script 重新创建 batch。              | `{ what: "image_batch" | "video_batch" }` |
-| GET     | `/api/workspaces/:workspaceId/shot-workflow-status` | 返回 active shot set 的整体状态、每个 shot 的候选/选择状态、是否可合成。 | 无                     |
+| GET     | `/api/workspaces/:workspaceId/shot-workflow-status` | 返回当前 active shot set 的整体状态、每个 shot 的候选/选择状态、是否可合成；不会混入 archived shot set rows；尚未生成 active shot set 时返回空 `shots`。 | 无                     |
 
 retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部创建 batch，可以由服务端生成幂等键。
 
-`shot-workflow-status` 每个 shot 行除 `selectedImageId` 外还返回 `selectedImageUrl`：当前 shot 已选分镜图候选的图片 URL，未选择时为 `null`。前端分镜列表据此直接渲染已选缩略图，无需为每个 shot 单独调用 `image-rounds`。
+`shot-workflow-status` 是首屏恢复/轮询接口。workspace 存在但尚未 apply active shot set 时，接口返回 `shots: []`、`canComposeFinalVideo: false`，不抛 `NO_ACTIVE_SHOT_SET`；真正的 shot 级操作仍要求 active shot set。每个 shot 行除 `selectedImageId` 外还返回 `selectedImageUrl`：当前 shot 已选分镜图候选的图片 URL，未选择时为 `null`。前端分镜列表据此直接渲染已选缩略图，无需为每个 shot 单独调用 `image-rounds`。
 
 ---
 

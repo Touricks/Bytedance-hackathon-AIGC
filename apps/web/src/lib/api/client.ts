@@ -106,6 +106,30 @@ export interface PromptRequirementsData {
   [key: string]: unknown;
 }
 
+export interface ReferenceVideoRequirementsImportResult {
+  source:
+    | {
+        type: "url";
+        url: string;
+        downloaded: boolean;
+        contentType: string;
+        sizeBytes: number;
+      }
+    | {
+        type: "file";
+        filename: string;
+        contentType: string;
+        sizeBytes: number;
+      };
+  draft: PromptRequirementsData;
+  analysis: {
+    summary: string;
+    confidence: "low" | "medium" | "high";
+    detectedBeats?: string[];
+    risks?: string[];
+  };
+}
+
 export interface WorkspaceModuleState<TData = unknown> {
   moduleId: WorkspaceArtifact<TData>["moduleId"];
   proposed: WorkspaceArtifact<TData> | null;
@@ -227,6 +251,26 @@ export interface WorkspaceMaterialUploadDetail {
     bytes: number;
     url: string;
   };
+}
+
+export interface WorkspaceMaterialDeleteDetail {
+  data: {
+    workspaceId: string;
+    ref: string;
+    deleted: true;
+  };
+}
+
+export const maxModelImageMaterialBytes = 10 * 1024 * 1024;
+
+export function workspaceMaterialFileRejectionReason(file: File): string | null {
+  if (
+    file.type.startsWith("image/") &&
+    file.size > maxModelImageMaterialBytes
+  ) {
+    return "图片超过 10MB，无法进入模型，请压缩后再上传";
+  }
+  return null;
 }
 
 export interface WorkspaceDirectorySelectDetail {
@@ -493,6 +537,22 @@ export async function uploadWorkspaceMaterial(input: {
   return (await response.json()) as WorkspaceMaterialUploadDetail;
 }
 
+export async function deleteWorkspaceMaterial(input: {
+  workspaceId: string;
+  ref: string;
+}): Promise<WorkspaceMaterialDeleteDetail> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/workspaces/${input.workspaceId}/materials/${encodeURIComponent(input.ref)}`,
+    { method: "DELETE" },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+
+  return (await response.json()) as WorkspaceMaterialDeleteDetail;
+}
+
 export async function getWorkspaceStatus(
   workspaceId: string,
 ): Promise<WorkspaceStatusDetail> {
@@ -533,6 +593,39 @@ export async function approveWorkspacePromptRequirements(input: {
     `/api/workspaces/${input.workspaceId}/prompt-requirements/approve`,
     input.artifactId ? { artifactId: input.artifactId } : { data: input.data },
   );
+}
+
+export async function importReferenceVideoRequirements(input: {
+  workspaceId: string;
+  source:
+    | { type: "url"; url: string }
+    | { type: "file"; file: File };
+}): Promise<ReferenceVideoRequirementsImportResult> {
+  const endpoint = `/api/workspaces/${input.workspaceId}/reference-video/import`;
+  if (input.source.type === "url") {
+    const response = await postJson<{
+      data: ReferenceVideoRequirementsImportResult;
+    }>(endpoint, {
+      source: {
+        type: "url",
+        url: input.source.url,
+      },
+    });
+    return response.data;
+  }
+
+  const body = new FormData();
+  body.set("file", input.source.file);
+  const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+  return ((await response.json()) as {
+    data: ReferenceVideoRequirementsImportResult;
+  }).data;
 }
 
 export async function runWorkspaceMaterialIntake(input: {

@@ -1,0 +1,59 @@
+{
+  "info": {
+    "name": "P0 shot image video prompt boundary",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Shotprompt outputs separated shotImage and shotVideo",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shotprompt/propose",
+        "body": { "mode": "raw", "raw": "{\n  \"aspectRatio\": \"9:16\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('shot image/video dictionaries are distinct', function () {",
+              "  const shots = pm.response.json().data.data.shots;",
+              "  pm.expect(shots.length).to.be.above(0);",
+              "  shots.forEach(function (shot) {",
+              "    pm.expect(shot.shotImage).to.be.an('object');",
+              "    pm.expect(shot.shotVideo).to.be.an('object');",
+              "    pm.expect(JSON.stringify(shot.shotImage)).to.not.eql(JSON.stringify(shot.shotVideo));",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Image prompt stays still-image only",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-prompts/propose",
+        "body": { "mode": "raw", "raw": "{}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('image prompt avoids video terms', function () {",
+              "  const text = pm.response.json().data.promptText;",
+              "  pm.expect(text).to.not.match(/cameraMotion|duration|voiceover|first frame|last frame|transition/i);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

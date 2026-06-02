@@ -156,7 +156,7 @@ function enrichShotPrompt(rawData: unknown) {
         ...normalizedShot,
         shotImage:
           rawShot.shotImage ?? {
-            scene: normalizedShot.providerPrompt,
+            scene: `静态关键帧场景：围绕本镜头目标呈现商品与环境，语境参考为「${normalizedShot.providerPrompt}」。`,
             composition: `Shot ${index + 1} composition for ${data.aspectRatio}`,
             productVisibility: shot.referenceAssetRefs.join(", "),
             style: "consistent ecommerce product visual identity",
@@ -165,9 +165,12 @@ function enrichShotPrompt(rawData: unknown) {
         shotVideo:
           rawShot.shotVideo ?? {
             cameraMotion: "smooth controlled ecommerce camera movement",
-            subjectMotion: normalizedShot.providerPrompt,
-            firstFrameIntent: normalizedShot.providerPrompt,
-            lastFrameIntent: nextShot?.providerPrompt ?? null,
+            subjectMotion:
+              "controlled product-first motion that animates the approved key frame without changing product identity",
+            firstFrameIntent: `begin from the approved static key frame for shot ${index + 1}`,
+            lastFrameIntent: nextShot
+              ? `move toward the next shot context without copying its still-image prompt: ${nextShot.providerPrompt.slice(0, 120)}`
+              : null,
             continuity:
               index === 0
                 ? "establish product identity for following shots"

@@ -27,3 +27,4 @@ export * from "./agents/storyboard-image-prompt.agent.js";
 export * from "./agents/video-shot-script.agent.js";
 export * from "./workflows/storyboard-image-prompt.workflow.js";
 export * from "./workflows/video-shot-script.workflow.js";
+export * from "./workflows/reference-video-requirements.workflow.js";

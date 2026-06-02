@@ -1,6 +1,6 @@
 # Module Artifact V2 迁移计划
 
-更新时间：2026-05-31
+更新时间：2026-06-02
 
 本计划综合 `docs/plan/modules/` 的模块提案与 `prompt-assembly-standard-plan.md` 的 prompt assembly 方案，目标是把当前混合架构迁移为 module-owned artifact tables + prompt assembly V2。
 
@@ -41,6 +41,15 @@
 | Select | 每 shot 一个 current selection，UPSERT 覆盖，不 stale 未选候选。 |
 | Select 表名 | 使用 `image_select_artifacts` / `video_select_artifacts`。 |
 | 测试 | 第一版 agent-chain 跑完整 real provider 链路；pnpm script 调用 Newman。 |
+
+2026-06-02 P0 收敛：
+
+- `/status.modules[].upstream` 与 `activeShotSet.upstream` 已接入 source fingerprint drift 比较。
+- 当前工作流查询只读 active shot set；archived shot sets 只作为历史/调试事实保留，不进入 `shot-workflow-status`、next shot、选图/选视频完成度或视频首尾帧查询。
+- workspace material 上传新增 `image/*` 10MB 模型输入上限，素材删除新增安全 `DELETE /api/workspaces/:workspaceId/materials/:ref`。
+- image prompt 支持用户编辑后 `regenerate`，新建 user-edited artifact 和 image batch，保留当前 selected image。
+- image/video prompt 边界已收紧：`shotImage` 只服务静态关键帧，`shotVideo` 只服务动态视频运动；Ark structured output agent 统一走 Responses API。
+- Seedance 分镜视频 prompt 固定追加统一 narrator / voice profile，source fingerprint 记录 `voiceProfileHash`。
 
 ---
 

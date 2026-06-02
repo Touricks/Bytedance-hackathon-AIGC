@@ -1,6 +1,6 @@
 # Postman / Newman Test Plan
 
-更新时间：2026-05-31
+更新时间：2026-06-02
 
 ## 目标
 
@@ -88,7 +88,9 @@ pnpm test:agent-chain
 | 2 | `POST /api/workspaces/:workspaceId/storage/bind` | `200`；绑定 `workspaceDirectory`。 |
 | 3 | `GET /api/workspaces/:workspaceId/storage` | `200`；`kind` 为 `LOCAL` 或等价小写值。 |
 | 4 | `POST /api/workspaces/:workspaceId/materials` | `200`；上传测试素材并返回 stable workspace URL。 |
-| 5 | `GET /api/workspaces/:workspaceId/status` | `200`；`modules`、`storage`、`activeShotSet` 字段存在。 |
+| 5 | `POST /api/workspaces/:workspaceId/materials` 上传 10MB+ image | `400 IMAGE_TOO_LARGE_FOR_MODEL`；不得创建 asset。 |
+| 6 | `DELETE /api/workspaces/:workspaceId/materials/:ref` | `200`；删除素材文件与 asset 记录；路径穿越 ref 返回 `400 INVALID_MATERIAL_REF`。 |
+| 7 | `GET /api/workspaces/:workspaceId/status` | `200`；`modules`、`storage`、`activeShotSet` 字段存在。 |
 
 ### 3. Prompt Requirements
 
@@ -136,7 +138,8 @@ pnpm test:agent-chain
 负向断言：
 
 - `shotprompt approve` 之后、`shot-sets` apply 之前，DB 中不应出现新 `storyboard_shots`。
-- 重新 propose/approve shotprompt 不应归档当前 active shot set，只应让 shot set 查询出现 `upstreamChanged=true`。
+- 重新 propose/approve shotprompt 不应归档当前 active shot set，只应让 `/status.activeShotSet.upstream.upstreamChanged === true`。
+- 重新 apply 新 shotprompt 后，`shot-workflow-status.data.shots.length` 等于新 active shot set shot 数，不混入 archived rows。
 
 ### 6. Image Chain
 
@@ -147,12 +150,14 @@ pnpm test:agent-chain
 | 1 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | `200`；返回 image prompt artifact 与 batch；artifact 有 prompt assembly metadata。 |
 | 2 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | 轮询到 batch `SUCCEEDED`；候选数达到 `imageCandidateCount`。 |
 | 3 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | `200`；返回 `imageSelectArtifact.imageCandidateId`；重复选择可覆盖。 |
+| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | `200`；新 artifact `createdBy === "user"`，`baseArtifactId` 等于旧 artifact；新 batch 的 `providerRequest.prompt` 来自用户编辑字段；原 `selectedImageId` 保留。 |
 
 选择断言：
 
 - select 不会将未选候选标记为 stale。
 - DB 中每个 shot 在 `image_select_artifacts` 只有一条 selection。
 - 前端可继续从旧候选中重新选择。
+- image rounds 在新轮次中仍返回 current selection，供 UI 显示“当前选择仍保留”。
 
 ### 7. Video Chain
 
@@ -168,6 +173,9 @@ pnpm test:agent-chain
 
 - 未完成全部 image selection 时 propose video script 返回 `IMAGE_SELECTION_INCOMPLETE`。
 - storyboard shot 低于 4 秒时，server 创建 video script 会夹到 Seedance 允许的 4 秒下限，避免真实 provider 返回 duration boundary error。
+- first/last frame 查询只读 active shot set；archived selected images 不参与 next frame。
+- `video_script_artifacts.source_fingerprint` 包含 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfileHash` 和本镜 `voiceover`。
+- Seedance provider prompt 包含统一 narrator / voice profile、只朗读本镜口播、禁止字幕/标题/可读文字。
 
 ### 8. Final Compose
 
@@ -216,6 +224,10 @@ trace 中不应出现：
 | 成片缺幂等头 | `final-videos` | `400 IDEMPOTENCY_KEY_REQUIRED`。 |
 | 重复绑定 storage | `storage/bind` | `409 STORAGE_ALREADY_BOUND`。 |
 | 静态文件 path traversal | `/materials/../../x` | `400`。 |
+| 10MB+ 图片素材 | `POST /workspaces/:workspaceId/materials` | `400 IMAGE_TOO_LARGE_FOR_MODEL`。 |
+| 删除不存在素材 | `DELETE /workspaces/:workspaceId/materials/:ref` | `404 MATERIAL_NOT_FOUND`。 |
+| archived shot 操作 | 对 archived shot select/propose/list rounds | `400 SHOT_NOT_IN_ACTIVE_SET`。 |
+| 用户编辑 image prompt base artifact 不属于 shot | `image-prompts/regenerate` | `400 INVALID_BASE_IMAGE_PROMPT`。 |
 
 ---
 

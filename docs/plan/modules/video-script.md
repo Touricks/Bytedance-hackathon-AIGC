@@ -6,7 +6,9 @@
 
 > 通俗解释：每个镜头要把「这一帧静态画面」变成「这一段动起来的视频」。本 agent 把分镜信息 + 首尾帧 + userDirection 翻译成 Seedance prompt，**并直接下任务、等结果、把 M 段候选视频交付给用户挑**。
 >
-> **关键设计**：每个 shot 的视频生成 **互相独立**——本 shot 的首帧 = `image_select_artifacts[shot]`、末帧 = `image_select_artifacts[shot+1]`，两端都来自已经确认的分镜图，无需等前一个 shot 的视频跑完。所有 shot 可以并行调用 Seedance。
+> **关键设计**：每个 shot 的视频生成 **互相独立**——本 shot 的首帧 = 当前 active shot set 内 `image_select_artifacts[shot]`、末帧 = 当前 active shot set 内 `image_select_artifacts[shot+1]`，两端都来自已经确认的分镜图，无需等前一个 shot 的视频跑完。所有 shot 可以并行调用 Seedance。Archived shot set 只作为历史事实保留，不参与首尾帧、next shot 或完成度判断。
+>
+> 2026-06-02 P0 更新：Seedance prompt 固定追加统一 narrator / voice profile（同一说话人、自然清晰普通话、统一语速/情绪/电商短视频播报风格）。每个 shot 只朗读本镜头口播，且 `source_fingerprint` 记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfileHash` 和本镜 `voiceover`。
 
 ## 2. 在工作流中的位置
 
@@ -201,6 +203,7 @@
 - 本接口被调用前，workspace 内所有 shots 必须已 image-selected（即 `image_select_artifacts` 覆盖所有 `storyboard_shots`）；否则 400 `IMAGE_SELECTION_INCOMPLETE`。
 - `first_frame_url` 必须等于 `image_select_artifacts[shotId].url`；不允许由前端 / 用户直接传任意 URL。
 - 若本 shot 非最后一个：`last_frame_url` 必须等于 `image_select_artifacts[next shot].url`；为最后一个：`last_frame_url` 必须为 `null`。
+- 上述首尾帧和 “所有 shot 已选图” 检查必须限定在当前 active shot set；不得读取 archived shot rows。
 
 **候选视频相关（用户可见）**
 
@@ -225,6 +228,7 @@
 - `providerPrompt` ≥ 30 字符；推荐 100-400 字符；硬上限 ≤ 600 字符。
 - `providerPrompt` 中必须明确描述首帧画面（与 `first_frame_url` 视觉一致）；若有 last_frame，必须描述末帧画面（与 `last_frame_url` 视觉一致）。
 - `voiceover` 必须等于 storyboard 同 index 的 voiceover，不允许模型改写。
+- 发送 Seedance 前必须追加统一 voice profile；同一 shot set 的所有片段除本镜 `voiceover` 外应使用同一份声音规则。
 - `negativePrompt` 应至少包含：`商品变形`、`相机抖动`、`不自然运动`。
 
 **Schema 合法性**

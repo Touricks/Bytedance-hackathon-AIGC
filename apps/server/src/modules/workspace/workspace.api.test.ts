@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -40,6 +40,27 @@ function assertPromptAssembly(value: unknown, moduleId: string) {
   assert.match(String(assembly.contractHash), /^[a-f0-9]{64}$/);
 }
 
+function multipartFilePayload(input: {
+  fieldName: string;
+  filename: string;
+  contentType: string;
+  bytes: Buffer;
+}) {
+  const boundary = `----workspace-test-${Date.now()}`;
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${input.fieldName}"; filename="${input.filename}"\r\n` +
+      `Content-Type: ${input.contentType}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    headers: {
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    },
+    payload: Buffer.concat([head, input.bytes, tail]),
+  };
+}
+
 describe("workspace API", () => {
   let app: FastifyInstance;
 
@@ -78,6 +99,103 @@ describe("workspace API", () => {
       uploadResponse.json().material.url,
       new RegExp(`/api/workspaces/${workspaceId}/materials/product\\.png$`),
     );
+  });
+
+  it("rejects workspace image materials over the model input limit", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const multipart = multipartFilePayload({
+      fieldName: "file",
+      filename: "too-large.png",
+      contentType: "image/png",
+      bytes: Buffer.alloc(10 * 1024 * 1024 + 1),
+    });
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      headers: multipart.headers,
+      payload: multipart.payload,
+    });
+
+    assert.equal(uploadResponse.statusCode, 400, uploadResponse.body);
+    assert.equal(uploadResponse.json().code, "IMAGE_TOO_LARGE_FOR_MODEL");
+  });
+
+  it("keeps non-image workspace materials on the 50MB limit", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const multipart = multipartFilePayload({
+      fieldName: "file",
+      filename: "large-notes.txt",
+      contentType: "text/plain",
+      bytes: Buffer.alloc(10 * 1024 * 1024 + 1, "a"),
+    });
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      headers: multipart.headers,
+      payload: multipart.payload,
+    });
+
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+    assert.equal(uploadResponse.json().material.ref, "large-notes.txt");
+  });
+
+  it("deletes workspace material files and asset records", async () => {
+    const { workspaceId, directory } = await createBoundWorkspace(app);
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      payload: {
+        filename: "delete-me.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+      },
+    });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+    const materialPath = path.join(
+      directory,
+      ".daireel",
+      "materials",
+      "delete-me.png",
+    );
+    await stat(materialPath);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}/materials/delete-me.png`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    assert.deepEqual(deleteResponse.json().data, {
+      workspaceId,
+      ref: "delete-me.png",
+      deleted: true,
+    });
+    await assert.rejects(() => stat(materialPath), { code: "ENOENT" });
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    assert.equal(statusResponse.json().materialLibrary.assets.length, 0);
+
+    const assetRows = await db.db2.pool().query(
+      `select count(*)::integer as count
+       from asset
+       where metadata->>'workspaceId' = $1 and metadata->>'ref' = 'delete-me.png'`,
+      [workspaceId],
+    );
+    assert.equal(assetRows.rows[0]?.count, 0);
+  });
+
+  it("rejects path traversal material deletes", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}/materials/..%2Fsecret.png`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 400, deleteResponse.body);
+    assert.equal(deleteResponse.json().code, "INVALID_MATERIAL_REF");
   });
 
   it("stores current V2 module artifacts outside workspace_artifact", async () => {

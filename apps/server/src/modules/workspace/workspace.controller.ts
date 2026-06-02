@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { toHttpError } from "../../common/errors.js";
 import {
   materialIntakeModuleProposeRequestSchema,
@@ -254,6 +254,29 @@ export async function registerWorkspaceController(
       return reply.status(httpError.statusCode).send(httpError);
     }
   });
+
+  const deleteWorkspaceMaterial = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    try {
+      const params = request.params as {
+        workspaceId: string;
+        ref?: string;
+        "*": string;
+      };
+      return await workspaceService.deleteMaterial({
+        workspaceId: params.workspaceId,
+        ref: params.ref ?? params["*"],
+      });
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  };
+
+  app.delete(workspaceRoute("/materials/:ref"), deleteWorkspaceMaterial);
+  app.delete(workspaceRoute("/materials/*"), deleteWorkspaceMaterial);
 
   app.get(
     workspaceRoute("/product-brief"),

@@ -1,0 +1,56 @@
+{
+  "info": {
+    "name": "P0 video scene audio consistency",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Video script records first last frame and voice profile",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-scripts/propose",
+        "body": { "mode": "raw", "raw": "{}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('video script has frame and voice anchors', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json.context.firstFrameCandidateId).to.be.a('string');",
+              "  pm.expect(json.context).to.have.property('lastFrameCandidateId');",
+              "  pm.expect(json.context.voiceProfileHash).to.match(/^[a-f0-9]{64}$/);",
+              "  pm.expect(json.context).to.have.property('voiceover');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video rounds expose frame URLs",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-rounds"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('video round exposes frame facts', function () {",
+              "  const round = pm.response.json().data[0];",
+              "  pm.expect(round.frames.firstFrameCandidateId).to.be.a('string');",
+              "  pm.expect(round.frames).to.have.property('lastFrameCandidateId');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

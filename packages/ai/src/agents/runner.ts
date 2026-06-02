@@ -24,13 +24,19 @@ export interface RunnerContext {
  * `OpenAIChatCompletionsModel` directly and passing a zero-arg `getModel`.
  * In v0.0.5 the `ModelProvider` interface requires `getModel(modelName?)`,
  * and the SDK ships `OpenAIProvider` which accepts `apiKey`/`baseURL` and
- * resolves models by name. We use `OpenAIProvider` here — it internally
- * creates an `OpenAIChatCompletionsModel` for the given model name,
- * which is exactly what we want. `useResponses: false` forces the Chat
- * Completions path (required for OpenAI-compatible endpoints).
+ * resolves models by name. By default we keep the Chat Completions path
+ * for broad OpenAI-compatible endpoint support; structured-output agents
+ * can opt into the Responses path with `useResponses: true`.
  */
-export function buildRunner(cfg: TaskProviderConfig): Runner {
-  const provider = new OpenAIProvider({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, useResponses: false });
+export function buildRunner(
+  cfg: TaskProviderConfig,
+  options: { useResponses?: boolean } = {},
+): Runner {
+  const provider = new OpenAIProvider({
+    apiKey: cfg.apiKey,
+    baseURL: cfg.baseURL,
+    useResponses: options.useResponses ?? false,
+  });
   return new Runner({ modelProvider: provider });
 }
 

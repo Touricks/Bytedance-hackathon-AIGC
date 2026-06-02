@@ -51,4 +51,46 @@ describe("module prompt assembler", () => {
     assert.match(videoPrompt.prompt, /shotVideo dict/);
     assert.match(videoPrompt.metadata.contractHash, /^[a-f0-9]{64}$/);
   });
+
+  it("keeps image-prompt instructions still-image only", () => {
+    const imagePrompt = buildModulePrompt({
+      moduleId: "image-prompt",
+      runtimeContext: "shotImage dict: { scene: '商品在桌面上' }",
+    });
+
+    assert.match(imagePrompt.prompt, /still-image prompt/);
+    assert.match(imagePrompt.prompt, /single key frame/);
+    assert.match(imagePrompt.prompt, /Use shot\.shotImage as the main creative requirement/);
+    assert.match(imagePrompt.prompt, /camera motion/);
+    assert.match(imagePrompt.prompt, /duration/);
+    assert.match(imagePrompt.prompt, /voiceover/);
+    assert.match(imagePrompt.prompt, /JSON null/);
+    assert.match(imagePrompt.prompt, /Simplified Chinese/);
+  });
+
+  it("keeps video-script instructions motion-provider only", () => {
+    const videoPrompt = buildModulePrompt({
+      moduleId: "video-script",
+      runtimeContext: "shotVideo dict: { cameraMotion: 'push_in' }",
+    });
+
+    assert.match(videoPrompt.prompt, /motion\/video provider prompt/);
+    assert.match(videoPrompt.prompt, /Use shot\.shotVideo as the main creative requirement/);
+    assert.match(videoPrompt.prompt, /first frame/);
+    assert.match(videoPrompt.prompt, /ending frame/);
+    assert.match(videoPrompt.prompt, /duration\/tempo/);
+    assert.match(videoPrompt.prompt, /must not be copied as the final providerPrompt/);
+  });
+
+  it("documents providerPrompt shotImage and shotVideo as separate shotprompt layers", () => {
+    const shotPrompt = buildModulePrompt({
+      moduleId: "shotprompt",
+      runtimeContext: "已确认分镜：商品开场",
+    });
+
+    assert.match(shotPrompt.prompt, /providerPrompt：镜头叙事和语境锚点/);
+    assert.match(shotPrompt.prompt, /shotImage：静态关键帧要求/);
+    assert.match(shotPrompt.prompt, /shotVideo：动态视频运动要求/);
+    assert.match(shotPrompt.prompt, /不得互相原样复制/);
+  });
 });

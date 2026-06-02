@@ -13,15 +13,44 @@ import {
   createVideoScriptVersionAtomic
 } from "../artifact/artifact.versioning.js";
 import { generationService } from "../generation/generation.service.js";
+import { seedanceVoiceProfileHash } from "../generation/voice-profile.js";
 import { traceService } from "../trace/trace.service.js";
 import { shotSetService } from "../workspace/shot-set.service.js";
 import { getNextAction, type ShotStatus } from "./shot.state.js";
 import { buildWorkflowShotRow } from "./shot.view.js";
 
-async function neighborImagesFor(workspaceId: string, shotId: string) {
-  const shots = (await db.db2.listShotsByWorkspace(workspaceId)).sort(
+async function listActiveShotsForWorkspace(workspaceId: string) {
+  return (await shotSetService.listActiveShots(workspaceId)).sort(
     (a, b) => a.orderIndex - b.orderIndex
   );
+}
+
+async function listWorkflowStatusShotsForWorkspace(workspaceId: string) {
+  await db.getWorkspace(workspaceId);
+  const active = await shotSetService.getActiveShotSet(workspaceId);
+  if (!active) {
+    return [];
+  }
+  return (await shotSetService.listShotSetShots({ workspaceId, shotSetId: active.id })).sort(
+    (a, b) => a.orderIndex - b.orderIndex
+  );
+}
+
+async function assertShotInActiveShotSet(workspaceId: string, shotId: string) {
+  const shots = await listActiveShotsForWorkspace(workspaceId);
+  const shot = shots.find((item) => item.id === shotId);
+  if (!shot) {
+    throw new HttpError(
+      400,
+      "SHOT_NOT_IN_ACTIVE_SET",
+      "Shot does not belong to the active shot set"
+    );
+  }
+  return { shot, shots };
+}
+
+async function neighborImagesFor(workspaceId: string, shotId: string) {
+  const shots = await listActiveShotsForWorkspace(workspaceId);
   const idx = shots.findIndex((s) => s.id === shotId);
   const prev = idx > 0 ? shots[idx - 1] : undefined;
   const next = idx >= 0 && idx < shots.length - 1 ? shots[idx + 1] : undefined;
@@ -70,7 +99,14 @@ function promptArtifactView<T extends Record<string, unknown>>(artifact: T) {
   return {
     ...artifact,
     promptAssembly,
-    sourceFingerprint
+    sourceFingerprint,
+    baseArtifactId: artifact.baseArtifactId ?? artifact.base_artifact_id ?? null,
+    createdBy: artifact.createdBy ?? artifact.created_by,
+    agentName: artifact.agentName ?? artifact.agent_name ?? null,
+    promptTemplateVersion:
+      artifact.promptTemplateVersion ?? artifact.prompt_template_version ?? null,
+    referenceAssetIds:
+      artifact.referenceAssetIds ?? artifact.reference_asset_ids ?? []
   };
 }
 
@@ -183,7 +219,7 @@ async function hydratePromptContext(input: {
     getCurrentModuleArtifact(input.workspaceId, "shot_prompt_artifacts"),
     getShotPromptRequirement(input.shot.id),
     listShotAssetRefs(input.shot.id),
-    db.db2.listShotsByWorkspace(input.workspaceId)
+    listActiveShotsForWorkspace(input.workspaceId)
   ]);
 
   const brief = briefArtifact
@@ -287,19 +323,17 @@ function durationForVideoScript(
 }
 
 async function allImagesSelected(workspaceId: string) {
-  const shots = await db.db2.listShotsByWorkspace(workspaceId);
+  const shots = await listActiveShotsForWorkspace(workspaceId);
   return shots.length > 0 && shots.every((shot) => Boolean(shot.selectedImageId));
 }
 
 async function allVideosSelected(workspaceId: string) {
-  const shots = await db.db2.listShotsByWorkspace(workspaceId);
+  const shots = await listActiveShotsForWorkspace(workspaceId);
   return shots.length > 0 && shots.every((shot) => Boolean(shot.selectedVideoId));
 }
 
 async function nextShotId(workspaceId: string, shotId: string) {
-  const shots = (await db.db2.listShotsByWorkspace(workspaceId)).sort(
-    (a, b) => a.orderIndex - b.orderIndex
-  );
+  const shots = await listActiveShotsForWorkspace(workspaceId);
   const index = shots.findIndex((shot) => shot.id === shotId);
   return index >= 0 ? (shots[index + 1]?.id ?? null) : null;
 }
@@ -321,6 +355,28 @@ function providerTemporaryUrl(
   return typeof response?.providerTemporaryUrl === "string"
     ? response.providerTemporaryUrl
     : (row?.imageUrl ?? null);
+}
+
+type UserEditedImagePrompt = {
+  promptText: string;
+  negativePrompt: string | null;
+  visualStyle: string | null;
+  composition: string | null;
+  lighting: string | null;
+  productVisibilityRule: string;
+  referenceImageUsage: Array<{
+    assetId: string;
+    usage: "product_identity" | "style_reference" | "scene_reference";
+    instruction: string;
+  }>;
+  qualityChecklist: string[];
+  context?: unknown;
+};
+
+function promptAssemblyWithEditMode(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>), mode: "user-edited-regenerate" }
+    : { mode: "user-edited-regenerate" };
 }
 
 export const shotWorkflowService = {
@@ -351,7 +407,7 @@ export const shotWorkflowService = {
   },
 
   async workflowStatus(workspaceId: string) {
-    const shots = await db.db2.listShotsByWorkspace(workspaceId);
+    const shots = await listWorkflowStatusShotsForWorkspace(workspaceId);
     const enriched = await Promise.all(
       shots.map(async (s) => {
         const [imageBatch, videoBatch, selectedImageCandidate] = await Promise.all([
@@ -380,6 +436,7 @@ export const shotWorkflowService = {
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
+    await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     const hydrated = await hydratePromptContext({
       workspaceId: args.workspaceId,
       shot,
@@ -532,6 +589,135 @@ export const shotWorkflowService = {
     }
   },
 
+  async regenerateImagePrompt(args: {
+    workspaceId: string;
+    shotId: string;
+    baseArtifactId: string;
+    prompt: UserEditedImagePrompt;
+  }) {
+    const shot = await db.db2.getShot(args.shotId);
+    assertShotInWorkspace(shot, args.workspaceId);
+    await assertShotInActiveShotSet(args.workspaceId, args.shotId);
+    const baseArtifact = await db.db2.getImagePromptArtifact(args.baseArtifactId);
+    if (baseArtifact.shotId !== args.shotId) {
+      throw new HttpError(
+        400,
+        "INVALID_BASE_IMAGE_PROMPT",
+        "Base image prompt artifact does not belong to this shot"
+      );
+    }
+
+    const hydrated = await hydratePromptContext({
+      workspaceId: args.workspaceId,
+      shot,
+      kind: "image"
+    });
+    const imageRef = hydrated.summary.sceneAnchorImageUrl;
+    if (shot.orderIndex > 0 && !hydrated.previousImageCandidate?.imageUrl) {
+      throw new HttpError(
+        400,
+        "NO_SCENE_ANCHOR",
+        "Previous shot must have a selected image before regenerating this image prompt"
+      );
+    }
+    if (!imageRef) {
+      throw new HttpError(
+        400,
+        "NO_SCENE_ANCHOR",
+        "No product or previous-shot image is available as scene anchor"
+      );
+    }
+
+    const traceId = nanoid();
+    const count = resolveBatchCount("image");
+    const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
+    const imageRefProviderUrl =
+      shot.orderIndex > 0 ? providerTemporaryUrl(hydrated.previousImageCandidate) : null;
+    const editedAt = new Date().toISOString();
+    const sourceFingerprint = {
+      ...hydrated.summary,
+      ...(baseArtifact.sourceFingerprint && typeof baseArtifact.sourceFingerprint === "object"
+        ? { baseSourceFingerprint: baseArtifact.sourceFingerprint }
+        : {}),
+      baseArtifactId: baseArtifact.id,
+      editedAt,
+      image_ref: imageRef,
+      number: count
+    };
+    const promptJson = {
+      ...args.prompt,
+      context: {
+        ...(args.prompt.context && typeof args.prompt.context === "object"
+          ? (args.prompt.context as Record<string, unknown>)
+          : {}),
+        ...sourceFingerprint
+      }
+    };
+
+    const artifact = await createImagePromptVersionAtomic({
+      shotId: args.shotId,
+      promptText: args.prompt.promptText,
+      negativePrompt: args.prompt.negativePrompt ?? undefined,
+      referenceAssetIds: baseArtifact.referenceAssetIds,
+      sourceFingerprint,
+      promptAssembly: promptAssemblyWithEditMode(baseArtifact.promptAssembly),
+      promptJson,
+      createdBy: "user",
+      agentName: "UserEditedImagePrompt",
+      promptTemplateVersion: baseArtifact.promptTemplateVersion ?? undefined,
+      baseArtifactId: baseArtifact.id
+    });
+    const artifactView = promptArtifactView(artifact);
+
+    const enqueued = await generationService.createImageBatch({
+      workspaceId: args.workspaceId,
+      shotId: args.shotId,
+      imagePromptArtifactId: artifact.id,
+      count,
+      aspectRatio,
+      idempotencyKey: `image-regenerate:${artifact.id}:${traceId}`,
+      providerRequest: {
+        prompt: args.prompt.promptText,
+        negativePrompt: args.prompt.negativePrompt,
+        image_ref: imageRef,
+        count,
+        aspectRatio,
+        source: "user-edited-regenerate",
+        baseArtifactId: baseArtifact.id
+      },
+      referenceImageUrls: imageRefProviderUrl ? [imageRefProviderUrl] : []
+    });
+    const batchId =
+      "batchId" in enqueued.data ? enqueued.data.batchId : enqueued.data.id;
+    const batch = enqueued.batch ?? (await db.db2.getImageBatch(batchId));
+    const candidates =
+      enqueued.candidates ?? (await db.db2.listImageCandidatesByBatch(batchId));
+    await traceService.record({
+      workspaceId: args.workspaceId,
+      shotId: args.shotId,
+      traceType: "user_action",
+      name: "image_prompt_regenerated",
+      outputPreview: args.prompt.promptText.slice(0, 200),
+      metadata: {
+        baseArtifactId: baseArtifact.id,
+        newArtifactId: artifact.id,
+        context: sourceFingerprint,
+        batchId: batch.id,
+        candidates: candidates.map((candidate) => candidate.id)
+      }
+    });
+    return {
+      data: artifactView,
+      artifact: artifactView,
+      batch,
+      candidates,
+      shotStatus: "IMAGE_GENERATING",
+      nextAction: getNextAction("IMAGE_GENERATING"),
+      traceId,
+      context: sourceFingerprint
+    };
+  },
+
   async listImagePrompts(shotId: string) {
     return { data: await db.db2.listImagePromptArtifacts(shotId) };
   },
@@ -546,6 +732,7 @@ export const shotWorkflowService = {
     const shot = await db.db2.getShot(args.shotId);
     if (args.workspaceId) {
       assertShotInWorkspace(shot, args.workspaceId);
+      await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     }
     const candidate = await db.db2.getImageCandidate(args.imageCandidateId);
     if (candidate.shotId !== args.shotId || candidate.workspaceId !== shot.workspaceId) {
@@ -635,7 +822,10 @@ export const shotWorkflowService = {
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
-    const shots = await db.db2.listShotsByWorkspace(args.workspaceId);
+    const { shots } = await assertShotInActiveShotSet(
+      args.workspaceId,
+      args.shotId
+    );
     const missingImageSelections = shots
       .filter((item) => !item.selectedImageId)
       .map((item) => item.id);
@@ -711,6 +901,8 @@ export const shotWorkflowService = {
         ...hydrated.summary,
         firstFrameCandidateId: selectedImage.id,
         lastFrameCandidateId: neighbors.next?.id ?? null,
+        voiceProfileHash: seedanceVoiceProfileHash(),
+        voiceover: hydrated.shotPromptShot?.voiceover ?? "",
         number: count
       };
       const artifact = await createVideoScriptVersionAtomic({
@@ -808,6 +1000,7 @@ export const shotWorkflowService = {
     const shot = await db.db2.getShot(args.shotId);
     if (args.workspaceId) {
       assertShotInWorkspace(shot, args.workspaceId);
+      await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     }
     const candidate = await db.db2.getVideoCandidate(args.videoCandidateId);
     if (candidate.shotId !== args.shotId || candidate.workspaceId !== shot.workspaceId) {
@@ -885,11 +1078,15 @@ export const shotWorkflowService = {
   async listImageRounds(args: { workspaceId: string; shotId: string }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
+    await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     const [artifacts, selected, hydrated] = await Promise.all([
       db.db2.listImagePromptArtifacts(args.shotId),
       db.db2.getSelectedImage(args.shotId),
       hydratePromptContext({ workspaceId: args.workspaceId, shot, kind: "image" })
     ]);
+    const currentSelectedCandidate = selected
+      ? await getImageCandidateMaybe(selected.imageCandidateId)
+      : null;
     const rounds = await Promise.all(
       artifacts.map(async (artifact) => {
         const batchId = await latestBatchIdForArtifact(
@@ -899,9 +1096,10 @@ export const shotWorkflowService = {
         );
         const batch = batchId ? await db.db2.getImageBatch(batchId) : null;
         const candidates = batch ? await db.db2.listImageCandidatesByBatch(batch.id) : [];
-        const selectedCandidate = selected
-          ? candidates.find((candidate) => candidate.id === selected.imageCandidateId)
-          : undefined;
+        const selectedCandidate =
+          (selected
+            ? candidates.find((candidate) => candidate.id === selected.imageCandidateId)
+            : undefined) ?? currentSelectedCandidate;
         const selection = selectedCandidate?.imageUrl
           ? {
               shotId: args.shotId,
@@ -927,6 +1125,7 @@ export const shotWorkflowService = {
   async listVideoRounds(args: { workspaceId: string; shotId: string }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
+    await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     const [artifacts, selected, hydrated] = await Promise.all([
       db.db2.listVideoScriptArtifacts(args.shotId),
       selectedVideoForShot(args.shotId),

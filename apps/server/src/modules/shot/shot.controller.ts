@@ -4,6 +4,7 @@ import { shotWorkflowService } from "./shot.service.js";
 import {
   proposeImagePromptRequest,
   proposeVideoScriptRequest,
+  regenerateImagePromptRequest,
   retryRequest,
   selectImageRequest,
   selectVideoRequest,
@@ -48,6 +49,25 @@ export async function registerShotController(app: FastifyInstance) {
           workspaceId: params.workspaceId,
           shotId: params.shotId,
           userDirection: body.userDirection,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = regenerateImagePromptRequest.parse(req.body);
+        return await shotWorkflowService.regenerateImagePrompt({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+          baseArtifactId: body.baseArtifactId,
+          prompt: body.prompt,
         });
       } catch (e) {
         const err = toHttpError(e);

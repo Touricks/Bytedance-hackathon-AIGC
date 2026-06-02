@@ -24,7 +24,11 @@ import {
 import type { AspectRatio, PromptRequirementsData } from "../../lib/api/client.js";
 import { createFinalVideo } from "../../lib/api/finalVideo.js";
 import { listImageRounds } from "../../lib/api/imageBatch.js";
-import { proposeImagePrompt } from "../../lib/api/imagePrompt.js";
+import {
+  proposeImagePrompt,
+  regenerateImagePrompt,
+  type ImagePromptJson,
+} from "../../lib/api/imagePrompt.js";
 import { selectImage } from "../../lib/api/imageSelect.js";
 import { getWorkflowStatus, listShots, retryShot } from "../../lib/api/shots.js";
 import { listWorkspaceTraces } from "../../lib/api/trace.js";
@@ -272,6 +276,12 @@ export function useWorkbenchViewModel(workspaceId: string) {
     onSuccess: invalidateShot,
   });
 
+  const regenerateImage = useMutation({
+    mutationFn: (input: { baseArtifactId: string; prompt: ImagePromptJson }) =>
+      regenerateImagePrompt(workspaceId, selectedShotId!, input),
+    onSuccess: invalidateShot,
+  });
+
   const selectImageCandidate = useMutation({
     mutationFn: (input: { candidateId: string; batchId: string }) =>
       selectImage(workspaceId, selectedShotId!, {
@@ -374,6 +384,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     applyShotSet,
     approveShotPromptAndApply,
     proposeImage,
+    regenerateImage,
     selectImageCandidate,
     proposeVideo,
     proposeAllVideos,
@@ -452,6 +463,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
       approveShotPromptAndApply: (data: ShotPromptArtifact) =>
         approveShotPromptAndApply.mutate(data),
       proposeImage: () => proposeImage.mutate(),
+      regenerateImage: (input: { baseArtifactId: string; prompt: ImagePromptJson }) =>
+        regenerateImage.mutate(input),
       selectImageCandidate: (candidateId: string, batchId: string) =>
         selectImageCandidate.mutate({ candidateId, batchId }),
       proposeVideo: () => proposeVideo.mutate(),
