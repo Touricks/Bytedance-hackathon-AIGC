@@ -7,6 +7,11 @@ import {
   type VideoProviderConfig
 } from "../providers/provider-config.js";
 
+console.log(
+  '[disabled] smoke:real-providers is disabled. Run "pnpm --filter @aigc-video/server test:integration:smoke" for backend image/video chain smoke tests.'
+);
+process.exit(0);
+
 loadWorkspaceEnv();
 
 interface ProviderProbeResult {

@@ -287,9 +287,8 @@ API 测试：
 
 真实链路验收：
 
-- `pnpm realitest`
-- `REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed pnpm realitest:parallel`
-- `node scripts/extract-one-picture-events.mjs` 检查 trace 中存在 prompt requirements 摘要。
+- 当前真实 provider 自动验收只保留 `pnpm --filter @aigc-video/server test:integration:smoke`。
+- `realitest` / `realitest:parallel` package scripts 已移除，不再作为 prompt assembly 验收入口。
 
 ---
 
@@ -326,7 +325,7 @@ API 测试：
 ### Phase 5：验收和回归
 
 - 跑单元/API 测试。
-- 跑 realitest 和 parallel acceptance。
+- 跑后端 image-flow / video-flow smoke：`pnpm --filter @aigc-video/server test:integration:smoke`。
 - 用 trace extractor 检查生成链路是否携带 requirements。
 
 ---

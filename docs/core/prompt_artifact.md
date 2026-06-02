@@ -1,8 +1,8 @@
-# prompt_artifact — 当前 Prompt 链路 Artifact 字段
+# prompt_artifact — Prompt Artifact 字段与存储契约
 
-更新时间：2026-06-01
+更新时间：2026-06-02
 
-本文只描述当前架构中与 prompt 链路相关的 artifact、状态锚点和 provider 生成记录。机器契约以 `apps/server/src/db/schema/schema.sql`、`packages/shared/src/schemas/artifacts.ts`、`packages/ai/src/schemas/*` 为准。
+本文只描述当前架构中与 prompt 链路相关的 artifact、状态锚点和 provider 生成记录。跨 module 的 prompt 组装顺序、artifact 流通和上下游读取规则见 [`prompt_workflow.md`](./prompt_workflow.md)。机器契约以 `apps/server/src/db/schema/schema.sql`、`packages/shared/src/schemas/artifacts.ts`、`packages/ai/src/schemas/*` 为准。
 
 ---
 
@@ -22,39 +22,13 @@
 - module artifact 是 append-only 语义；业务读取 `status='approved' and is_current=true`，UI 可读 latest proposed。
 - `shotprompt approve` 只产生 current approved artifact；只有 `POST /shot-sets` 才创建 active shot set 和 `storyboard_shots`。
 - `image_prompt_artifacts` / `video_script_artifacts` 是 per-shot 版本化 artifact；每次 propose 新增一版，旧 ACTIVE 变 STALE。
+- `shot-workflow-status`、`image-rounds`、`video-rounds` 会基于 `source_fingerprint` 返回 `upstream`，提示当前 shot/round 是否基于旧上游；这是 redo handoff 信号，不会自动删除候选、选择或成片链路。
 - 当前不持久化完整 assembled prompt；完整 prompt 写入 trace，module artifact 的 `prompt_assembly` 保存 subject/contract 模板 id 与 hash。
+- material-intake 的真实 Ark text provider 请求默认只发送纯文本 runtime context。product-brief 在真实模式下会读取 primary material image，并以 `image_url` 形式附给多模态 Ark text provider，避免只凭空 metadata 生成商品 brief。
 
-### 1.1 当前剧本链路的 prompt 拼装
+### 1.1 Prompt 组装与跨模块流通
 
-本节描述当前版本从“商品卖点审核”到“生成成片”的实际 prompt 拼装。所有 agent 型 module 都遵循同一拼装顺序：
-
-```text
-## Subject Prompt
-<packages/ai/src/prompts/modules/<module>/subject.md>
-
-## Runtime Context
-<server 或 agent 注入的业务上下文>
-
-## Schema Contract
-<packages/ai/src/prompts/modules/<module>/contract.md>
-```
-
-其中 `subject.md` 是业务主体 prompt，可被剧本 / 分镜 / 图像 / 运镜策略迭代；`contract.md` 是工程契约 prompt，描述输入、输出 schema、字段名、provider 硬约束和禁止项。完整 prompt 写入 trace；artifact 表只保存 `prompt_assembly`，即 `subjectTemplateId`、`contractTemplateId`、`subjectHash`、`contractHash`、`assemblerVersion` 和简短 preview。
-
-| 链路节点 | 触发接口 / 代码入口 | Subject / Contract | Runtime Context / 用户可编辑输入 | 输出与下游 |
-|---|---|---|---|---|
-| 商品卖点审核 `product-brief` | `POST /api/workspaces/:workspaceId/product-brief/propose`；`productBriefV2Service.propose`；`generateProductBriefWithArk` | `product-brief/subject.md` + `product-brief/contract.md` | `userDirection`、表单预填 `title/sellingPoints/audience/stylePreference`、approved `material_intake_artifacts.data` 中的 `primaryProductRef` 和 `assets[]`。当前 approved `prompt_requirements_artifacts` 作为依赖门槛和 `source_fingerprint.promptRequirementsArtifactId` 记录；本节点当前没有把 requirements data 展开进 runtime context。 | 生成 `product_brief_artifacts.data`：商品、核心卖点、人群、证据、offer、platform、brandTone、landingInfo、assumptions。用户在审核台可用表单修改后 approve；approved 数据覆盖为 current。 |
-| 分镜规划 `storyboard` | `POST /api/workspaces/:workspaceId/storyboard/propose`；`storyboardV2Service.propose`；`generateStoryboardWithArk` | `storyboard/subject.md` + `storyboard/contract.md` | approved `product_brief_artifacts.data` 的商品/卖点/人群/语气，approved `material_intake_artifacts.data.assets[]`，以及 approved requirements 中的 `storyboard` / `script` 相关要求。 | 生成 `storyboard_artifacts.data`：`narrative`、`totalDurationSec`、`shots[]`。每个 shot 含 `purpose/durationSec/scene/visualDirection/productAssetRef/voiceover/transition`。这里的 `voiceover` 是后续 shotprompt 和视频旁白的来源。 |
-| 分镜生成要求 `shotprompt` | `POST /api/workspaces/:workspaceId/shotprompt/propose`；`shotPromptV2Service.propose`；`generateShotPromptWithArk` | `shotprompt/subject.md` + `shotprompt/contract.md` | approved `product_brief`、approved `material_intake.assets[]`、approved `storyboard`、请求 `aspectRatio`，以及 approved requirements 中的 `shotImage` / `shotVideo` / `storyboard` / `script` 要求。 | 生成 `shot_prompt_artifacts.data`：全局 `prompt/negativePrompt`、`aspectRatio`、逐 shot 的 `providerPrompt/referenceAssetRefs/voiceover/shotImage/shotVideo`、以及 `tts.enabled/source/voiceover`。`providerPrompt` 是语境锚点；`shotImage` 是静态关键帧要求；`shotVideo` 是动态运动要求。server 会通过 `enrichShotPrompt()` 补齐缺失的 `shotImage/shotVideo` dict。 |
-| 应用 shot set | `POST /api/workspaces/:workspaceId/shot-sets`；`shotSetService.apply` | 无模型 prompt | 读取 current approved `shot_prompt_artifacts.data`。 | 创建 active `shot_sets`、`storyboard_shots`、`shot_prompt_requirements` 和 `shot_asset_refs`。`storyboard_shots.objective/title` 来自 `shots[].providerPrompt`；`shot_prompt_requirements.shot_image/shot_video` 是后续逐 shot 图像 / 视频 agent 的输入 dict。 |
-| 分镜图提示词 `image-prompt` | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`；`runStoryboardImagePromptAgent` | `image-prompt/subject.md` + `image-prompt/contract.md`，作为 `@openai/agents` Agent instructions。该 agent 使用 Ark Responses API strict structured output。 | user message 是 JSON：approved `productBrief`、approved `materialIntake`、当前 `shot`（含 `providerPromptFromShotPrompt` 和 `shotImage`）、`image_ref`、`referenceAssets[]`、`previousImagePromptText`、`userHint`。首镜 `image_ref` 是主商品素材；后续镜头 `image_ref` 是上一镜 selected image，用于场景一致性。 | 生成 `image_prompt_artifacts.prompt_text/negative_prompt/prompt_json`，并创建 `image_generation_batches`。`promptText` 只描述静态关键帧，不写运镜、时长、首末帧、旁白或转场。真正发给 Seedream 的 provider request 使用 `promptText`、`negativePrompt`、`referenceImageUrls`、`count`、`aspectRatio`。 |
-| 分镜图用户编辑重生成 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | 不调用 text agent；复用 base artifact 的 prompt assembly metadata 并标记 `mode=user-edited-regenerate`。 | 请求体传 `baseArtifactId` 和结构化 prompt 字段。 | 新增 `image_prompt_artifacts(created_by='user', base_artifact_id=...)` 和新 image batch；`provider_request.prompt` 来自用户编辑的 `promptText`；当前 `selected_image_id` 不清空，旧候选仍可回看。 |
-| 分镜视频脚本 `video-script` | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose`；`runVideoShotScriptAgent` | `video-script/subject.md` + `video-script/contract.md`，作为 `@openai/agents` Agent instructions | user message 是 JSON：approved `productBrief`、当前 `shot`（含 `voiceover/providerPromptFromShotPrompt/shotVideo`）、当前 active shot set 内本 shot selected image 作为 `first_frame_url`、下一镜 selected image 作为 `last_frame_url`、`durationSec`、`neighborImages`、`previousVideoScript`、`userHint`。当前要求 active shot set 全部 shots 均已 selected image 后才可进入视频脚本。 | 生成 `video_script_artifacts.script_json/provider_prompt`，并创建 `video_generation_batches` 和候选 job。`source_fingerprint` 记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfileHash`、`voiceover`。`provider_prompt` 是 agent 输出；发 Seedance 前还会经 `buildSeedanceShotVideoPrompt()` 拼入统一旁白声音要求。 |
-| 分镜视频生成 | `generation_v2` worker；`runVideoGenerationCandidate` / `generateVideoWithSeedance` | 无额外 agent prompt；使用 `video_script_artifacts.provider_prompt` 加 server-side 音频块 | `buildSeedanceShotVideoPrompt()` 将 `script.providerPrompt` 与 `script.scriptJson.voiceover` 组合：若有 voiceover，会追加统一 narrator / voice profile 规则（同一说话人、自然清晰普通话、统一语速/情绪/电商短视频播报风格）、本镜口播、`generate_audio=true` 和禁止字幕/可读文字。Seedance 请求体还固定传 `generate_audio: true`。 | Seedance `content[0].text` 为最终文本 prompt，`content[]` 同时含 `first_frame` 和可选 `last_frame` 图片；成功后写 `video_candidates.provider_response/video_url`。 |
-| 视频选择 `video-select` | `POST /api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | 无模型 prompt | 用户从候选视频中选择一个。 | 写 `video_select_artifacts` 并更新 `storyboard_shots.selected_video_id`。重复选择用 UPSERT 覆盖当前选择，不删除未选候选。 |
-| 生成成片 `final compose` | `POST /api/workspaces/:workspaceId/final-videos`；`processComposeFinalVideo` | 无 LLM / provider prompt | 读取 active shot set 下每个 shot 的 `selected_video_id` 和 `active_video_script_artifact_id`。 | 使用 ffmpeg concat selected videos，音轨保留并转 AAC；写 `final_video_jobs.compiled_manifest`、`compiled_manifest_hash`、`local_url`。当前成片阶段不再调用 `buildSeedanceVideoExportPrompt()`，该 builder 仅保留为旧 whole-video export / contract registry 口径。 |
-
-需要特别注意：当前版本中，`prompt_requirements_artifacts.data` 对 product-brief / storyboard / shotprompt 主要表现为“依赖门槛 + source fingerprint”；逐 shot 的图像 / 视频要求则通过 approved shotprompt 中的 `shotImage` / `shotVideo` dict 明确进入 image-prompt / video-script agent 输入。
+当前 prompt 组装由 `packages/ai/src/prompts/module-prompt-assembler.ts` 统一完成，模板目录只包含 `subject.md` 和 `contract.md`。逐节点读取哪些 artifact、怎样写入下游、哪些步骤没有模型 prompt，统一维护在 [`prompt_workflow.md`](./prompt_workflow.md)。
 
 ---
 
@@ -74,6 +48,10 @@
 | `created_at` | timestamptz | 创建时间。 |
 | `updated_at` | timestamptz | 更新时间。 |
 | `approved_at` | timestamptz | 批准时间。 |
+
+`storyboard/voiceover/propose` 生成的 `storyboard_artifacts.source_fingerprint` 额外记录 `baseStoryboardArtifactId` 与 `rewriteKind: "voiceover"`，用于区分“完整 storyboard propose”和“只重写口播”的 proposed artifact。
+
+`product-brief/propose` 在商品卖点审核页按商家自然语言重生成时，会读取请求内的当前页面草稿 `draft`，并写入新的 proposed `product_brief_artifacts`。此时 `source_fingerprint` 仍保留 current prompt requirements/material intake id，并额外记录 `baseProductBriefArtifactId` 与 `rewriteKind: "merchant_direction"`。该 proposed 产物不会改变 current；只有 approve 后，storyboard/shotprompt 才会因 current product brief id 变化显示上游变化。
 
 `prompt_assembly` 当前形态：
 
@@ -161,6 +139,8 @@ Schema：`storyboardArtifactSchema`
 | `shots[]` | 分镜草案。每项含 `index/purpose/durationSec/scene/visualDirection/productAssetRef/voiceover/transition`。 |
 | `assumptions[]` | 生成时假设。 |
 
+P0 分镜脚本固定为 15 秒三镜。`POST /api/workspaces/:workspaceId/storyboard/voiceover/propose` 只重写 `shots[].voiceover`，必须保留 `shots[]` 数量、顺序、`index`、`purpose`、`durationSec`、`scene`、`visualDirection`、`productAssetRef` 与 `transition`。
+
 ### 2.5 `shot_prompt_artifacts.data`
 
 Schema：`shotPromptArtifactSchema`
@@ -172,7 +152,7 @@ Schema：`shotPromptArtifactSchema`
 | `aspectRatio` | `9:16 / 16:9 / 1:1`。 |
 | `prompt` | 全局视频目标和叙事主线。 |
 | `negativePrompt` | 全局负向提示。 |
-| `shots[]` | 可 apply 为 `storyboard_shots` 的逐镜头提示。每项含 `index/startSec/endSec/providerPrompt/referenceAssetRefs/voiceover/shotImage/shotVideo`。server 会把 provider 返回的 shot index 归一化为 0-based 顺序。 |
+| `shots[]` | 可 apply 为 `storyboard_shots` 的逐镜头提示。每项含 `index/startSec/endSec/providerPrompt/referenceAssetRefs/voiceover/shotImage/shotVideo`。真实 provider 输出必须与 P0 15 秒三镜 approved storyboard 的 `shots[]` 数量、顺序和 index 一致；不得省略、合并、拆分或新增镜头。apply 时 `storyboard_shots.order_index` 使用数组位置归一为 0-based 工作流顺序，不直接复用 provider-facing `shots[].index`；propose、approve 和 apply 边界都会校验 P0 storyboard 与数量/顺序/index invariant。 |
 | `tts` | 口播配置：`enabled/source/voiceover/audioAssetRef?`。 |
 | `assumptions[]` | 生成时假设。 |
 
@@ -271,11 +251,11 @@ Schema：`shotPromptArtifactSchema`
 | `productVisibilityRule` | agent 输出。 |
 | `referenceImageUsage[]` | agent 输出；每项含 `assetId/usage/instruction`。 |
 | `qualityChecklist[]` | agent 输出。 |
-| `context` | server 注入的上下文摘要，包括 material/brief/shotprompt、前后镜、当前/前序候选、`image_ref`、`number` 等。 |
+| `context` | server 注入的装配快照，包括 material/brief/shotprompt、前后镜、当前/前序候选、`image_ref`、`number`、`shotImage`、`shotVideo`、`compiledShotRequirements`、`userDirection` 等。 |
 
 prompt 装配：
 
-- subject prompt：`packages/ai/src/prompts/modules/image-prompt/subject.md`，负责图像创作主体要求和 `shotImage` dict 的使用方式。
+- subject prompt：`packages/ai/src/prompts/modules/image-prompt/subject.md`，负责图像创作主体要求，并把后端从 `shotImage + shotVideo` 编译出的上游分镜生成要求转译为静态关键帧 prompt。
 - contract prompt：`packages/ai/src/prompts/modules/image-prompt/contract.md`，只说明输入 JSON 和 `StoryboardImagePromptOutputSchema` 输出约束。
 - 业务调整分镜图生成策略时改 subject；只有输入字段或输出 schema 变化时才改 contract。
 

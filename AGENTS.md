@@ -12,17 +12,156 @@ This repo uses the canonical triage label vocabulary. See `docs/agents/triage-la
 
 This repo uses a single-context domain layout rooted at `CONTEXT.md`. See `docs/agents/domain.md`.
 
-### Storage cleanup
+## System Prompt
 
-Before a new version test run, prefer the one-shot reset:
+This file is the project constitution for Codex. Keep it short, factual, and specific to this AIGC commerce video repository.
 
+### Repository profile
+
+- Product: merchant-facing AIGC commerce video generation. The V2 flow is material upload -> material intake -> prompt requirements -> product brief -> storyboard -> shotprompt -> shot set apply -> per-shot image/video candidates -> final compose.
+- Package manager: `pnpm@9.15.4` in a pnpm workspace (`apps/*`, `packages/*`) with Turbo tasks.
+- Runtime: Node.js 22+, PostgreSQL 16, Redis/BullMQ, local workspace files under `.daireel/`, and ffmpeg for final composition.
+- Current frontend target: `apps/web_latest`. Legacy `apps/web` remains available for comparison, but migration work should target `apps/web_latest` unless the user says otherwise.
+- Default ports: API `3000`, legacy web `5173`, latest web `5174`. Do not assume `5173` is the latest UI.
+
+### Commands
+
+- Install: `pnpm install`.
+- Infra: `docker compose -f infra/docker-compose.yml up -d`.
+- Current dev after cleanup: `pnpm reset:dev -- --yes` clears dev ports, Postgres business tables, BullMQ queues, then starts `pnpm dev-latest`.
+- Current dev without cleanup: `pnpm dev-latest` starts `@aigc-video/server` and `@aigc-video/web-latest`.
+- Full dev: `pnpm dev` starts all workspace dev servers, including legacy web.
+- Mode-specific dev: `pnpm dev:real` or `pnpm dev:mock`.
+- Build: `pnpm build`.
+- Typecheck: `pnpm typecheck`.
+- Lint: `pnpm lint`.
+- Unit tests: `pnpm --filter @aigc-video/ai test`, `pnpm --filter @aigc-video/server test`, `pnpm --filter @aigc-video/web-latest test`, or `pnpm --filter @aigc-video/web test`.
+- Frontend/backend contract check: `pnpm contract:frontend-backend`.
+- Backend real-provider smoke: `pnpm --filter @aigc-video/server test:integration:smoke` runs only the backend image-flow and video-flow smoke files, with image/video candidates fixed to 1 each.
+- Removed multi-real-model package scripts: `realitest`, `realitest:parallel`, `agenttest:real`, `test:agent-chain`, `test:integration:provider`, `test:integration:expensive`, `smoke:providers`, and `smoke:real-providers`. Legacy direct runner files remain guarded and must not trigger provider calls if invoked manually.
+
+### Repo layout
+
+```text
+apps/server/       # Fastify API, BullMQ worker, Postgres access, file storage, ffmpeg compose
+apps/web/          # legacy React/Vite frontend on 5173
+apps/web_latest/   # current Claude-design migration frontend on 5174
+packages/ai/       # provider clients, agents/workflows, prompt assembly, response schemas
+packages/shared/   # shared Zod contracts, domain types, job payload types
+packages/config/   # shared lint/prettier/typescript config
+docs/core/         # authoritative V2 architecture, ERD, interface, OpenAPI, prompt workflow/artifacts
+docs/reference/    # provider API references for Ark text/image and Seedance video
+docs/reference_frontend/ # Claude design reference for frontend migration
+docs/test/         # Postman/Newman and acceptance-test documentation
+scripts/           # reset/dev/test/provider orchestration
+CONTEXT.md         # canonical business language
+```
+
+### Runtime config
+
+- Copy `.env.example` to `.env`; never commit real provider keys, endpoint IDs, credentials, or local secrets.
+- Preferred provider env fields are `TEXT_*`, `IMAGE_*`, and `VIDEO_*`. Legacy `ARK_*` aliases may exist in code, but new work should use the explicit per-provider fields.
+- Candidate count env names are `DEFAULT_IMAGE_CANDIDATES`, `MAX_IMAGE_CANDIDATES_PER_SHOT`, `DEFAULT_VIDEO_CANDIDATES`, and `MAX_VIDEO_CANDIDATES_PER_SHOT`.
+- Queue/provider concurrency is controlled by `GENERATION_WORKER_CONCURRENCY`, `TEXT_PROVIDER_CONCURRENCY`, `IMAGE_PROVIDER_CONCURRENCY`, and `VIDEO_PROVIDER_CONCURRENCY`.
+
+### Product and domain rules
+
+- Use `CONTEXT.md` terms in UI copy, docs, issues, and API explanations. Prefer business language such as 创作审核台, 素材解读, 创作要求, 分镜生成要求, 分镜链路实例, 分镜图选择, 分镜视频选择, and 成片.
+- Do not turn engineering terms like `Prompt`, raw provider prompt, mock, artifact console, or system prompt into the primary user-facing language.
+- Users edit structured 创作要求 and review/edit generated creative artifacts; they do not edit system prompts or assembled provider prompts.
+- `shot_sets` are 分镜链路实例. Approved shotprompt / 分镜生成要求 is the source plan; applying it creates or archives shot-set instances.
+- Workspace modules follow `propose -> approve`; downstream reads only approved/current artifacts.
+- Upstream changes should surface as `upstreamChanged` warnings, not automatic deletion of downstream candidates, selections, or final outputs.
+- For frontend migration, match `docs/reference_frontend/` visual direction first. Do not introduce `window.DR` mocks, do not keep `TweaksPanel`, and do not expand prototype-only engineering labels into main UI copy.
+
+### Source of truth rules
+
+- Before backend, provider, or contract work, read `CONTEXT.md` plus the relevant `docs/core/` files.
+- `docs/core/arc_v2.md` is the target architecture; `docs/core/interface.md` and `docs/core/openapi.yaml` are the API contract; `docs/core/prompt_workflow.md` and `docs/core/prompt_artifact.md` describe prompt assembly and persisted prompt facts.
+- Use `docs/reference/` before changing Ark text/image or Seedance video request/response handling.
+- When API behavior changes, update frontend clients, `docs/core/openapi.yaml`, `docs/core/interface.md` together when applicable.
+- When fixing issues, check whether `docs/core/` architecture/interface/prompt-chain files need matching updates.
+- Business rules belong in backend services, schemas, shared contracts, and domain docs, not duplicated only in UI.
+
+### Framework asset locations
+
+- Codex standard project guidance: `AGENTS.md`.
+- Codex custom agents: `.codex/agents/*.toml`.
+- Codex repo skills: source files live in `.agents/skills/*/SKILL.md`; symlinks in `~/.codex/skills/*` enable automatic Codex discovery.
+- Framework docs/prompts/scripts/notes: `.agent/`.
+- Create a lesson: `python .agent/bin/new_lesson.py "<task title>"`.
+- Validate framework: `python .agent/bin/validate_framework.py`.
+
+### Default Codex operating model
+
+- For unfamiliar code, cross-layer changes, bug fixes, or refactors, first map the code path before editing.
+- For difficult or ambiguous tasks, produce a plan before implementation.
+- Prefer the smallest coherent vertical diff over broad speculative refactors.
+- Do not add production dependencies without explaining why existing tools are insufficient.
+- Do not change unrelated formatting, generated files, lockfiles, or public APIs unless the task requires it.
+- When touching user-visible behavior, update or add tests that prove the behavior.
+- When tests cannot be run, state the exact command that should be run and why it was not run.
+
+### Agent usage conventions
+
+Use repo-scoped Codex custom agents from `.codex/agents/`:
+
+- `repo_mapper`: read-only mapping before edits.
+- `feature_planner`: read-only planning and task decomposition.
+- `frontend_worker`: targeted frontend implementation.
+- `backend_worker`: targeted backend/API/data implementation.
+- `test_verifier`: tests, repros, and validation.
+- `reviewer`: correctness and regression review.
+- `security_reviewer`: auth, secrets, PII, payment, upload, webhook, SSRF, injection, and permission review.
+- `performance_reviewer`: query, bundle, render, cache, and latency review.
+- `docs_researcher`: API/framework documentation verification.
+- `skill_curator`: post-task lesson extraction and skill maintenance.
+
+For complex tasks, spawn read-only agents before implementation. Keep worker agents narrow and ask reviewers to review the resulting diff.
+
+### Skill usage conventions
+
+Use repo skills from `.agents/skills/`. They are symlinked into `~/.codex/skills/` for automatic `$skill-name` triggering:
+
+- `$repo-map-before-change` before unfamiliar edits.
+- `$fullstack-feature-slice` for vertical product changes.
+- `$bugfix-root-cause-loop` for bugs and regressions.
+- `$api-contract-change` for public API/schema changes.
+- `$db-migration-safe-change` for schema/migration/data backfill work.
+- `$react-state-form-flow` for React UI state/forms/components.
+- `$test-verification-loop` before considering work done.
+- `$security-sensitive-change` for auth/payment/PII/upload/webhook/permission-sensitive changes.
+- `$diff-review-before-merge` for final review.
+- `$postmortem-to-skill` after repeated mistakes or high-value wins.
+
+### Done definition
+
+A task is not done until the response includes:
+
+1. Files changed and why.
+2. User-visible behavior or internal behavior changed.
+3. Tests added/updated.
+4. Commands run and results.
+5. Remaining risks, follow-ups, or things intentionally not changed.
+
+### Post-task learning loop
+
+When the same mistake happens twice, or a correct path saves meaningful time:
+
+1. Create a lesson in `.agent/notes/lessons/`.
+2. Classify the lesson as project fact, skill workflow, agent behavior, or one-off note.
+3. Patch the smallest relevant `SKILL.md` or `AGENTS.md` section.
+4. Add an eval case under `.agent/notes/evals/` if the lesson should be tested later.
+
+
+## Important shortcut
 ```sh
 pnpm reset:dev -- --yes
 ```
 
-It stops current `SERVER_PORT` / `WEB_PORT` listeners, clears Postgres business tables, clears BullMQ `generation` / `generation_v2` Redis queues, then starts `pnpm dev`.
+It stops current `SERVER_PORT` / `WEB_PORT` / `WEB_LATEST_PORT` listeners, clears Postgres business tables, clears BullMQ `generation` / `generation_v2` Redis queues, then starts `pnpm dev-latest`.
 
-IMPORTANT: This do not delete workspace file in test folder. ({testDir}/.daireel/), which may cause some problems when implementing second tests. Delete them by yourself when needed.
+IMPORTANT: This does not delete workspace files in test folders (`{testDir}/.daireel/`), which may affect later test runs. Delete them manually when needed.
 
 For cleanup without restarting dev:
 
@@ -32,48 +171,22 @@ pnpm reset:dev -- --yes --no-dev
 
 The reset does not delete workspace `.daireel/trace/events.jsonl`, deprecated repo-local `storage/trace`, `storage/uploads`, or MinIO content.
 
-### Realitest parallel acceptance
+### Real-provider smoke policy
 
-Use the normal smoke first when only validating provider credentials and the single-shot main path:
-
-```sh
-pnpm realitest
-```
-
-Use the multishot parallel acceptance when validating multi-shot image/video generation stability:
+Only the backend image/video chain smoke entry remains active. It fixes image/video candidates to 1 each:
 
 ```sh
-pnpm realitest:parallel
+pnpm --filter @aigc-video/server test:integration:smoke
 ```
 
-`pnpm realitest:parallel` resets dev state, removes the target workspace `.daireel/`, starts `pnpm dev`, approves a fixed 4-shot storyboard, compiles/approves a 4-shot shotprompt, then asserts all 4 shots finish image/video selection and final compose uses 4 selected videos.
+It runs:
 
-If the compile output is unstable, keep the compile check but approve a fixed 4-shot shotprompt with:
+- `apps/server/test/integration/image-flow.integration.test.ts`
+- `apps/server/test/integration/video-flow.integration.test.ts`
 
-```sh
-REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed pnpm realitest:parallel
-```
+Full agent-chain, multi-shot parallel, final-compose, direct provider probes, and frontend real-provider E2E are intentionally disabled to avoid multi-real-model联调.
 
-### Trace extraction
-
-To return the raw trace events from the one-picture integration test workspace, use:
-
-```sh
-node scripts/extract-one-picture-events.mjs
-```
-
-The script reads `integrationTest_v0/onePicture/.daireel/trace/events.jsonl` and writes its contents to stdout.
-
-### Codex worktree creation
-
-When creating a new Codex worktree, create a fresh branch from the local `main` branch instead of checking out `main` directly. Use `dev_{timestamp}` as the branch name format, for example `dev_20260530143000`.
-
-Use the local `main` ref as the source of truth for the new worktree, not `origin/main`, so the new worktree is a copy of the current local main state:
-
-```sh
-git worktree add -b dev_$(date +%Y%m%d%H%M%S) <worktree-path> main
-```
-### Reference
+## Reference
 
 When context is compacted or a new agent joins, use these files to regain the project center before making backend or provider changes:
 
@@ -81,7 +194,8 @@ When context is compacted or a new agent joins, use these files to regain the pr
 - `docs/core/`: current target API contract. 
 - `CONTEXT.md`: canonical domain language. Use these terms in new docs, issues, comments, and API explanations.
 
-### User preference
+## User preference
 
-- 当用户提到后端架构更新时，同时检查后端开发计划（backend-development-plan.md）以及契约文档(openapi.yaml),测试文档(postman-test-plan.md)并更新
-- 更新时，不需要考虑向后兼容
+- 当完成修复issues时，检查docs/core/中的架构/接口/prompt链路文件是否需要更新
+- 使用$diagnose诊断时，将issue总结并写入docs/issues/P0
+- 前端基于apps/web_latest/进行开发

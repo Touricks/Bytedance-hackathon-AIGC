@@ -32,6 +32,35 @@
           }
         }
       ]
+    },
+    {
+      "name": "Video script propose returns strict structured fields",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-scripts/propose",
+        "body": { "mode": "raw", "raw": "{}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('video script structured output has required strict fields', function () {",
+              "  const artifact = pm.response.json().data;",
+              "  const script = artifact.scriptJson;",
+              "  ['durationSec', 'shotGoal', 'startFrameDescription', 'endFrameDescription', 'continuityWithPrevious', 'continuityWithNext', 'cameraMotion', 'subjectMotion', 'productVisibility', 'sceneConsistency', 'voiceover', 'onscreenText', 'providerPrompt', 'negativePrompt', 'riskNotes'].forEach(function (key) {",
+              "    pm.expect(script).to.have.property(key);",
+              "  });",
+              "  pm.expect(script.riskNotes).to.be.an('array');",
+              "  pm.expect(artifact.promptAssembly.moduleId).to.eql('video-script');",
+              "  pm.expect(pm.response.json().poll.videoRoundsUrl).to.be.a('string');",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

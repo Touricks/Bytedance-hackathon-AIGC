@@ -6,6 +6,7 @@ import type { FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { config } from "./common/config.js";
+import { toHttpError } from "./common/errors.js";
 import { db } from "./db/client.js";
 import { registerMaterialController } from "./modules/material/material.controller.js";
 import { registerPipelineController } from "./modules/pipeline/pipeline.controller.js";
@@ -92,24 +93,50 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
   app.get("/api/workspaces/:workspaceId/videos/*", async (request, reply) => {
     const params = request.params as { workspaceId: string; "*": string };
-    return sendWorkspaceFile(
-      params.workspaceId,
-      params["*"],
-      "videos",
-      "Invalid workspace video path",
-      reply
-    );
+    try {
+      return await sendWorkspaceFile(
+        params.workspaceId,
+        params["*"],
+        "videos",
+        "Invalid workspace video path",
+        reply
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return reply.status(404).send({ message: "Workspace video not found" });
+      }
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
   });
 
   app.get("/api/workspaces/:workspaceId/materials/*", async (request, reply) => {
     const params = request.params as { workspaceId: string; "*": string };
-    return sendWorkspaceFile(
-      params.workspaceId,
-      params["*"],
-      "materials",
-      "Invalid workspace material path",
-      reply
-    );
+    try {
+      return await sendWorkspaceFile(
+        params.workspaceId,
+        params["*"],
+        "materials",
+        "Invalid workspace material path",
+        reply
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return reply.status(404).send({ message: "Workspace material not found" });
+      }
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
   });
 
   const legacyUploadDir = config.uploadDir;

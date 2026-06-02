@@ -16,8 +16,25 @@ import { generationService } from "../generation/generation.service.js";
 import { seedanceVoiceProfileHash } from "../generation/voice-profile.js";
 import { traceService } from "../trace/trace.service.js";
 import { shotSetService } from "../workspace/shot-set.service.js";
+import {
+  compareSourceFingerprint,
+  type UpstreamDrift
+} from "../workspace/upstream-drift-v2.service.js";
 import { getNextAction, type ShotStatus } from "./shot.state.js";
 import { buildWorkflowShotRow } from "./shot.view.js";
+
+type EditableShotAssetRefRole =
+  | "product_identity"
+  | "reference_style"
+  | "reference_scene"
+  | "first_frame_hint"
+  | "other";
+
+type EditableShotAssetRefInput = {
+  assetId: string;
+  role: EditableShotAssetRefRole;
+  weight?: number;
+};
 
 async function listActiveShotsForWorkspace(workspaceId: string) {
   return (await shotSetService.listActiveShots(workspaceId)).sort(
@@ -110,10 +127,26 @@ function promptArtifactView<T extends Record<string, unknown>>(artifact: T) {
   };
 }
 
+const noUpstreamDrift: UpstreamDrift = {
+  upstreamChanged: false,
+  changedSources: []
+};
+
 type CurrentModuleArtifactTable =
   | "material_intake_artifacts"
   | "product_brief_artifacts"
   | "shot_prompt_artifacts";
+
+type PromptContextShot = {
+  id: string;
+  workspaceId: string;
+  orderIndex: number;
+  title: string;
+  objective: string | null;
+  defaultDurationSec: number | null;
+  activeImagePromptArtifactId?: string | null;
+  activeVideoScriptArtifactId?: string | null;
+};
 
 async function getCurrentModuleArtifact(
   workspaceId: string,
@@ -164,9 +197,24 @@ function refFromAssetRow(row: { url: string; metadata: unknown }) {
   return row.url.split("/").pop() ?? row.url;
 }
 
+function normalizeShotAssetRefRole(role: string): EditableShotAssetRefRole {
+  switch (role) {
+    case "product_identity":
+    case "reference_style":
+    case "reference_scene":
+    case "first_frame_hint":
+    case "other":
+      return role;
+    case "reference":
+      return "reference_scene";
+    default:
+      return "other";
+  }
+}
+
 async function listShotAssetRefs(shotId: string) {
   const result = await db.db2.pool().query(
-    `select sar.asset_id, sar.role, sar.position, a.url, a.metadata
+    `select sar.id, sar.shot_id, sar.asset_id, sar.role, sar.weight, sar.position, a.url, a.metadata
      from shot_asset_refs sar
      join asset a on a.id = sar.asset_id
      where sar.shot_id = $1
@@ -174,13 +222,52 @@ async function listShotAssetRefs(shotId: string) {
     [shotId]
   );
   return result.rows.map((row) => ({
+    id: String(row.id),
+    shotId: String(row.shot_id),
     assetId: String(row.asset_id),
-    role: String(row.role),
+    role: normalizeShotAssetRefRole(String(row.role)),
+    weight: Number(row.weight ?? 1),
     position: Number(row.position ?? 0),
     ref: refFromAssetRow({ url: String(row.url), metadata: row.metadata }),
     url: String(row.url),
     metadata: row.metadata as Record<string, unknown> | null
   }));
+}
+
+async function getEditableShotOrThrow(shotId: string) {
+  const shot = await db.db2.getShot(shotId);
+  const { shot: activeShot } = await assertShotInActiveShotSet(shot.workspaceId, shotId);
+  return activeShot;
+}
+
+async function assertAssetEditableForShot(input: {
+  workspaceId: string;
+  assetId: string;
+}) {
+  const result = await db.db2.pool().query(
+    `select id, metadata
+     from asset
+     where id = $1
+     limit 1`,
+    [input.assetId]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(400, "INVALID_ASSET_REF", `Asset ${input.assetId} does not exist`);
+  }
+  const metadata =
+    row.metadata && typeof row.metadata === "object"
+      ? (row.metadata as Record<string, unknown>)
+      : null;
+  const assetWorkspaceId =
+    typeof metadata?.workspaceId === "string" ? metadata.workspaceId : null;
+  if (assetWorkspaceId && assetWorkspaceId !== input.workspaceId) {
+    throw new HttpError(
+      400,
+      "INVALID_ASSET_REF",
+      `Asset ${input.assetId} does not belong to workspace ${input.workspaceId}`
+    );
+  }
 }
 
 async function selectedVideoForShot(shotId: string) {
@@ -203,7 +290,7 @@ async function latestBatchIdForArtifact(
 
 async function hydratePromptContext(input: {
   workspaceId: string;
-  shot: Awaited<ReturnType<typeof db.db2.getShot>>;
+  shot: PromptContextShot;
   kind: "image" | "video";
 }) {
   const [
@@ -231,16 +318,6 @@ async function hydratePromptContext(input: {
   const shotPrompt = shotPromptArtifact
     ? shotPromptArtifactSchema.parse(shotPromptArtifact.data)
     : null;
-  const shotPromptShotBase = shotPrompt?.shots.find(
-    (shot) => shot.index === input.shot.orderIndex
-  );
-  const shotPromptShot = shotPromptShotBase
-    ? {
-        ...shotPromptShotBase,
-        shotImage: shotRequirement?.shotImage ?? {},
-        shotVideo: shotRequirement?.shotVideo ?? {}
-      }
-    : undefined;
   const materialDescriptions = new Map(
     material?.assets.map((asset) => [asset.ref, asset.description]) ?? []
   );
@@ -258,6 +335,18 @@ async function hydratePromptContext(input: {
     shotIndex >= 0 && shotIndex < orderedShots.length - 1
       ? orderedShots[shotIndex + 1]
       : null;
+  const shotPromptShotBase =
+    shotIndex >= 0
+      ? (shotPrompt?.shots[shotIndex] ??
+        shotPrompt?.shots.find((shot) => shot.index === input.shot.orderIndex))
+      : undefined;
+  const shotPromptShot = shotPromptShotBase
+    ? {
+        ...shotPromptShotBase,
+        shotImage: shotRequirement?.shotImage ?? {},
+        shotVideo: shotRequirement?.shotVideo ?? {}
+      }
+    : undefined;
   const previousPrompt =
     input.kind === "image"
       ? (await db.db2.listImagePromptArtifacts(input.shot.id))[0]
@@ -314,6 +403,81 @@ async function hydratePromptContext(input: {
   };
 }
 
+function currentImagePromptSources(
+  hydrated: Awaited<ReturnType<typeof hydratePromptContext>>
+) {
+  return {
+    approvedBriefArtifactId: hydrated.summary.approvedBriefArtifactId,
+    materialIntakeArtifactId: hydrated.summary.materialIntakeArtifactId,
+    shotPromptArtifactId: hydrated.summary.shotPromptArtifactId,
+    shotPromptRequirementsId: hydrated.summary.shotPromptRequirementsId,
+    sceneAnchorImageUrl: hydrated.summary.sceneAnchorImageUrl
+  };
+}
+
+function currentVideoScriptSources(
+  hydrated: Awaited<ReturnType<typeof hydratePromptContext>>
+) {
+  return {
+    approvedBriefArtifactId: hydrated.summary.approvedBriefArtifactId,
+    materialIntakeArtifactId: hydrated.summary.materialIntakeArtifactId,
+    shotPromptArtifactId: hydrated.summary.shotPromptArtifactId,
+    shotPromptRequirementsId: hydrated.summary.shotPromptRequirementsId,
+    firstFrameCandidateId: hydrated.currentImageCandidate?.id ?? null,
+    lastFrameCandidateId: hydrated.nextImageCandidate?.id ?? null
+  };
+}
+
+function mergeUpstreamDrift(items: UpstreamDrift[]): UpstreamDrift {
+  const changedSources = [...new Set(items.flatMap((item) => item.changedSources))];
+  return {
+    upstreamChanged: items.some((item) => item.upstreamChanged),
+    changedSources
+  };
+}
+
+async function shotArtifactUpstreamDrift(args: {
+  workspaceId: string;
+  shot: PromptContextShot;
+}) {
+  const [imageHydrated, videoHydrated, imageArtifact, videoArtifact] = await Promise.all([
+    hydratePromptContext({
+      workspaceId: args.workspaceId,
+      shot: args.shot,
+      kind: "image"
+    }),
+    hydratePromptContext({
+      workspaceId: args.workspaceId,
+      shot: args.shot,
+      kind: "video"
+    }),
+    args.shot.activeImagePromptArtifactId
+      ? db.db2.getImagePromptArtifact(args.shot.activeImagePromptArtifactId).catch(() => null)
+      : Promise.resolve(null),
+    args.shot.activeVideoScriptArtifactId
+      ? db.db2.getVideoScriptArtifact(args.shot.activeVideoScriptArtifactId).catch(() => null)
+      : Promise.resolve(null)
+  ]);
+  const imagePromptUpstream = imageArtifact
+    ? compareSourceFingerprint(
+        imageArtifact.sourceFingerprint,
+        currentImagePromptSources(imageHydrated)
+      )
+    : noUpstreamDrift;
+  const videoScriptUpstream = videoArtifact
+    ? compareSourceFingerprint(
+        videoArtifact.sourceFingerprint,
+        currentVideoScriptSources(videoHydrated)
+      )
+    : noUpstreamDrift;
+
+  return {
+    imagePromptUpstream,
+    videoScriptUpstream,
+    upstream: mergeUpstreamDrift([imagePromptUpstream, videoScriptUpstream])
+  };
+}
+
 function durationForVideoScript(
   shot: { defaultDurationSec: number | null },
   requested?: number
@@ -357,26 +521,117 @@ function providerTemporaryUrl(
     : (row?.imageUrl ?? null);
 }
 
-type UserEditedImagePrompt = {
-  promptText: string;
-  negativePrompt: string | null;
-  visualStyle: string | null;
-  composition: string | null;
-  lighting: string | null;
-  productVisibilityRule: string;
-  referenceImageUsage: Array<{
-    assetId: string;
-    usage: "product_identity" | "style_reference" | "scene_reference";
-    instruction: string;
-  }>;
-  qualityChecklist: string[];
-  context?: unknown;
+type ShotPromptRequirementContext = {
+  shotImage: unknown;
+  shotVideo: unknown;
+  compiledText: string;
 };
+
+const SHOT_IMAGE_FIELD_ORDER = [
+  "scene",
+  "composition",
+  "lighting",
+  "productVisibility",
+  "productVis",
+  "referenceUsage",
+  "style",
+  "negative",
+];
+
+const SHOT_VIDEO_FIELD_ORDER = [
+  "cameraMotion",
+  "subjectMotion",
+  "firstFrame",
+  "firstFrameIntent",
+  "lastFrame",
+  "lastFrameIntent",
+  "durationIntent",
+  "continuity",
+  "negative",
+];
+
+function stableRequirementValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "未提供";
+  if (typeof value === "string") return value.trim() || "未提供";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => stableRequirementValue(item)).join("；");
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function orderedRequirementEntries(
+  value: unknown,
+  preferredOrder: string[],
+): Array<[string, unknown]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [["value", value]];
+  }
+  const record = value as Record<string, unknown>;
+  const preferred = preferredOrder
+    .filter((key) => Object.prototype.hasOwnProperty.call(record, key))
+    .map((key) => [key, record[key]] as [string, unknown]);
+  const extras = Object.keys(record)
+    .filter((key) => !preferredOrder.includes(key))
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => [key, record[key]] as [string, unknown]);
+  return [...preferred, ...extras];
+}
+
+function compileRequirementSection(
+  title: string,
+  value: unknown,
+  preferredOrder: string[],
+) {
+  const entries = orderedRequirementEntries(value, preferredOrder);
+  return [
+    `${title}:`,
+    ...entries.map(([key, fieldValue]) => `- ${key}: ${stableRequirementValue(fieldValue)}`),
+  ].join("\n");
+}
+
+function compileShotPromptRequirements(shotPromptShot: {
+  shotImage?: unknown;
+  shotVideo?: unknown;
+} | null | undefined): ShotPromptRequirementContext {
+  const shotImage = shotPromptShot?.shotImage ?? {};
+  const shotVideo = shotPromptShot?.shotVideo ?? {};
+  const compiledText = [
+    "上游分镜生成要求是本次分镜图 prompt 的权威输入。",
+    compileRequirementSection("shotImage 静态关键帧要求", shotImage, SHOT_IMAGE_FIELD_ORDER),
+    compileRequirementSection(
+      "shotVideo 动态与连续性要求（需转译为静态关键帧约束）",
+      shotVideo,
+      SHOT_VIDEO_FIELD_ORDER,
+    ),
+  ].join("\n\n");
+  return { shotImage, shotVideo, compiledText };
+}
+
+function imagePromptContextSnapshot(input: {
+  sourceFingerprint: Record<string, unknown>;
+  requirements: ShotPromptRequirementContext;
+  userDirection?: string;
+  baseArtifactId?: string;
+}) {
+  return {
+    ...input.sourceFingerprint,
+    ...(input.baseArtifactId ? { baseArtifactId: input.baseArtifactId } : {}),
+    userDirection: input.userDirection?.trim() || null,
+    shotImage: input.requirements.shotImage,
+    shotVideo: input.requirements.shotVideo,
+    compiledShotRequirements: input.requirements.compiledText,
+  };
+}
 
 function promptAssemblyWithEditMode(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>), mode: "user-edited-regenerate" }
-    : { mode: "user-edited-regenerate" };
+    ? { ...(value as Record<string, unknown>), mode: "user-feedback-regenerate" }
+    : { mode: "user-feedback-regenerate" };
 }
 
 export const shotWorkflowService = {
@@ -406,21 +661,74 @@ export const shotWorkflowService = {
     };
   },
 
+  async listShotAssetRefs(shotId: string) {
+    await getEditableShotOrThrow(shotId);
+    return {
+      data: await listShotAssetRefs(shotId),
+    };
+  },
+
+  async replaceShotAssetRefs(input: {
+    shotId: string;
+    refs: EditableShotAssetRefInput[];
+  }) {
+    const shot = await getEditableShotOrThrow(input.shotId);
+    for (const ref of input.refs) {
+      await assertAssetEditableForShot({
+        workspaceId: shot.workspaceId,
+        assetId: ref.assetId,
+      });
+    }
+
+    const client = await db.db2.pool().connect();
+    try {
+      await client.query("begin");
+      await client.query("delete from shot_asset_refs where shot_id = $1", [input.shotId]);
+      for (const [position, ref] of input.refs.entries()) {
+        await client.query(
+          `insert into shot_asset_refs
+             (id, shot_id, asset_id, role, weight, position)
+           values ($1, $2, $3, $4, $5, $6)`,
+          [
+            nanoid(),
+            input.shotId,
+            ref.assetId,
+            ref.role,
+            ref.weight ?? 1,
+            position,
+          ]
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return {
+      data: await listShotAssetRefs(input.shotId),
+    };
+  },
+
   async workflowStatus(workspaceId: string) {
     const shots = await listWorkflowStatusShotsForWorkspace(workspaceId);
     const enriched = await Promise.all(
       shots.map(async (s) => {
-        const [imageBatch, videoBatch, selectedImageCandidate] = await Promise.all([
+        const [imageBatch, videoBatch, selectedImageCandidate, upstream] = await Promise.all([
           db.db2.getLatestImageBatchForShot(s.id),
           db.db2.getLatestVideoBatchForShot(s.id),
           s.selectedImageId
             ? db.db2.getImageCandidate(s.selectedImageId).catch(() => null)
-            : Promise.resolve(null)
+            : Promise.resolve(null),
+          shotArtifactUpstreamDrift({ workspaceId, shot: s }).then((drift) => drift.upstream)
         ]);
         return buildWorkflowShotRow(s, {
           activeImageBatchId: imageBatch?.id ?? null,
           activeVideoBatchId: videoBatch?.id ?? null,
-          selectedImageCandidate
+          selectedImageCandidate,
+          upstream
         });
       })
     );
@@ -463,6 +771,7 @@ export const shotWorkflowService = {
     const count = resolveBatchCount("image");
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const traceId = nanoid();
+    const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
 
     await db.db2.updateShot(args.shotId, { status: "IMAGE_PROMPT_PROPOSING" });
     try {
@@ -478,8 +787,10 @@ export const shotWorkflowService = {
             productAssetRef: hydrated.shotPromptShot?.referenceAssetRefs[0],
             referenceAssetRefs: hydrated.shotPromptShot?.referenceAssetRefs ?? [],
             providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
-            shotImage: hydrated.shotPromptShot?.shotImage
+            shotImage: shotRequirements.shotImage,
+            shotVideo: shotRequirements.shotVideo
           },
+          compiledShotRequirements: shotRequirements.compiledText,
           workspaceId: args.workspaceId,
           shotId: args.shotId,
           userDirection: args.userDirection,
@@ -513,6 +824,11 @@ export const shotWorkflowService = {
         image_ref: imageRef,
         number: count
       };
+      const contextSnapshot = imagePromptContextSnapshot({
+        sourceFingerprint,
+        requirements: shotRequirements,
+        userDirection: args.userDirection,
+      });
       const artifact = await createImagePromptVersionAtomic({
         shotId: args.shotId,
         promptText: result.output.promptText,
@@ -522,7 +838,7 @@ export const shotWorkflowService = {
         promptAssembly: result.promptAssembly,
         promptJson: {
           ...result.output,
-          context: sourceFingerprint
+          context: contextSnapshot
         },
         createdBy: "agent",
         agentName: "StoryboardImagePromptAgent",
@@ -564,7 +880,7 @@ export const shotWorkflowService = {
         metadata: {
           templateVersion: result.templateVersion,
           promptAssembly: result.promptAssembly,
-          context: sourceFingerprint,
+          context: contextSnapshot,
           batchId: batch.id,
           candidates: candidates.map((candidate) => candidate.id)
         }
@@ -578,7 +894,7 @@ export const shotWorkflowService = {
         shotStatus: "IMAGE_GENERATING",
         nextAction: getNextAction("IMAGE_GENERATING"),
         traceId,
-        context: sourceFingerprint
+        context: contextSnapshot
       };
     } catch (err) {
       await db.db2.updateShot(args.shotId, {
@@ -593,7 +909,7 @@ export const shotWorkflowService = {
     workspaceId: string;
     shotId: string;
     baseArtifactId: string;
-    prompt: UserEditedImagePrompt;
+    userDirection?: string;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -634,37 +950,82 @@ export const shotWorkflowService = {
     const imageRefProviderUrl =
       shot.orderIndex > 0 ? providerTemporaryUrl(hydrated.previousImageCandidate) : null;
     const editedAt = new Date().toISOString();
+    const userDirection = args.userDirection?.trim() || undefined;
+    const referenceAssetIds = hydrated.referenceAssets.map((asset) => asset.id);
+    const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
     const sourceFingerprint = {
       ...hydrated.summary,
       ...(baseArtifact.sourceFingerprint && typeof baseArtifact.sourceFingerprint === "object"
         ? { baseSourceFingerprint: baseArtifact.sourceFingerprint }
         : {}),
       baseArtifactId: baseArtifact.id,
+      userDirection: userDirection ?? null,
       editedAt,
       image_ref: imageRef,
       number: count
     };
-    const promptJson = {
-      ...args.prompt,
+    const contextSnapshot = imagePromptContextSnapshot({
+      sourceFingerprint,
+      requirements: shotRequirements,
+      userDirection,
+      baseArtifactId: baseArtifact.id,
+    });
+
+    const result = await runStoryboardImagePromptAgent({
+      payload: {
+        productBrief: hydrated.brief ?? {},
+        shot: {
+          index: shot.orderIndex,
+          objective:
+            hydrated.shotPromptShot?.providerPrompt ?? shot.objective ?? shot.title,
+          sceneDescription: hydrated.shotPromptShot?.providerPrompt ?? undefined,
+          defaultDurationSec: shot.defaultDurationSec ?? undefined,
+          productAssetRef: hydrated.shotPromptShot?.referenceAssetRefs[0],
+          referenceAssetRefs: hydrated.shotPromptShot?.referenceAssetRefs ?? [],
+          providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
+          shotImage: shotRequirements.shotImage,
+          shotVideo: shotRequirements.shotVideo,
+        },
+        compiledShotRequirements: shotRequirements.compiledText,
+        workspaceId: args.workspaceId,
+        shotId: args.shotId,
+        userDirection,
+        number: count,
+        image_ref: imageRef,
+        materialIntake: hydrated.material ?? {},
+        previousImagePromptText: baseArtifact.promptText,
+        referenceAssets: referenceAssetIds.map((id) => ({
+          id,
+          role:
+            hydrated.referenceAssets.find((asset) => asset.id === id)?.role ??
+            "product_identity",
+          summary:
+            hydrated.referenceAssets.find((asset) => asset.id === id)?.summary ?? "",
+        })),
+        userHint: userDirection,
+      },
       context: {
-        ...(args.prompt.context && typeof args.prompt.context === "object"
-          ? (args.prompt.context as Record<string, unknown>)
-          : {}),
-        ...sourceFingerprint
-      }
-    };
+        workspaceId: args.workspaceId,
+        shotId: args.shotId,
+        traceId,
+        runtimeMode: process.env.MODEL_MODE === "real" ? "real" : "mock",
+      },
+    });
 
     const artifact = await createImagePromptVersionAtomic({
       shotId: args.shotId,
-      promptText: args.prompt.promptText,
-      negativePrompt: args.prompt.negativePrompt ?? undefined,
-      referenceAssetIds: baseArtifact.referenceAssetIds,
+      promptText: result.output.promptText,
+      negativePrompt: result.output.negativePrompt ?? undefined,
+      referenceAssetIds,
       sourceFingerprint,
-      promptAssembly: promptAssemblyWithEditMode(baseArtifact.promptAssembly),
-      promptJson,
+      promptAssembly: promptAssemblyWithEditMode(result.promptAssembly),
+      promptJson: {
+        ...result.output,
+        context: contextSnapshot,
+      },
       createdBy: "user",
-      agentName: "UserEditedImagePrompt",
-      promptTemplateVersion: baseArtifact.promptTemplateVersion ?? undefined,
+      agentName: "StoryboardImagePromptAgent",
+      promptTemplateVersion: result.templateVersion,
       baseArtifactId: baseArtifact.id
     });
     const artifactView = promptArtifactView(artifact);
@@ -677,13 +1038,14 @@ export const shotWorkflowService = {
       aspectRatio,
       idempotencyKey: `image-regenerate:${artifact.id}:${traceId}`,
       providerRequest: {
-        prompt: args.prompt.promptText,
-        negativePrompt: args.prompt.negativePrompt,
+        prompt: result.output.promptText,
+        negativePrompt: result.output.negativePrompt ?? null,
         image_ref: imageRef,
         count,
         aspectRatio,
-        source: "user-edited-regenerate",
-        baseArtifactId: baseArtifact.id
+        source: "user-feedback-regenerate",
+        baseArtifactId: baseArtifact.id,
+        userDirection: userDirection ?? null,
       },
       referenceImageUrls: imageRefProviderUrl ? [imageRefProviderUrl] : []
     });
@@ -692,16 +1054,20 @@ export const shotWorkflowService = {
     const batch = enqueued.batch ?? (await db.db2.getImageBatch(batchId));
     const candidates =
       enqueued.candidates ?? (await db.db2.listImageCandidatesByBatch(batchId));
+    await db.db2.updateShot(args.shotId, {
+      status: "IMAGE_GENERATING",
+      activeImagePromptArtifactId: artifact.id
+    });
     await traceService.record({
       workspaceId: args.workspaceId,
       shotId: args.shotId,
       traceType: "user_action",
       name: "image_prompt_regenerated",
-      outputPreview: args.prompt.promptText.slice(0, 200),
+      outputPreview: result.output.promptText.slice(0, 200),
       metadata: {
         baseArtifactId: baseArtifact.id,
         newArtifactId: artifact.id,
-        context: sourceFingerprint,
+        context: contextSnapshot,
         batchId: batch.id,
         candidates: candidates.map((candidate) => candidate.id)
       }
@@ -714,7 +1080,7 @@ export const shotWorkflowService = {
       shotStatus: "IMAGE_GENERATING",
       nextAction: getNextAction("IMAGE_GENERATING"),
       traceId,
-      context: sourceFingerprint
+      context: contextSnapshot
     };
   },
 
@@ -1110,11 +1476,16 @@ export const shotWorkflowService = {
             }
           : null;
         const promptJson = artifact.promptJson as { context?: unknown } | null;
+        const upstream = compareSourceFingerprint(
+          artifact.sourceFingerprint,
+          currentImagePromptSources(hydrated)
+        );
         return {
           artifact,
           batch,
           candidates,
           selection,
+          upstream,
           context: promptJson?.context ?? hydrated.summary
         };
       })
@@ -1157,6 +1528,10 @@ export const shotWorkflowService = {
           getImageCandidateMaybe(artifact.basedOnNextImageCandidateId)
         ]);
         const scriptJson = artifact.scriptJson as { context?: unknown } | null;
+        const upstream = compareSourceFingerprint(
+          artifact.sourceFingerprint,
+          currentVideoScriptSources(hydrated)
+        );
         return {
           artifact,
           batch,
@@ -1168,6 +1543,7 @@ export const shotWorkflowService = {
             firstFrameCandidateId: firstFrame?.id ?? artifact.basedOnImageCandidateId,
             lastFrameCandidateId: lastFrame?.id ?? null
           },
+          upstream,
           context: scriptJson?.context ?? hydrated.summary
         };
       })

@@ -362,32 +362,22 @@ provider 走独立配额：text/image/video provider 调用分别由 `TEXT_PROVI
 
 ---
 
-## 11. Agent Chain Acceptance
+## 11. Real-provider Smoke Policy
 
-V2 新增 real-provider agent-chain 验收：
+当前自动真实 provider 测试只保留后端图像链路和视频链路 smoke，且图像/视频候选数都固定为 1：
 
-```
-docs/test/agent-chain/
-├── agent-chain.postman.json
-├── agent-chain.env.json
-└── agent-chain.data.json
+```sh
+pnpm --filter @aigc-video/server test:integration:smoke
 ```
 
-`pnpm` 脚本调用 Newman 执行 collection，并补 DB/trace/文件断言：
+该入口仅执行：
 
-```text
-pnpm agenttest:real
-  -> reset dev
-  -> start pnpm dev
-  -> newman run docs/test/agent-chain/agent-chain.postman.json
-  -> inspect Postgres module artifacts
-  -> inspect trace finalPrompt / assembly metadata
-  -> verify final compose source count
-```
+- `apps/server/test/integration/image-flow.integration.test.ts`
+- `apps/server/test/integration/video-flow.integration.test.ts`
 
-第一版运行完整 real agent 链路：material-intake → product-brief → storyboard → shotprompt → apply shot-set → image/video candidates → selections → final compose。
+完整 real-provider agent-chain、Newman agent-chain、多 shot parallel、final compose、direct provider probes 与 frontend real-provider E2E 均已关闭，避免把多真实模型联调、provider 配额和产品链路回归混在同一个自动测试入口里。
 
-断言以 schema、状态、数量、source fingerprint、trace 和媒体文件为主，不断言具体文案。
+`docs/test/agent-chain/` 里的 Postman 资产可保留为公开契约参考，但不再作为当前自动真实 provider 验收入口。
 
 ---
 

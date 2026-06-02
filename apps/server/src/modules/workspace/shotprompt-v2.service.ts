@@ -4,11 +4,15 @@ import {
   getModulePromptAssemblyMetadata,
 } from "@aigc-video/ai";
 import {
+  assertShotPromptMatchesStoryboard,
   compileShotPrompt as compileShotPromptArtifact,
   materialIntakeArtifactSchema,
   productBriefArtifactSchema,
   shotPromptArtifactSchema,
+  type ShotPromptArtifact,
+  type StoryboardArtifact,
   storyboardArtifactSchema,
+  validateP0StoryboardScript,
 } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
@@ -138,27 +142,53 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
   return toShotPromptArtifact(row);
 }
 
-function enrichShotPrompt(rawData: unknown) {
+function assertMatchesStoryboard(
+  data: ShotPromptArtifact,
+  storyboard: StoryboardArtifact,
+) {
+  try {
+    assertShotPromptMatchesStoryboard(data, storyboard);
+  } catch (error) {
+    throw new HttpError(
+      400,
+      "INVALID_SHOTPROMPT",
+      error instanceof Error ? error.message : "Shotprompt does not match current storyboard",
+    );
+  }
+}
+
+function assertP0StoryboardBoundary(storyboard: StoryboardArtifact) {
+  const result = validateP0StoryboardScript(storyboard);
+  if (result.valid) return;
+  throw new HttpError(
+    400,
+    "UPSTREAM_STORYBOARD_NOT_P0",
+    `当前生效的分镜脚本不是三镜版本，请先批准三镜分镜脚本，再生成分镜生成要求。${result.issues
+      .map((issue) => issue.message)
+      .join(" ")}`,
+  );
+}
+
+function enrichShotPrompt(rawData: unknown, storyboard: StoryboardArtifact) {
   const data = shotPromptArtifactSchema.parse(rawData);
+  assertMatchesStoryboard(data, storyboard);
   const rawShots = Array.isArray((rawData as { shots?: unknown })?.shots)
     ? ((rawData as { shots: Array<Record<string, unknown>> }).shots)
     : [];
   return {
     ...data,
-    shots: data.shots.map((shot, index, shots) => {
-      const nextShot = shots[index + 1];
-      const rawShot = rawShots[index] ?? {};
-      const normalizedShot = {
-        ...shot,
-        index,
-      };
+    shots: data.shots.map((shot, position, shots) => {
+      const nextShot = shots[position + 1];
+      const rawShot = rawShots[position] ?? {};
       return {
-        ...normalizedShot,
+        ...shot,
         shotImage:
           rawShot.shotImage ?? {
-            scene: `静态关键帧场景：围绕本镜头目标呈现商品与环境，语境参考为「${normalizedShot.providerPrompt}」。`,
-            composition: `Shot ${index + 1} composition for ${data.aspectRatio}`,
+            scene: `静态关键帧场景：围绕本镜头目标呈现商品与环境，语境参考为「${shot.providerPrompt}」。`,
+            composition: `Shot ${position + 1} composition for ${data.aspectRatio}`,
+            lighting: "保持真实电商短视频场景光线，主体清晰稳定。",
             productVisibility: shot.referenceAssetRefs.join(", "),
+            referenceUsage: `使用 ${shot.referenceAssetRefs.join(", ")} 保持商品身份和画面语境。`,
             style: "consistent ecommerce product visual identity",
             negative: [],
           },
@@ -167,12 +197,13 @@ function enrichShotPrompt(rawData: unknown) {
             cameraMotion: "smooth controlled ecommerce camera movement",
             subjectMotion:
               "controlled product-first motion that animates the approved key frame without changing product identity",
-            firstFrameIntent: `begin from the approved static key frame for shot ${index + 1}`,
+            firstFrameIntent: `begin from the approved static key frame for shot ${position + 1}`,
             lastFrameIntent: nextShot
               ? `move toward the next shot context without copying its still-image prompt: ${nextShot.providerPrompt.slice(0, 120)}`
               : null,
+            durationIntent: `${Math.max(1, shot.endSec - shot.startSec)} 秒内完成本镜头目标。`,
             continuity:
-              index === 0
+              position === 0
                 ? "establish product identity for following shots"
                 : "preserve identity and motion continuity from previous shot",
             negative: [],
@@ -259,6 +290,7 @@ export const shotPromptV2Service = {
       sources.materialIntake.data,
     );
     const storyboard = storyboardArtifactSchema.parse(sources.storyboard.data);
+    assertP0StoryboardBoundary(storyboard);
     const aspectRatio = input.aspectRatio ?? "9:16";
     const data = enrichShotPrompt(
       runtimeMode() === "real"
@@ -271,6 +303,7 @@ export const shotPromptV2Service = {
             )
           ).shotPrompt
         : compileShotPromptArtifact(storyboard, { aspectRatio }),
+      storyboard,
     );
     const sourceFingerprint = {
       promptRequirementsArtifactId: sources.requirements.id,
@@ -313,10 +346,12 @@ export const shotPromptV2Service = {
     }
 
     const sources = await currentSources(input.workspaceId);
+    const storyboard = storyboardArtifactSchema.parse(sources.storyboard.data);
+    assertP0StoryboardBoundary(storyboard);
     const source = input.artifactId
       ? await getArtifactForWorkspace(input.workspaceId, input.artifactId)
       : null;
-    const data = enrichShotPrompt(input.data ?? source?.data);
+    const data = enrichShotPrompt(input.data ?? source?.data, storyboard);
     const sourceFingerprint = source?.sourceFingerprint ?? {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,

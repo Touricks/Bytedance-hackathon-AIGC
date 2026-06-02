@@ -14,7 +14,6 @@ import {
   collectWorkspaceMaterialLibrary,
   copySelectedLegacyRootMaterials,
   createWorkspaceTraceLogger,
-  materialIntakeImageInputs,
   materialIntakeTextPreviews,
   resolveWorkspaceStorageLocalPath,
   runtimeMode,
@@ -172,7 +171,6 @@ export const materialIntakeV2Service = {
                 textPreviews,
               },
               {
-                imageInputs: await materialIntakeImageInputs(localPath, scanned),
                 traceLogger: createWorkspaceTraceLogger(localPath, workspace),
               },
             )

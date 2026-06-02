@@ -2,7 +2,7 @@ Example:
 ```
 curl https://ark.cn-beijing.volces.com/api/v3/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ark-2c5d09f6-25c3-462d-af0f-c0769da97efa-b5968" \
+  -H "Authorization: Bearer xxx" \
   -d $'{
     "messages": [
         {

@@ -66,6 +66,58 @@
               "  const shots = pm.response.json().data.shots;",
               "  const ids = new Set(shots.map(function (shot) { return shot.shotId; }));",
               "  pm.expect(ids.size).to.eql(shots.length);",
+              "  shots.forEach(function (shot) {",
+              "    pm.expect(shot.upstream).to.have.property('upstreamChanged');",
+              "    pm.expect(shot.upstream.changedSources).to.be.an('array');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Image rounds expose redo handoff upstream drift",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-rounds"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('image rounds include upstream handoff', function () {",
+              "  const rounds = pm.response.json().data;",
+              "  rounds.forEach(function (round) {",
+              "    pm.expect(round.upstream).to.have.property('upstreamChanged');",
+              "    pm.expect(round.upstream.changedSources).to.be.an('array');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video rounds expose redo handoff upstream drift",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/video-rounds"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('video rounds include upstream handoff', function () {",
+              "  const rounds = pm.response.json().data;",
+              "  rounds.forEach(function (round) {",
+              "    pm.expect(round.upstream).to.have.property('upstreamChanged');",
+              "    pm.expect(round.upstream.changedSources).to.be.an('array');",
+              "  });",
               "});"
             ]
           }

@@ -130,14 +130,16 @@ export interface ReferenceVideoRequirementsImportResult {
   };
 }
 
+export interface UpstreamDrift {
+  upstreamChanged: boolean;
+  changedSources: string[];
+}
+
 export interface WorkspaceModuleState<TData = unknown> {
   moduleId: WorkspaceArtifact<TData>["moduleId"];
   proposed: WorkspaceArtifact<TData> | null;
   current: WorkspaceArtifact<TData> | null;
-  upstream?: {
-    upstreamChanged: boolean;
-    changedSources: string[];
-  };
+  upstream?: UpstreamDrift;
 }
 
 export interface WorkspaceShotSet {
@@ -146,6 +148,7 @@ export interface WorkspaceShotSet {
   shotPromptArtifactId: string;
   status: "active" | "archived" | string;
   sourceFingerprint: Record<string, unknown>;
+  upstream?: UpstreamDrift;
   createdAt: string;
   archivedAt: string | null;
 }
@@ -438,6 +441,32 @@ function normalizeWorkspaceArtifact<TData>(
   };
 }
 
+function workspaceArtifactTimestamp(
+  artifact: WorkspaceArtifact<unknown> | null | undefined,
+) {
+  if (!artifact) return 0;
+  return Math.max(
+    ...[artifact.approvedAt, artifact.updatedAt, artifact.createdAt]
+      .map((value) => (value ? Date.parse(value) : NaN))
+      .filter(Number.isFinite),
+    0,
+  );
+}
+
+function preferredWorkspaceArtifact<TData>(
+  moduleState: WorkspaceModuleState<TData> | null | undefined,
+  fallback: WorkspaceArtifact<TData> | null | undefined,
+) {
+  const proposed = normalizeWorkspaceArtifact(moduleState?.proposed);
+  const current = normalizeWorkspaceArtifact(moduleState?.current);
+  if (proposed && current) {
+    return workspaceArtifactTimestamp(proposed) > workspaceArtifactTimestamp(current)
+      ? proposed
+      : current;
+  }
+  return proposed ?? current ?? normalizeWorkspaceArtifact(fallback);
+}
+
 async function postModuleArtifact<TData>(
   path: string,
   body: unknown,
@@ -565,10 +594,22 @@ export async function getWorkspaceStatus(
       promptRequirements: normalizeWorkspaceArtifact(
         detail.artifacts.promptRequirements,
       ),
-      material: normalizeWorkspaceArtifact(detail.artifacts.material),
-      brief: normalizeWorkspaceArtifact(detail.artifacts.brief),
-      storyboard: normalizeWorkspaceArtifact(detail.artifacts.storyboard),
-      shotPrompt: normalizeWorkspaceArtifact(detail.artifacts.shotPrompt),
+      material: preferredWorkspaceArtifact(
+        detail.modules?.["material-intake"],
+        detail.artifacts.material,
+      ),
+      brief: preferredWorkspaceArtifact(
+        detail.modules?.["product-brief"],
+        detail.artifacts.brief,
+      ),
+      storyboard: preferredWorkspaceArtifact(
+        detail.modules?.storyboard,
+        detail.artifacts.storyboard,
+      ),
+      shotPrompt: preferredWorkspaceArtifact(
+        detail.modules?.shotprompt,
+        detail.artifacts.shotPrompt,
+      ),
     };
   }
   return detail;

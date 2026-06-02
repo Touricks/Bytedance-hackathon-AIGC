@@ -12,6 +12,7 @@ export interface ImagePromptAgentInput {
   image_ref?: string;
   materialIntake?: unknown;
   previousImagePromptText?: string;
+  compiledShotRequirements?: string;
   productBrief: unknown;
   shot: {
     index: number;
@@ -22,6 +23,7 @@ export interface ImagePromptAgentInput {
     referenceAssetRefs?: string[];
     providerPromptFromShotPrompt?: string;
     shotImage?: unknown;
+    shotVideo?: unknown;
   };
   referenceAssets: Array<{ id: string; role: string; summary: string }>;
   userHint?: string;
@@ -59,7 +61,9 @@ export async function runStoryboardImagePromptAgent(input: {
       templateVersion: STORYBOARD_IMAGE_PROMPT_TEMPLATE_VERSION,
       promptAssembly: getModulePromptAssemblyMetadata("image-prompt"),
       output: StoryboardImagePromptOutputSchema.parse({
-        promptText: `第 ${input.payload.shot.index} 镜静态关键帧：${input.payload.shot.objective}。清晰呈现商品主体、环境、构图、光线和参考图一致性。`,
+        promptText: `第 ${input.payload.shot.index} 镜静态关键帧：${input.payload.shot.objective}。已参考上游分镜生成要求${
+          input.payload.userDirection ? `，并按反馈调整：${input.payload.userDirection}` : ""
+        }。清晰呈现商品主体、环境、构图、光线和参考图一致性。`,
         negativePrompt: "商品变形、文字模糊、场景突变",
         visualStyle: null,
         composition: null,

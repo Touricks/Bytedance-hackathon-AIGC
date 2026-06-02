@@ -1,4 +1,4 @@
-// @provider — full image flow against real Ark image API, seeded via the upstream V1 flow.
+// @smoke — backend image chain against the running API and configured image provider.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
@@ -6,12 +6,12 @@ import { seedWorkspace, type SeededWorkspace } from "../helpers/seed-workspace.j
 
 const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
 
-describe("image flow @provider", { skip: !RUN }, () => {
+describe("image flow @smoke", { skip: !RUN }, () => {
   let ws: SeededWorkspace;
   before(async () => { ws = await seedWorkspace({ label: `it-img-${Date.now()}` }); });
   after(async () => { await ws?.cleanup(); });
 
-  it("propose prompt -> generate 3 candidates -> select first", async () => {
+  it("propose prompt -> generate 1 candidate -> select first", async () => {
     const shotId = ws.shotIds[0];
     assert.ok(shotId, "seeded workspace had no shots");
 
@@ -26,6 +26,7 @@ describe("image flow @provider", { skip: !RUN }, () => {
     assert.ok(proposal.data.promptText.length > 20);
     assert.notEqual(proposal.batch.status, "FAILED");
     assert.ok(proposal.batch.succeededCount >= 1);
+    assert.equal(proposal.candidates.length, 1);
     const pick = proposal.candidates.find((c) => c.status === "SUCCEEDED" && c.imageUrl);
     assert.ok(pick && /^https?:\/\//.test(pick.imageUrl));
 

@@ -4,25 +4,31 @@ export const proposeImagePromptRequest = z.object({
   userDirection: z.string().optional(),
 }).strict();
 
-const imagePromptReferenceUsageRequest = z.object({
-  assetId: z.string(),
-  usage: z.enum(["product_identity", "style_reference", "scene_reference"]),
-  instruction: z.string(),
-}).strict();
+const shotAssetRefRoleSchema = z.enum([
+  "product_identity",
+  "reference_style",
+  "reference_scene",
+  "first_frame_hint",
+  "other",
+]);
+
+export const patchShotAssetRefsRequest = z
+  .object({
+    refs: z.array(
+      z
+        .object({
+          assetId: z.string().min(1),
+          role: shotAssetRefRoleSchema,
+          weight: z.number().finite().positive().optional(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 
 export const regenerateImagePromptRequest = z.object({
   baseArtifactId: z.string().min(1),
-  prompt: z.object({
-    promptText: z.string().min(1),
-    negativePrompt: z.string().nullable(),
-    visualStyle: z.string().nullable(),
-    composition: z.string().nullable(),
-    lighting: z.string().nullable(),
-    productVisibilityRule: z.string().min(1),
-    referenceImageUsage: z.array(imagePromptReferenceUsageRequest),
-    qualityChecklist: z.array(z.string()),
-    context: z.unknown().optional(),
-  }).strict(),
+  userDirection: z.string().optional(),
 }).strict();
 
 export const selectImageRequest = z.object({

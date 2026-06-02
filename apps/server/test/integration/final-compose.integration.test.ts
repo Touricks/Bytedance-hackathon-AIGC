@@ -1,14 +1,11 @@
-// @expensive — runs image + video for every shot, then composes. Can take 20–40 min for a 4-shot workspace.
+// Disabled: final compose real-provider acceptance is a multi-real-model integration test.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
 import { pollUntil } from "../helpers/poll.js";
 import { seedWorkspace, seedShotWithSelectedImage, type SeededWorkspace } from "../helpers/seed-workspace.js";
 
-const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
-const ALLOW = process.env.ALLOW_EXPENSIVE_TESTS === "true";
-
-describe("final compose @expensive", { skip: !RUN || !ALLOW }, () => {
+describe("final compose @disabled", { skip: true }, () => {
   let ws: SeededWorkspace;
 
   before(async () => {

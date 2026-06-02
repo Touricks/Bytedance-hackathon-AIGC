@@ -1,61 +1,55 @@
 # Scripts
 
-This directory contains local development, provider verification, and real-chain acceptance scripts for the V2 module artifact workflow.
+This directory contains local development scripts and retired real-chain acceptance helpers for the V2 module artifact workflow.
 
 ## Common Commands
 
 | Command | Script | Purpose |
 |---|---|---|
-| `pnpm reset:dev -- --yes` | `reset-dev-session.mjs` | Stop current dev listeners, clear Postgres business tables and BullMQ Redis queues, then start `pnpm dev` unless `--no-dev` is passed. |
+| `pnpm reset:dev -- --yes` | `reset-dev-session.mjs` | Stop current `SERVER_PORT` / `WEB_PORT` / `WEB_LATEST_PORT` listeners, clear Postgres business tables and BullMQ Redis queues, then start `pnpm dev-latest` unless `--no-dev` is passed. |
 | `pnpm db:clear -- --yes` | `clear-postgres.mjs` | Clear Postgres business tables without touching workspace files. |
 | `pnpm redis:clear -- --yes` | `clear-redis.mjs` | Clear BullMQ `generation` and `generation_v2` queue state. |
-| `pnpm realitest` | `run-realitest.mjs` | Wrapper for the V2 real-provider agent-chain smoke. Internally runs `run-agent-chain-test.mjs`. |
-| `pnpm test:agent-chain` / `pnpm agenttest:real` | `run-agent-chain-test.mjs` | Runs the V2 Postman/Newman module chain, then drives image/video/final-compose requests and DB assertions. |
-| `pnpm realitest:parallel` | `run-realitest-parallel.mjs` | Runs 4-shot real-provider image/video/final compose acceptance. |
-| `node scripts/verify-provider-apis.mjs` | `verify-provider-apis.mjs` | Calls text, image, and video providers directly without creating a merchant creative session. |
-| `node scripts/extract-one-picture-events.mjs` | `extract-one-picture-events.mjs` | Prints the one-picture workspace-local trace file to stdout. |
+| `pnpm contract:frontend-backend` | `frontend-backend-contract-check.mjs` | Checks the frontend API surface against `docs/core/openapi.yaml`, validates mock response shapes, and records backend route gaps. |
+| `pnpm --filter @aigc-video/server test:integration:smoke` | server integration tests | Active real-provider smoke; runs only backend image-flow and video-flow with one image candidate and one video candidate. |
+
+## Frontend / Backend Contract Check
+
+Run the lightweight contract check before touching backend/frontend API shape:
+
+```bash
+pnpm contract:frontend-backend
+```
+
+Useful modes:
+
+```bash
+node scripts/frontend-backend-contract-check.mjs --strict-source
+node scripts/frontend-backend-contract-check.mjs --write-issues
+FRONTEND_BACKEND_CONTRACT_LIVE=1 node scripts/frontend-backend-contract-check.mjs
+```
+
+Default mode requires OpenAPI coverage and validates all frontend-facing response shapes through an in-process mock backend. `--strict-source` additionally fails when the server source has no route for a frontend endpoint. `--write-issues` writes P0 backend gap docs for known missing routes.
 
 ## Real Provider Checks
 
-Use provider verification before debugging a full agent-chain failure:
+The only active real-provider smoke is the backend image/video chain. It fixes image/video candidates to 1 each:
 
 ```bash
-node scripts/verify-provider-apis.mjs
+pnpm --filter @aigc-video/server test:integration:smoke
 ```
 
-This script is a standalone model probe. It verifies provider credentials and endpoint availability for text, image, and video, but it does not create a workspace, write module artifacts, or exercise the product workflow.
+The following multi-real-model package scripts have been removed from `package.json` and must not be restored as active automation without a new test policy decision:
 
-Use the full V2 real-provider flow when you want to validate the public workflow:
+- `realitest`
+- `test:agent-chain`
+- `agenttest:real`
+- `realitest:parallel`
+- `test:integration:provider`
+- `test:integration:expensive`
+- `smoke:providers`
+- `smoke:real-providers`
 
-```bash
-pnpm test:agent-chain
-```
-
-This script:
-
-1. Loads `.env`.
-2. Clears Postgres and Redis unless `--no-reset` is passed.
-3. Removes the target workspace `.daireel/` directory unless `--no-reset` is passed.
-4. Starts `pnpm dev` unless `--no-dev` is passed.
-5. Runs Newman with:
-   - `docs/test/agent-chain/agent-chain.postman.json`
-   - `docs/test/agent-chain/agent-chain.env.json`
-   - `docs/test/agent-chain/agent-chain.data.json`
-6. Continues past the Postman collection by sending image prompt, image select, video script, video select, and final compose requests.
-7. Checks DB invariants, including V2 module artifact tables, current selections, final compose inputs, and absence of legacy main-chain `workspace_artifact` writes.
-
-For multi-shot stability and final compose acceptance:
-
-```bash
-pnpm realitest:parallel
-```
-
-Useful overrides:
-
-```bash
-REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed pnpm realitest:parallel
-REALITEST_PARALLEL_IMAGE_BATCH_SIZE=1 REALITEST_PARALLEL_VIDEO_BATCH_SIZE=1 pnpm realitest:parallel
-```
+Legacy direct runner files such as `scripts/run-realitest.mjs`, `scripts/run-agent-chain-test.mjs`, `scripts/run-realitest-parallel.mjs`, and `scripts/verify-provider-apis.mjs` remain guarded and exit with a disabled message if invoked manually.
 
 ## Postman Assets
 
@@ -127,7 +121,7 @@ Older `events.jsonl` files may be short because the workspace-local file trace u
 - `material-intake` real text agent/provider calls.
 - `shotprompt` real text agent/provider calls.
 
-After a successful `pnpm realitest:parallel`, the one-picture `events.jsonl` may contain only a handful of lines, such as:
+In historical `pnpm realitest:parallel` runs, the one-picture `events.jsonl` could contain only a handful of lines, such as:
 
 - `material_intake.request_prepared`
 - `provider.request_started`
@@ -146,7 +140,7 @@ That small file does not mean the image/video/final-compose chain did not run. I
 - The extractor only reads `.daireel/trace/events.jsonl`; it does not query `trace_events`.
 - Provider payloads are intentionally compacted and redacted in file traces, especially image data URLs.
 
-Current behavior mirrors `traceService.record(...)` into the workspace-local file trace after writing the DB row. New full runs should therefore include shot-level events such as:
+Historical full runs mirrored `traceService.record(...)` into the workspace-local file trace after writing the DB row. Those runs could include shot-level events such as:
 
 - `image_prompt_proposed`
 - `image_candidate_completed`
@@ -156,7 +150,7 @@ Current behavior mirrors `traceService.record(...)` into the workspace-local fil
 - `video_candidate_selected`
 - `final_compose_completed`
 
-For full-run auditing, use both sources:
+For historical full-run auditing, use both sources:
 
 ```bash
 node scripts/extract-one-picture-events.mjs
@@ -168,7 +162,7 @@ and:
 GET /api/workspaces/:workspaceId/traces?limit=500
 ```
 
-The parallel acceptance script already checks both. Its summary reports the local trace path and the DB trace row count:
+The retired parallel acceptance script checked both. Its summary reported the local trace path and the DB trace row count:
 
 ```json
 {
@@ -179,7 +173,7 @@ The parallel acceptance script already checks both. Its summary reports the loca
 }
 ```
 
-The parallel acceptance gate now also requires local file trace coverage for shot-level propose, generation completion, and candidate selection events, so a new successful full run should not produce a text-agent-only trace file.
+That retired gate also required local file trace coverage for shot-level propose, generation completion, and candidate selection events.
 
 ## Script Flags
 

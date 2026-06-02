@@ -85,6 +85,8 @@ export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
     runtimeContext: [
       "输入：",
       `画幅比例：${input.aspectRatio}`,
+      `必须输出 shot 数量：${input.storyboard.shots.length}`,
+      `必须输出 shot index 顺序：${input.storyboard.shots.map((shot) => shot.index).join(", ")}`,
       "已确认商品 brief：",
       JSON.stringify(input.brief),
       "已确认素材清单：",

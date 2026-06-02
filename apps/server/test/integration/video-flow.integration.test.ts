@@ -1,13 +1,12 @@
-// @expensive — full video flow; per-video takes ~1–5 min, so this suite can take 5–15 min.
+// @smoke — backend video chain against the running API and configured video provider.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
 import { seedWorkspace, seedShotWithSelectedImage, type SeededWorkspace } from "../helpers/seed-workspace.js";
 
 const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
-const ALLOW = process.env.ALLOW_EXPENSIVE_TESTS === "true";
 
-describe("video flow @expensive", { skip: !RUN || !ALLOW }, () => {
+describe("video flow @smoke", { skip: !RUN }, () => {
   let ws: SeededWorkspace;
   let ctx: Awaited<ReturnType<typeof seedShotWithSelectedImage>>;
 
@@ -17,7 +16,7 @@ describe("video flow @expensive", { skip: !RUN || !ALLOW }, () => {
   });
   after(async () => { await ws?.cleanup(); });
 
-  it("propose script -> generate 2 candidates -> select first", async () => {
+  it("propose script -> generate 1 candidate -> select first", async () => {
     const script = await api<{
       data: { id: string; durationSec: number };
       batch: { id: string; status: string; succeededCount: number };
@@ -29,6 +28,7 @@ describe("video flow @expensive", { skip: !RUN || !ALLOW }, () => {
     assert.equal(script.data.durationSec, 4);
     assert.notEqual(script.batch.status, "FAILED");
     assert.ok(script.batch.succeededCount >= 1);
+    assert.equal(script.candidates.length, 1);
 
     const pick = script.candidates.find((c) => c.status === "SUCCEEDED" && c.videoUrl);
     assert.ok(pick && /^https?:\/\//.test(pick.videoUrl));

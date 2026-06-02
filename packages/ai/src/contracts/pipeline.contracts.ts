@@ -3,6 +3,7 @@ import { PRODUCT_BRIEF_PROMPT_VERSION } from "../prompts/product-brief.prompt.js
 import { SHOTPROMPT_PROMPT_VERSION } from "../prompts/shotprompt.prompt.js";
 import { STORYBOARD_PROMPT_VERSION } from "../prompts/storyboard.prompt.js";
 import { FEEDBACK_ROUTE_PROMPT_VERSION } from "../prompts/feedback-route.prompt.js";
+import { STORYBOARD_SCRIPT_TOTAL_DURATION_SEC } from "@aigc-video/shared";
 
 export const VIDEO_EXPORT_CONTRACT_VERSION = "seedance-video-export.v1";
 
@@ -114,8 +115,11 @@ const steps: PipelineContractStep[] = [
     outputJsonSchema: objectSchema(
       {
         narrative: stringSchema,
-        totalDurationSec: { type: "number" },
-        shots: arraySchema,
+        totalDurationSec: {
+          type: "integer",
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC]
+        },
+        shots: { ...arraySchema, minItems: 3, maxItems: 3 },
         assumptions: arraySchema
       },
       ["narrative", "totalDurationSec", "shots", "assumptions"]

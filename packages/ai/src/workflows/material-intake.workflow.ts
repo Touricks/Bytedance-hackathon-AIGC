@@ -9,7 +9,10 @@ import {
   MATERIAL_INTAKE_PROMPT_VERSION
 } from "../prompts/material-intake.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
-import { generateTextWithArk } from "../providers/ark-text.provider.js";
+import {
+  generateTextWithArk,
+  type ArkTextProviderOptions
+} from "../providers/ark-text.provider.js";
 import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
@@ -43,13 +46,15 @@ export interface MaterialIntakeTrace {
 export interface GenerateMaterialIntakeOptions {
   env?: ProviderEnv;
   imageInputs?: MaterialIntakeImageInput[];
+  includeImageInputs?: boolean;
+  createClient?: ArkTextProviderOptions["createClient"];
   traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
 const materialTagSchema = z.object({
   ref: z.string().min(1),
   role: materialAssetSchema.shape.role,
-  description: z.string().min(1),
+  description: z.string().trim().min(1),
   relevance: materialAssetSchema.shape.relevance,
   included: z.boolean().optional()
 });
@@ -147,7 +152,7 @@ export async function generateMaterialIntakeWithArk(
   const contract = getPipelineContractStep("material_intake");
   const env = options.env ?? process.env;
   const prompt = buildMaterialIntakePrompt(input);
-  const imageInputs = options.imageInputs ?? [];
+  const imageInputs = options.includeImageInputs ? (options.imageInputs ?? []) : [];
   const content = buildContent(prompt, imageInputs);
   const imageReferenceMode = imageInputs[0]?.mode ?? "none";
   const responseFormat = buildMaterialIntakeResponseFormat(contract.activeVersion);
@@ -201,6 +206,7 @@ export async function generateMaterialIntakeWithArk(
       config,
       {
         traceLogger: options.traceLogger,
+        createClient: options.createClient,
         responseFormat,
         trace: {
           pipeline: "material_intake",

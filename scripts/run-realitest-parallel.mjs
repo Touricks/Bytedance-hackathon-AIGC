@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exitDisabledRealModelTest } from "./real-model-test-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
@@ -31,19 +32,18 @@ function usage() {
     "  pnpm realitest:parallel",
     "  node scripts/run-realitest-parallel.mjs",
     "",
-    "Resets dev state, removes the target workspace .daireel/ directory,",
-    "starts pnpm dev, waits for /api/health, then runs a fixed 4-shot",
-    "provider acceptance flow with concurrent video generation and audit gates.",
+    "Disabled: multi-real-model integration tests are closed.",
+    "Use pnpm --filter @aigc-video/server test:integration:smoke for backend image/video smoke.",
     "",
-    "Environment overrides:",
+    "Retired environment overrides:",
     "  REALITEST_BASE_URL",
     "  REALITEST_WORKSPACE_DIRECTORY",
-  "  REALITEST_MATERIAL_REF",
-  "  REALITEST_PARALLEL_SHOTPROMPT_SOURCE=compiled|fixed",
-  "  REALITEST_PARALLEL_IMAGE_BATCH_SIZE",
-  "  REALITEST_PARALLEL_VIDEO_BATCH_SIZE",
-  "  REALITEST_REQUEST_RETRY_MAX_ATTEMPTS",
-  "  REALITEST_REQUEST_RETRY_BASE_MS"
+    "  REALITEST_MATERIAL_REF",
+    "  REALITEST_PARALLEL_SHOTPROMPT_SOURCE=compiled|fixed",
+    "  REALITEST_PARALLEL_IMAGE_CANDIDATES",
+    "  REALITEST_PARALLEL_VIDEO_CANDIDATES",
+    "  REALITEST_REQUEST_RETRY_MAX_ATTEMPTS",
+    "  REALITEST_REQUEST_RETRY_BASE_MS"
   ].join("\n");
 }
 
@@ -98,6 +98,15 @@ async function readJson(filePath) {
 async function resolvePostmanVariable(key) {
   const environment = await readJson(environmentPath);
   return postmanVariableValue(environment, key);
+}
+
+function parsePositiveInteger(value, label) {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function assertSafeWorkspaceDirectory(workspaceDirectory) {
@@ -1112,6 +1121,8 @@ async function main() {
     return;
   }
 
+  exitDisabledRealModelTest("realitest:parallel");
+
   loadDotEnv(repoRoot);
   const workspaceDirectory = assertSafeWorkspaceDirectory(
     process.env.REALITEST_WORKSPACE_DIRECTORY ??
@@ -1127,17 +1138,20 @@ async function main() {
     process.env.REALITEST_MATERIAL_REF ??
     (await resolvePostmanVariable("materialRef")) ??
     "display_1.png";
-  const parallelVideoBatchSize = Number(
-    process.env.REALITEST_PARALLEL_VIDEO_BATCH_SIZE ?? 1
+  const parallelVideoCandidateCount = parsePositiveInteger(
+    process.env.REALITEST_PARALLEL_VIDEO_CANDIDATES,
+    "REALITEST_PARALLEL_VIDEO_CANDIDATES"
+  ) ?? 1;
+  const parallelImageCandidateCount = parsePositiveInteger(
+    process.env.REALITEST_PARALLEL_IMAGE_CANDIDATES,
+    "REALITEST_PARALLEL_IMAGE_CANDIDATES"
   );
-  const parallelImageBatchSize = process.env.REALITEST_PARALLEL_IMAGE_BATCH_SIZE
-    ? Number(process.env.REALITEST_PARALLEL_IMAGE_BATCH_SIZE)
-    : null;
-  if (parallelImageBatchSize !== null) {
-    process.env.DEFAULT_IMAGE_BATCH_SIZE = String(parallelImageBatchSize);
-    process.env.MAX_IMAGE_BATCH_SIZE = String(parallelImageBatchSize);
+  if (parallelImageCandidateCount !== null) {
+    process.env.DEFAULT_IMAGE_CANDIDATES = String(parallelImageCandidateCount);
+    process.env.MAX_IMAGE_CANDIDATES_PER_SHOT = String(parallelImageCandidateCount);
   }
-  process.env.DEFAULT_VIDEO_BATCH_SIZE = String(parallelVideoBatchSize);
+  process.env.DEFAULT_VIDEO_CANDIDATES = String(parallelVideoCandidateCount);
+  process.env.MAX_VIDEO_CANDIDATES_PER_SHOT = String(parallelVideoCandidateCount);
   process.env.AIGC_VIDEO_SKIP_ENV_FILE = "true";
 
   runSync("pnpm", ["reset:dev", "--", "--yes", "--no-dev"]);
@@ -1146,15 +1160,15 @@ async function main() {
   const devChild = startDev();
   await waitForHealth(baseUrl, devChild);
   const limits = await requestJson(baseUrl, "GET", "/api/config/limits");
-  if (parallelImageBatchSize !== null) {
+  if (parallelImageCandidateCount !== null) {
     assert(
-      limits.data?.defaultImageBatchSize === parallelImageBatchSize,
-      `parallel dev server must use defaultImageBatchSize=${parallelImageBatchSize}`
+      limits.data?.defaultImageCandidates === parallelImageCandidateCount,
+      `parallel dev server must use defaultImageCandidates=${parallelImageCandidateCount}`
     );
   }
   assert(
-    limits.data?.defaultVideoBatchSize === parallelVideoBatchSize,
-    `parallel dev server must use defaultVideoBatchSize=${parallelVideoBatchSize}`
+    limits.data?.defaultVideoCandidates === parallelVideoCandidateCount,
+    `parallel dev server must use defaultVideoCandidates=${parallelVideoCandidateCount}`
   );
 
   const summary = await runParallelFlow({

@@ -1,5 +1,10 @@
 import { getNextAction, type NextAction, type ShotStatus } from "./shot.state.js";
 
+export interface WorkflowShotUpstream {
+  upstreamChanged: boolean;
+  changedSources: string[];
+}
+
 export interface WorkflowShotSource {
   id: string;
   orderIndex: number;
@@ -14,6 +19,7 @@ export interface WorkflowShotExtras {
   activeImageBatchId: string | null;
   activeVideoBatchId: string | null;
   selectedImageCandidate: { imageUrl: string | null } | null;
+  upstream: WorkflowShotUpstream;
 }
 
 export interface WorkflowShotRow {
@@ -28,6 +34,7 @@ export interface WorkflowShotRow {
   selectedVideoId: string | null;
   activeImageBatchId: string | null;
   activeVideoBatchId: string | null;
+  upstream: WorkflowShotUpstream;
 }
 
 /**
@@ -53,5 +60,6 @@ export function buildWorkflowShotRow(
     selectedVideoId: shot.selectedVideoId,
     activeImageBatchId: extras.activeImageBatchId,
     activeVideoBatchId: extras.activeVideoBatchId,
+    upstream: extras.upstream,
   };
 }

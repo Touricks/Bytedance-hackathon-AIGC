@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exitDisabledRealModelTest } from "./real-model-test-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
@@ -65,12 +66,12 @@ function usage() {
     "  pnpm agenttest:real",
     "  node scripts/run-agent-chain-test.mjs",
     "",
-    "Resets dev state, removes the target workspace .daireel/ directory,",
-    "starts pnpm dev, waits for /api/health, then runs the V2 agent-chain Newman collection.",
+    "Disabled: multi-real-model integration tests are closed.",
+    "Use pnpm --filter @aigc-video/server test:integration:smoke for backend image/video smoke.",
     "",
     "Options:",
-    "  --no-reset    Do not clear Postgres/Redis or workspace files.",
-    "  --no-dev      Do not start pnpm dev; use an already running backend.",
+    "  --no-reset    Retired; kept for old callers.",
+    "  --no-dev      Retired; kept for old callers.",
     "  --help        Show this help text.",
   ].join("\n");
 }
@@ -443,7 +444,7 @@ function parsePositiveInteger(value, label) {
   return parsed;
 }
 
-async function applyAgentTestBatchSizeOverrides() {
+async function applyAgentTestCandidateOverrides() {
   const imageCandidateCount = parsePositiveInteger(
     process.env.AGENTTEST_IMAGE_CANDIDATE_COUNT ??
       (await resolvePostmanVariable("imageCandidateCount")),
@@ -456,17 +457,17 @@ async function applyAgentTestBatchSizeOverrides() {
   );
 
   if (imageCandidateCount) {
-    process.env.DEFAULT_IMAGE_BATCH_SIZE = String(imageCandidateCount);
-    const max = Number(process.env.MAX_IMAGE_BATCH_SIZE ?? imageCandidateCount);
+    process.env.DEFAULT_IMAGE_CANDIDATES = String(imageCandidateCount);
+    const max = Number(process.env.MAX_IMAGE_CANDIDATES_PER_SHOT ?? imageCandidateCount);
     if (max < imageCandidateCount) {
-      process.env.MAX_IMAGE_BATCH_SIZE = String(imageCandidateCount);
+      process.env.MAX_IMAGE_CANDIDATES_PER_SHOT = String(imageCandidateCount);
     }
   }
   if (videoCandidateCount) {
-    process.env.DEFAULT_VIDEO_BATCH_SIZE = String(videoCandidateCount);
-    const max = Number(process.env.MAX_VIDEO_BATCH_SIZE ?? videoCandidateCount);
+    process.env.DEFAULT_VIDEO_CANDIDATES = String(videoCandidateCount);
+    const max = Number(process.env.MAX_VIDEO_CANDIDATES_PER_SHOT ?? videoCandidateCount);
     if (max < videoCandidateCount) {
-      process.env.MAX_VIDEO_BATCH_SIZE = String(videoCandidateCount);
+      process.env.MAX_VIDEO_CANDIDATES_PER_SHOT = String(videoCandidateCount);
     }
   }
 }
@@ -729,6 +730,8 @@ async function main() {
     return;
   }
 
+  exitDisabledRealModelTest("agent-chain real-provider flow");
+
   const workspaceDirectory =
     process.env.AGENTTEST_WORKSPACE_DIRECTORY ??
     (await resolvePostmanVariable("workspaceDirectory"));
@@ -736,7 +739,7 @@ async function main() {
     process.env.AGENTTEST_BASE_URL ??
     (await resolvePostmanVariable("baseUrl")) ??
     "http://localhost:3000";
-  await applyAgentTestBatchSizeOverrides();
+  await applyAgentTestCandidateOverrides();
 
   if (!args.noReset) {
     runSync("pnpm", ["reset:dev", "--", "--yes", "--no-dev"]);

@@ -1,11 +1,10 @@
 import { z } from "zod";
-import OpenAI from "openai";
 import {
   isRealProviderMode,
-  resolveTextProviderConfig,
+  resolveArkTextProviderConfig,
   type ProviderEnv,
 } from "../providers/provider-config.js";
-import { runWithProviderSlot } from "../concurrency/provider-concurrency.js";
+import { generateResponsesTextWithArk } from "../providers/ark-text.provider.js";
 
 export const referenceVideoRequirementsDraftSchema = z.object({
   image: z.record(z.unknown()).optional(),
@@ -83,26 +82,11 @@ function parseJsonObject(text: string) {
   throw new Error("REFERENCE_VIDEO_ANALYSIS_INVALID_JSON");
 }
 
-function responseText(response: unknown) {
-  const record = response as Record<string, unknown>;
-  if (typeof record.output_text === "string") return record.output_text;
-  const output = Array.isArray(record.output) ? record.output : [];
-  for (const item of output) {
-    const content = (item as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === "string") return text;
-    }
-  }
-  return "";
-}
-
 async function analyzeWithProvider(
   input: AnalyzeReferenceVideoRequirementsInput,
   env: ProviderEnv,
 ): Promise<ReferenceVideoRequirementsResult> {
-  const config = resolveTextProviderConfig(env);
+  const config = resolveArkTextProviderConfig(env);
   if (!config) {
     throw new Error(
       "Reference video analysis requires text provider config: TEXT_API_KEY/TEXT_BASE_URL/TEXT_ENDPOINT_ID or ARK_API_KEY/ARK_BASE_URL/ARK_TEXT_ENDPOINT_ID",
@@ -112,13 +96,8 @@ async function analyzeWithProvider(
     throw new Error("Reference video analysis requires a video URL or data URL");
   }
 
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-  });
-  const response = await runWithProviderSlot("text", () =>
-    client.responses.create({
-      model: config.endpointId,
+  const response = await generateResponsesTextWithArk(
+    {
       input: [
         {
           role: "user",
@@ -141,10 +120,11 @@ async function analyzeWithProvider(
         },
       ],
       temperature: 0.2,
-    } as never),
+    },
+    config,
   );
   return referenceVideoRequirementsResultSchema.parse(
-    parseJsonObject(responseText(response)),
+    parseJsonObject(response.output),
   );
 }
 

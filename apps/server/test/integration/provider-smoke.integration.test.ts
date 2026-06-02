@@ -1,4 +1,4 @@
-// @smoke — runs three real-provider probes; no fixture workspace required.
+// Disabled: multi-real-model provider probes are closed. Keep backend image/video chain smoke only.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -10,9 +10,7 @@ import {
   generateTextWithArk,
 } from "@aigc-video/ai";
 
-const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
-
-describe("provider smoke @smoke", { skip: !RUN }, () => {
+describe("provider smoke @disabled", { skip: true }, () => {
   it("text provider produces non-empty output", async () => {
     const cfg = resolveTextProviderConfig();
     assert.ok(cfg, "TEXT_* env not set");

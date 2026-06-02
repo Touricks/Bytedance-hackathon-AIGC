@@ -27,7 +27,6 @@ import { listImageRounds } from "../../lib/api/imageBatch.js";
 import {
   proposeImagePrompt,
   regenerateImagePrompt,
-  type ImagePromptJson,
 } from "../../lib/api/imagePrompt.js";
 import { selectImage } from "../../lib/api/imageSelect.js";
 import { getWorkflowStatus, listShots, retryShot } from "../../lib/api/shots.js";
@@ -170,14 +169,9 @@ export function useWorkbenchViewModel(workspaceId: string) {
         workspaceId,
         artifactId: requirements.artifact.id,
       });
-      const material = await runWorkspaceMaterialIntake({
+      return await runWorkspaceMaterialIntake({
         workspaceId,
         prompt: materialPrompt.trim() || undefined,
-      });
-      await approveWorkspaceMaterialIntake(workspaceId, material.artifact.data);
-      return await proposeWorkspaceBrief({
-        workspaceId,
-        userDirection: briefDirection.trim() || undefined,
       });
     },
     onSuccess: invalidateWorkspace,
@@ -277,7 +271,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const regenerateImage = useMutation({
-    mutationFn: (input: { baseArtifactId: string; prompt: ImagePromptJson }) =>
+    mutationFn: (input: { baseArtifactId: string; userDirection?: string }) =>
       regenerateImagePrompt(workspaceId, selectedShotId!, input),
     onSuccess: invalidateShot,
   });
@@ -429,6 +423,9 @@ export function useWorkbenchViewModel(workspaceId: string) {
       aspectRatio,
       setAspectRatio,
     },
+    pending: {
+      materialIntake: startCreativeReview.isPending || materialIntake.isPending,
+    },
     actions: {
       setSelectedShotId,
       refresh: invalidateWorkspace,
@@ -463,7 +460,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       approveShotPromptAndApply: (data: ShotPromptArtifact) =>
         approveShotPromptAndApply.mutate(data),
       proposeImage: () => proposeImage.mutate(),
-      regenerateImage: (input: { baseArtifactId: string; prompt: ImagePromptJson }) =>
+      regenerateImage: (input: { baseArtifactId: string; userDirection?: string }) =>
         regenerateImage.mutate(input),
       selectImageCandidate: (candidateId: string, batchId: string) =>
         selectImageCandidate.mutate({ candidateId, batchId }),

@@ -129,11 +129,17 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
 function promptAssembly(input: {
   requirementArtifactId: string;
   data: unknown;
+  userDirection?: string;
+  baseProductBriefArtifactId?: string | null;
+  rewriteKind?: "merchant_direction";
 }) {
   const metadata = getModulePromptAssemblyMetadata("product-brief");
   return {
     ...metadata,
     requirementArtifactId: input.requirementArtifactId,
+    userDirection: input.userDirection ?? null,
+    baseProductBriefArtifactId: input.baseProductBriefArtifactId ?? null,
+    ...(input.rewriteKind ? { rewriteKind: input.rewriteKind } : {}),
     preview:
       typeof input.data === "object" && input.data
         ? Object.keys(input.data).slice(0, 5).join(", ")
@@ -182,30 +188,47 @@ export const productBriefV2Service = {
     sellingPoints?: string;
     audience?: string;
     stylePreference?: string;
+    draft?: ProductBriefArtifact;
+    baseArtifactId?: string;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
     const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
+    const baseArtifact = input.baseArtifactId
+      ? await getArtifactForWorkspace(input.workspaceId, input.baseArtifactId)
+      : null;
     const material = materialIntakeArtifactSchema.parse(
       sources.materialIntake.data,
     );
+    const draft =
+      input.draft ??
+      (baseArtifact
+        ? productBriefArtifactSchema.parse(baseArtifact.data)
+        : undefined);
+    const rewriteKind =
+      draft || input.baseArtifactId ? "merchant_direction" : undefined;
     const data: ProductBriefArtifact = productBriefArtifactSchema.parse(
       runtimeMode() === "real"
         ? (
             await generateProductBriefWithArk(
-              { ...input, material },
+              { ...input, material, draft },
               {
                 imageInput: await productBriefImageInput(localPath, material),
+                includeImageInput: true,
                 traceLogger: createWorkspaceTraceLogger(localPath, workspace),
               },
             )
           ).productBrief
-        : toProductBrief({ ...input, material }),
+        : toProductBrief({ ...input, material, draft }),
     );
-    const sourceFingerprint = {
+    const sourceFingerprint: Record<string, unknown> = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,
     };
+    if (rewriteKind) {
+      sourceFingerprint.baseProductBriefArtifactId = input.baseArtifactId ?? null;
+      sourceFingerprint.rewriteKind = rewriteKind;
+    }
     const result = await db.db2.pool().query(
       `insert into product_brief_artifacts
          (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
@@ -220,6 +243,9 @@ export const productBriefV2Service = {
           promptAssembly({
             requirementArtifactId: sources.requirements.id,
             data,
+            userDirection: input.userDirection,
+            baseProductBriefArtifactId: input.baseArtifactId ?? null,
+            rewriteKind,
           }),
         ),
       ],

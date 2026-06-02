@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exitDisabledRealModelTest } from "./real-model-test-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
@@ -12,8 +13,8 @@ function usage() {
     "  pnpm realitest",
     "  node scripts/run-realitest.mjs",
     "",
-    "Runs the V2 real-provider agent-chain Newman smoke.",
-    "For multi-shot parallel acceptance, use pnpm realitest:parallel.",
+    "Disabled: multi-real-model integration tests are closed.",
+    "Use pnpm --filter @aigc-video/server test:integration:smoke for backend image/video smoke.",
   ].join("\n");
 }
 
@@ -21,6 +22,8 @@ if (process.argv.includes("--help")) {
   console.log(usage());
   process.exit(0);
 }
+
+exitDisabledRealModelTest("realitest");
 
 const result = spawnSync(
   process.execPath,

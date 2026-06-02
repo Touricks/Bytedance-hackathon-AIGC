@@ -8,6 +8,7 @@ import {
   shotPromptModuleProposeRequestSchema,
   shotSetCreateRequestSchema,
   storyboardModuleProposeRequestSchema,
+  storyboardVoiceoverProposeRequestSchema,
   managedWorkspaceCreateRequestSchema,
   workspaceStorageBindRequestSchema,
   workspaceMaterialUploadRequestSchema,
@@ -109,6 +110,16 @@ export async function registerWorkspaceController(
     try {
       const body = managedWorkspaceCreateRequestSchema.parse(request.body);
       return await workspaceService.createManagedWorkspace(body.name);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.delete(workspaceRoute(""), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.deleteWorkspace(params.workspaceId);
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);
@@ -353,6 +364,27 @@ export async function registerWorkspaceController(
         return {
           data: await storyboardV2Service.propose({
             workspaceId: params.workspaceId,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/storyboard/voiceover/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = storyboardVoiceoverProposeRequestSchema.parse(request.body);
+        return {
+          data: await storyboardV2Service.proposeVoiceover({
+            workspaceId: params.workspaceId,
+            baseArtifactId: body.baseArtifactId,
+            draft: body.draft,
+            userDirection: body.userDirection,
           }),
         };
       } catch (error) {

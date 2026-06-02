@@ -50,7 +50,10 @@ export async function runVideoShotScriptAgent(input: {
         subjectMotion: "mock motion",
         productVisibility: "hero",
         sceneConsistency: "consistent mock lighting",
+        continuityWithPrevious: null,
+        continuityWithNext: null,
         voiceover: input.payload.shot.voiceover ?? null,
+        onscreenText: null,
         negativePrompt: "商品变形、相机抖动、不自然运动",
         providerPrompt: `MOCK video prompt for shot ${input.payload.shot.index} (${input.payload.durationSec}s push-in on hero product)`,
         riskNotes: [],
@@ -59,7 +62,7 @@ export async function runVideoShotScriptAgent(input: {
   }
   const cfg = resolveTextProviderConfig();
   if (!cfg) throw new Error("TEXT provider not configured (TEXT_API_KEY / TEXT_ENDPOINT_ID)");
-  const runner = buildRunner(cfg);
+  const runner = buildRunner(cfg, { useResponses: true });
   const agent = buildVideoShotScriptAgent(cfg.endpointId);
   const output = await runAgent<VideoScriptAgentInput, VideoShotScriptOutput>({
     agent,

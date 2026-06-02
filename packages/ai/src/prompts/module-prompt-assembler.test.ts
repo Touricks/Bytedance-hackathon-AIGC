@@ -60,7 +60,8 @@ describe("module prompt assembler", () => {
 
     assert.match(imagePrompt.prompt, /still-image prompt/);
     assert.match(imagePrompt.prompt, /single key frame/);
-    assert.match(imagePrompt.prompt, /Use shot\.shotImage as the main creative requirement/);
+    assert.match(imagePrompt.prompt, /Use compiledShotRequirements as the authoritative creative requirement/);
+    assert.match(imagePrompt.prompt, /full shotImage and shotVideo dictionaries/);
     assert.match(imagePrompt.prompt, /camera motion/);
     assert.match(imagePrompt.prompt, /duration/);
     assert.match(imagePrompt.prompt, /voiceover/);

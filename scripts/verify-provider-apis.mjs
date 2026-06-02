@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exitDisabledRealModelTest } from "./real-model-test-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
@@ -17,10 +18,11 @@ function usage() {
     "  node scripts/verify-provider-apis.mjs --video-image-url <url>",
     "  node scripts/verify-provider-apis.mjs --json",
     "",
-    "Validates the configured text, image, and video provider APIs.",
-    "The script loads .env from the repository root when present.",
+    "Disabled: multi-provider verification is closed.",
+    "Use pnpm --filter @aigc-video/server test:integration:smoke for backend image/video smoke.",
+    "The disabled entry does not load .env or call provider APIs.",
     "",
-    "Environment variables:",
+    "Retired environment variables:",
     "  Text:  TEXT_API_KEY/TEXT_BASE_URL/TEXT_ENDPOINT_ID",
     "         or AI_TEXT_* / ARK_API_KEY, ARK_BASE_URL, ARK_TEXT_ENDPOINT_ID",
     "  Image: IMAGE_API_KEY/IMAGE_BASE_URL/IMAGE_ENDPOINT_ID",
@@ -28,7 +30,7 @@ function usage() {
     "  Video: VIDEO_API_KEY/VIDEO_BASE_URL/VIDEO_ENDPOINT_ID",
     "         or AI_VIDEO_* / ARK_API_KEY, ARK_BASE_URL, ARK_VIDEO_ENDPOINT_ID",
     "",
-    "Options:",
+    "Retired options:",
     "  --video-image-url <url>    Use this image URL for the video probe.",
     "                             Image API is still probed separately.",
     "  --skip-video               Probe text and image only.",
@@ -667,6 +669,7 @@ async function runProbe(name, config, fn) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  exitDisabledRealModelTest("verify-provider-apis");
   const envLoaded = loadRootEnv();
   const configs = {
     text: resolveTaskConfig("text"),

@@ -1,6 +1,7 @@
 import type {
   MaterialIntakeArtifact,
   ProductBriefArtifact,
+  StoryboardArtifact,
 } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
@@ -10,6 +11,12 @@ export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard.v1";
 export interface BuildStoryboardPromptInput {
   brief: ProductBriefArtifact;
   material: MaterialIntakeArtifact;
+}
+
+export interface BuildStoryboardVoiceoverRewritePromptInput
+  extends BuildStoryboardPromptInput {
+  storyboard: StoryboardArtifact;
+  userDirection?: string;
 }
 
 export interface BuildStoryboardPromptViewInput extends BuildStoryboardPromptInput {
@@ -60,7 +67,7 @@ export function buildStoryboardPromptView(
         {
           id: "task",
           label: "任务",
-          body: "生成一条 12 秒电商口播风格分镜。保留唯一核心卖点。每个 shot 的 purpose 必须是 hook、benefit、proof 或 cta；productAssetRef 必须是已确认素材清单中的非空 ref。",
+          body: "生成一条 15 秒电商口播风格分镜。固定 3 镜，purpose 按顺序是 hook、proof、cta，durationSec 按顺序是 4、7、4。保留唯一核心卖点；productAssetRef 必须是已确认素材清单中的非空 ref；每段口播有效字数不超过 durationSec * 5。",
         },
         {
           id: "output_contract",
@@ -89,6 +96,30 @@ export function buildStoryboardPrompt(input: BuildStoryboardPromptInput) {
       JSON.stringify(input.brief),
       "已确认素材清单：",
       JSON.stringify(input.material.assets),
+    ].join("\n"),
+  }).prompt;
+}
+
+export function buildStoryboardVoiceoverRewritePrompt(
+  input: BuildStoryboardVoiceoverRewritePromptInput,
+) {
+  return buildModulePrompt({
+    moduleId: "storyboard",
+    runtimeContext: [
+      "任务：只重写分镜脚本中的 shots[].voiceover。",
+      "边界：不得改变 narrative、totalDurationSec、shots 数量、index、purpose、durationSec、scene、visualDirection、productAssetRef、transition。",
+      "节奏约束：每段口播有效字数必须小于等于 durationSec * 5。",
+      "风格：用商家能直接审核的中文电商口播，避免夸大宣称和不可验证承诺。",
+      input.userDirection?.trim()
+        ? `用户补充要求：${input.userDirection.trim()}`
+        : "用户补充要求：无。",
+      "已确认商品 brief：",
+      JSON.stringify(input.brief),
+      "已确认素材解读：",
+      JSON.stringify(input.material),
+      "当前分镜脚本：",
+      JSON.stringify(input.storyboard),
+      "输出严格 JSON：{\"shots\":[{\"index\":0,\"voiceover\":\"...\"}]}。",
     ].join("\n"),
   }).prompt;
 }

@@ -1,4 +1,8 @@
-import type { MaterialIntakeArtifact } from "@aigc-video/shared";
+import {
+  STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+  STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
+  type MaterialIntakeArtifact,
+} from "@aigc-video/shared";
 import type { ArkJsonSchemaResponseFormat } from "../providers/ark-text.provider.js";
 
 type JsonSchema = Record<string, unknown>;
@@ -169,13 +173,19 @@ export function buildStoryboardResponseFormat(input: {
     schema: strictObject(
       {
         narrative: nonEmptyString,
-        totalDurationSec: positiveInteger,
+        totalDurationSec: {
+          type: "integer",
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC],
+        },
         shots: arrayOf(
           strictObject(
             {
               index: integer,
-              purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
-              durationSec: positiveInteger,
+              purpose: { type: "string", enum: ["hook", "proof", "cta"] },
+              durationSec: {
+                type: "integer",
+                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+              },
               scene: nonEmptyString,
               visualDirection: nonEmptyString,
               productAssetRef: refSchema(refs),
@@ -193,7 +203,7 @@ export function buildStoryboardResponseFormat(input: {
               "transition",
             ],
           ),
-          { minItems: 1 },
+          { minItems: 3, maxItems: 3 },
         ),
         assumptions: arrayOf(plainString),
       },
@@ -202,11 +212,79 @@ export function buildStoryboardResponseFormat(input: {
   });
 }
 
+export function buildStoryboardVoiceoverRewriteResponseFormat(input: {
+  schemaVersion: string;
+  expectedShotCount: number;
+}): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "ugc_storyboard_voiceover_rewrite_v1",
+    description: "按已确认分镜结构重写每段中文口播，只返回 index 与 voiceover。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        shots: arrayOf(
+          strictObject(
+            {
+              index: integer,
+              voiceover: nonEmptyString,
+            },
+            ["index", "voiceover"],
+          ),
+          {
+            minItems: input.expectedShotCount,
+            maxItems: input.expectedShotCount,
+          },
+        ),
+      },
+      ["shots"],
+    ),
+  });
+}
+
 export function buildShotPromptResponseFormat(input: {
   schemaVersion: string;
   material: MaterialIntakeArtifact;
+  expectedShotCount: number;
 }): ArkJsonSchemaResponseFormat {
   const refs = materialRefs(input.material);
+  const shotImageSchema = strictObject(
+    {
+      scene: nonEmptyString,
+      composition: nonEmptyString,
+      lighting: nonEmptyString,
+      productVisibility: nonEmptyString,
+      referenceUsage: nonEmptyString,
+      negative: arrayOf(plainString),
+    },
+    [
+      "scene",
+      "composition",
+      "lighting",
+      "productVisibility",
+      "referenceUsage",
+      "negative",
+    ],
+  );
+  const shotVideoSchema = strictObject(
+    {
+      cameraMotion: nonEmptyString,
+      subjectMotion: nonEmptyString,
+      firstFrameIntent: nonEmptyString,
+      lastFrameIntent: nullableString(),
+      durationIntent: nonEmptyString,
+      continuity: nonEmptyString,
+      negative: arrayOf(plainString),
+    },
+    [
+      "cameraMotion",
+      "subjectMotion",
+      "firstFrameIntent",
+      "lastFrameIntent",
+      "durationIntent",
+      "continuity",
+      "negative",
+    ],
+  );
   return responseFormat({
     name: "video_shotprompt_v1",
     description: "生成可编辑的 V1 Seedance 视频生成提示词 artifact。",
@@ -227,6 +305,8 @@ export function buildShotPromptResponseFormat(input: {
               providerPrompt: nonEmptyString,
               referenceAssetRefs: arrayOf(refSchema(refs)),
               voiceover: nonEmptyString,
+              shotImage: shotImageSchema,
+              shotVideo: shotVideoSchema,
             },
             [
               "index",
@@ -235,9 +315,11 @@ export function buildShotPromptResponseFormat(input: {
               "providerPrompt",
               "referenceAssetRefs",
               "voiceover",
+              "shotImage",
+              "shotVideo",
             ],
           ),
-          { minItems: 1 },
+          { minItems: input.expectedShotCount, maxItems: input.expectedShotCount },
         ),
         tts: strictObject(
           {

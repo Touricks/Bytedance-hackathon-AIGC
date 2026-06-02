@@ -1,0 +1,102 @@
+import {
+  fetchJson,
+  type WorkflowEnvelope,
+  type ShotStatus,
+  type NextAction,
+  type UpstreamDrift,
+  type WorkspaceShotSet,
+} from "./client.js";
+
+export interface ShotRow {
+  id: string;
+  workspaceId: string;
+  orderIndex: number;
+  title: string;
+  objective: string | null;
+  defaultDurationSec: number | null;
+  status: ShotStatus;
+  nextAction: NextAction;
+  activeImagePromptArtifactId: string | null;
+  selectedImageId: string | null;
+  activeVideoScriptArtifactId: string | null;
+  selectedVideoId: string | null;
+}
+
+export interface ShotSetShot extends ShotRow {
+  shotSetId: string;
+  requirements: {
+    shotImage: unknown;
+    shotVideo: unknown;
+    sourceShotPromptArtifactId: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkflowStatus {
+  workspaceId: string;
+  shots: Array<{
+    shotId: string;
+    orderIndex: number;
+    status: ShotStatus;
+    nextAction: NextAction;
+    activeImagePromptArtifactId: string | null;
+    selectedImageId: string | null;
+    selectedImageUrl?: string | null;
+    activeVideoScriptArtifactId: string | null;
+    selectedVideoId: string | null;
+    activeImageBatchId?: string | null;
+    activeVideoBatchId?: string | null;
+    upstream?: UpstreamDrift;
+  }>;
+  canComposeFinalVideo: boolean;
+}
+
+export function listShots(workspaceId: string) {
+  return fetchJson<{ data: ShotSetShot[] }>(
+    `/api/workspaces/${workspaceId}/shots`,
+  );
+}
+
+export function listWorkspaceShotSets(
+  workspaceId: string,
+  options: { includeArchived?: boolean } = {},
+) {
+  const params = new URLSearchParams();
+  if (options.includeArchived) params.set("includeArchived", "true");
+  const query = params.toString();
+  return fetchJson<{ data: WorkspaceShotSet[] }>(
+    `/api/workspaces/${workspaceId}/shot-sets${query ? `?${query}` : ""}`,
+  );
+}
+
+export function listWorkspaceShotSetShots(
+  workspaceId: string,
+  shotSetId: string,
+) {
+  return fetchJson<{ data: ShotSetShot[] }>(
+    `/api/workspaces/${workspaceId}/shot-sets/${shotSetId}/shots`,
+  );
+}
+
+export function getShot(shotId: string) {
+  return fetchJson<{ data: ShotRow }>(`/api/shots/${shotId}`);
+}
+
+export function getWorkflowStatus(workspaceId: string) {
+  return fetchJson<{ data: WorkflowStatus }>(
+    `/api/workspaces/${workspaceId}/shot-workflow-status`,
+  );
+}
+
+export function retryShot(
+  shotId: string,
+  what: "image_batch" | "video_batch",
+  idempotencyKey: string,
+) {
+  return fetchJson<WorkflowEnvelope<unknown>>(`/api/shots/${shotId}/retry`, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ what }),
+  });
+}

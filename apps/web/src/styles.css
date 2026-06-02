@@ -2003,6 +2003,24 @@ button:disabled {
   white-space: nowrap;
 }
 
+.review-shot-nav__upstream {
+  grid-column: 3;
+  width: fit-content;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #b45309;
+  background: #fff7ed;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.review-shot-nav__item--active .review-shot-nav__upstream {
+  border-color: rgb(255 255 255 / 35%);
+  color: #ffedd5;
+  background: rgb(255 255 255 / 10%);
+}
+
 .review-panel {
   display: grid;
   gap: 16px;
@@ -2109,6 +2127,18 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.reference-video-import__upload {
+  color: #4b47e6;
+  border-color: #dedefb;
+  background: #ececfd;
+}
+
+.reference-video-import__upload:hover {
+  color: #36329e;
+  border-color: #cfcffa;
+  background: #dedefb;
 }
 
 .reference-video-import__analysis {
@@ -2423,6 +2453,23 @@ button:disabled {
   border-radius: 999px;
   padding: 3px 9px;
   background: #f8fafc;
+}
+
+.review-upstream-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #9a3412;
+  background: #fff7ed;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.review-upstream-note svg {
+  flex: 0 0 auto;
 }
 
 .review-image-grid {

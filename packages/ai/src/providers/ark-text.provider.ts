@@ -50,11 +50,26 @@ interface ChatCompletionResponse {
   }>;
 }
 
+interface ResponsesCreateResponse {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{
+      text?: string;
+    }>;
+  }>;
+}
+
 export interface OpenAICompatibleTextClient {
   chat: {
     completions: {
       create(request: unknown): Promise<ChatCompletionResponse>;
     };
+  };
+}
+
+export interface OpenAICompatibleResponsesClient {
+  responses: {
+    create(request: unknown): Promise<ResponsesCreateResponse>;
   };
 }
 
@@ -73,6 +88,15 @@ export interface ArkTextProviderOptions {
   clock?: () => number;
 }
 
+export interface ArkResponsesTextProviderRequest {
+  input: unknown;
+  temperature?: number;
+}
+
+export interface ArkResponsesTextProviderOptions {
+  createClient?: (config: TextProviderConfig) => OpenAICompatibleResponsesClient;
+}
+
 function createOpenAICompatibleClient(
   config: TextProviderConfig
 ): OpenAICompatibleTextClient {
@@ -80,6 +104,15 @@ function createOpenAICompatibleClient(
     apiKey: config.apiKey,
     baseURL: config.baseURL
   });
+}
+
+function createOpenAICompatibleResponsesClient(
+  config: TextProviderConfig
+): OpenAICompatibleResponsesClient {
+  return new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL
+  }) as unknown as OpenAICompatibleResponsesClient;
 }
 
 function toArkResponseFormat(responseFormat?: ArkJsonSchemaResponseFormat) {
@@ -210,5 +243,47 @@ export async function generateTextWithArk(
 ): Promise<ArkTextProviderResult> {
   return runWithProviderSlot("text", () =>
     generateTextWithArkInner(request, config, options)
+  );
+}
+
+function responseText(response: ResponsesCreateResponse) {
+  if (typeof response.output_text === "string") return response.output_text;
+  const output = Array.isArray(response.output) ? response.output : [];
+  for (const item of output) {
+    const content = Array.isArray(item.content) ? item.content : [];
+    for (const part of content) {
+      if (typeof part.text === "string") return part.text;
+    }
+  }
+  return "";
+}
+
+async function generateResponsesTextWithArkInner(
+  request: ArkResponsesTextProviderRequest,
+  config: TextProviderConfig,
+  options: ArkResponsesTextProviderOptions = {}
+): Promise<ArkTextProviderResult> {
+  const client = (options.createClient ?? createOpenAICompatibleResponsesClient)(
+    config
+  );
+  const response = await client.responses.create({
+    model: config.model,
+    input: request.input,
+    temperature: request.temperature ?? 0.2
+  });
+  return {
+    provider: config.provider,
+    model: config.model,
+    output: responseText(response)
+  };
+}
+
+export async function generateResponsesTextWithArk(
+  request: ArkResponsesTextProviderRequest,
+  config: TextProviderConfig,
+  options: ArkResponsesTextProviderOptions = {}
+): Promise<ArkTextProviderResult> {
+  return runWithProviderSlot("text", () =>
+    generateResponsesTextWithArkInner(request, config, options)
   );
 }

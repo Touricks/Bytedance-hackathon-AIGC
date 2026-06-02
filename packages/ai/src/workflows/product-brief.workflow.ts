@@ -9,7 +9,10 @@ import {
   PRODUCT_BRIEF_PROMPT_VERSION,
 } from "../prompts/product-brief.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
-import { generateTextWithArk } from "../providers/ark-text.provider.js";
+import {
+  generateTextWithArk,
+  type ArkTextProviderOptions,
+} from "../providers/ark-text.provider.js";
 import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
@@ -35,6 +38,7 @@ export interface GenerateProductBriefInput {
   audience?: string;
   stylePreference?: string;
   material: MaterialIntakeArtifact;
+  draft?: ProductBriefArtifact;
 }
 
 export interface ProductBriefTrace {
@@ -49,6 +53,8 @@ export interface ProductBriefTrace {
 export interface GenerateProductBriefOptions {
   env?: ProviderEnv;
   imageInput?: ProductBriefImageInput;
+  includeImageInput?: boolean;
+  createClient?: ArkTextProviderOptions["createClient"];
   traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
@@ -90,8 +96,9 @@ export async function generateProductBriefWithArk(
   const contract = getPipelineContractStep("product_brief");
   const env = options.env ?? process.env;
   const prompt = buildProductBriefPrompt(input);
-  const content = buildContent(prompt, options.imageInput);
-  const imageReferenceMode = options.imageInput?.mode ?? "none";
+  const imageInput = options.includeImageInput ? options.imageInput : undefined;
+  const content = buildContent(prompt, imageInput);
+  const imageReferenceMode = imageInput?.mode ?? "none";
   const responseFormat = buildProductBriefResponseFormat(contract.activeVersion);
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
@@ -110,7 +117,7 @@ export async function generateProductBriefWithArk(
         parsedOutputStatus: "not_attempted",
         error: message,
         imageReferenceMode,
-        image: imageTraceMeta(options.imageInput),
+        image: imageTraceMeta(imageInput),
       },
     });
     if (isRealProviderMode(env)) {
@@ -133,7 +140,7 @@ export async function generateProductBriefWithArk(
       content,
       imageReferenceMode,
       parsedOutputStatus: "not_parsed",
-      image: imageTraceMeta(options.imageInput),
+      image: imageTraceMeta(imageInput),
     },
   });
 
@@ -146,6 +153,7 @@ export async function generateProductBriefWithArk(
       config,
       {
         traceLogger: options.traceLogger,
+        createClient: options.createClient,
         responseFormat,
         trace: {
           pipeline: "product_brief",
@@ -157,7 +165,7 @@ export async function generateProductBriefWithArk(
             contractVersion: contract.activeVersion,
             imageReferenceMode,
             parsedOutputStatus: "not_parsed",
-            image: imageTraceMeta(options.imageInput),
+            image: imageTraceMeta(imageInput),
           },
         },
       },
@@ -219,6 +227,7 @@ export async function generateProductBriefWithArk(
         config,
         {
           traceLogger: options.traceLogger,
+          createClient: options.createClient,
           responseFormat,
           trace: {
             pipeline: "product_brief",

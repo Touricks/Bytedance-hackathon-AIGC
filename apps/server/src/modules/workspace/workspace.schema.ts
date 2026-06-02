@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  productBriefArtifactSchema,
+  storyboardArtifactSchema,
+} from "@aigc-video/shared";
 const workspaceDirectoryRequestBaseSchema = z.object({
   directory: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
@@ -64,14 +68,30 @@ export const materialIntakeModuleProposeRequestSchema = z.object({
 });
 
 export const productBriefModuleProposeRequestSchema = z.object({
-  userDirection: z.string().optional(),
+  userDirection: z.string().trim().min(1).max(1000).optional(),
   title: z.string().min(1).optional(),
   sellingPoints: z.string().min(1).optional(),
   audience: z.string().min(1).optional(),
   stylePreference: z.string().optional(),
+  draft: productBriefArtifactSchema.optional(),
+  baseArtifactId: z.string().min(1).optional(),
+}).superRefine((value, context) => {
+  if ((value.draft || value.baseArtifactId) && !value.userDirection) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["userDirection"],
+      message: "userDirection is required when regenerating a product brief draft",
+    });
+  }
 });
 
 export const storyboardModuleProposeRequestSchema = z.object({
+  userDirection: z.string().optional(),
+});
+
+export const storyboardVoiceoverProposeRequestSchema = z.object({
+  baseArtifactId: z.string().min(1).optional(),
+  draft: storyboardArtifactSchema,
   userDirection: z.string().optional(),
 });
 

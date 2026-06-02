@@ -3,6 +3,7 @@ import {
   type WorkflowEnvelope,
   type ShotStatus,
   type NextAction,
+  type UpstreamDrift,
 } from "./client.js";
 
 export interface ShotRow {
@@ -34,6 +35,7 @@ export interface WorkflowStatus {
     selectedVideoId: string | null;
     activeImageBatchId?: string | null;
     activeVideoBatchId?: string | null;
+    upstream?: UpstreamDrift;
   }>;
   canComposeFinalVideo: boolean;
 }

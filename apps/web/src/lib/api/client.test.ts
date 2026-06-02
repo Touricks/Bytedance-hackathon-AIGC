@@ -159,6 +159,139 @@ describe("api client", () => {
     ]);
   });
 
+  it("prefers regenerated proposed material intake over the old current artifact", async () => {
+    const currentMaterial = moduleArtifact(
+      "material-intake",
+      {
+        scannedAt: "2026-05-25T00:00:00.000Z",
+        primaryProductRef: "old-product.png",
+        assets: [{ ref: "old-product.png", description: "旧素材解读" }],
+        rejected: []
+      },
+      "approved"
+    );
+    const proposedMaterial = {
+      ...moduleArtifact("material-intake", {
+        scannedAt: "2026-05-26T00:00:00.000Z",
+        primaryProductRef: "new-product.png",
+        assets: [{ ref: "new-product.png", description: "重新生成的素材解读" }],
+        rejected: []
+      }),
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z"
+    };
+
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          workspace: {
+            id: "workspace_123",
+            localPath: "/tmp/desk-demo",
+            currentScriptId: "script_123",
+            status: "materials_ready",
+            traceFile: ".daireel/trace/events.jsonl",
+            createdAt: "2026-05-25T00:00:00.000Z",
+            updatedAt: "2026-05-25T00:00:00.000Z",
+            lastSeenAt: "2026-05-25T00:00:00.000Z"
+          },
+          modules: {
+            "material-intake": {
+              moduleId: "material-intake",
+              proposed: proposedMaterial,
+              current: currentMaterial
+            }
+          },
+          artifacts: {
+            material: currentMaterial,
+            brief: null,
+            storyboard: null,
+            shotPrompt: null
+          }
+        }),
+        { status: 200 }
+      );
+
+    const status = await getWorkspaceStatus("workspace_123");
+
+    assert.equal(status.artifacts?.material?.id, proposedMaterial.id);
+    assert.equal(status.artifacts?.material?.isCurrent, false);
+    assert.equal(
+      status.artifacts?.material?.data.assets[0]?.description,
+      "重新生成的素材解读"
+    );
+  });
+
+  it("keeps the approved material intake current when it is newer than a lingering proposal", async () => {
+    const proposedMaterial = {
+      ...moduleArtifact(
+        "material-intake",
+        {
+          scannedAt: "2026-05-25T00:00:00.000Z",
+          primaryProductRef: "old-product.png",
+          assets: [{ ref: "old-product.png", description: "待审核素材解读" }],
+          rejected: []
+        },
+        "proposed"
+      ),
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z"
+    };
+    const currentMaterial = {
+      ...moduleArtifact(
+        "material-intake",
+        {
+          scannedAt: "2026-05-26T00:00:00.000Z",
+          primaryProductRef: "approved-product.png",
+          assets: [{ ref: "approved-product.png", description: "已批准素材解读" }],
+          rejected: []
+        },
+        "approved"
+      ),
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+      approvedAt: "2026-05-26T00:00:00.000Z"
+    };
+
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          workspace: {
+            id: "workspace_123",
+            localPath: "/tmp/desk-demo",
+            currentScriptId: "script_123",
+            status: "brief_proposed",
+            traceFile: ".daireel/trace/events.jsonl",
+            createdAt: "2026-05-25T00:00:00.000Z",
+            updatedAt: "2026-05-26T00:00:00.000Z",
+            lastSeenAt: "2026-05-26T00:00:00.000Z"
+          },
+          modules: {
+            "material-intake": {
+              moduleId: "material-intake",
+              proposed: proposedMaterial,
+              current: currentMaterial
+            }
+          },
+          artifacts: {
+            material: currentMaterial,
+            brief: null,
+            storyboard: null,
+            shotPrompt: null
+          }
+        }),
+        { status: 200 }
+      );
+
+    const status = await getWorkspaceStatus("workspace_123");
+
+    assert.equal(status.artifacts?.material?.id, currentMaterial.id);
+    assert.equal(status.artifacts?.material?.isCurrent, true);
+    assert.equal(
+      status.artifacts?.material?.data.assets[0]?.description,
+      "已批准素材解读"
+    );
+  });
+
   it("proposes and approves prompt requirements by workspaceId", async () => {
     const calls: unknown[] = [];
     globalThis.fetch = async (url, init) => {

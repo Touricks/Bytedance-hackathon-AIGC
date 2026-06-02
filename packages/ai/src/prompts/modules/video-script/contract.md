@@ -12,6 +12,7 @@ Input contract:
 
 Output contract:
 Return only one JSON object matching VideoShotScriptOutputSchema. Do not wrap in markdown. Do not include explanatory text.
+All schema fields are required. Nullable soft fields must be JSON null when empty, not the string "null".
 Natural-language field values should be written in Simplified Chinese unless a provider vocabulary enum or asset id requires English.
 
 Required output behavior:

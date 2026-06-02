@@ -12,6 +12,11 @@ const baseShot = {
   selectedVideoId: null,
 };
 
+const noUpstream = {
+  upstreamChanged: false,
+  changedSources: [],
+};
+
 describe("buildWorkflowShotRow", () => {
   it("exposes the selected image url so the shot list can render its thumbnail", () => {
     const row = buildWorkflowShotRow(baseShot, {
@@ -20,12 +25,14 @@ describe("buildWorkflowShotRow", () => {
       selectedImageCandidate: {
         imageUrl: "/api/workspaces/ws_1/videos/shot_1/imc_1.png",
       },
+      upstream: noUpstream,
     });
 
     assert.equal(row.selectedImageUrl, "/api/workspaces/ws_1/videos/shot_1/imc_1.png");
     assert.equal(row.selectedImageId, "imc_1");
     assert.equal(row.activeImageBatchId, "imb_1");
     assert.equal(row.shotId, "shot_1");
+    assert.deepEqual(row.upstream, noUpstream);
   });
 
   it("returns a null selected image url when nothing is selected", () => {
@@ -35,6 +42,7 @@ describe("buildWorkflowShotRow", () => {
         activeImageBatchId: null,
         activeVideoBatchId: null,
         selectedImageCandidate: null,
+        upstream: noUpstream,
       },
     );
 
@@ -47,6 +55,7 @@ describe("buildWorkflowShotRow", () => {
       activeImageBatchId: "imb_1",
       activeVideoBatchId: null,
       selectedImageCandidate: { imageUrl: null },
+      upstream: noUpstream,
     });
 
     assert.equal(row.selectedImageUrl, null);

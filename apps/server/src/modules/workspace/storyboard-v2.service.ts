@@ -2,11 +2,15 @@ import { nanoid } from "nanoid";
 import {
   generateStoryboardWithArk,
   getModulePromptAssemblyMetadata,
+  rewriteStoryboardVoiceoversWithArk,
 } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
   productBriefArtifactSchema,
+  storyboardScriptVoiceoverLimit,
   storyboardArtifactSchema,
+  validateP0StoryboardScript,
+  type ProductBriefArtifact,
   type StoryboardArtifact,
 } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
@@ -41,6 +45,56 @@ function toIsoString(value: unknown): string {
 
 function jsonbParam(value: unknown) {
   return JSON.stringify(value ?? {});
+}
+
+function assertValidP0StoryboardScript(data: StoryboardArtifact) {
+  const result = validateP0StoryboardScript(data);
+  if (!result.valid) {
+    throw new HttpError(
+      400,
+      "INVALID_STORYBOARD_SCRIPT",
+      result.issues.map((issue) => issue.message).join(" "),
+    );
+  }
+}
+
+function assertValidP0StoryboardStructure(data: StoryboardArtifact) {
+  assertValidP0StoryboardScript({
+    ...data,
+    shots: data.shots.map((shot) => ({
+      ...shot,
+      voiceover: "口播",
+    })),
+  });
+}
+
+function clampEffectiveText(value: string, limit: number) {
+  const characters = Array.from(value.replace(/\s+/g, ""));
+  return characters.slice(0, Math.max(1, limit)).join("");
+}
+
+function mockVoiceoverRewrite(
+  brief: ProductBriefArtifact,
+  draft: StoryboardArtifact,
+): StoryboardArtifact {
+  const proof = brief.proof[0]?.trim() || "真实素材看得见";
+  const offer = brief.offer?.trim() || "点击查看详情";
+  const templates = [
+    `${brief.audience.painOrDesire}，先看${brief.product.name}`,
+    `${brief.coreSellingPoint}，${proof}`,
+    `${offer}，马上看详情`,
+  ];
+
+  return {
+    ...draft,
+    shots: draft.shots.map((shot, index) => ({
+      ...shot,
+      voiceover: clampEffectiveText(
+        templates[index] ?? shot.voiceover,
+        storyboardScriptVoiceoverLimit(shot.durationSec),
+      ),
+    })),
+  };
 }
 
 function toStoryboardArtifact(
@@ -209,10 +263,88 @@ export const storyboardV2Service = {
           ).storyboard
         : toStoryboard(brief),
     );
+    assertValidP0StoryboardScript(data);
     const sourceFingerprint = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,
       productBriefArtifactId: sources.productBrief.id,
+    };
+    const result = await db.db2.pool().query(
+      `insert into storyboard_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+       values ($1, $2, 'proposed', false, $3, $4, $5)
+       returning *`,
+      [
+        nanoid(),
+        input.workspaceId,
+        jsonbParam(data),
+        jsonbParam(sourceFingerprint),
+        jsonbParam(
+          promptAssembly({
+            requirementArtifactId: sources.requirements.id,
+            data,
+          }),
+        ),
+      ],
+    );
+    await writeReviewSnapshot({
+      localPath,
+      workspace,
+      artifact: "storyboard",
+      status: "proposed",
+      schemaVersion: "ugc-storyboard.v1",
+      data,
+    });
+    await db.updateWorkspace(input.workspaceId, {
+      status: "storyboard_proposed",
+    });
+    return toStoryboardArtifact(result.rows[0]);
+  },
+
+  async proposeVoiceover(input: {
+    workspaceId: string;
+    baseArtifactId?: string;
+    draft: StoryboardArtifact;
+    userDirection?: string;
+  }) {
+    const workspace = await db.getWorkspace(input.workspaceId);
+    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
+    const sources = await currentSources(input.workspaceId);
+    if (input.baseArtifactId) {
+      await getArtifactForWorkspace(input.workspaceId, input.baseArtifactId);
+    }
+
+    const brief = productBriefArtifactSchema.parse(sources.productBrief.data);
+    const material = materialIntakeArtifactSchema.parse(
+      sources.materialIntake.data,
+    );
+    const draft = storyboardArtifactSchema.parse(input.draft);
+    assertValidP0StoryboardStructure(draft);
+    const data: StoryboardArtifact = storyboardArtifactSchema.parse(
+      runtimeMode() === "real"
+        ? (
+            await rewriteStoryboardVoiceoversWithArk(
+              {
+                brief,
+                material,
+                storyboard: draft,
+                userDirection: input.userDirection,
+              },
+              {
+                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+              },
+            )
+          ).storyboard
+        : mockVoiceoverRewrite(brief, draft),
+    );
+    assertValidP0StoryboardScript(data);
+
+    const sourceFingerprint = {
+      promptRequirementsArtifactId: sources.requirements.id,
+      materialIntakeArtifactId: sources.materialIntake.id,
+      productBriefArtifactId: sources.productBrief.id,
+      baseStoryboardArtifactId: input.baseArtifactId ?? null,
+      rewriteKind: "voiceover",
     };
     const result = await db.db2.pool().query(
       `insert into storyboard_artifacts
@@ -262,6 +394,7 @@ export const storyboardV2Service = {
       ? await getArtifactForWorkspace(input.workspaceId, input.artifactId)
       : null;
     const data = storyboardArtifactSchema.parse(input.data ?? source?.data);
+    assertValidP0StoryboardScript(data);
     const sourceFingerprint = source?.sourceFingerprint ?? {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,

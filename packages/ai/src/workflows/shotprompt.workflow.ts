@@ -1,4 +1,5 @@
 import {
+  assertShotPromptMatchesStoryboard,
   shotPromptArtifactSchema,
   type MaterialIntakeArtifact,
   type ProductBriefArtifact,
@@ -39,8 +40,15 @@ export interface GenerateShotPromptOptions {
   traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
-function parseShotPrompt(rawOutput: string): ShotPromptArtifact {
-  return shotPromptArtifactSchema.parse(JSON.parse(rawOutput));
+function parseShotPrompt(
+  rawOutput: string,
+  storyboard: StoryboardArtifact,
+): ShotPromptArtifact {
+  const shotPrompt = shotPromptArtifactSchema.parse(JSON.parse(rawOutput));
+  assertShotPromptMatchesStoryboard(shotPrompt, storyboard, {
+    requireShotLayers: true,
+  });
+  return shotPrompt;
 }
 
 export async function generateShotPromptWithArk(
@@ -52,7 +60,8 @@ export async function generateShotPromptWithArk(
   const prompt = buildShotPromptPrompt(input);
   const responseFormat = buildShotPromptResponseFormat({
     schemaVersion: contract.activeVersion,
-    material: input.material
+    material: input.material,
+    expectedShotCount: input.storyboard.shots.length
   });
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
@@ -115,7 +124,7 @@ export async function generateShotPromptWithArk(
   ).output;
   let shotPrompt: ShotPromptArtifact;
   try {
-    shotPrompt = parseShotPrompt(rawOutput);
+    shotPrompt = parseShotPrompt(rawOutput, input.storyboard);
   } catch (error) {
     await options.traceLogger?.append({
       kind: "shotprompt.parse_failed",

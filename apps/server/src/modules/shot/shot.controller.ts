@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { toHttpError } from "../../common/errors.js";
 import { shotWorkflowService } from "./shot.service.js";
 import {
+  patchShotAssetRefsRequest,
   proposeImagePromptRequest,
   proposeVideoScriptRequest,
   regenerateImagePromptRequest,
@@ -23,6 +24,29 @@ export async function registerShotController(app: FastifyInstance) {
   app.get("/api/shots/:shotId", async (req, reply) => {
     try {
       return await shotWorkflowService.getShot((req.params as any).shotId);
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.get("/api/shots/:shotId/asset-refs", async (req, reply) => {
+    try {
+      return await shotWorkflowService.listShotAssetRefs((req.params as any).shotId);
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.patch("/api/shots/:shotId/asset-refs", async (req, reply) => {
+    try {
+      const params = req.params as { shotId: string };
+      const body = patchShotAssetRefsRequest.parse(req.body);
+      return await shotWorkflowService.replaceShotAssetRefs({
+        shotId: params.shotId,
+        refs: body.refs,
+      });
     } catch (e) {
       const err = toHttpError(e);
       return reply.status(err.statusCode).send(err);
@@ -67,7 +91,7 @@ export async function registerShotController(app: FastifyInstance) {
           workspaceId: params.workspaceId,
           shotId: params.shotId,
           baseArtifactId: body.baseArtifactId,
-          prompt: body.prompt,
+          userDirection: body.userDirection,
         });
       } catch (e) {
         const err = toHttpError(e);

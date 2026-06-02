@@ -25,7 +25,7 @@ function assertPromptAssembly(value: unknown, moduleId: string) {
 async function seedApprovedShotPromptWorkspace(
   app: FastifyInstance,
   shotCount = 1,
-  options: { registerMaterialAsset?: boolean } = {}
+  options: { registerMaterialAsset?: boolean; storyboardIndexBase?: number } = {}
 ) {
   const createResponse = await app.inject({
     method: "POST",
@@ -123,11 +123,33 @@ async function seedApprovedShotPromptWorkspace(
     payload: {}
   });
   assert.equal(storyboardResponse.statusCode, 200, storyboardResponse.body);
+  const proposedStoryboard = storyboardResponse.json().data.data;
+  const approvedStoryboardShots = proposedStoryboard.shots.map(
+    (shot: Record<string, unknown>, index: number) => ({
+      ...shot,
+      index:
+        typeof options.storyboardIndexBase === "number"
+          ? options.storyboardIndexBase + index
+          : shot.index,
+    })
+  );
+  assert.equal(
+    proposedStoryboard.shots.length,
+    3,
+    "storyboard fixture must produce the P0 three-shot script"
+  );
   const storyboardApproveResponse = await app.inject({
     method: "POST",
     url: `/api/workspaces/${workspace.id}/storyboard/approve`,
     payload: {
-      artifactId: storyboardResponse.json().data.id
+      data: {
+        ...proposedStoryboard,
+        totalDurationSec: approvedStoryboardShots.reduce(
+          (sum: number, shot: { durationSec: number }) => sum + shot.durationSec,
+          0
+        ),
+        shots: approvedStoryboardShots
+      }
     }
   });
   assert.equal(storyboardApproveResponse.statusCode, 200, storyboardApproveResponse.body);
@@ -139,20 +161,24 @@ async function seedApprovedShotPromptWorkspace(
   });
   assert.equal(shotPromptResponse.statusCode, 200, shotPromptResponse.body);
   const shotPrompt = shotPromptResponse.json().data.data;
-  const approvedShots = shotPrompt.shots.slice(0, shotCount);
+  const approvedShots = shotPrompt.shots;
   const firstShot = approvedShots[0];
   assert.ok(firstShot, "shotprompt produced no shots");
+  assert.ok(
+    approvedShots.length >= shotCount,
+    "shotprompt fixture did not produce enough shots"
+  );
   const approvalResponse = await app.inject({
     method: "POST",
     url: `/api/workspaces/${workspace.id}/shotprompt/approve`,
     payload: {
       data: {
         ...shotPrompt,
-        durationSec: firstShot.endSec - firstShot.startSec,
+        durationSec: shotPrompt.durationSec,
         shots: approvedShots,
         tts: {
           ...shotPrompt.tts,
-          voiceover: firstShot.voiceover
+          voiceover: approvedShots.map((shot: { voiceover: string }) => shot.voiceover).join("")
         }
       }
     }
@@ -201,6 +227,17 @@ async function reapproveCurrentShotPrompt(app: FastifyInstance, workspaceId: str
   });
   assert.equal(approveResponse.statusCode, 200, approveResponse.body);
   return approveResponse.json().data as { id: string; data: { shots: unknown[] } };
+}
+
+async function listSeededShotAssetIds(shotId: string) {
+  const result = await db.db2.pool().query(
+    `select asset_id
+     from shot_asset_refs
+     where shot_id = $1
+     order by position asc, created_at asc`,
+    [shotId]
+  );
+  return result.rows.map((row) => String(row.asset_id));
 }
 
 async function completeImageSelection(
@@ -280,8 +317,445 @@ describe("shot workflow API", () => {
     });
   });
 
+  it("rejects shotprompt approvals that collapse current storyboard shots", async () => {
+    const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 2);
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    const shotPrompt = statusResponse.json().artifacts.shotPrompt.data;
+    assert.equal(shotPrompt.shots.length, 3);
+
+    const collapseResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shotprompt/approve`,
+      payload: {
+        data: {
+          ...shotPrompt,
+          durationSec: shotPrompt.shots[0].endSec - shotPrompt.shots[0].startSec,
+          shots: shotPrompt.shots.slice(0, 1),
+          tts: {
+            ...shotPrompt.tts,
+            voiceover: shotPrompt.shots[0].voiceover
+          }
+        }
+      }
+    });
+
+    assert.equal(collapseResponse.statusCode, 400, collapseResponse.body);
+    assert.equal(collapseResponse.json().code, "INVALID_SHOTPROMPT");
+    assert.match(collapseResponse.json().message, /expected 3, got 1/);
+  });
+
+  it("rejects artifactId approval when a proposed shotprompt no longer matches storyboard", async () => {
+    const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 2);
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    const shotPromptArtifact = statusResponse.json().artifacts.shotPrompt;
+    const shotPrompt = shotPromptArtifact.data;
+    const badArtifactId = `bad-shotprompt-${Date.now()}`;
+
+    await db.db2.pool().query(
+      `insert into shot_prompt_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+       values ($1, $2, 'proposed', false, $3::jsonb, $4::jsonb, $5::jsonb)`,
+      [
+        badArtifactId,
+        workspaceId,
+        JSON.stringify({
+          ...shotPrompt,
+          durationSec: shotPrompt.shots[0].endSec - shotPrompt.shots[0].startSec,
+          shots: shotPrompt.shots.slice(0, 1),
+          tts: {
+            ...shotPrompt.tts,
+            voiceover: shotPrompt.shots[0].voiceover
+          }
+        }),
+        JSON.stringify(shotPromptArtifact.sourceFingerprint ?? {}),
+        JSON.stringify(shotPromptArtifact.promptAssembly ?? {})
+      ]
+    );
+
+    const approveResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shotprompt/approve`,
+      payload: { artifactId: badArtifactId }
+    });
+
+    assert.equal(approveResponse.statusCode, 400, approveResponse.body);
+    assert.equal(approveResponse.json().code, "INVALID_SHOTPROMPT");
+    assert.match(approveResponse.json().message, /expected 3, got 1/);
+  });
+
+  it("rejects applying an approved shotprompt that does not match current storyboard", async () => {
+    const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 2);
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    const shotPromptArtifact = statusResponse.json().artifacts.shotPrompt;
+    const shotPrompt = shotPromptArtifact.data;
+    const badArtifactId = `bad-approved-shotprompt-${Date.now()}`;
+
+    await db.db2.pool().query(
+      `insert into shot_prompt_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+       values ($1, $2, 'approved', false, $3::jsonb, $4::jsonb, $5::jsonb, now())`,
+      [
+        badArtifactId,
+        workspaceId,
+        JSON.stringify({
+          ...shotPrompt,
+          durationSec: shotPrompt.shots[0].endSec - shotPrompt.shots[0].startSec,
+          shots: shotPrompt.shots.slice(0, 1),
+          tts: {
+            ...shotPrompt.tts,
+            voiceover: shotPrompt.shots[0].voiceover
+          }
+        }),
+        JSON.stringify(shotPromptArtifact.sourceFingerprint ?? {}),
+        JSON.stringify(shotPromptArtifact.promptAssembly ?? {})
+      ]
+    );
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shot-sets`,
+      payload: { shotPromptArtifactId: badArtifactId }
+    });
+
+    assert.equal(applyResponse.statusCode, 400, applyResponse.body);
+    assert.equal(applyResponse.json().code, "INVALID_SHOTPROMPT");
+    assert.match(applyResponse.json().message, /expected 3, got 1/);
+  });
+
+  it("normalizes one-based provider shot indexes into zero-based workflow order", async () => {
+    const { workspaceId, shotId } = await seedApprovedShotPromptWorkspace(app, 2, {
+      storyboardIndexBase: 1,
+    });
+
+    const workflowResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-workflow-status`
+    });
+    assert.equal(workflowResponse.statusCode, 200, workflowResponse.body);
+    const workflowShots = workflowResponse.json().data.shots as Array<{
+      shotId: string;
+      orderIndex: number;
+    }>;
+    assert.deepEqual(
+      workflowShots.map((shot) => shot.orderIndex),
+      [0, 1, 2]
+    );
+    assert.equal(workflowShots[0]?.shotId, shotId);
+
+    const imagePromptResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`,
+      payload: {}
+    });
+    assert.equal(imagePromptResponse.statusCode, 200, imagePromptResponse.body);
+  });
+
+  it("lists editable shot asset refs for active shots", async () => {
+    const { shotId } = await seedApprovedShotPromptWorkspace(app, 1);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/shots/${shotId}/asset-refs`,
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const refs = response.json().data as Array<{
+      id: string;
+      shotId: string;
+      assetId: string;
+      role: string;
+      weight: number;
+      position: number;
+      ref: string;
+      url: string;
+    }>;
+    assert.equal(refs.length, 1);
+    assert.equal(refs[0]?.shotId, shotId);
+    assert.equal(refs[0]?.role, "product_identity");
+    assert.equal(refs[0]?.weight, 1);
+    assert.equal(refs[0]?.position, 0);
+    assert.equal(refs[0]?.ref, "product.png");
+    assert.match(String(refs[0]?.url ?? ""), /\/api\/workspaces\/.+\/materials\/product\.png$/);
+  });
+
+  it("lists active and archived shot set instances with upstream drift and historical shots", async () => {
+    const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 1);
+
+    const updatedShotPrompt = await reapproveCurrentShotPrompt(app, workspaceId);
+    const driftListResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-sets?includeArchived=true`,
+    });
+    assert.equal(driftListResponse.statusCode, 200, driftListResponse.body);
+    const [driftedActive] = driftListResponse.json().data as Array<{
+      id: string;
+      status: string;
+      shotCount?: number;
+      upstream?: { upstreamChanged: boolean; changedSources: string[] };
+    }>;
+    assert.equal(driftedActive?.status, "active");
+    assert.equal(driftedActive?.shotCount, 3);
+    assert.equal(driftedActive?.upstream?.upstreamChanged, true);
+    assert.deepEqual(driftedActive?.upstream?.changedSources, [
+      "shotPromptArtifactId",
+    ]);
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shot-sets`,
+      payload: { shotPromptArtifactId: updatedShotPrompt.id },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-sets?includeArchived=true`,
+    });
+    assert.equal(listResponse.statusCode, 200, listResponse.body);
+    const shotSets = listResponse.json().data as Array<{
+      id: string;
+      status: string;
+      shotCount?: number;
+      upstream?: { upstreamChanged: boolean };
+    }>;
+    const active = shotSets.find((shotSet) => shotSet.status === "active");
+    const archived = shotSets.find((shotSet) => shotSet.status === "archived");
+    assert.ok(active, "expected a new active shot set");
+    assert.ok(archived, "expected the old shot set to be archived");
+    assert.equal(active.shotCount, 3);
+    assert.equal(archived.shotCount, 3);
+    assert.equal(active.upstream?.upstreamChanged, false);
+    assert.equal(archived.upstream?.upstreamChanged, true);
+
+    const archivedShotsResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-sets/${archived.id}/shots`,
+    });
+    assert.equal(archivedShotsResponse.statusCode, 200, archivedShotsResponse.body);
+    const archivedShots = archivedShotsResponse.json().data as Array<{
+      shotSetId: string;
+      requirements: { shotImage: unknown; shotVideo: unknown };
+    }>;
+    assert.equal(archivedShots.length, 3);
+    assert.equal(archivedShots[0]?.shotSetId, archived.id);
+    assert.ok(archivedShots[0]?.requirements.shotImage);
+    assert.ok(archivedShots[0]?.requirements.shotVideo);
+  });
+
+  it("initializes shotprompt reference asset refs with documented role values", async () => {
+    const { workspaceId } = await seedApprovedShotPromptWorkspace(app, 1);
+    const extraUploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      payload: {
+        filename: "style.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+      },
+    });
+    assert.equal(extraUploadResponse.statusCode, 200, extraUploadResponse.body);
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    const shotPrompt = statusResponse.json().artifacts.shotPrompt.data;
+    const approveResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shotprompt/approve`,
+      payload: {
+        data: {
+          ...shotPrompt,
+          shots: shotPrompt.shots.map((shot: Record<string, unknown>, index: number) =>
+            index === 0
+              ? { ...shot, referenceAssetRefs: ["product.png", "style.png"] }
+              : shot,
+          ),
+        },
+      },
+    });
+    assert.equal(approveResponse.statusCode, 200, approveResponse.body);
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shot-sets`,
+      payload: { shotPromptArtifactId: approveResponse.json().data.id },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+
+    const shotsResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shots`,
+    });
+    assert.equal(shotsResponse.statusCode, 200, shotsResponse.body);
+    const [firstShot] = shotsResponse.json().data as Array<{ id: string }>;
+    assert.ok(firstShot);
+
+    const refsResponse = await app.inject({
+      method: "GET",
+      url: `/api/shots/${firstShot.id}/asset-refs`,
+    });
+    assert.equal(refsResponse.statusCode, 200, refsResponse.body);
+    const refs = refsResponse.json().data as Array<{
+      role: string;
+      ref: string;
+    }>;
+    assert.deepEqual(
+      refs.map((ref) => ({ role: ref.role, ref: ref.ref })),
+      [
+        { role: "product_identity", ref: "product.png" },
+        { role: "reference_scene", ref: "style.png" },
+      ],
+    );
+    const rawRoles = await db.db2.pool().query(
+      `select role
+       from shot_asset_refs
+       where shot_id = $1
+       order by position asc`,
+      [firstShot.id],
+    );
+    assert.deepEqual(
+      rawRoles.rows.map((row) => String(row.role)),
+      ["product_identity", "reference_scene"],
+    );
+  });
+
+  it("replaces shot asset refs in request order", async () => {
+    const { workspaceId, shotId } = await seedApprovedShotPromptWorkspace(app, 1);
+    const [existingAssetId] = await listSeededShotAssetIds(shotId);
+    assert.ok(existingAssetId);
+
+    const extraUploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      payload: {
+        filename: "style.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+      },
+    });
+    assert.equal(extraUploadResponse.statusCode, 200, extraUploadResponse.body);
+    const extraAssetId = extraUploadResponse.json().material.assetId as string;
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/shots/${shotId}/asset-refs`,
+      payload: {
+        refs: [
+          { assetId: extraAssetId, role: "reference_style", weight: 0.5 },
+          { assetId: existingAssetId, role: "product_identity" },
+        ],
+      },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const refs = response.json().data as Array<{
+      assetId: string;
+      role: string;
+      weight: number;
+      position: number;
+      ref: string;
+    }>;
+    assert.deepEqual(
+      refs.map((ref) => ({
+        assetId: ref.assetId,
+        role: ref.role,
+        weight: ref.weight,
+        position: ref.position,
+        ref: ref.ref,
+      })),
+      [
+        {
+          assetId: extraAssetId,
+          role: "reference_style",
+          weight: 0.5,
+          position: 0,
+          ref: "style.png",
+        },
+        {
+          assetId: existingAssetId,
+          role: "product_identity",
+          weight: 1,
+          position: 1,
+          ref: "product.png",
+        },
+      ]
+    );
+  });
+
+  it("rejects shot asset ref updates for assets from another workspace", async () => {
+    const { shotId } = await seedApprovedShotPromptWorkspace(app, 1);
+    const otherWorkspace = await seedApprovedShotPromptWorkspace(app, 1);
+    const [otherAssetId] = await listSeededShotAssetIds(otherWorkspace.shotId);
+    assert.ok(otherAssetId);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/shots/${shotId}/asset-refs`,
+      payload: {
+        refs: [{ assetId: otherAssetId, role: "reference_scene" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().code, "INVALID_ASSET_REF");
+  });
+
+  it("returns 404 for unknown shot asset ref routes", async () => {
+    const getResponse = await app.inject({
+      method: "GET",
+      url: "/api/shots/shot-does-not-exist/asset-refs",
+    });
+    assert.equal(getResponse.statusCode, 404, getResponse.body);
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/shots/shot-does-not-exist/asset-refs",
+      payload: { refs: [] },
+    });
+    assert.equal(patchResponse.statusCode, 404, patchResponse.body);
+  });
+
+  it("rejects shot asset ref reads and writes for archived shots", async () => {
+    const { workspaceId, shotId: archivedShotId } = await seedApprovedShotPromptWorkspace(app, 1);
+    await reapproveCurrentShotPrompt(app, workspaceId);
+    const nextShotSetResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shot-sets`,
+      payload: {},
+    });
+    assert.equal(nextShotSetResponse.statusCode, 200, nextShotSetResponse.body);
+
+    const getResponse = await app.inject({
+      method: "GET",
+      url: `/api/shots/${archivedShotId}/asset-refs`,
+    });
+    assert.equal(getResponse.statusCode, 400, getResponse.body);
+    assert.equal(getResponse.json().code, "SHOT_NOT_IN_ACTIVE_SET");
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/shots/${archivedShotId}/asset-refs`,
+      payload: {
+        refs: [],
+      },
+    });
+    assert.equal(patchResponse.statusCode, 400, patchResponse.body);
+    assert.equal(patchResponse.json().code, "SHOT_NOT_IN_ACTIVE_SET");
+  });
+
   it("keeps refresh-resumable batch ids and writes image/video selections to V2 tables", async () => {
-    const { workspaceId, shotId } = await seedApprovedShotPromptWorkspace(app);
+    const { workspaceId, shotId, shotIds } = await seedApprovedShotPromptWorkspace(app);
 
     const imagePromptResponse = await app.inject({
       method: "POST",
@@ -375,7 +849,8 @@ describe("shot workflow API", () => {
     assert.equal(selectImageResponse.statusCode, 200, selectImageResponse.body);
     assert.equal(selectImageResponse.json().shotStatus, "IMAGE_SELECTED");
     assert.equal(selectImageResponse.json().selectedImageUrl, imageCandidate.imageUrl);
-    assert.equal(selectImageResponse.json().allShotsImageSelected, true);
+    assert.equal(selectImageResponse.json().allShotsImageSelected, false);
+    assert.equal(typeof selectImageResponse.json().nextShotId, "string");
     const selectedImage = await db.db2.getSelectedImage(shotId);
     assert.equal(selectedImage?.imageCandidateId, imageCandidate.id);
     assert.equal(selectedImage?.imageGenerationBatchId, imageBatchId);
@@ -399,16 +874,7 @@ describe("shot workflow API", () => {
       url: `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/regenerate`,
       payload: {
         baseArtifactId: imagePromptId,
-        prompt: {
-          promptText: "清爽真实摄影风格，商品完整居中展示，背景延续上一轮场景。",
-          negativePrompt: "商品变形、文字乱码、手部遮挡",
-          visualStyle: "清爽真实摄影",
-          composition: "主体居中，轻微低机位",
-          lighting: "柔和自然光",
-          productVisibilityRule: "商品完整可见，logo 清晰，不裁切。",
-          referenceImageUsage: [],
-          qualityChecklist: ["商品不变形", "背景保持连续"]
-        }
+        userDirection: "入口标识更清晰，背景延续上一轮场景。"
       }
     });
     assert.equal(regenerateResponse.statusCode, 200, regenerateResponse.body);
@@ -420,18 +886,40 @@ describe("shot workflow API", () => {
     const regeneratedBatchId = regenerateResponse.json().batch.id as string;
     const regeneratedPrompt = await db.db2.getImagePromptArtifact(regeneratedPromptId);
     assert.equal(regeneratedPrompt.baseArtifactId, imagePromptId);
-    assert.equal(regeneratedPrompt.promptText, "清爽真实摄影风格，商品完整居中展示，背景延续上一轮场景。");
+    assert.equal(regeneratedPrompt.agentName, "StoryboardImagePromptAgent");
+    assert.match(regeneratedPrompt.promptText, /入口标识更清晰/);
+    const regeneratedPromptJson = regeneratedPrompt.promptJson as {
+      context?: Record<string, unknown>;
+    };
+    assert.equal(
+      regeneratedPromptJson.context?.userDirection,
+      "入口标识更清晰，背景延续上一轮场景。"
+    );
+    assert.ok(regeneratedPromptJson.context?.shotImage);
+    assert.ok(regeneratedPromptJson.context?.shotVideo);
+    assert.match(
+      String(regeneratedPromptJson.context?.compiledShotRequirements ?? ""),
+      /shotImage 静态关键帧要求/
+    );
+    assert.match(
+      String(regeneratedPromptJson.context?.compiledShotRequirements ?? ""),
+      /shotVideo 动态与连续性要求/
+    );
     const regeneratedBatch = await db.db2.getImageBatch(regeneratedBatchId);
     assert.equal(
       (regeneratedBatch.providerRequest as Record<string, unknown>).prompt,
-      "清爽真实摄影风格，商品完整居中展示，背景延续上一轮场景。"
+      regeneratedPrompt.promptText
     );
     assert.equal(
-      (regeneratedBatch.providerRequest as Record<string, unknown>).negativePrompt,
-      "商品变形、文字乱码、手部遮挡"
+      (regeneratedBatch.providerRequest as Record<string, unknown>).userDirection,
+      "入口标识更清晰，背景延续上一轮场景。"
     );
     const selectedAfterRegenerate = await db.db2.getSelectedImage(shotId);
     assert.equal(selectedAfterRegenerate?.imageCandidateId, imageCandidate.id);
+
+    for (const downstreamShotId of shotIds.slice(1)) {
+      await completeImageSelection(app, workspaceId, downstreamShotId);
+    }
 
     const videoScriptResponse = await app.inject({
       method: "POST",
@@ -526,7 +1014,7 @@ describe("shot workflow API", () => {
     assert.equal(selectVideoResponse.statusCode, 200, selectVideoResponse.body);
     assert.equal(selectVideoResponse.json().shotStatus, "VIDEO_SELECTED");
     assert.equal(selectVideoResponse.json().selectedVideoUrl, videoCandidate.videoUrl);
-    assert.equal(selectVideoResponse.json().allShotsVideoSelected, true);
+    assert.equal(selectVideoResponse.json().allShotsVideoSelected, false);
 
     const videoRoundsResponse = await app.inject({
       method: "GET",
@@ -734,16 +1222,96 @@ describe("shot workflow API", () => {
     );
   });
 
+  it("surfaces shot-level redo handoff when upstream artifacts change", async () => {
+    const { workspaceId, shotId, shotIds } = await seedApprovedShotPromptWorkspace(app, 1);
+    await completeImageSelection(app, workspaceId, shotId);
+    for (const downstreamShotId of shotIds.slice(1)) {
+      await completeImageSelection(app, workspaceId, downstreamShotId);
+    }
+    const videoScriptResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/propose`,
+      payload: {}
+    });
+    assert.equal(videoScriptResponse.statusCode, 200, videoScriptResponse.body);
+
+    const initialWorkflowResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-workflow-status`
+    });
+    assert.equal(initialWorkflowResponse.statusCode, 200, initialWorkflowResponse.body);
+    const initialShot = initialWorkflowResponse
+      .json()
+      .data.shots.find((shot: { shotId: string }) => shot.shotId === shotId);
+    assert.equal(initialShot.upstream.upstreamChanged, false);
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    const brief = statusResponse.json().artifacts.brief.data;
+    const briefApproveResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/product-brief/approve`,
+      payload: {
+        data: {
+          ...brief,
+          assumptions: [...(brief.assumptions ?? []), "shot redo handoff drift"]
+        }
+      }
+    });
+    assert.equal(briefApproveResponse.statusCode, 200, briefApproveResponse.body);
+
+    const workflowResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-workflow-status`
+    });
+    assert.equal(workflowResponse.statusCode, 200, workflowResponse.body);
+    const shotRow = workflowResponse
+      .json()
+      .data.shots.find((shot: { shotId: string }) => shot.shotId === shotId);
+    assert.equal(shotRow.upstream.upstreamChanged, true);
+    assert.ok(shotRow.upstream.changedSources.includes("approvedBriefArtifactId"));
+
+    const imageRoundsResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shots/${shotId}/image-rounds`
+    });
+    assert.equal(imageRoundsResponse.statusCode, 200, imageRoundsResponse.body);
+    assert.equal(imageRoundsResponse.json().data[0].upstream.upstreamChanged, true);
+    assert.ok(
+      imageRoundsResponse
+        .json()
+        .data[0].upstream.changedSources.includes("approvedBriefArtifactId")
+    );
+
+    const videoRoundsResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shots/${shotId}/video-rounds`
+    });
+    assert.equal(videoRoundsResponse.statusCode, 200, videoRoundsResponse.body);
+    assert.equal(videoRoundsResponse.json().data[0].upstream.upstreamChanged, true);
+    assert.ok(
+      videoRoundsResponse
+        .json()
+        .data[0].upstream.changedSources.includes("approvedBriefArtifactId")
+    );
+  });
+
   it("keeps archived shot rows out of the active workflow path", async () => {
     const { workspaceId, shotIds: oldShotIds } =
       await seedApprovedShotPromptWorkspace(app, 2);
     const oldFirstShotId = oldShotIds[0];
     const oldSecondShotId = oldShotIds[1];
+    const oldThirdShotId = oldShotIds[2];
     assert.ok(oldFirstShotId);
     assert.ok(oldSecondShotId);
+    assert.ok(oldThirdShotId);
 
     await completeImageSelection(app, workspaceId, oldFirstShotId);
     await completeImageSelection(app, workspaceId, oldSecondShotId);
+    await completeImageSelection(app, workspaceId, oldThirdShotId);
 
     const newShotPrompt = await reapproveCurrentShotPrompt(app, workspaceId);
     const newShotSetResponse = await app.inject({
@@ -759,22 +1327,24 @@ describe("shot workflow API", () => {
     });
     assert.equal(shotsResponse.statusCode, 200, shotsResponse.body);
     const activeShots = shotsResponse.json().data as Array<{ id: string }>;
-    assert.equal(activeShots.length, 2);
+    assert.equal(activeShots.length, 3);
     assert.ok(!activeShots.some((shot) => oldShotIds.includes(shot.id)));
     const activeFirstShotId = activeShots[0]?.id;
     const activeSecondShotId = activeShots[1]?.id;
+    const activeThirdShotId = activeShots[2]?.id;
     assert.ok(activeFirstShotId);
     assert.ok(activeSecondShotId);
+    assert.ok(activeThirdShotId);
 
     const workflowResponse = await app.inject({
       method: "GET",
       url: `/api/workspaces/${workspaceId}/shot-workflow-status`
     });
     assert.equal(workflowResponse.statusCode, 200, workflowResponse.body);
-    assert.equal(workflowResponse.json().data.shots.length, 2);
+    assert.equal(workflowResponse.json().data.shots.length, 3);
     assert.deepEqual(
       workflowResponse.json().data.shots.map((shot: { shotId: string }) => shot.shotId),
-      [activeFirstShotId, activeSecondShotId]
+      [activeFirstShotId, activeSecondShotId, activeThirdShotId]
     );
     assert.equal(workflowResponse.json().data.canComposeFinalVideo, false);
 
@@ -804,7 +1374,14 @@ describe("shot workflow API", () => {
       workspaceId,
       activeSecondShotId
     );
-    assert.equal(secondActiveImage.selection.allShotsImageSelected, true);
+    assert.equal(secondActiveImage.selection.allShotsImageSelected, false);
+
+    const thirdActiveImage = await completeImageSelection(
+      app,
+      workspaceId,
+      activeThirdShotId
+    );
+    assert.equal(thirdActiveImage.selection.allShotsImageSelected, true);
 
     const videoScriptResponse = await app.inject({
       method: "POST",

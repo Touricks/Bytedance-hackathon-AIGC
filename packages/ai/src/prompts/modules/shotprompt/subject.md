@@ -5,6 +5,7 @@
 任务：
 生成 provider-neutral 的 shotprompt artifact，必须准确保持被引用商品。
 referenceAssetRefs 只能来自已确认素材清单。
+必须为已确认分镜中的每一个 storyboard shot 输出且只输出一个对应的 shots[] 条目，数量、顺序和 index 必须完全一致。
 保持分镜时间和口播对齐。
 V1 不生成字幕，不要把可读文字作为视频生成要求。
 启用 tts，并从 shots[].voiceover 汇总完整 voiceover。tts 是渲染计划/结果，不是第二份可编辑脚本。

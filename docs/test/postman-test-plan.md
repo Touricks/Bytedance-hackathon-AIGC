@@ -4,13 +4,13 @@
 
 ## 目标
 
-Postman collection 是后端公开契约的可读测试定义；`pnpm` 脚本负责调用 Newman、启动/清理服务，并补充 DB/trace 断言。V2 第一版验收跑完整 real provider agent 链路。
+Postman collection 是后端公开契约的可读测试定义。当前真实 provider 自动测试策略已经收敛：只保留后端图像链路和视频链路 smoke，不再运行完整 real provider agent-chain、多 shot 并行验收、direct provider probe 或 final compose 联调。
 
 | 测试 | 入口 | Provider | 目的 |
 |---|---|---|---|
-| 快速真实 smoke | `pnpm realitest` | real | 验证 provider credentials 与单 shot 主链路。 |
-| 多 shot 并行验收 | `pnpm realitest:parallel` | real | 验证 4-shot 图像/视频并行稳定性与 final compose。 |
-| V2 agent-chain | `pnpm test:agent-chain` | real | 按 V2 module artifact + shot set 契约端到端验证。 |
+| 后端图像/视频链路 smoke | `pnpm --filter @aigc-video/server test:integration:smoke` | real | 仅验证后端 `image-flow` 与 `video-flow` 两条链路；图像/视频候选数固定为 1。 |
+| V2 agent-chain | package script removed | removed | 关闭完整多真实模型联调，Postman 资产仅作为契约参考保留。 |
+| 多 shot 并行验收 | package script removed | removed | 关闭 4-shot image/video/final compose 联调，历史 runner 仅保留禁用保护。 |
 
 V2 collection 建议放在：
 
@@ -29,22 +29,15 @@ provider secrets 继续来自 `.env` 与现有 `docs/test/provider.env.json`。`
 推荐脚本形态：
 
 ```bash
-pnpm test:agent-chain
+pnpm --filter @aigc-video/server test:integration:smoke
 ```
 
 脚本职责：
 
-1. 执行 `pnpm reset:dev -- --yes`，清理 Postgres / Redis 并启动 `pnpm dev`。
-2. 删除目标 workspace 的 `.daireel/`，避免旧 trace/manifest 干扰。
-3. 合并 `.env`、`docs/test/provider.env.json`、`docs/test/agent-chain/agent-chain.env.json`。
-4. 调用 Newman 执行 `agent-chain.postman.json`。
-5. 运行 DB/trace assertions：
-   - 各 module artifact 表存在 proposed 和 approved/current。
-   - `shotprompt approve` 不创建 shots。
-   - `POST /shot-sets` 后才出现 active shot set 与 shots。
-   - `image_select_artifacts` / `video_select_artifacts` 每个 shot 只有一条 current selection。
-   - final compose 输入视频数等于 active shot set 的 shot 数。
-   - trace 中存在 prompt assembly metadata 和 provider call events。
+1. 连接已运行的后端服务，默认 `TEST_API_BASE_URL=http://localhost:3000`。
+2. 以 `DEFAULT_IMAGE_CANDIDATES=1` / `MAX_IMAGE_CANDIDATES_PER_SHOT=1` 执行 `apps/server/test/integration/image-flow.integration.test.ts`。
+3. 以 `DEFAULT_VIDEO_CANDIDATES=1` / `MAX_VIDEO_CANDIDATES_PER_SHOT=1` 执行 `apps/server/test/integration/video-flow.integration.test.ts`。
+4. 不执行 Newman agent-chain、final compose、direct provider probe 或前端 real-provider E2E。
 
 ---
 
@@ -65,8 +58,8 @@ pnpm test:agent-chain
 | `pollIntervalMs` | `3000` | provider 轮询间隔。 |
 | `imageCandidateCount` | `3` | 每个 shot 图像候选数。 |
 | `videoCandidateCount` | `1` | 每个 shot 视频候选数，real provider 第一版建议为 1。 |
-| `REALITEST_PARALLEL_IMAGE_BATCH_SIZE` | 空 | `pnpm realitest:parallel` 专用；真实图片 provider 配额紧张时可设为 `1` 覆盖服务端默认图像候选数。 |
-| `REALITEST_PARALLEL_VIDEO_BATCH_SIZE` | `1` | `pnpm realitest:parallel` 专用；控制每个 shot 的视频候选数。 |
+| `REALITEST_PARALLEL_IMAGE_CANDIDATES` | disabled | 旧 parallel 联调变量；当前不使用。 |
+| `REALITEST_PARALLEL_VIDEO_CANDIDATES` | disabled | 旧 parallel 联调变量；当前不使用。 |
 
 ---
 
@@ -77,20 +70,24 @@ pnpm test:agent-chain
 | 顺序 | 请求 | 断言 |
 |---|---|---|
 | 1 | `GET /api/health` | `200`；`ok === true`；`runtime` 存在。 |
-| 2 | `GET /api/config/limits` | `200`；图像/视频 batch limit 与 `aspectRatios` 存在。 |
+| 2 | `GET /api/config/limits` | `200`；图像/视频候选数限制与 `aspectRatios` 存在。 |
 | 3 | `GET /api/pipeline/contracts` | `200`；包含 module id、prompt template、input/output schema 信息。 |
 
 ### 2. Workspace / Storage / Material
 
 | 顺序 | 请求 | 断言 / 变量 |
 |---|---|---|
-| 1 | `POST /api/workspaces` | `200`；回填 `workspaceId`。 |
-| 2 | `POST /api/workspaces/:workspaceId/storage/bind` | `200`；绑定 `workspaceDirectory`。 |
-| 3 | `GET /api/workspaces/:workspaceId/storage` | `200`；`kind` 为 `LOCAL` 或等价小写值。 |
-| 4 | `POST /api/workspaces/:workspaceId/materials` | `200`；上传测试素材并返回 stable workspace URL。 |
-| 5 | `POST /api/workspaces/:workspaceId/materials` 上传 10MB+ image | `400 IMAGE_TOO_LARGE_FOR_MODEL`；不得创建 asset。 |
-| 6 | `DELETE /api/workspaces/:workspaceId/materials/:ref` | `200`；删除素材文件与 asset 记录；路径穿越 ref 返回 `400 INVALID_MATERIAL_REF`。 |
-| 7 | `GET /api/workspaces/:workspaceId/status` | `200`；`modules`、`storage`、`activeShotSet` 字段存在。 |
+| 1 | `POST /api/workspaces/directory/select` | `200`；返回 `{ directory, cancelled, method }`；取消选择时 `directory=null`。 |
+| 2 | `POST /api/workspaces` | `200`；回填顶层 `workspace.id` 与 `manifest.workspaceId`。 |
+| 3 | `POST /api/workspaces/:workspaceId/storage/bind` | `200`；绑定 `workspaceDirectory`。 |
+| 4 | `GET /api/workspaces/:workspaceId/storage` | `200`；`kind` 为 `LOCAL` 或等价小写值。 |
+| 5 | `POST /api/workspaces/:workspaceId/materials` | `200`；上传测试素材并返回 stable workspace URL。 |
+| 6 | `POST /api/workspaces/:workspaceId/materials` 上传 10MB+ image | `400 IMAGE_TOO_LARGE_FOR_MODEL`；不得创建 asset。 |
+| 7 | `DELETE /api/workspaces/:workspaceId/materials/:ref` | `200`；删除素材文件与 asset 记录；路径穿越 ref 返回 `400 INVALID_MATERIAL_REF`。 |
+| 8 | `GET /api/workspaces/:workspaceId/status` | `200`；`modules`、`storage`、`activeShotSet` 字段存在。 |
+| 9 | `DELETE /api/workspaces/:workspaceId` | `200`；仅删除 LOCAL 工作目录下 `.daireel/` 与该 workspace 的业务记录；普通用户文件保留；`GET /api/workspaces` 不再列出该 workspace。 |
+
+工作区删除当前是同步 MVP，不是跨 DB + 文件系统真事务；S3 active binding 只验证接口边界，返回 `501 S3_WORKSPACE_DELETE_NOT_IMPLEMENTED`，不声明已经执行对象存储 prefix 物理删除。
 
 ### 3. Prompt Requirements
 
@@ -116,8 +113,9 @@ pnpm test:agent-chain
 |---|---|---|---|
 | `material-intake` | `POST /api/workspaces/:workspaceId/material-intake/propose` | `POST /api/workspaces/:workspaceId/material-intake/approve` | 读取 workspace materials 与 prompt requirements。 |
 | `product-brief` | `POST /api/workspaces/:workspaceId/product-brief/propose` | `POST /api/workspaces/:workspaceId/product-brief/approve` | brief 字段完整；`sourceFingerprint.materialIntakeArtifactId` 存在。 |
-| `storyboard` | `POST /api/workspaces/:workspaceId/storyboard/propose` | `POST /api/workspaces/:workspaceId/storyboard/approve` | 至少 4 个 storyboard beats；总时长满足测试要求。 |
-| `shotprompt` | `POST /api/workspaces/:workspaceId/shotprompt/propose` | `POST /api/workspaces/:workspaceId/shotprompt/approve` | 每个 `shots[]` 都有 `shotImage` 和 `shotVideo` dict。 |
+| `storyboard` | `POST /api/workspaces/:workspaceId/storyboard/propose` | `POST /api/workspaces/:workspaceId/storyboard/approve` | 固定 P0 15 秒三镜；`purpose` 顺序为 `hook/proof/cta`；每段口播有效字数不超过 `durationSec * 5`。 |
+| `storyboard voiceover rewrite` | `POST /api/workspaces/:workspaceId/storyboard/voiceover/propose` | `POST /api/workspaces/:workspaceId/storyboard/approve` | 请求体带当前 storyboard draft；返回新的 proposed storyboard，只改 `shots[].voiceover`，`sourceFingerprint.rewriteKind=voiceover` 且 current 不变。 |
+| `shotprompt` | `POST /api/workspaces/:workspaceId/shotprompt/propose` | `POST /api/workspaces/:workspaceId/shotprompt/approve` | `shots.length`、顺序和 index 与 approved storyboard 一致；每个 `shots[]` 都有 `shotImage` 和 `shotVideo` dict。 |
 
 公共断言：
 
@@ -133,13 +131,16 @@ pnpm test:agent-chain
 | 1 | `GET /api/workspaces/:workspaceId/shots` | 在 apply 前返回 `400 NO_ACTIVE_SHOT_SET` 或空 active 语义。 |
 | 2 | `POST /api/workspaces/:workspaceId/shot-sets` | `200`；创建 active shot set；回填 `shotSetId`。 |
 | 3 | `GET /api/workspaces/:workspaceId/shot-sets/:shotSetId/shots` | `shots.length === approvedShotPrompt.shots.length`；每个 shot 有 `requirements.shotImage` 与 `requirements.shotVideo`。 |
-| 4 | `GET /api/workspaces/:workspaceId/shot-sets` | active shot set 唯一。 |
+| 4 | `GET /api/workspaces/:workspaceId/shot-sets?includeArchived=true` | active shot set 唯一；每条记录包含 `shotCount` 与 `upstream`。 |
+| 5 | `GET /api/shots/:shotId/asset-refs` | `200`；返回 shot 当前素材引用，包含 `assetId`、`role`、`weight`、`position`。 |
+| 6 | `PATCH /api/shots/:shotId/asset-refs` | `200`；按请求体顺序替换素材引用；返回更新后的 refs；不重跑图像/视频链路。 |
 
 负向断言：
 
 - `shotprompt approve` 之后、`shot-sets` apply 之前，DB 中不应出现新 `storyboard_shots`。
 - 重新 propose/approve shotprompt 不应归档当前 active shot set，只应让 `/status.activeShotSet.upstream.upstreamChanged === true`。
 - 重新 apply 新 shotprompt 后，`shot-workflow-status.data.shots.length` 等于新 active shot set shot 数，不混入 archived rows。
+- `PATCH /api/shots/:shotId/asset-refs` 传不存在或跨 workspace asset 时返回 `400 INVALID_ASSET_REF`；对 archived shot 返回 `400 SHOT_NOT_IN_ACTIVE_SET`。
 
 ### 6. Image Chain
 
@@ -150,7 +151,7 @@ pnpm test:agent-chain
 | 1 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | `200`；返回 image prompt artifact 与 batch；artifact 有 prompt assembly metadata。 |
 | 2 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | 轮询到 batch `SUCCEEDED`；候选数达到 `imageCandidateCount`。 |
 | 3 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | `200`；返回 `imageSelectArtifact.imageCandidateId`；重复选择可覆盖。 |
-| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | `200`；新 artifact `createdBy === "user"`，`baseArtifactId` 等于旧 artifact；新 batch 的 `providerRequest.prompt` 来自用户编辑字段；原 `selectedImageId` 保留。 |
+| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | `200`；请求只含 `baseArtifactId` 与可选 `userDirection`；新 artifact `createdBy === "user"`，`baseArtifactId` 等于旧 artifact；`promptJson.context` 包含 `shotImage`、`shotVideo`、`compiledShotRequirements`；原 `selectedImageId` 保留。 |
 
 选择断言：
 
@@ -226,7 +227,10 @@ trace 中不应出现：
 | 静态文件 path traversal | `/materials/../../x` | `400`。 |
 | 10MB+ 图片素材 | `POST /workspaces/:workspaceId/materials` | `400 IMAGE_TOO_LARGE_FOR_MODEL`。 |
 | 删除不存在素材 | `DELETE /workspaces/:workspaceId/materials/:ref` | `404 MATERIAL_NOT_FOUND`。 |
+| 删除 busy 工作区 | `DELETE /workspaces/:workspaceId` 且存在 `PENDING/RUNNING` generation 或 final video job | `409 WORKSPACE_DELETE_BUSY`，DB workspace 和 `.daireel/` 均保留。 |
+| 删除 S3 工作区 | `DELETE /workspaces/:workspaceId` 且 active storage 为 S3 | `501 S3_WORKSPACE_DELETE_NOT_IMPLEMENTED`，DB workspace 保留；MVP 不做 S3 object cleanup。 |
 | archived shot 操作 | 对 archived shot select/propose/list rounds | `400 SHOT_NOT_IN_ACTIVE_SET`。 |
+| invalid shot 素材引用 | `PATCH /api/shots/:shotId/asset-refs` 传不存在或跨 workspace asset | `400 INVALID_ASSET_REF`。 |
 | 用户编辑 image prompt base artifact 不属于 shot | `image-prompts/regenerate` | `400 INVALID_BASE_IMAGE_PROMPT`。 |
 
 ---

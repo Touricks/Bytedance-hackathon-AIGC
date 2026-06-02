@@ -9,6 +9,11 @@ import {
   maskSecret,
 } from "@aigc-video/ai";
 
+console.log(
+  '[disabled] smoke:providers is disabled. Run "pnpm --filter @aigc-video/server test:integration:smoke" for backend image/video chain smoke tests.'
+);
+process.exit(0);
+
 type Result = { name: string; ok: boolean; detail: string };
 
 async function probeText(): Promise<Result> {

@@ -23,7 +23,7 @@ export const materialAssetSchema = z.object({
     "reference",
     "other",
   ]),
-  description: z.string().min(1),
+  description: z.string().trim().min(1),
   relevance: z.enum(["high", "medium", "low"]),
   usable: z.boolean(),
   included: z.boolean(),
@@ -92,6 +92,8 @@ export const shotPromptShotArtifactSchema = z.object({
   providerPrompt: z.string().min(1),
   referenceAssetRefs: z.array(z.string().min(1)),
   voiceover: z.string().min(1),
+  shotImage: z.record(z.unknown()).optional(),
+  shotVideo: z.record(z.unknown()).optional(),
 });
 
 export const shotPromptArtifactSchema = z.object({
@@ -129,3 +131,41 @@ export type ProductBriefArtifact = z.infer<typeof productBriefArtifactSchema>;
 export type StoryboardArtifact = z.infer<typeof storyboardArtifactSchema>;
 export type ShotPromptArtifact = z.infer<typeof shotPromptArtifactSchema>;
 export type FeedbackRouteArtifact = z.infer<typeof feedbackRouteArtifactSchema>;
+
+function isRecord(value: unknown) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function assertShotPromptMatchesStoryboard(
+  shotPrompt: ShotPromptArtifact,
+  storyboard: StoryboardArtifact,
+  options: { requireShotLayers?: boolean } = {},
+) {
+  const expectedIndexes = storyboard.shots.map((shot) => shot.index);
+  const actualIndexes = shotPrompt.shots.map((shot) => shot.index);
+  if (actualIndexes.length !== expectedIndexes.length) {
+    throw new Error(
+      `Shotprompt provider output does not match storyboard shot count: expected ${expectedIndexes.length}, got ${actualIndexes.length}`,
+    );
+  }
+
+  const mismatchedIndex = actualIndexes.findIndex(
+    (index, position) => index !== expectedIndexes[position],
+  );
+  if (mismatchedIndex >= 0) {
+    throw new Error(
+      `Shotprompt provider output index mismatch at position ${mismatchedIndex}: expected ${expectedIndexes[mismatchedIndex]}, got ${actualIndexes[mismatchedIndex]}`,
+    );
+  }
+
+  if (options.requireShotLayers) {
+    const missingLayer = shotPrompt.shots.find((shot) => {
+      return !isRecord(shot.shotImage) || !isRecord(shot.shotVideo);
+    });
+    if (missingLayer) {
+      throw new Error(
+        `Shotprompt provider output missing shotImage/shotVideo for shot index ${missingLayer.index}`,
+      );
+    }
+  }
+}

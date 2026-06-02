@@ -1,9 +1,16 @@
 import path from "node:path";
 import { stat } from "node:fs/promises";
 import { nanoid } from "nanoid";
+import {
+  assertShotPromptMatchesStoryboard,
+  shotPromptArtifactSchema,
+  storyboardArtifactSchema,
+  validateP0StoryboardScript,
+} from "@aigc-video/shared";
 import type { PoolClient } from "pg";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
+import { compareSourceFingerprint } from "./upstream-drift-v2.service.js";
 
 interface ShotPromptShotV2 {
   index?: number;
@@ -28,16 +35,27 @@ function jsonbParam(value: unknown) {
   return JSON.stringify(value ?? {});
 }
 
-function shotSetView(row: Record<string, unknown>) {
+function shotSetView(
+  row: Record<string, unknown>,
+  currentShotPromptArtifactId?: string | null,
+) {
+  const sourceFingerprint =
+    row.source_fingerprint && typeof row.source_fingerprint === "object"
+      ? row.source_fingerprint
+      : {};
   return {
     id: String(row.id),
     workspaceId: String(row.workspace_id),
     shotPromptArtifactId: String(row.shot_prompt_artifact_id),
     status: String(row.status),
-    sourceFingerprint:
-      row.source_fingerprint && typeof row.source_fingerprint === "object"
-        ? row.source_fingerprint
-        : {},
+    sourceFingerprint,
+    upstream: compareSourceFingerprint(sourceFingerprint, {
+      shotPromptArtifactId: currentShotPromptArtifactId,
+    }),
+    shotCount:
+      typeof row.shot_count === "undefined" || row.shot_count === null
+        ? undefined
+        : Number(row.shot_count),
     createdAt: toIsoString(row.created_at),
     archivedAt: row.archived_at ? toIsoString(row.archived_at) : null,
   };
@@ -113,11 +131,57 @@ async function getCurrentApprovedShotPrompt(
   };
 }
 
+async function getCurrentApprovedShotPromptId(workspaceId: string) {
+  const result = await db.db2.pool().query(
+    `select id
+     from shot_prompt_artifacts
+     where workspace_id = $1 and status = 'approved' and is_current = true
+     order by approved_at desc, created_at desc, id desc
+     limit 1`,
+    [workspaceId],
+  );
+  return typeof result.rows[0]?.id === "string" ? result.rows[0].id : null;
+}
+
+async function getCurrentApprovedStoryboard(workspaceId: string) {
+  const result = await db.db2.pool().query(
+    `select data
+     from storyboard_artifacts
+     where workspace_id = $1
+       and status = 'approved'
+       and is_current = true
+     order by approved_at desc, created_at desc, id desc
+     limit 1`,
+    [workspaceId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(
+      400,
+      "NO_CURRENT_APPROVED_ARTIFACT",
+      "Current approved storyboard is required",
+    );
+  }
+  return storyboardArtifactSchema.parse(row.data);
+}
+
 function assertShotPromptShots(data: ShotPromptDataV2): ShotPromptShotV2[] {
   if (!Array.isArray(data.shots) || data.shots.length === 0) {
     throw new HttpError(400, "INVALID_SHOTPROMPT", "Shotprompt must contain shots");
   }
   return data.shots;
+}
+
+function assertP0StoryboardBoundary(storyboard: ReturnType<typeof storyboardArtifactSchema.parse>) {
+  const result = validateP0StoryboardScript(storyboard);
+  if (result.valid) return;
+  throw new HttpError(
+    400,
+    "UPSTREAM_STORYBOARD_NOT_P0",
+    `当前生效的分镜脚本不是三镜版本，请先批准三镜分镜脚本，再应用分镜。${result.issues
+      .map((issue) => issue.message)
+      .join(" ")}`,
+  );
 }
 
 async function ensureMaterialAsset(input: {
@@ -193,28 +257,44 @@ async function ensureMaterialAsset(input: {
 
 export const shotSetService = {
   async getActiveShotSet(workspaceId: string) {
-    const result = await db.db2.pool().query(
-      `select *
-       from shot_sets
-       where workspace_id = $1 and status = 'active'
-       order by created_at desc, id desc
-       limit 1`,
-      [workspaceId],
-    );
-    return result.rows[0] ? shotSetView(result.rows[0]) : null;
+    const [result, currentShotPromptArtifactId] = await Promise.all([
+      db.db2.pool().query(
+        `select ss.*,
+                count(s.id)::integer as shot_count
+         from shot_sets ss
+         left join storyboard_shots s on s.shot_set_id = ss.id
+         where ss.workspace_id = $1 and ss.status = 'active'
+         group by ss.id
+         order by created_at desc, id desc
+         limit 1`,
+        [workspaceId],
+      ),
+      getCurrentApprovedShotPromptId(workspaceId),
+    ]);
+    return result.rows[0]
+      ? shotSetView(result.rows[0], currentShotPromptArtifactId)
+      : null;
   },
 
   async listShotSets(workspaceId: string, includeArchived = false) {
     await db.getWorkspace(workspaceId);
-    const result = await db.db2.pool().query(
-      `select *
-       from shot_sets
-       where workspace_id = $1
-         and ($2::boolean or status = 'active')
-       order by created_at desc, id desc`,
-      [workspaceId, includeArchived],
+    const [result, currentShotPromptArtifactId] = await Promise.all([
+      db.db2.pool().query(
+        `select ss.*,
+                count(s.id)::integer as shot_count
+         from shot_sets ss
+         left join storyboard_shots s on s.shot_set_id = ss.id
+         where ss.workspace_id = $1
+           and ($2::boolean or ss.status = 'active')
+         group by ss.id
+         order by ss.created_at desc, ss.id desc`,
+        [workspaceId, includeArchived],
+      ),
+      getCurrentApprovedShotPromptId(workspaceId),
+    ]);
+    return result.rows.map((row) =>
+      shotSetView(row, currentShotPromptArtifactId),
     );
-    return result.rows.map(shotSetView);
   },
 
   async apply(input: { workspaceId: string; shotPromptArtifactId?: string }) {
@@ -225,6 +305,20 @@ export const shotSetService = {
       input.workspaceId,
       input.shotPromptArtifactId,
     );
+    const storyboard = await getCurrentApprovedStoryboard(input.workspaceId);
+    assertP0StoryboardBoundary(storyboard);
+    const parsedShotPrompt = shotPromptArtifactSchema.parse(shotPrompt.data);
+    try {
+      assertShotPromptMatchesStoryboard(parsedShotPrompt, storyboard, {
+        requireShotLayers: true,
+      });
+    } catch (error) {
+      throw new HttpError(
+        400,
+        "INVALID_SHOTPROMPT",
+        error instanceof Error ? error.message : "Shotprompt does not match current storyboard",
+      );
+    }
     const shots = assertShotPromptShots(shotPrompt.data);
     const shotSetId = nanoid();
     const client = await db.db2.pool().connect();
@@ -255,10 +349,7 @@ export const shotSetService = {
       );
 
       for (const [position, shot] of shots.entries()) {
-        const orderIndex =
-          typeof shot.index === "number" && Number.isInteger(shot.index)
-            ? shot.index
-            : position;
+        const orderIndex = position;
         const startSec =
           typeof shot.startSec === "number" && Number.isFinite(shot.startSec)
             ? shot.startSec
@@ -320,7 +411,7 @@ export const shotSetService = {
               nanoid(),
               shotId,
               assetId,
-              refIndex === 0 ? "product_identity" : "reference",
+              refIndex === 0 ? "product_identity" : "reference_scene",
               refIndex === 0 ? 1 : 0.8,
               refIndex,
             ],

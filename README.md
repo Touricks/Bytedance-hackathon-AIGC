@@ -4,7 +4,7 @@ ByteDance Hackathon AIGC 电商带货视频项目。根 README 只做项目入�
 
 当前 V2 方向是：商家上传商品素材 -> 模块化 AI 链路生成并批准生效创作产物 -> 显式应用 shot prompt 创建分镜链路实例 -> 逐分镜生成候选图/候选视频并选择当前结果 -> ffmpeg 拼接成片。
 
-> 注意：`docs/core/arc_v2.md` 描述迁移目标架构，`docs/core/prompt_artifact.md` 描述当前 prompt 链路的混合态和缺口。开发时需要同时看两者，避免把目标态和当前实现混在一起。
+> 注意：`docs/core/arc_v2.md` 描述迁移目标架构，`docs/core/prompt_workflow.md` 描述当前 prompt 组装和跨模块 artifact 流通，`docs/core/prompt_artifact.md` 描述 prompt 相关表字段与存储契约。开发时需要同时看这些文档，避免把目标态、流程态和字段契约混在一起。
 
 ## 新会话先读
 
@@ -26,10 +26,13 @@ ByteDance Hackathon AIGC 电商带货视频项目。根 README 只做项目入�
 6. [docs/core/openapi.yaml](./docs/core/openapi.yaml)
    机器可读 OpenAPI 契约。
 
-7. [docs/core/prompt_artifact.md](./docs/core/prompt_artifact.md)
-   当前 prompt 链路相关 artifact 字段，以及迁移前的旧结构缺口。
+7. [docs/core/prompt_workflow.md](./docs/core/prompt_workflow.md)
+   当前 prompt 组装流程、workspace module 到 per-shot agent 的 artifact 流通和调试入口。
 
-8. [docs/plan/](./docs/plan/) 与 [docs/test/](./docs/test/)
+8. [docs/core/prompt_artifact.md](./docs/core/prompt_artifact.md)
+   当前 prompt 链路相关 artifact 字段、状态锚点和 provider 生成记录。
+
+9. [docs/plan/](./docs/plan/) 与 [docs/test/](./docs/test/)
    迁移计划、模块提案、Postman/Newman 测试数据和验收说明。
 
 ## 仓库拓扑
@@ -44,7 +47,7 @@ Bytedancehack/
 │   ├── shared/          # Zod 契约、领域类型、job payload 类型
 │   └── config/          # lint/format/tsconfig 预设
 ├── docs/
-│   ├── core/            # 架构、ERD、接口、OpenAPI、prompt artifact
+│   ├── core/            # 架构、ERD、接口、OpenAPI、prompt workflow/artifact
 │   ├── plan/            # 迁移计划
 │   └── test/            # Postman/Newman 测试资料
 ├── scripts/             # reset/dev/test orchestration
@@ -99,18 +102,22 @@ workspace init / storage bind
 V2 将主体 prompt 和契约 prompt 分离：
 
 ```text
-packages/ai/src/prompts/modules/<module>/
-├── subject.md       # 主体创作任务：模块要创作什么
-├── contract.md      # 输入 artifact、输出 schema、JSON 格式、provider/safety 硬约束
-└── assembler.ts     # 组装 subject + contract + 创作要求 + runtime context
+packages/ai/src/prompts/
+├── module-prompt-assembler.ts   # 组装 subject + runtime context + contract
+└── modules/<module>/
+    ├── subject.md               # 主体创作任务：模块要创作什么
+    └── contract.md              # 输入 artifact、输出 schema、JSON 格式、provider/safety 硬约束
 ```
 
 边界：
 
 - 用户编辑的是结构化“创作要求”，不是 raw prompt 或 system prompt。
 - `subject.md` 可以迭代创作策略；`contract.md` 锁定输入、输出和 provider 约束。
-- `assembler.ts` 将主体 prompt、契约 prompt、当前创作要求、shot 级 `shotImage` / `shotVideo` dict、请求内联要求和 runtime context 组装为最终 prompt。
+- `module-prompt-assembler.ts` 统一拼装 `Subject Prompt`、`Runtime Context` 和 `Schema Contract`，并生成 subject/contract 模板 id 与 hash。
+- workspace module 的 runtime context 由各 prompt builder 注入 approved artifact 与请求参数；per-shot `image-prompt` / `video-script` agent 的 instructions 也使用同一 assembler，真实业务上下文以 JSON user message 传入。
+- `prompt_requirements_artifacts.data` 当前主要作为 workspace module 的依赖门槛和 source fingerprint；逐 shot 阶段通过 approved shotprompt 的 `shotImage` / `shotVideo` dict 注入图像和视频 agent。
 - artifact 表保存 `prompt_assembly` 元数据和短 preview；完整 assembled prompt 写入 `trace_events` 和 workspace 本地 `.daireel/trace/events.jsonl`。
+- 跨 module artifact 流通和每个节点的读取/写入规则见 [docs/core/prompt_workflow.md](./docs/core/prompt_workflow.md)。
 - 文本 agent 走 `@openai/agents` Runner + Zod outputType；`MODEL_MODE != real` 时 workflow wrapper 可短路到确定性 fixture。
 
 ## 数据与运行时
@@ -128,7 +135,7 @@ V2 目标主链路围绕这些表组织：
 
 | 模块 | 表 / artifact | 语义 |
 |---|---|---|
-| 创作要求 | `prompt_requirements_artifacts` | 用户可编辑的结构化要求，作为 prompt assembly 输入。 |
+| 创作要求 | `prompt_requirements_artifacts` | 用户可编辑的结构化要求，作为 prompt 链路依赖和 source fingerprint。 |
 | material-intake | `material_intake_artifacts` | 素材解读、选用素材、图像输入描述。 |
 | product-brief | `product_brief_artifacts` | 商品卖点、人群、语气、约束。 |
 | storyboard | `storyboard_artifacts` | 视频结构、节奏和镜头目标。 |
@@ -190,7 +197,7 @@ cp .env.example .env
 | `TEXT_API_KEY` / `TEXT_BASE_URL` / `TEXT_ENDPOINT_ID` | Ark text provider。 |
 | `IMAGE_API_KEY` / `IMAGE_BASE_URL` / `IMAGE_ENDPOINT_ID` | Ark Seedream image provider。 |
 | `VIDEO_API_KEY` / `VIDEO_BASE_URL` / `VIDEO_ENDPOINT_ID` | Ark Seedance video provider。 |
-| `DEFAULT_*_BATCH_SIZE` / `MAX_*_BATCH_SIZE` | 每个 shot 的默认/最大候选数量。 |
+| `DEFAULT_IMAGE_CANDIDATES` / `MAX_IMAGE_CANDIDATES_PER_SHOT` / `DEFAULT_VIDEO_CANDIDATES` / `MAX_VIDEO_CANDIDATES_PER_SHOT` | 每个 shot 的默认/最大候选数量。 |
 
 `MODEL_MODE=real` 的完整链路需要 text / image / video 三组 provider 配置齐全。workspace 本地存储通过 `POST /api/workspaces/:workspaceId/storage/bind` 绑定目录。
 
@@ -221,6 +228,8 @@ pnpm dev:mock
 pnpm reset:dev -- --yes
 ```
 
+该命令会清理开发端口、Postgres 业务表和 Redis 队列，然后启动 `pnpm dev-latest`。
+
 只清空、不重启服务：
 
 ```bash
@@ -249,23 +258,13 @@ pnpm --filter @aigc-video/web test
 pnpm build
 ```
 
-真实 provider smoke：
+真实 provider smoke 仅保留后端图像链路 / 视频链路，并固定每条链路只生成 1 个候选：
 
 ```bash
-pnpm realitest
+pnpm --filter @aigc-video/server test:integration:smoke
 ```
 
-多 shot 并行验收：
-
-```bash
-pnpm realitest:parallel
-```
-
-如果 compile output 不稳定，但想保留 compile 检查并审批固定 4-shot shotprompt：
-
-```bash
-REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed pnpm realitest:parallel
-```
+多真实模型联调 package scripts 已移除，包括 `realitest`、`realitest:parallel`、`agenttest:real`、`test:agent-chain`、`smoke:providers` 和 `smoke:real-providers`。历史直连脚本仍保留禁用保护，手动调用时只会打印停用说明，不会发起 provider 请求。
 
 查看 one-picture trace：
 
@@ -273,26 +272,16 @@ REALITEST_PARALLEL_SHOTPROMPT_SOURCE=fixed pnpm realitest:parallel
 node scripts/extract-one-picture-events.mjs
 ```
 
-Provider 联通验证：
-
-```bash
-pnpm --filter @aigc-video/server smoke:providers
-```
-
 集成测试：
 
 ```bash
 pnpm --filter @aigc-video/server test:integration:smoke
-pnpm --filter @aigc-video/server test:integration:provider
-pnpm --filter @aigc-video/server test:integration:expensive
 ```
 
 Playwright e2e：
 
 ```bash
 pnpm --filter @aigc-video/web test:e2e
-RUN_REAL_PROVIDER_E2E=true PLAYWRIGHT_BASE_URL=http://127.0.0.1:5173 \
-  pnpm --filter @aigc-video/web test:e2e -- e2e/real-provider-flow.spec.ts
 ```
 
 V2 agent-chain 验收资料位于 `docs/test/agent-chain/`：
@@ -304,7 +293,7 @@ docs/test/agent-chain/
 └── agent-chain.data.json
 ```
 
-目标验收方式是由 pnpm 脚本封装 Newman，并补充 DB、trace 和媒体文件断言；当前脚本入口见 `scripts/run-agent-chain-test.mjs`。
+这些 Postman/Newman 资产当前只作为公开契约参考保留；完整 agent-chain 真实模型联调入口已关闭。当前真实 provider 自动 smoke 只跑后端 image-flow / video-flow。
 
 ## API 契约
 

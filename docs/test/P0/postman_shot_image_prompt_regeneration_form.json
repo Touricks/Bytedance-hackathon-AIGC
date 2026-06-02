@@ -28,14 +28,14 @@
       ]
     },
     {
-      "name": "Regenerate image candidates from edited prompt",
+      "name": "Regenerate image candidates from user feedback",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots/{{shotId}}/image-prompts/regenerate",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"baseArtifactId\": \"{{baseImagePromptArtifactId}}\",\n  \"prompt\": {\n    \"promptText\": \"清爽真实摄影风格，商品完整居中展示，背景延续上一轮场景。\",\n    \"negativePrompt\": \"商品变形、文字乱码、手部遮挡\",\n    \"visualStyle\": \"清爽真实摄影\",\n    \"composition\": \"主体居中，轻微低机位\",\n    \"lighting\": \"柔和自然光\",\n    \"productVisibilityRule\": \"商品完整可见，logo 清晰，不裁切。\",\n    \"referenceImageUsage\": [],\n    \"qualityChecklist\": [\"商品不变形\", \"背景保持连续\"]\n  }\n}"
+          "raw": "{\n  \"baseArtifactId\": \"{{baseImagePromptArtifactId}}\",\n  \"userDirection\": \"入口标识更清晰，背景延续上一轮场景。\"\n}"
         }
       },
       "event": [

@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rm,
   stat,
   unlink,
   writeFile,
@@ -15,6 +16,8 @@ import { createFileTraceLogger } from "@aigc-video/ai";
 import {
   productBriefArtifactSchema,
   storyboardArtifactSchema,
+  STORYBOARD_SCRIPT_DEFAULT_DURATIONS,
+  STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
   type MaterialAsset,
   type MaterialIntakeArtifact,
   type ProductBriefArtifact,
@@ -403,8 +406,10 @@ function inferProductName(input: {
   title?: string;
   userDirection?: string;
   material: MaterialIntakeArtifact;
+  draft?: ProductBriefArtifact;
 }) {
   return (
+    input.draft?.product.name.trim() ||
     input.title?.trim() ||
     input.material.assets.find(
       (asset) => asset.ref === input.material.primaryProductRef,
@@ -418,11 +423,13 @@ function inferSellingPoint(input: {
   sellingPoints?: string;
   userDirection?: string;
   material: MaterialIntakeArtifact;
+  draft?: ProductBriefArtifact;
 }) {
   return (
     firstSellingPoint(input.sellingPoints ?? "") ||
-    input.material.assets.find((asset) => asset.included)?.description ||
     input.userDirection?.trim() ||
+    input.draft?.coreSellingPoint.trim() ||
+    input.material.assets.find((asset) => asset.included)?.description ||
     "Product benefit inferred from selected materials"
   );
 }
@@ -434,10 +441,14 @@ export function toProductBrief(input: {
   audience?: string;
   stylePreference?: string;
   material: MaterialIntakeArtifact;
+  draft?: ProductBriefArtifact;
 }): ProductBriefArtifact {
   const sellingPoint = inferSellingPoint(input);
   const productName = inferProductName(input);
-  const audience = input.audience?.trim() || "target ecommerce shoppers";
+  const audience =
+    input.audience?.trim() ||
+    input.draft?.audience.who.trim() ||
+    "target ecommerce shoppers";
   const productAssets = input.material.assets
     .filter((asset) => asset.included && asset.kind === "image")
     .map((asset) => ({
@@ -449,27 +460,36 @@ export function toProductBrief(input: {
   return productBriefArtifactSchema.parse({
     product: {
       name: productName,
-      category: "consumer product",
+      category: input.draft?.product.category ?? "consumer product",
       keyFacts: (input.sellingPoints ?? sellingPoint)
         .split(/[,\n，]/)
         .map((value) => value.trim())
-        .filter(Boolean),
-      assets: productAssets,
+        .filter(Boolean)
+        .concat(input.draft?.product.keyFacts ?? []),
+      assets: productAssets.length > 0 ? productAssets : (input.draft?.product.assets ?? []),
     },
     audience: {
       who: audience,
-      painOrDesire: `Needs ${sellingPoint}`,
+      painOrDesire: input.draft?.audience.painOrDesire ?? `Needs ${sellingPoint}`,
     },
     coreSellingPoint: sellingPoint,
-    proof: input.material.assets
-      .filter((asset) => asset.included)
-      .map((asset) => asset.description),
-    offer: null,
-    platform: "Seedance",
-    brandTone: input.stylePreference ?? "clear ecommerce",
-    bannedExpressions: [],
-    landingInfo: null,
-    assumptions: ["Generated from approved material intake."],
+    proof: [
+      ...(input.draft?.proof ?? []),
+      ...input.material.assets
+        .filter((asset) => asset.included)
+        .map((asset) => asset.description),
+    ],
+    offer: input.draft?.offer ?? null,
+    platform: input.draft?.platform ?? "Seedance",
+    brandTone: input.stylePreference ?? input.draft?.brandTone ?? "clear ecommerce",
+    bannedExpressions: input.draft?.bannedExpressions ?? [],
+    landingInfo: input.draft?.landingInfo ?? null,
+    assumptions: [
+      ...(input.draft?.assumptions ?? []),
+      input.draft
+        ? "Regenerated from merchant direction and current product brief draft."
+        : "Generated from approved material intake.",
+    ],
   });
 }
 
@@ -487,46 +507,36 @@ export function toStoryboard(brief: ProductBriefArtifact): StoryboardArtifact {
 
   return storyboardArtifactSchema.parse({
     narrative: `${brief.product.name} helps ${brief.audience.who} with ${brief.coreSellingPoint}.`,
-    totalDurationSec: 12,
+    totalDurationSec: STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
     shots: [
       {
         index: 0,
         purpose: "hook",
-        durationSec: 3,
+        durationSec: STORYBOARD_SCRIPT_DEFAULT_DURATIONS[0],
         scene: `${brief.product.name} hero problem hook`,
         visualDirection: `Show ${productAssetRef} as the primary product asset with ${brief.brandTone} styling.`,
         productAssetRef,
-        voiceover: `Meet ${brief.product.name}.`,
+        voiceover: "第一眼看清需求",
         transition: "cut",
       },
       {
         index: 1,
-        purpose: "benefit",
-        durationSec: 3,
-        scene: `${brief.coreSellingPoint} benefit demonstration`,
-        visualDirection: `Use ${productAssetRef} in a realistic moment for ${brief.audience.who}.`,
+        purpose: "proof",
+        durationSec: STORYBOARD_SCRIPT_DEFAULT_DURATIONS[1],
+        scene: `${brief.coreSellingPoint} selling point proof`,
+        visualDirection: `Use ${productAssetRef} in a realistic moment and support it with: ${proof}.`,
         productAssetRef,
-        voiceover: `${brief.coreSellingPoint}.`,
+        voiceover: "核心卖点现场证明",
         transition: "match cut",
       },
       {
         index: 2,
-        purpose: "proof",
-        durationSec: 3,
-        scene: "Proof and product detail",
-        visualDirection: `Show a close detail of ${productAssetRef} that supports: ${proof}.`,
-        productAssetRef,
-        voiceover: proof,
-        transition: "push",
-      },
-      {
-        index: 3,
         purpose: "cta",
-        durationSec: 3,
+        durationSec: STORYBOARD_SCRIPT_DEFAULT_DURATIONS[2],
         scene: "Clear purchase call to action",
         visualDirection: `End on ${productAssetRef} with a confident ecommerce packshot.`,
         productAssetRef,
-        voiceover: `Try ${brief.product.name} today.`,
+        voiceover: "现在就去了解",
         transition: "fade",
       },
     ],
@@ -1318,6 +1328,169 @@ export const workspaceService = {
     );
     const discovered = filterUnregisteredDiscovered(dbPaths, scanned);
     return { workspaces: withStorage, discovered };
+  },
+
+  async deleteWorkspace(workspaceId: string) {
+    await db.getWorkspace(workspaceId);
+    const binding = await db.getActiveWorkspaceStorage(workspaceId);
+    if (binding?.kind === "S3") {
+      throw new HttpError(
+        501,
+        "S3_WORKSPACE_DELETE_NOT_IMPLEMENTED",
+        "S3 workspace deletion is not implemented yet",
+      );
+    }
+
+    const busy = await db.db2.pool().query<{ busy: boolean }>(
+      `select exists (
+         select 1 from generation_jobs
+         where workspace_id = $1 and status in ('PENDING', 'RUNNING', 'RETRYING')
+         union all
+         select 1 from final_video_jobs
+         where workspace_id = $1 and status in ('PENDING', 'RUNNING')
+       ) as busy`,
+      [workspaceId],
+    );
+    if (busy.rows[0]?.busy) {
+      throw new HttpError(
+        409,
+        "WORKSPACE_DELETE_BUSY",
+        "Workspace has active generation work",
+      );
+    }
+
+    if (binding?.localPath) {
+      await rm(path.join(normalizeWorkspacePath(binding.localPath), ".daireel"), {
+        recursive: true,
+        force: true,
+      });
+    }
+
+    const client = await db.db2.pool().connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `delete from campaign_publication_metrics
+         where publication_id in (
+           select id from campaign_publications where workspace_id = $1
+         )`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from campaign_publications where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(`delete from generation_jobs where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from trace_events where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from final_video_jobs where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(
+        `delete from video_select_artifacts where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from video_candidates where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from video_generation_batches where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from video_script_artifacts
+         where shot_id in (
+           select id from storyboard_shots where workspace_id = $1
+         )`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from image_select_artifacts where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from image_candidates where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from image_generation_batches where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from image_prompt_artifacts
+         where shot_id in (
+           select id from storyboard_shots where workspace_id = $1
+         )`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from shot_asset_refs
+         where shot_id in (
+           select id from storyboard_shots where workspace_id = $1
+         )`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from shot_prompt_requirements where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(`delete from storyboard_shots where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from shot_sets where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from shot_prompt_artifacts where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from storyboard_artifacts where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from product_brief_artifacts where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(`delete from material_intake_artifacts where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(
+        `delete from prompt_requirements_artifacts where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(`delete from workspace_artifact where workspace_id = $1`, [
+        workspaceId,
+      ]);
+      await client.query(
+        `delete from shot_asset_refs
+         where asset_id in (
+           select id from asset where metadata->>'workspaceId' = $1
+         )`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from asset where source = 'upload' and metadata->>'workspaceId' = $1`,
+        [workspaceId],
+      );
+      await client.query(`delete from creative_workspace where id = $1`, [
+        workspaceId,
+      ]);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return {
+      data: {
+        workspaceId,
+        deleted: true,
+      },
+    };
   },
 
   async getWorkspaceDirectory(workspaceId: string) {

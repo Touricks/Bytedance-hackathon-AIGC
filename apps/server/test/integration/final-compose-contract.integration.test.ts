@@ -1,12 +1,9 @@
-// @expensive — verifies the final-compose worker emits zero text/image/video provider_call traces.
+// Disabled: final compose contract acceptance is a multi-real-model integration test.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../helpers/api-client.js";
 import { pollUntil } from "../helpers/poll.js";
 import { seedWorkspace, seedShotWithSelectedImage, type SeededWorkspace } from "../helpers/seed-workspace.js";
-
-const RUN = process.env.RUN_REAL_PROVIDER_TESTS === "true";
-const ALLOW = process.env.ALLOW_EXPENSIVE_TESTS === "true";
 
 interface TraceEventLite {
   traceType: string;
@@ -15,7 +12,7 @@ interface TraceEventLite {
   metadata: unknown;
 }
 
-describe("final compose contract @expensive", { skip: !RUN || !ALLOW }, () => {
+describe("final compose contract @disabled", { skip: true }, () => {
   let ws: SeededWorkspace;
   let composeStartedAt = 0;
   let composeFinishedAt = 0;

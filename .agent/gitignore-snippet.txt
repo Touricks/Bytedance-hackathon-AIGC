@@ -1,0 +1,5 @@
+# Optional agent-framework ignores
+.codex-log/
+.agent/notes/traces/*.jsonl
+.agent/tmp/
+.agent/cache/

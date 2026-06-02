@@ -1,20 +1,20 @@
 import { z } from "zod";
 
 export const VideoShotScriptOutputSchema = z.object({
-  durationSec: z.number().int().min(1).max(8),
-  shotGoal: z.string().min(1),
-  startFrameDescription: z.string().min(1),
-  endFrameDescription: z.string().min(1),
-  continuityWithPrevious: z.string().nullable().optional(),
-  continuityWithNext: z.string().nullable().optional(),
-  cameraMotion: z.string().min(1),
-  subjectMotion: z.string().min(1),
-  productVisibility: z.string().min(1),
-  sceneConsistency: z.string().min(1),
-  voiceover: z.string().nullable().optional(),
-  onscreenText: z.string().nullable().optional(),
-  providerPrompt: z.string().min(30),
-  negativePrompt: z.string().nullable().optional(),
-  riskNotes: z.array(z.string()).default([]),
-});
+  durationSec: z.number(),
+  shotGoal: z.string(),
+  startFrameDescription: z.string(),
+  endFrameDescription: z.string(),
+  continuityWithPrevious: z.string().nullable(),
+  continuityWithNext: z.string().nullable(),
+  cameraMotion: z.string(),
+  subjectMotion: z.string(),
+  productVisibility: z.string(),
+  sceneConsistency: z.string(),
+  voiceover: z.string().nullable(),
+  onscreenText: z.string().nullable(),
+  providerPrompt: z.string(),
+  negativePrompt: z.string().nullable(),
+  riskNotes: z.array(z.string()),
+}).strict();
 export type VideoShotScriptOutput = z.infer<typeof VideoShotScriptOutputSchema>;

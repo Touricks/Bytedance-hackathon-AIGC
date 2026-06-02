@@ -474,20 +474,16 @@ Provider 密钥继续从 `.env` / process env / `docs/test/provider.env.json` �
 scripts/run-agent-chain-test.mjs
 ```
 
-新增 package scripts：
+当前不新增 agent-chain package script；完整多真实模型联调入口已从 `package.json` 移除。
 
-```json
-{
-  "agenttest:real": "node scripts/run-agent-chain-test.mjs"
-}
-```
-
-脚本职责：
+历史脚本职责：
 
 - reset dev。
 - 删除测试 workspace `.daireel/`。
 - 启动 `pnpm dev`。
 - 调用 `newman run docs/test/agent-chain/agent-chain.postman.json --environment docs/test/agent-chain/agent-chain.env.json --iteration-data docs/test/agent-chain/agent-chain.data.json`。
+
+当前状态：完整 agent-chain 真实模型联调入口已关闭；现行真实 provider 自动 smoke 只保留 `pnpm --filter @aigc-video/server test:integration:smoke`。
 - 读取 Newman 输出。
 - 补充 DB 断言：
   - 每个 module 有 current approved artifact。
@@ -537,7 +533,7 @@ scripts/run-agent-chain-test.mjs
 7. 迁移 final compose。
 8. 更新前端最小闭环。
 9. 新建 agent-chain Postman collection 和 pnpm Newman script。
-10. 跑 `pnpm agenttest:real`。
+10. 跑 `pnpm --filter @aigc-video/server test:integration:smoke`。
 11. 删除旧 workspace artifact 主链路和 delete/reseed 逻辑。
 
 ---

@@ -38,98 +38,20 @@ import {
   isSelectableCandidate,
   stageCandidate,
 } from "./imageSelection.js";
+import {
+  canOpenReviewStep,
+  deriveActiveStep,
+  deriveReviewStepIndicators,
+  isTerminalReady,
+  materialDeleteResetConfirmMessage,
+  shouldResetFlowAfterMaterialDelete,
+  statusTone,
+  type ReviewStepId,
+} from "./reviewFlow.js";
 
 function backToWorkspaces() {
   window.history.pushState({}, "", "/");
   window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-function statusTone(value: string | null | undefined) {
-  if (!value) return "idle";
-  if (value.includes("FAILED") || value === "failed") return "danger";
-  if (value.includes("SELECTED") || value === "approved" || value === "SUCCEEDED") {
-    return "good";
-  }
-  if (value.includes("GENERATING") || value.includes("PROPOSING") || value === "PENDING" || value === "RUNNING") {
-    return "busy";
-  }
-  if (value === "proposed" || value.includes("READY") || value === "PARTIAL") {
-    return "review";
-  }
-  return "idle";
-}
-
-function isTerminalReady(status: string | null | undefined) {
-  return status === "SUCCEEDED" || status === "PARTIAL";
-}
-
-type ReviewStepId =
-  | "requirements"
-  | "brief"
-  | "storyboard"
-  | "shotprompt"
-  | "image"
-  | "video"
-  | "final";
-
-const reviewStepOrder: ReviewStepId[] = [
-  "requirements",
-  "brief",
-  "storyboard",
-  "shotprompt",
-  "image",
-  "video",
-  "final",
-];
-
-type ReviewModuleId = "product-brief" | "storyboard" | "shotprompt";
-
-function deriveActiveStep(vm: WorkbenchViewModel): ReviewStepId {
-  const hasRequirements = Boolean(vm.artifacts.promptRequirements?.isCurrent);
-  const brief = vm.artifacts.brief;
-  const storyboard = vm.artifacts.storyboard;
-  const shotPrompt = vm.artifacts.shotPrompt;
-  const hasActiveShotSet = Boolean(vm.workspaceStatus?.activeShotSet);
-  const hasShots = vm.shots.length > 0;
-  const allImagesSelected =
-    hasShots && vm.shots.every((shot) => Boolean(shot.selectedImageId));
-  const allVideosSelected =
-    hasShots && vm.shots.every((shot) => Boolean(shot.selectedVideoId));
-
-  if (!hasRequirements || !brief) return "requirements";
-  if (!brief.isCurrent) return "brief";
-  if (!storyboard || !storyboard.isCurrent) return "storyboard";
-  if (!shotPrompt || !shotPrompt.isCurrent || !hasActiveShotSet) return "shotprompt";
-  if (!allImagesSelected) return "image";
-  if (!allVideosSelected) return "video";
-  return "final";
-}
-
-function canOpenReviewStep(
-  vm: WorkbenchViewModel,
-  stepId: ReviewStepId,
-  defaultStep: ReviewStepId,
-) {
-  const defaultIndex = reviewStepOrder.indexOf(defaultStep);
-  const stepIndex = reviewStepOrder.indexOf(stepId);
-  if (stepIndex <= defaultIndex) return true;
-
-  switch (stepId) {
-    case "requirements":
-      return true;
-    case "brief":
-      return Boolean(vm.artifacts.brief);
-    case "storyboard":
-      return Boolean(vm.artifacts.storyboard);
-    case "shotprompt":
-      return Boolean(vm.artifacts.shotPrompt);
-    case "image":
-      return Boolean(vm.workspaceStatus?.activeShotSet) || vm.shots.length > 0;
-    case "video":
-      return vm.shots.some((shot) => Boolean(shot.selectedImageId));
-    case "final":
-      return Boolean(vm.workflow?.canComposeFinalVideo);
-  }
 }
 
 function StepRail({
@@ -145,55 +67,7 @@ function StepRail({
   onSelect: (step: ReviewStepId) => void;
   onShotSelect: (shotId: string) => void;
 }) {
-  const moduleUpstreamChanged = (moduleId: ReviewModuleId) =>
-    Boolean(vm.workspaceStatus?.modules?.[moduleId]?.upstream?.upstreamChanged);
-  const steps: Array<{
-    id: ReviewStepId;
-    label: string;
-    state: string;
-  }> = [
-    {
-      id: "requirements",
-      label: "创作要求与上传素材",
-      state: vm.artifacts.promptRequirements?.isCurrent ? "已确认" : "待提交",
-    },
-    {
-      id: "brief",
-      label: "商品卖点审核",
-      state: moduleUpstreamChanged("product-brief")
-        ? "上游已变化"
-        : (vm.artifacts.brief?.status ?? "等待生成"),
-    },
-    {
-      id: "storyboard",
-      label: "分镜规划",
-      state: moduleUpstreamChanged("storyboard")
-        ? "上游已变化"
-        : (vm.artifacts.storyboard?.status ?? "等待生成"),
-    },
-    {
-      id: "shotprompt",
-      label: "分镜生成要求",
-      state: moduleUpstreamChanged("shotprompt")
-        ? "上游已变化"
-        : (vm.artifacts.shotPrompt?.status ?? "等待生成"),
-    },
-    {
-      id: "image",
-      label: "分镜图选择",
-      state: `${vm.shots.filter((shot) => shot.selectedImageId).length}/${vm.shots.length || 0}`,
-    },
-    {
-      id: "video",
-      label: "分镜视频选择",
-      state: `${vm.shots.filter((shot) => shot.selectedVideoId).length}/${vm.shots.length || 0}`,
-    },
-    {
-      id: "final",
-      label: "生成成片",
-      state: vm.workflow?.canComposeFinalVideo ? "可生成" : "等待选择",
-    },
-  ];
+  const steps = deriveReviewStepIndicators(vm);
 
   return (
     <aside className="review-rail">
@@ -220,7 +94,7 @@ function StepRail({
                 <span className="review-step__index">{index + 1}</span>
                 <span className="review-step__label">{step.label}</span>
                 <span
-                  className={`review-step__state review-step__state--${statusTone(step.state)}`}
+                  className={`review-step__state review-step__state--${step.tone}`}
                 >
                   {step.state}
                 </span>
@@ -257,6 +131,9 @@ function StepRail({
                 />
               )}
               <strong>{shot.status}</strong>
+              {shot.upstream?.upstreamChanged ? (
+                <span className="review-shot-nav__upstream">上游已变化</span>
+              ) : null}
             </button>
           ))}
         </section>
@@ -265,17 +142,34 @@ function StepRail({
   );
 }
 
-function RightRail({ vm }: { vm: WorkbenchViewModel }) {
+function RightRail({
+  vm,
+  onReturnToRequirements,
+}: {
+  vm: WorkbenchViewModel;
+  onReturnToRequirements: () => void;
+}) {
   const assets = vm.materialLibrary?.assets ?? [];
   const [deletingRef, setDeletingRef] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const materialApproved = Boolean(vm.artifacts.material?.isCurrent);
+  const shouldResetAfterDelete = shouldResetFlowAfterMaterialDelete(
+    vm.artifacts.promptRequirements,
+  );
 
   const deleteMaterial = async (ref: string) => {
+    if (
+      shouldResetAfterDelete &&
+      !window.confirm(materialDeleteResetConfirmMessage)
+    ) {
+      return;
+    }
     setDeletingRef(ref);
     setDeleteError(null);
     try {
       await deleteWorkspaceMaterial({ workspaceId: vm.workspaceId, ref });
+      if (shouldResetAfterDelete) {
+        onReturnToRequirements();
+      }
       await vm.actions.refresh();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : String(error));
@@ -315,10 +209,10 @@ function RightRail({ vm }: { vm: WorkbenchViewModel }) {
                   <button
                     type="button"
                     className="review-secondary"
-                    disabled={deletingRef === asset.ref || materialApproved}
+                    disabled={deletingRef === asset.ref}
                     title={
-                      materialApproved
-                        ? "素材已进入审核链路，如需更换请回到创作要求重新提交"
+                      shouldResetAfterDelete
+                        ? `删除 ${filename}，流程将返回模块一`
                         : `删除 ${filename}`
                     }
                     onClick={() => deleteMaterial(asset.ref)}
@@ -331,9 +225,9 @@ function RightRail({ vm }: { vm: WorkbenchViewModel }) {
           </div>
         )}
         {deleteError ? <p className="review-error">{deleteError}</p> : null}
-        {materialApproved ? (
+        {shouldResetAfterDelete ? (
           <p className="review-muted">
-            素材已进入审核链路，如需更换请回到创作要求重新提交。
+            删除已提交后的素材会让流程返回模块一，避免后续模块继续引用已删除素材。
           </p>
         ) : null}
       </section>
@@ -598,7 +492,7 @@ function RequirementsStart({
               />
             </label>
             <div className="reference-video-import__actions">
-              <label className="review-secondary">
+              <label className="review-secondary reference-video-import__upload">
                 <Upload size={16} />
                 上传参考视频
                 <input
@@ -1764,7 +1658,7 @@ function ImageSelectionPanel({
                 onSubmit={(prompt) =>
                   vm.actions.regenerateImage({
                     baseArtifactId: round.artifact.id,
-                    prompt,
+                    userDirection: prompt.promptText,
                   })
                 }
               />
@@ -1990,6 +1884,12 @@ function CandidateImages({
           {round.batch?.succeededCount ?? 0}/{round.batch?.requestedCount ?? round.candidates.length}
         </span>
       </div>
+      {round.upstream?.upstreamChanged ? (
+        <div className="review-upstream-note">
+          <Clock3 size={15} />
+          <span>本轮分镜图基于旧上游；当前选择仍可用，重新生成会使用最新内容。</span>
+        </div>
+      ) : null}
       <div className="review-image-grid">
         {round.candidates.map((candidate) => {
           const isStaged = candidate.id === stagedId;
@@ -2138,6 +2038,12 @@ function CandidateVideos({
           {round.batch?.succeededCount ?? 0}/{round.batch?.requestedCount ?? round.candidates.length}
         </span>
       </div>
+      {round.upstream?.upstreamChanged ? (
+        <div className="review-upstream-note">
+          <Clock3 size={15} />
+          <span>本轮分镜视频基于旧上游；当前选择仍可用，重新生成会使用最新内容。</span>
+        </div>
+      ) : null}
       <div className="review-video-grid">
         {round.candidates.map((candidate) => (
           <div
@@ -2322,7 +2228,10 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
             }}
             onImageSelectionConfirmed={() => setManualShotSelectionId(null)}
           />
-          <RightRail vm={vm} />
+          <RightRail
+            vm={vm}
+            onReturnToRequirements={() => setSelectedStep("requirements")}
+          />
         </main>
       )}
       {vm.busy || vm.refreshing || vm.hasActiveGeneration ? (
