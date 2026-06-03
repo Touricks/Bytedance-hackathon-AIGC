@@ -11,7 +11,6 @@ export interface PollableRound {
     status: string;
   } | null;
 }
-
 export function roundPollingInterval(input: {
   activeBatchId: string | null | undefined;
   rounds: PollableRound[] | null | undefined;
@@ -28,4 +27,3 @@ export function roundPollingInterval(input: {
     ? false
     : input.intervalMs;
 }
-

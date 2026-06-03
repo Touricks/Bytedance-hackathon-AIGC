@@ -19,7 +19,11 @@ export interface ImagePromptArtifact {
 
 export interface ImagePromptReferenceUsage {
   assetId: string;
-  usage: "product_identity" | "style_reference" | "scene_reference";
+  usage:
+    | "product_identity"
+    | "style_reference"
+    | "scene_reference"
+    | "composition_reference";
   instruction: string;
 }
 
@@ -62,7 +66,8 @@ export function regenerateImagePrompt(
   shotId: string,
   body: {
     baseArtifactId: string;
-    userDirection?: string;
+    feedbackImageCandidateId: string;
+    userDirection: string;
   },
 ) {
   return fetchJson<

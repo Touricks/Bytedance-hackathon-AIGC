@@ -1,6 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Collapse from "@mui/material/Collapse";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import {
   ArrowLeft,
+  Ban,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Clock3,
   Download,
@@ -8,13 +20,31 @@ import {
   Film,
   Image as ImageIcon,
   Layers3,
+  MessageSquare,
+  PackageCheck,
   Play,
   RefreshCw,
+  Send,
+  Tags,
   Trash2,
   Upload,
   Wand2,
 } from "lucide-react";
+import {
+  STORYBOARD_SCRIPT_DEFAULT_DURATIONS,
+  STORYBOARD_SCRIPT_DEFAULT_PURPOSES,
+  STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+  STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
+  DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
+  redistributeP0StoryboardDurations,
+  storyboardScriptVoiceoverCount,
+  storyboardScriptVoiceoverLimit,
+  validateP0StoryboardScript,
+  type ShotPromptVoiceProfile,
+} from "@aigc-video/shared";
 import type {
+  CreativeRequirementTemplate,
+  MaterialIntakeArtifact,
   ProductBriefArtifact,
   ShotPromptArtifact,
   StoryboardArtifact,
@@ -24,13 +54,16 @@ import {
   toWorkspaceMaterialUrl,
   deleteWorkspaceMaterial,
   importReferenceVideoRequirements,
+  listCreativeRequirementTemplates,
   type PromptRequirementsData,
+  type ProposeWorkspaceBriefInput,
   type ReferenceVideoRequirementsImportResult,
   uploadWorkspaceMaterial,
   workspaceMaterialFileRejectionReason,
 } from "../../lib/api/client.js";
-import type { ImagePromptJson } from "../../lib/api/imagePrompt.js";
+import type { ShotSetShot } from "../../lib/api/shots.js";
 import { materialAssetFilename } from "../../lib/materials.js";
+import { shotStatusLabel } from "../../lib/shotStatusLabel.js";
 import type { WorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
 import { useWorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
 import {
@@ -41,6 +74,7 @@ import {
 import {
   canOpenReviewStep,
   deriveActiveStep,
+  deriveCreativeActivity,
   deriveReviewStepIndicators,
   isTerminalReady,
   materialDeleteResetConfirmMessage,
@@ -48,10 +82,109 @@ import {
   statusTone,
   type ReviewStepId,
 } from "./reviewFlow.js";
+import {
+  deriveMaterialPreviewMode,
+  materialPreviewModeLabel,
+  type MaterialPreviewMode,
+} from "./materialPreview.js";
+import {
+  briefToForm,
+  buildProductBriefRegenerationInput,
+  formToBrief,
+  type ProductBriefFormState,
+} from "./productBriefForm.js";
 
 function backToWorkspaces() {
   window.history.pushState({}, "", "/");
   window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function shortEntityId(id: string | null | undefined) {
+  if (!id) return "未创建";
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
+function formatReviewTime(value: string | null | undefined) {
+  if (!value) return "时间未知";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatShotDuration(shot: Pick<ShotSetShot, "defaultDurationSec">) {
+  return typeof shot.defaultDurationSec === "number"
+    ? `约 ${Math.round(shot.defaultDurationSec)} 秒`
+    : "时长待定";
+}
+
+function cssAspectRatio(value: string | null | undefined) {
+  const match = value?.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return `${width} / ${height}`;
+}
+
+function MaterialAssetPreview({
+  kind,
+  src,
+  filename,
+  className,
+}: {
+  kind: MaterialIntakeArtifact["assets"][number]["kind"];
+  src: string;
+  filename: string;
+  className: string;
+}) {
+  const [mode, setMode] = useState<MaterialPreviewMode>(() =>
+    deriveMaterialPreviewMode({ kind }),
+  );
+
+  useEffect(() => {
+    setMode(deriveMaterialPreviewMode({ kind }));
+  }, [kind, src]);
+
+  return (
+    <div
+      className={`material-asset-preview material-asset-preview--${mode} ${className}`}
+      data-preview-mode={mode}
+    >
+      {kind === "image" ? (
+        <img
+          src={src}
+          alt={filename}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            setMode(
+              deriveMaterialPreviewMode({
+                kind,
+                width: image.naturalWidth,
+                height: image.naturalHeight,
+              }),
+            );
+          }}
+        />
+      ) : (
+        <div
+          className="material-asset-preview__file-cover"
+          aria-label={`${filename} 文件封面`}
+        >
+          <FileText size={22} />
+        </div>
+      )}
+      <span className="material-asset-preview__badge">
+        {materialPreviewModeLabel(mode)}
+      </span>
+    </div>
+  );
 }
 
 function StepRail({
@@ -122,7 +255,7 @@ function StepRail({
                 <img
                   className="review-shot-nav__thumb"
                   src={toAbsoluteAssetUrl(shot.selectedImageUrl)}
-                  alt={`Shot ${shot.orderIndex + 1} 已选分镜图`}
+                  alt={`分镜 ${shot.orderIndex + 1} 已选分镜图`}
                 />
               ) : (
                 <span
@@ -130,7 +263,7 @@ function StepRail({
                   aria-hidden="true"
                 />
               )}
-              <strong>{shot.status}</strong>
+              <strong>{shotStatusLabel(shot.status)}</strong>
               {shot.upstream?.upstreamChanged ? (
                 <span className="review-shot-nav__upstream">上游已变化</span>
               ) : null}
@@ -145,9 +278,11 @@ function StepRail({
 function RightRail({
   vm,
   onReturnToRequirements,
+  onSelectStep,
 }: {
   vm: WorkbenchViewModel;
   onReturnToRequirements: () => void;
+  onSelectStep: (step: ReviewStepId) => void;
 }) {
   const assets = vm.materialLibrary?.assets ?? [];
   const [deletingRef, setDeletingRef] = useState<string | null>(null);
@@ -155,6 +290,7 @@ function RightRail({
   const shouldResetAfterDelete = shouldResetFlowAfterMaterialDelete(
     vm.artifacts.promptRequirements,
   );
+  const activity = deriveCreativeActivity(vm);
 
   const deleteMaterial = async (ref: string) => {
     if (
@@ -197,15 +333,15 @@ function RightRail({
                   className="review-asset"
                   title={asset.description}
                 >
-                  {asset.kind === "image" ? (
-                    <img
-                      src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
-                      alt={filename}
-                    />
-                  ) : (
-                    <FileText size={18} />
-                  )}
-                  <span title={filename}>{filename}</span>
+                  <MaterialAssetPreview
+                    kind={asset.kind}
+                    src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
+                    filename={filename}
+                    className="review-asset__preview"
+                  />
+                  <span className="review-asset__name" title={filename}>
+                    {filename}
+                  </span>
                   <button
                     type="button"
                     className="review-secondary"
@@ -234,20 +370,24 @@ function RightRail({
       <section className="review-side__section">
         <div className="review-side__head">
           <Clock3 size={16} />
-          <h2>创作会话追踪</h2>
+          <h2>创作动态</h2>
         </div>
-        {vm.traces.length === 0 ? (
-          <p className="review-muted">暂无追踪事件。</p>
-        ) : (
-          <div className="review-traces">
-            {vm.traces.map((trace) => (
-              <div key={trace.id} className="review-trace">
-                <span>{trace.traceType}</span>
-                <strong>{trace.name}</strong>
-              </div>
-            ))}
-          </div>
-        )}
+        <div
+          className={`review-activity review-activity--${activity.tone}`}
+          aria-live="polite"
+        >
+          <strong>{activity.title}</strong>
+          <p>{activity.message}</p>
+          {activity.action ? (
+            <button
+              type="button"
+              className="review-secondary review-activity__action"
+              onClick={() => onSelectStep(activity.action!.stepId)}
+            >
+              {activity.action.label}
+            </button>
+          ) : null}
+        </div>
       </section>
     </aside>
   );
@@ -277,6 +417,12 @@ export type RequirementsFormState = {
   shotImageGlobal: string;
   shotVideoGlobal: string;
 };
+
+export function applyCreativeRequirementTemplate(
+  template: CreativeRequirementTemplate,
+): RequirementsFormState {
+  return { ...template.values };
+}
 
 export function requirementFormFromArtifact(
   data: PromptRequirementsData | null,
@@ -373,6 +519,14 @@ function RequirementsStart({
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceAnalysis, setReferenceAnalysis] =
     useState<ReferenceVideoRequirementsImportResult["analysis"] | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(true);
+  const [templateMessage, setTemplateMessage] = useState<string | null>(null);
+  const templateQuery = useQuery({
+    queryKey: ["creative-requirement-templates"],
+    queryFn: listCreativeRequirementTemplates,
+    staleTime: Infinity,
+  });
+  const creativeRequirementTemplates = templateQuery.data?.templates ?? [];
 
   useEffect(() => {
     setForm(initialForm);
@@ -380,6 +534,11 @@ function RequirementsStart({
 
   const update = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
+
+  const applyTemplate = (template: CreativeRequirementTemplate) => {
+    setForm(applyCreativeRequirementTemplate(template));
+    setTemplateMessage(`已套用「${template.name}」`);
+  };
 
   const uploadFiles = async (files: File[]) => {
     const rejected = files
@@ -476,7 +635,7 @@ function RequirementsStart({
         <span>首屏</span>
         <h1>创作要求 + 上传素材</h1>
         <p>
-          先确认商家的创作要求和商品素材。提交后系统会自动完成素材理解，并停在商品卖点审核。
+          先确认商家的创作要求和商品素材。提交后系统会自动完成素材理解，并等待你审核素材解读。
         </p>
       </div>
       {!requirementsArtifact?.isCurrent ? (
@@ -493,7 +652,6 @@ function RequirementsStart({
             </label>
             <div className="reference-video-import__actions">
               <label className="review-secondary reference-video-import__upload">
-                <Upload size={16} />
                 上传参考视频
                 <input
                   type="file"
@@ -558,6 +716,57 @@ function RequirementsStart({
         </span>
       </div>
       {uploadMessage ? <p className="review-error">{uploadMessage}</p> : null}
+      <section className="requirement-template-panel">
+        <Button
+          className="requirement-template-panel__toggle"
+          aria-expanded={templatesOpen}
+          aria-controls="requirement-template-options"
+          onClick={() => setTemplatesOpen((open) => !open)}
+          size="small"
+          variant="text"
+        >
+          {templatesOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <span>创作要求模板</span>
+        </Button>
+        <Collapse in={templatesOpen} timeout="auto" unmountOnExit>
+          <div
+            id="requirement-template-options"
+            className="requirement-template-panel__body"
+          >
+            {templateQuery.isLoading ? (
+              <Button
+                className="requirement-template-option"
+                disabled
+                variant="outlined"
+              >
+                <span>模板加载中</span>
+                <small>稍后即可套用</small>
+              </Button>
+            ) : null}
+            {templateQuery.isError ? (
+              <p className="review-error requirement-template-panel__error">
+                创作要求模板暂不可用
+              </p>
+            ) : null}
+            {creativeRequirementTemplates.map((template) => (
+              <Button
+                key={template.id}
+                className="requirement-template-option"
+                onClick={() => applyTemplate(template)}
+                variant="outlined"
+              >
+                <span>{template.name}</span>
+                <small>{template.summary}</small>
+              </Button>
+            ))}
+          </div>
+        </Collapse>
+        {templateMessage ? (
+          <p className="review-muted requirement-template-panel__message">
+            {templateMessage}
+          </p>
+        ) : null}
+      </section>
       <div className="review-form-grid">
         <label>
           图像风格
@@ -634,6 +843,301 @@ function RequirementsStart({
   );
 }
 
+const materialRoleOptions: Array<MaterialIntakeArtifact["assets"][number]["role"]> = [
+  "product_main",
+  "product_detail",
+  "packaging",
+  "logo",
+  "demo_video",
+  "spec_text",
+  "reference",
+  "other",
+];
+
+const materialRelevanceOptions: Array<
+  MaterialIntakeArtifact["assets"][number]["relevance"]
+> = ["high", "medium", "low"];
+
+const materialRoleLabels: Record<
+  MaterialIntakeArtifact["assets"][number]["role"],
+  string
+> = {
+  product_main: "主商品",
+  product_detail: "商品细节",
+  packaging: "包装",
+  logo: "品牌标识",
+  demo_video: "演示视频",
+  spec_text: "规格文本",
+  reference: "参考素材",
+  other: "其他",
+};
+
+const materialRelevanceLabels: Record<
+  MaterialIntakeArtifact["assets"][number]["relevance"],
+  string
+> = {
+  high: "高",
+  medium: "中",
+  low: "低",
+};
+
+function normalizeMaterialIntakeDraft(
+  draft: MaterialIntakeArtifact,
+): MaterialIntakeArtifact {
+  return {
+    ...draft,
+    assets: draft.assets.map((asset) => ({
+      ...asset,
+      description: asset.description.trim(),
+    })),
+  };
+}
+
+function MaterialIntakeReview({
+  vm,
+  onActionComplete,
+}: {
+  vm: WorkbenchViewModel;
+  onActionComplete: () => void;
+}) {
+  const artifact = vm.artifacts.material;
+  const initialData = useMemo<MaterialIntakeArtifact>(
+    () =>
+      artifact?.data ?? {
+        scannedAt: new Date(0).toISOString(),
+        primaryProductRef: "",
+        assets: [],
+        rejected: [],
+      },
+    [artifact?.data],
+  );
+  const [draft, setDraft] = useState<MaterialIntakeArtifact>(initialData);
+
+  useEffect(() => {
+    setDraft(initialData);
+  }, [artifact?.id, initialData]);
+
+	  if (!artifact) {
+	    return (
+	      <ProposalPlaceholder
+        title="素材解读"
+        description="创作要求确认后，系统会清点上传素材并生成可审核的素材标签。"
+        actionLabel="生成素材解读"
+        busy={vm.busy}
+        onAction={() => {
+          vm.actions.runMaterialIntake();
+          onActionComplete();
+        }}
+      />
+    );
+  }
+
+  const updateAsset = (
+    ref: string,
+    patch: Partial<MaterialIntakeArtifact["assets"][number]>,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      assets: current.assets.map((asset) =>
+        asset.ref === ref ? { ...asset, ...patch } : asset,
+      ),
+      primaryProductRef:
+        patch.included === false && current.primaryProductRef === ref
+          ? (current.assets.find((asset) => asset.ref !== ref && asset.included)?.ref ??
+            current.primaryProductRef)
+          : current.primaryProductRef,
+    }));
+  };
+
+  const includedAssets = draft.assets.filter((asset) => asset.included);
+  const hasBlankDescriptions = draft.assets.some(
+    (asset) => asset.description.trim().length === 0,
+  );
+  const canApprove = includedAssets.some(
+    (asset) => asset.ref === draft.primaryProductRef && asset.usable,
+  ) && !hasBlankDescriptions;
+
+  return (
+    <section className="review-panel">
+      <div className="review-panel__header">
+        <span>{artifact.isCurrent ? "生效创作产物" : "待审创作产物"}</span>
+        <h1>素材解读</h1>
+        <p>
+          确认每个上传素材的角色、相关性和是否纳入后，再生成商品卖点审核。
+        </p>
+      </div>
+      <div className="material-intake-summary">
+        <div>
+          <PackageCheck size={18} />
+          <span>主商品素材</span>
+        </div>
+        <select
+          value={draft.primaryProductRef}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              primaryProductRef: event.target.value,
+            }))
+          }
+        >
+          {includedAssets.map((asset) => (
+            <option key={asset.ref} value={asset.ref}>
+              {materialAssetFilename(asset.ref)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="material-intake-grid">
+        {draft.assets.map((asset) => {
+          const filename = materialAssetFilename(asset.ref);
+          return (
+            <article key={asset.ref} className="material-intake-card">
+              <MaterialAssetPreview
+                kind={asset.kind}
+                src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
+                filename={filename}
+                className="material-intake-card__preview"
+              />
+              <div className="material-intake-card__body">
+                <div className="material-intake-card__title">
+                  <strong title={filename}>{filename}</strong>
+                  <button
+                    type="button"
+                    className={`material-intake-card__toggle ${
+                      asset.included ? "is-included" : "is-excluded"
+                    }`}
+                    aria-pressed={asset.included}
+                    disabled={!asset.usable}
+                    title={
+                      asset.usable
+                        ? asset.included
+                          ? "点击后本轮不使用该素材"
+                          : "点击后纳入本轮生成链路"
+                        : "系统判定该素材不可用"
+                    }
+                    onClick={() =>
+                      updateAsset(asset.ref, { included: !asset.included })
+                    }
+                  >
+                    {asset.included ? <CheckCircle2 size={14} /> : <Ban size={14} />}
+                    <span>
+                      {asset.usable
+                        ? asset.included
+                          ? "已纳入"
+                          : "不纳入"
+                        : "系统拒绝"}
+                    </span>
+                  </button>
+                </div>
+                <div className="material-intake-fields">
+                  <label>
+                    素材标签
+                    <select
+                      value={asset.role}
+                      onChange={(event) =>
+                        updateAsset(asset.ref, {
+                          role: event.target.value as MaterialIntakeArtifact["assets"][number]["role"],
+                        })
+                      }
+                    >
+                      {materialRoleOptions.map((role) => (
+                        <option key={role} value={role}>
+                          {materialRoleLabels[role]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    相关性
+                    <select
+                      value={asset.relevance}
+                      onChange={(event) =>
+                        updateAsset(asset.ref, {
+                          relevance:
+                            event.target.value as MaterialIntakeArtifact["assets"][number]["relevance"],
+                        })
+                      }
+                    >
+                      {materialRelevanceOptions.map((relevance) => (
+                        <option key={relevance} value={relevance}>
+                          {materialRelevanceLabels[relevance]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="material-intake-fields__wide">
+                    解读说明（必填）
+                    <textarea
+                      rows={3}
+                      value={asset.description}
+                      required
+                      aria-invalid={asset.description.trim().length === 0}
+                      placeholder="补充素材内容、用途或关键视觉信息，不能为空。"
+                      onChange={(event) =>
+                        updateAsset(asset.ref, { description: event.target.value })
+                      }
+                    />
+                    {asset.description.trim().length === 0 ? (
+                      <span className="material-intake-fields__error">
+                        解读说明不能为空
+                      </span>
+                    ) : (
+                      <span className="material-intake-fields__hint">
+                        这段说明会作为后续商品卖点、分镜和单镜生成的素材依据。
+                      </span>
+                    )}
+                  </label>
+                </div>
+                <div className="material-intake-meta">
+                  <span>{asset.usable ? "可用于生成" : "系统判定不可用"}</span>
+                  <span>{Math.round(asset.bytes / 1024)} KB</span>
+                  <code>{asset.ref}</code>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {draft.rejected.length > 0 ? (
+        <div className="material-intake-rejected">
+          <Tags size={16} />
+          <div>
+            <strong>系统拒绝素材</strong>
+            {draft.rejected.map((item) => (
+              <span key={item.ref}>
+                {materialAssetFilename(item.ref)}：{item.reason}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div className="review-panel__actions">
+        <button
+          type="button"
+          className="review-primary"
+          disabled={vm.busy || !canApprove}
+          onClick={() => {
+            vm.actions.approveMaterialIntakeAndProposeBrief(
+              normalizeMaterialIntakeDraft(draft),
+            );
+            onActionComplete();
+          }}
+        >
+          <CheckCircle2 size={16} />
+          {vm.pending?.productBrief
+            ? "正在生成商品卖点..."
+            : "批准素材解读并生成商品卖点"}
+        </button>
+        <span className="review-action-note">
+          {hasBlankDescriptions
+            ? "每个素材都需要填写解读说明。"
+            : "素材标签只描述素材角色，不会修改上传文件本身。"}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function ProposalPlaceholder({
   title,
   description,
@@ -669,20 +1173,10 @@ function ProposalPlaceholder({
   );
 }
 
-type ProductBriefFormState = {
-  productName: string;
-  category: string;
-  coreSellingPoint: string;
-  audienceWho: string;
-  audiencePainOrDesire: string;
-  brandTone: string;
-  platform: string;
-  keyFacts: string;
-  proof: string;
-  bannedExpressions: string;
-  offer: string;
-  landingInfo: string;
-  assumptions: string;
+type ProductBriefChatMessage = {
+  id: string;
+  role: "merchant" | "system";
+  text: string;
 };
 
 function linesFromText(value: string) {
@@ -692,83 +1186,75 @@ function linesFromText(value: string) {
     .filter(Boolean);
 }
 
-function briefToForm(brief: ProductBriefArtifact): ProductBriefFormState {
-  return {
-    productName: brief.product.name,
-    category: brief.product.category,
-    coreSellingPoint: brief.coreSellingPoint,
-    audienceWho: brief.audience.who,
-    audiencePainOrDesire: brief.audience.painOrDesire,
-    brandTone: brief.brandTone,
-    platform: brief.platform,
-    keyFacts: brief.product.keyFacts.join("\n"),
-    proof: brief.proof.join("\n"),
-    bannedExpressions: brief.bannedExpressions.join("\n"),
-    offer: brief.offer ?? "",
-    landingInfo: brief.landingInfo ?? "",
-    assumptions: brief.assumptions.join("\n"),
-  };
-}
-
-function formToBrief(
-  form: ProductBriefFormState,
-  current: ProductBriefArtifact,
-): ProductBriefArtifact {
-  return {
-    ...current,
-    product: {
-      ...current.product,
-      name: form.productName.trim(),
-      category: form.category.trim(),
-      keyFacts: linesFromText(form.keyFacts),
-    },
-    audience: {
-      ...current.audience,
-      who: form.audienceWho.trim(),
-      painOrDesire: form.audiencePainOrDesire.trim(),
-    },
-    coreSellingPoint: form.coreSellingPoint.trim(),
-    proof: linesFromText(form.proof),
-    offer: form.offer.trim() || null,
-    platform: form.platform.trim(),
-    brandTone: form.brandTone.trim(),
-    bannedExpressions: linesFromText(form.bannedExpressions),
-    landingInfo: form.landingInfo.trim() || null,
-    assumptions: linesFromText(form.assumptions),
-  };
-}
-
 function ProductBriefReviewForm({
   artifactId,
   brief,
   busy,
   onApprove,
+  onRegenerate,
   onActionComplete,
 }: {
   artifactId: string;
   brief: ProductBriefArtifact;
   busy: boolean;
   onApprove: (data: ProductBriefArtifact) => void;
+  onRegenerate: (input: Omit<ProposeWorkspaceBriefInput, "workspaceId">) => Promise<unknown>;
   onActionComplete: () => void;
 }) {
   const [form, setForm] = useState(() => briefToForm(brief));
-  const [draft, setDraft] = useState<ProductBriefArtifact>(brief);
-  const [submitted, setSubmitted] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<ProductBriefChatMessage[]>([]);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatMessageCounter = useRef(0);
 
   useEffect(() => {
     setForm(briefToForm(brief));
-    setDraft(brief);
-    setSubmitted(false);
+    setChatError(null);
   }, [artifactId, brief]);
 
   const update = (key: keyof ProductBriefFormState, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
-    setSubmitted(false);
   };
 
-  const submitForm = () => {
-    setDraft((current) => formToBrief(form, current));
-    setSubmitted(true);
+  const nextChatMessageId = (role: ProductBriefChatMessage["role"]) => {
+    chatMessageCounter.current += 1;
+    return `${role}-${artifactId}-${chatMessageCounter.current}`;
+  };
+
+  const regenerateBrief = async () => {
+    const userDirection = chatInput.trim();
+    if (!userDirection || busy) return;
+    setChatMessages((current) => [
+      ...current,
+      {
+        id: nextChatMessageId("merchant"),
+        role: "merchant",
+        text: userDirection,
+      },
+    ]);
+    setChatInput("");
+    setChatError(null);
+    try {
+      await onRegenerate(
+        buildProductBriefRegenerationInput({
+          artifactId,
+          brief,
+          form,
+          userDirection,
+        }),
+      );
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: nextChatMessageId("system"),
+          role: "system",
+          text: "已生成新的待审商品卖点，请检查后再批准。",
+        },
+      ]);
+      onActionComplete();
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   return (
@@ -776,8 +1262,58 @@ function ProductBriefReviewForm({
       <div className="review-panel__header">
         <span>待审创作产物</span>
         <h1>商品卖点审核</h1>
-        <p>确认商品名、核心卖点、人群、语气和禁用表达后，再生成分镜规划。</p>
+        <p>确认商品名、核心卖点、人群、语气和禁用表达后，再生成分镜脚本。</p>
       </div>
+      <section className="product-brief-chat" aria-label="调整商品卖点">
+        <div className="product-brief-chat__head">
+          <MessageSquare size={18} />
+          <div>
+            <h2>调整商品卖点</h2>
+            <p>描述希望强化或改写的方向，系统会基于当前表单草稿重新生成待审商品卖点。</p>
+          </div>
+        </div>
+        <ul className="product-brief-chat__messages" aria-live="polite">
+          {chatMessages.length === 0 ? (
+            <li className="product-brief-chat__hint">
+              例如：更突出送礼场景，语气更年轻，减少材质描述。
+            </li>
+          ) : (
+            chatMessages.map((message) => (
+              <li
+                key={message.id}
+                className={`product-brief-chat__message product-brief-chat__message--${message.role}`}
+              >
+                {message.text}
+              </li>
+            ))
+          )}
+        </ul>
+        <div className="product-brief-chat__form">
+          <label>
+            补充要求
+            <textarea
+              rows={3}
+              maxLength={1000}
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+              placeholder="告诉系统这版商品卖点需要怎样调整"
+            />
+          </label>
+          <div className="product-brief-chat__actions">
+            <span className="product-brief-chat__meta">{chatInput.trim().length}/1000</span>
+            <button
+              type="button"
+              className="review-primary"
+              onClick={() => void regenerateBrief()}
+              disabled={busy || chatInput.trim().length === 0}
+            >
+              <Send size={16} />
+              {busy ? "正在重新生成..." : "重新生成商品卖点"}
+            </button>
+          </div>
+          {chatError ? <p className="product-brief-chat__error">{chatError}</p> : null}
+        </div>
+      </section>
       <div className="review-business-form" aria-label="商品卖点表单">
         <label>
           商品名称
@@ -881,34 +1417,17 @@ function ProductBriefReviewForm({
         </label>
       </div>
       <div className="review-panel__actions">
-        <button type="button" className="review-secondary" onClick={submitForm}>
-          <FileText size={16} />
-          提交表单到结构化内容
-        </button>
-        <span className="review-action-note">
-          {submitted ? "表单内容已同步到后端 payload。" : "修改表单后，请先同步到 payload。"}
-        </span>
-      </div>
-      <label className="review-payload-debug">
-        <span>后端 payload（只读）</span>
-        <textarea
-          aria-label="后端 payload（只读）"
-          readOnly
-          value={JSON.stringify(draft, null, 2)}
-        />
-      </label>
-      <div className="review-panel__actions">
         <button
           type="button"
           className="review-primary"
           onClick={() => {
-            onApprove(draft);
+            onApprove(formToBrief(form, brief));
             onActionComplete();
           }}
           disabled={busy}
         >
           <CheckCircle2 size={16} />
-          批准商品卖点并生成分镜规划
+          批准商品卖点并生成分镜脚本
         </button>
       </div>
     </section>
@@ -923,13 +1442,18 @@ function ProductBriefReview({
   onActionComplete: () => void;
 }) {
   const artifact = vm.artifacts.brief;
+  const pending = Boolean(vm.pending?.productBrief);
   if (!artifact) {
     return (
       <ProposalPlaceholder
         title="商品卖点审核"
-        description="素材理解完成后，需要生成商品卖点供商家确认。"
-        actionLabel="生成商品卖点"
-        busy={vm.busy}
+        description={
+          pending
+            ? "系统正在根据已批准的素材解读生成商品卖点，完成后会停在这里供你审核。"
+            : "素材理解完成后，需要生成商品卖点供商家确认。"
+        }
+        actionLabel={pending ? "正在生成商品卖点..." : "生成商品卖点"}
+        busy={vm.busy || pending}
         onAction={() => {
           vm.actions.proposeBrief();
           onActionComplete();
@@ -938,18 +1462,20 @@ function ProductBriefReview({
     );
   }
   const brief = artifact.data;
+  const storyboardPending = Boolean(vm.pending?.storyboard);
   return (
     <ProductBriefReviewForm
       artifactId={artifact.id}
       brief={brief}
-      busy={vm.busy}
+      busy={vm.busy || storyboardPending}
       onApprove={vm.actions.approveBriefAndProposeStoryboard}
+      onRegenerate={vm.actions.proposeBrief}
       onActionComplete={onActionComplete}
     />
   );
 }
 
-type StoryboardShotFormState = {
+export type StoryboardShotFormState = {
   purpose: string;
   durationSec: string;
   scene: string;
@@ -959,26 +1485,81 @@ type StoryboardShotFormState = {
   transition: string;
 };
 
-type StoryboardFormState = {
+export type StoryboardFormState = {
   narrative: string;
   totalDurationSec: string;
   assumptions: string;
   shots: StoryboardShotFormState[];
 };
 
-function storyboardToForm(storyboard: StoryboardArtifact): StoryboardFormState {
+function compactText(values: Array<string | undefined>) {
+  return values.map((value) => value?.trim()).filter(Boolean).join("；");
+}
+
+function storyboardScriptFormShots(storyboard: StoryboardArtifact) {
+  if (storyboard.shots.length === STORYBOARD_SCRIPT_DEFAULT_DURATIONS.length) {
+    return storyboard.shots;
+  }
+
+  const firstShot = storyboard.shots[0];
+  const lastShot = storyboard.shots.at(-1) ?? firstShot;
+  const proofShots =
+    storyboard.shots.length > 2
+      ? storyboard.shots.slice(1, -1)
+      : storyboard.shots.slice(1);
+  const proofBase = proofShots[0] ?? lastShot ?? firstShot;
+  const materialRef =
+    firstShot?.productAssetRef ||
+    proofBase?.productAssetRef ||
+    lastShot?.productAssetRef ||
+    "";
+
+  return [firstShot, proofBase, lastShot].map((shot, index) => {
+    const source = shot ?? firstShot ?? proofBase ?? lastShot;
+    return {
+      ...source,
+      index,
+      purpose: STORYBOARD_SCRIPT_DEFAULT_PURPOSES[index]!,
+      durationSec: STORYBOARD_SCRIPT_DEFAULT_DURATIONS[index]!,
+      productAssetRef: source?.productAssetRef || materialRef,
+      scene:
+        index === 1
+          ? compactText(proofShots.map((item) => item.scene)) || source?.scene || ""
+          : source?.scene || "",
+      visualDirection:
+        index === 1
+          ? compactText(proofShots.map((item) => item.visualDirection)) ||
+            source?.visualDirection ||
+            ""
+          : source?.visualDirection || "",
+      voiceover:
+        index === 1
+          ? compactText(proofShots.map((item) => item.voiceover)) ||
+            source?.voiceover ||
+            ""
+          : source?.voiceover || "",
+    };
+  });
+}
+
+export function storyboardToForm(storyboard: StoryboardArtifact): StoryboardFormState {
+  const shots = storyboardScriptFormShots(storyboard);
   return {
     narrative: storyboard.narrative,
-    totalDurationSec: String(storyboard.totalDurationSec),
+    totalDurationSec: String(STORYBOARD_SCRIPT_TOTAL_DURATION_SEC),
     assumptions: storyboard.assumptions.join("\n"),
-    shots: storyboard.shots.map((shot) => ({
+    shots: shots.map((shot, index) => ({
       purpose: shot.purpose,
-      durationSec: String(shot.durationSec),
+      durationSec: String(
+        storyboard.shots.length === STORYBOARD_SCRIPT_DEFAULT_DURATIONS.length
+          ? shot.durationSec
+          : STORYBOARD_SCRIPT_DEFAULT_DURATIONS[index],
+      ),
       scene: shot.scene,
       visualDirection: shot.visualDirection,
       productAssetRef: shot.productAssetRef,
       voiceover: shot.voiceover,
-      transition: shot.transition,
+      transition: shot.transition ?? "",
     })),
   };
 }
@@ -987,9 +1568,35 @@ function normalizeStoryboardPurpose(
   value: string,
   fallback: StoryboardArtifact["shots"][number]["purpose"],
 ): StoryboardArtifact["shots"][number]["purpose"] {
-  return ["hook", "benefit", "proof", "cta"].includes(value)
+  if (value === "benefit") return "proof";
+  return ["hook", "proof", "cta"].includes(value)
     ? (value as StoryboardArtifact["shots"][number]["purpose"])
     : fallback;
+}
+
+function storyboardPurposeLabel(
+  purpose: StoryboardArtifact["shots"][number]["purpose"],
+) {
+  switch (purpose) {
+    case "hook":
+      return "开场钩子";
+    case "benefit":
+      return "卖点证明";
+    case "proof":
+      return "卖点证明";
+    case "cta":
+      return "行动号召";
+  }
+}
+
+function storyboardTiming(shots: StoryboardArtifact["shots"]) {
+  let cursor = 0;
+  return shots.map((shot) => {
+    const start = cursor;
+    const end = start + shot.durationSec;
+    cursor = end;
+    return { start, end };
+  });
 }
 
 function positiveIntegerFromText(value: string, fallback: number) {
@@ -997,28 +1604,20 @@ function positiveIntegerFromText(value: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function nonNegativeIntegerFromText(value: string, fallback: number) {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
-function formToStoryboard(
+export function formToStoryboard(
   form: StoryboardFormState,
   current: StoryboardArtifact,
 ): StoryboardArtifact {
   return {
     ...current,
     narrative: form.narrative.trim(),
-    totalDurationSec: positiveIntegerFromText(
-      form.totalDurationSec,
-      current.totalDurationSec,
-    ),
+    totalDurationSec: STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
     assumptions: linesFromText(form.assumptions),
     shots: form.shots.map((shot, index) => {
       const currentShot = current.shots[index] ?? current.shots[0]!;
       return {
         ...currentShot,
-        index: currentShot.index,
+        index,
         purpose: normalizeStoryboardPurpose(shot.purpose, currentShot.purpose),
         durationSec: positiveIntegerFromText(
           shot.durationSec,
@@ -1034,32 +1633,103 @@ function formToStoryboard(
   };
 }
 
+function clampTextToEffectiveChars(value: string, limit: number) {
+  const chars: string[] = [];
+  let count = 0;
+  for (const char of Array.from(value.trim())) {
+    if (!/\s/.test(char)) count += 1;
+    if (count > limit) break;
+    chars.push(char);
+  }
+  return chars.join("").trim();
+}
+
+export function fitStoryboardVoiceoversToBudget(form: StoryboardFormState) {
+  return {
+    ...form,
+    shots: form.shots.map((shot) => {
+      const durationSec = positiveIntegerFromText(
+        shot.durationSec,
+        STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+      );
+      const limit = storyboardScriptVoiceoverLimit(durationSec);
+      const source = shot.voiceover.trim() || shot.scene.trim() || shot.visualDirection.trim();
+      return {
+        ...shot,
+        voiceover: clampTextToEffectiveChars(source, limit),
+      };
+    }),
+  };
+}
+
+export function applyStoryboardDurationAllocation(
+  form: StoryboardFormState,
+  durations: readonly number[],
+) {
+  return {
+    ...form,
+    totalDurationSec: String(STORYBOARD_SCRIPT_TOTAL_DURATION_SEC),
+    shots: form.shots.map((shot, index) => ({
+      ...shot,
+      durationSec: String(
+        durations[index] ??
+          positiveIntegerFromText(
+            shot.durationSec,
+            STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+          ),
+      ),
+    })),
+  };
+}
+
 function StoryboardReviewForm({
   artifactId,
   storyboard,
   busy,
+  voiceoverGenerating,
+  onGenerateVoiceover,
   onApprove,
   onActionComplete,
 }: {
   artifactId: string;
   storyboard: StoryboardArtifact;
   busy: boolean;
+  voiceoverGenerating: boolean;
+  onGenerateVoiceover: (input: {
+    baseArtifactId?: string;
+    draft: StoryboardArtifact;
+  }) => void;
   onApprove: (data: StoryboardArtifact) => void;
   onActionComplete: () => void;
 }) {
   const [form, setForm] = useState(() => storyboardToForm(storyboard));
-  const [draft, setDraft] = useState<StoryboardArtifact>(storyboard);
-  const [submitted, setSubmitted] = useState(false);
+  const [structureEditorOpen, setStructureEditorOpen] = useState(false);
+  const [openStructureShotIndex, setOpenStructureShotIndex] = useState<number | null>(
+    null,
+  );
+  const [draggingDividerIndex, setDraggingDividerIndex] = useState<number | null>(
+    null,
+  );
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const draft = useMemo(() => formToStoryboard(form, storyboard), [form, storyboard]);
+  const timing = useMemo(() => storyboardTiming(draft.shots), [draft.shots]);
+  const validation = useMemo(() => validateP0StoryboardScript(draft), [draft]);
 
   useEffect(() => {
     setForm(storyboardToForm(storyboard));
-    setDraft(storyboard);
-    setSubmitted(false);
+    setStructureEditorOpen(false);
+    setOpenStructureShotIndex(null);
   }, [artifactId, storyboard]);
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+    };
+  }, []);
 
   const update = (key: keyof Omit<StoryboardFormState, "shots">, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
-    setSubmitted(false);
   };
 
   const updateShot = (
@@ -1073,136 +1743,440 @@ function StoryboardReviewForm({
         shotIndex === index ? { ...shot, [key]: value } : shot,
       ),
     }));
-    setSubmitted(false);
   };
 
-  const submitForm = () => {
-    setDraft((current) => formToStoryboard(form, current));
-    setSubmitted(true);
+  const generateVoiceoversByRatio = () => {
+    if (voiceoverGenerating) return;
+    onGenerateVoiceover({
+      baseArtifactId: artifactId,
+      draft,
+    });
   };
+
+  const applyDurations = (durations: readonly number[]) => {
+    setForm((current) => applyStoryboardDurationAllocation(current, durations));
+  };
+
+  const nudgeDurationDivider = (dividerIndex: number, deltaSec: number) => {
+    applyDurations(
+      redistributeP0StoryboardDurations(
+        draft.shots.map((shot) => shot.durationSec),
+        dividerIndex,
+        deltaSec,
+      ),
+    );
+  };
+
+  const beginDurationDrag = (dividerIndex: number, startClientX: number) => {
+    const timelineWidth = timelineRef.current?.getBoundingClientRect().width ?? 0;
+    if (timelineWidth <= 0) return;
+
+    dragCleanupRef.current?.();
+    setDraggingDividerIndex(dividerIndex);
+    const startDurations = draft.shots.map((shot) => shot.durationSec);
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      document.body.style.userSelect = previousUserSelect;
+      setDraggingDividerIndex(null);
+      dragCleanupRef.current = null;
+    };
+    const handleMove = (event: PointerEvent) => {
+      event.preventDefault();
+      const deltaSec =
+        ((event.clientX - startClientX) / timelineWidth) *
+        STORYBOARD_SCRIPT_TOTAL_DURATION_SEC;
+      applyDurations(
+        redistributeP0StoryboardDurations(
+          startDurations,
+          dividerIndex,
+          deltaSec,
+        ),
+      );
+    };
+
+    dragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", cleanup, { once: true });
+    window.addEventListener("pointercancel", cleanup, { once: true });
+  };
+
+  const canApprove = !busy && !voiceoverGenerating && validation.valid;
+  const validationSummary = validation.issues
+    .slice(0, 3)
+    .map((issue) => issue.message)
+    .join(" ");
 
   return (
     <section className="review-panel">
       <div className="review-panel__header">
         <span>待审创作产物</span>
-        <h1>分镜规划</h1>
-        <p>先确认叙事结构、镜头目标和节奏，再进入每个 shot 的生成要求。</p>
+        <h1>分镜脚本</h1>
+        <p>确认每段讲什么、讲多久，以及口播是否能在时长内说完。</p>
       </div>
-      <div className="review-business-form" aria-label="分镜规划表单">
-        <label className="review-business-form__wide">
-          分镜叙事
-          <textarea
-            rows={3}
-            value={form.narrative}
-            onChange={(event) => update("narrative", event.target.value)}
-          />
-        </label>
-        <label>
-          总时长
-          <input
-            type="number"
-            min={1}
-            value={form.totalDurationSec}
-            onChange={(event) => update("totalDurationSec", event.target.value)}
-          />
-        </label>
-        <label>
-          分镜假设
-          <textarea
-            rows={3}
-            value={form.assumptions}
-            onChange={(event) => update("assumptions", event.target.value)}
-          />
-        </label>
-      </div>
-      <div className="review-shot-form-list">
-        {form.shots.map((shot, index) => (
-          <fieldset key={index} className="review-shot-form">
-            <legend>Shot {index + 1}</legend>
-            <label>
-              Shot {index + 1} 目的
-              <select
-                value={shot.purpose}
-                onChange={(event) => updateShot(index, "purpose", event.target.value)}
+
+      <section
+        className="storyboard-plan"
+        aria-label="分镜脚本摘要"
+        aria-busy={voiceoverGenerating}
+      >
+        <div className="storyboard-plan__topline">
+          <div>
+            <span>叙事结构</span>
+            <p>{draft.narrative}</p>
+          </div>
+          <div className="storyboard-plan__stats">
+            <span>{STORYBOARD_SCRIPT_TOTAL_DURATION_SEC}s</span>
+            <span>{draft.shots.length} 镜</span>
+          </div>
+        </div>
+        <div
+          className="storyboard-timeline"
+          ref={timelineRef}
+          aria-label="分镜时间轴"
+        >
+          {draft.shots.map((shot, index) => (
+            <article
+              key={`${shot.index}-${index}`}
+              className={`storyboard-timeline__beat ${
+                draggingDividerIndex === index || draggingDividerIndex === index - 1
+                  ? "storyboard-timeline__beat--dragging"
+                  : ""
+              }`}
+              style={{ flexGrow: Math.max(shot.durationSec, 1) }}
+            >
+              <span>
+                {timing[index]?.start ?? 0}-{timing[index]?.end ?? shot.durationSec}s
+              </span>
+              <strong>{storyboardPurposeLabel(shot.purpose)}</strong>
+              <em>
+                {shot.durationSec}s ·{" "}
+                {Math.round((shot.durationSec / STORYBOARD_SCRIPT_TOTAL_DURATION_SEC) * 100)}
+                %
+              </em>
+              {index > 0 ? (
+                <button
+                  type="button"
+                  className="storyboard-timeline__handle storyboard-timeline__handle--left"
+                  aria-label={`调整第 ${index} 和第 ${index + 1} 段时长`}
+                  title="拖动分配相邻段时长"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    beginDurationDrag(index - 1, event.clientX);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      nudgeDurationDivider(index - 1, -1);
+                    }
+                    if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      nudgeDurationDivider(index - 1, 1);
+                    }
+                  }}
+                />
+              ) : null}
+              {index < draft.shots.length - 1 ? (
+                <button
+                  type="button"
+                  className="storyboard-timeline__handle storyboard-timeline__handle--right"
+                  aria-label={`调整第 ${index + 1} 和第 ${index + 2} 段时长`}
+                  title="拖动分配相邻段时长"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    beginDurationDrag(index, event.clientX);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      nudgeDurationDivider(index, -1);
+                    }
+                    if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      nudgeDurationDivider(index, 1);
+                    }
+                  }}
+                />
+              ) : null}
+            </article>
+          ))}
+        </div>
+        <div className="storyboard-ratio-action">
+          <Button
+            type="button"
+            variant="contained"
+            size="small"
+            startIcon={
+              voiceoverGenerating ? (
+                <RefreshCw className="spin" size={15} />
+              ) : (
+                <Wand2 size={15} />
+              )
+            }
+            disabled={busy || voiceoverGenerating}
+            onClick={generateVoiceoversByRatio}
+          >
+            {voiceoverGenerating ? "正在生成..." : "按比例生成剧本文案"}
+          </Button>
+          <span>
+            {voiceoverGenerating
+              ? "生成完成前保留当前口播，不会更新字数与草稿。"
+              : "按当前时长比例调用模型重写每段口播。"}
+          </span>
+          <span className="storyboard-duration-hint">
+            单个场景必须保持在 4-12s 之间
+          </span>
+        </div>
+      </section>
+
+      <section className="storyboard-script-list" aria-label="口播文案">
+        {draft.shots.map((shot, index) => {
+          const count = storyboardScriptVoiceoverCount(shot.voiceover);
+          const limit = storyboardScriptVoiceoverLimit(shot.durationSec);
+          const overLimit = count > limit;
+          return (
+            <article
+              key={`${shot.index}-${index}`}
+              className={`storyboard-script-row ${
+                overLimit ? "storyboard-script-row--invalid" : ""
+              }`}
+            >
+              <div className="storyboard-script-row__meta">
+                <span className="storyboard-row__index">{index + 1}</span>
+                <div>
+                  <strong>{storyboardPurposeLabel(shot.purpose)}</strong>
+                  <em>
+                    {timing[index]?.start ?? 0}-{timing[index]?.end ?? shot.durationSec}s
+                    {" · "}
+                    {shot.durationSec}s
+                  </em>
+                </div>
+              </div>
+              <div className="storyboard-script-row__current">
+                <div>
+                  <span>当前口播</span>
+                  <p>{shot.voiceover || "未填写口播"}</p>
+                </div>
+                <div>
+                  <span>画面意图</span>
+                  <p>{shot.scene || "未填写画面意图"}</p>
+                </div>
+              </div>
+              <div
+                className={`storyboard-voiceover-count ${
+                  overLimit ? "storyboard-voiceover-count--invalid" : ""
+                }`}
               >
-                <option value="hook">hook</option>
-                <option value="benefit">benefit</option>
-                <option value="proof">proof</option>
-                <option value="cta">cta</option>
-              </select>
-            </label>
-            <label>
-              Shot {index + 1} 时长
-              <input
-                type="number"
-                min={1}
-                value={shot.durationSec}
-                onChange={(event) => updateShot(index, "durationSec", event.target.value)}
-              />
-            </label>
-            <label>
-              Shot {index + 1} 场景
-              <textarea
-                rows={2}
-                value={shot.scene}
-                onChange={(event) => updateShot(index, "scene", event.target.value)}
-              />
-            </label>
-            <label>
-              Shot {index + 1} 画面方向
-              <textarea
-                rows={2}
-                value={shot.visualDirection}
-                onChange={(event) =>
-                  updateShot(index, "visualDirection", event.target.value)
-                }
-              />
-            </label>
-            <label>
-              Shot {index + 1} 素材 ref
-              <input
-                value={shot.productAssetRef}
-                onChange={(event) =>
-                  updateShot(index, "productAssetRef", event.target.value)
-                }
-              />
-            </label>
-            <label>
-              Shot {index + 1} 转场
-              <input
-                value={shot.transition}
-                onChange={(event) => updateShot(index, "transition", event.target.value)}
-              />
-            </label>
-            <label className="review-business-form__wide">
-              Shot {index + 1} 口播
-              <textarea
-                rows={2}
-                value={shot.voiceover}
-                onChange={(event) => updateShot(index, "voiceover", event.target.value)}
-              />
-            </label>
-          </fieldset>
-        ))}
-      </div>
-      <div className="review-panel__actions">
-        <button type="button" className="review-secondary" onClick={submitForm}>
-          <FileText size={16} />
-          提交分镜规划到结构化内容
+                <span>{overLimit ? "偏长" : "节奏合适"}</span>
+                <strong>
+                  {count} / {limit} 字
+                </strong>
+              </div>
+              <Accordion
+                className="storyboard-script-editor"
+                disableGutters
+                elevation={0}
+              >
+                <AccordionSummary
+                  expandIcon={<ChevronDown size={16} />}
+                  aria-controls={`storyboard-script-editor-${index}`}
+                  id={`storyboard-script-editor-summary-${index}`}
+                >
+                  编辑口播与画面意图
+                </AccordionSummary>
+                <AccordionDetails id={`storyboard-script-editor-${index}`}>
+                  <TextField
+                    label="口播文案"
+                    value={form.shots[index]?.voiceover ?? ""}
+                    onChange={(event) =>
+                      updateShot(index, "voiceover", event.target.value)
+                    }
+                    multiline
+                    minRows={2}
+                    fullWidth
+                    size="small"
+                  />
+                  <TextField
+                    label="画面意图"
+                    value={form.shots[index]?.scene ?? ""}
+                    onChange={(event) => updateShot(index, "scene", event.target.value)}
+                    multiline
+                    minRows={2}
+                    fullWidth
+                    size="small"
+                  />
+                </AccordionDetails>
+              </Accordion>
+            </article>
+          );
+        })}
+      </section>
+
+      {!validation.valid ? (
+        <div className="review-validation-alert" role="status">
+          <Ban size={16} />
+          <span>{validationSummary}</span>
+        </div>
+      ) : null}
+
+      <section className="storyboard-edit" aria-label="调整分镜结构">
+        <button
+          type="button"
+          className="storyboard-edit__toggle"
+          onClick={() => setStructureEditorOpen((current) => !current)}
+          aria-expanded={structureEditorOpen}
+          aria-controls="storyboard-structure-editor"
+        >
+          <span className="storyboard-edit__title">
+            <FileText size={16} />
+            <span>
+              <strong>调整分镜结构</strong>
+              <em>低频编辑：叙事、素材、画面方向与转场</em>
+            </span>
+          </span>
+          {structureEditorOpen ? (
+            <ChevronDown size={16} aria-hidden="true" />
+          ) : (
+            <ChevronRight size={16} aria-hidden="true" />
+          )}
         </button>
-        <span className="review-action-note">
-          {submitted ? "表单内容已同步到后端 payload。" : "修改表单后，请先同步到 payload。"}
-        </span>
-      </div>
-      <label className="review-payload-debug">
-        <span>后端 payload（只读）</span>
-        <textarea
-          aria-label="后端 payload（只读）"
-          readOnly
-          value={JSON.stringify(draft, null, 2)}
-        />
-      </label>
-      <div className="review-panel__actions">
+        <Collapse in={structureEditorOpen} timeout="auto" unmountOnExit>
+          <div id="storyboard-structure-editor" className="storyboard-edit__body">
+            <div className="storyboard-edit__global">
+              <div className="storyboard-edit__section-title">
+                <strong>全局结构</strong>
+                <span>影响整条片子的叙事和总时长</span>
+              </div>
+              <div className="review-business-form" aria-label="分镜脚本表单">
+                <label className="review-business-form__wide">
+                  分镜叙事
+                  <textarea
+                    rows={3}
+                    value={form.narrative}
+                    onChange={(event) => update("narrative", event.target.value)}
+                  />
+                </label>
+                <label>
+                  分镜假设
+                  <textarea
+                    rows={3}
+                    value={form.assumptions}
+                    onChange={(event) => update("assumptions", event.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="storyboard-shot-editor-list">
+              {form.shots.map((shot, index) => {
+                const currentPurpose =
+                  storyboard.shots[index]?.purpose ?? storyboard.shots[0]?.purpose ?? "hook";
+                const purpose = normalizeStoryboardPurpose(shot.purpose, currentPurpose);
+                const isOpen = openStructureShotIndex === index;
+                const panelId = `storyboard-structure-shot-${index}`;
+                return (
+                  <article key={index} className="storyboard-shot-editor">
+                    <button
+                      type="button"
+                      className="storyboard-shot-editor__toggle"
+                      onClick={() =>
+                        setOpenStructureShotIndex(isOpen ? null : index)
+                      }
+                      aria-expanded={isOpen}
+                      aria-controls={panelId}
+                    >
+                      <span className="storyboard-row__index">{index + 1}</span>
+                      <span className="storyboard-shot-editor__summary">
+                        <strong>{storyboardPurposeLabel(purpose)}</strong>
+                        <em>{shot.durationSec || "0"}s</em>
+                        <small>{shot.scene || shot.visualDirection || "未填写画面意图"}</small>
+                      </span>
+                      {isOpen ? (
+                        <ChevronDown size={16} aria-hidden="true" />
+                      ) : (
+                        <ChevronRight size={16} aria-hidden="true" />
+                      )}
+                    </button>
+                    <Collapse in={isOpen} timeout="auto" unmountOnExit>
+                      <fieldset id={panelId} className="review-shot-form">
+                        <legend>分镜 {index + 1}</legend>
+                        <label>
+                          分镜 {index + 1} 目的
+                          <select
+                            value={shot.purpose}
+                            onChange={(event) =>
+                              updateShot(index, "purpose", event.target.value)
+                            }
+                          >
+                            <option value="hook">开场钩子</option>
+                            <option value="proof">卖点证明</option>
+                            <option value="cta">行动号召</option>
+                          </select>
+                        </label>
+                        <label>
+                          分镜 {index + 1} 时长
+                          <input
+                            type="number"
+                            min={STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC}
+                            value={shot.durationSec}
+                            onChange={(event) =>
+                              updateShot(index, "durationSec", event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          分镜 {index + 1} 场景
+                          <textarea
+                            rows={2}
+                            value={shot.scene}
+                            onChange={(event) =>
+                              updateShot(index, "scene", event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          分镜 {index + 1} 画面方向
+                          <textarea
+                            rows={2}
+                            value={shot.visualDirection}
+                            onChange={(event) =>
+                              updateShot(index, "visualDirection", event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          分镜 {index + 1} 素材
+                          <input
+                            value={shot.productAssetRef}
+                            onChange={(event) =>
+                              updateShot(index, "productAssetRef", event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          分镜 {index + 1} 转场
+                          <input
+                            value={shot.transition}
+                            onChange={(event) =>
+                              updateShot(index, "transition", event.target.value)
+                            }
+                          />
+                        </label>
+                      </fieldset>
+                    </Collapse>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </Collapse>
+      </section>
+
+      <div className="storyboard-approve-dock">
         <button
           type="button"
           className="review-primary"
@@ -1210,10 +2184,10 @@ function StoryboardReviewForm({
             onApprove(draft);
             onActionComplete();
           }}
-          disabled={busy}
+          disabled={!canApprove}
         >
           <CheckCircle2 size={16} />
-          批准分镜规划并生成分镜生成要求
+          批准生效
         </button>
       </div>
     </section>
@@ -1228,13 +2202,18 @@ function StoryboardReview({
   onActionComplete: () => void;
 }) {
   const artifact = vm.artifacts.storyboard;
+  const pending = Boolean(vm.pending?.storyboard);
   if (!artifact) {
     return (
       <ProposalPlaceholder
-        title="分镜规划"
-        description="商品卖点批准后，生成视频叙事结构和镜头节奏。"
-        actionLabel="生成分镜规划"
-        busy={vm.busy}
+        title="分镜脚本"
+        description={
+          pending
+            ? "系统正在根据已批准的商品卖点生成分镜脚本，完成后会停在这里供你审核。"
+            : "商品卖点批准后，生成视频口播、节奏和画面意图。"
+        }
+        actionLabel={pending ? "正在生成分镜脚本..." : "生成分镜脚本"}
+        busy={vm.busy || pending}
         onAction={() => {
           vm.actions.proposeStoryboard();
           onActionComplete();
@@ -1248,6 +2227,8 @@ function StoryboardReview({
       artifactId={artifact.id}
       storyboard={storyboard}
       busy={vm.busy}
+      voiceoverGenerating={Boolean(vm.pending?.storyboardVoiceover)}
+      onGenerateVoiceover={vm.actions.proposeStoryboardVoiceover}
       onApprove={vm.actions.approveStoryboardAndProposeShotPrompt}
       onActionComplete={onActionComplete}
     />
@@ -1255,69 +2236,399 @@ function StoryboardReview({
 }
 
 type ShotPromptShotFormState = {
-  startSec: string;
-  endSec: string;
   providerPrompt: string;
-  referenceAssetRefs: string;
-  voiceover: string;
+  shotImage: Record<string, string>;
+  shotVideo: Record<string, string>;
 };
 
 type ShotPromptFormState = {
-  durationSec: string;
   aspectRatio: ShotPromptArtifact["aspectRatio"];
   prompt: string;
   negativePrompt: string;
-  ttsVoiceover: string;
-  assumptions: string;
+  voiceProfile: ShotPromptVoiceProfile;
   shots: ShotPromptShotFormState[];
 };
 
+type ShotPromptLayer = "shotImage" | "shotVideo";
+
+const VOICE_GENDER_LABELS: Record<ShotPromptVoiceProfile["gender"], string> = {
+  female: "女声",
+  male: "男声",
+};
+
+const VOICE_PITCH_LABELS: Record<ShotPromptVoiceProfile["pitch"], string> = {
+  low: "低沉",
+  medium: "自然中声区",
+  high: "明亮偏高",
+};
+
+const VOICE_PACE_LABELS: Record<ShotPromptVoiceProfile["pace"], string> = {
+  slow: "慢速",
+  medium: "中速",
+  fast: "中等偏快",
+};
+
+const SHOT_IMAGE_LABELS: Record<string, string> = {
+  scene: "场景",
+  composition: "构图",
+  lighting: "光线",
+  productVisibility: "商品呈现",
+  referenceUsage: "参考图使用",
+  style: "视觉风格",
+  negative: "负向约束",
+};
+
+const SHOT_VIDEO_LABELS: Record<string, string> = {
+  cameraMotion: "镜头运动",
+  subjectMotion: "主体运动",
+  firstFrameIntent: "首帧意图",
+  lastFrameIntent: "末帧意图",
+  durationIntent: "时长节奏",
+  continuity: "连续性",
+  negative: "负向约束",
+};
+
+const SHOT_IMAGE_ORDER = [
+  "scene",
+  "composition",
+  "lighting",
+  "productVisibility",
+  "referenceUsage",
+  "negative",
+];
+
+const SHOT_VIDEO_ORDER = [
+  "cameraMotion",
+  "subjectMotion",
+  "firstFrameIntent",
+  "lastFrameIntent",
+  "durationIntent",
+  "continuity",
+  "negative",
+];
+
+const SHOT_IMAGE_REQUIRED_KEYS = SHOT_IMAGE_ORDER.filter(
+  (key) => key !== "negative",
+);
+
+const SHOT_VIDEO_REQUIRED_KEYS = SHOT_VIDEO_ORDER.filter(
+  (key) => key !== "negative",
+);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function layerKeys(
+  value: unknown,
+  preferredOrder: string[],
+): string[] {
+  if (!isPlainRecord(value)) return [];
+  const known = preferredOrder.filter((key) => key in value);
+  const extra = Object.keys(value)
+    .filter((key) => !preferredOrder.includes(key))
+    .sort((a, b) => a.localeCompare(b));
+  return [...known, ...extra];
+}
+
+function valueToFormText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join("\n");
+  }
+  if (isPlainRecord(value)) {
+    return JSON.stringify(value, null, 2);
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value);
+}
+
+function layerToForm(value: unknown, preferredOrder: string[]) {
+  if (!isPlainRecord(value)) {
+    return Object.fromEntries(preferredOrder.map((key) => [key, ""]));
+  }
+  const keys = layerKeys(value, preferredOrder);
+  return Object.fromEntries(
+    [...preferredOrder, ...keys.filter((key) => !preferredOrder.includes(key))].map(
+      (key) => [key, valueToFormText(value[key])],
+    ),
+  );
+}
+
+function formTextToLayerValue(text: string, original: unknown): unknown {
+  if (Array.isArray(original)) {
+    return linesFromText(text);
+  }
+  if (typeof original === "number") {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : original;
+  }
+  if (typeof original === "boolean") {
+    return text.trim().toLowerCase() === "true";
+  }
+  if (isPlainRecord(original)) {
+    try {
+      const parsed = JSON.parse(text);
+      return isPlainRecord(parsed) || Array.isArray(parsed) ? parsed : original;
+    } catch {
+      return original;
+    }
+  }
+  return text.trim();
+}
+
+function formLayerToRecord(
+  formLayer: Record<string, string>,
+  currentLayer: unknown,
+): Record<string, unknown> | undefined {
+  const original = isPlainRecord(currentLayer) ? currentLayer : {};
+  const entries = Object.entries(formLayer).map(([key, value]) => [
+    key,
+    formTextToLayerValue(value, original[key]),
+  ]);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function derivedTtsVoiceover(shots: ShotPromptArtifact["shots"]) {
+  return shots
+    .map((shot) => shot.voiceover.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizeVoiceProfile(
+  profile: Partial<ShotPromptVoiceProfile> | undefined,
+): ShotPromptVoiceProfile {
+  return {
+    ...DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
+    ...profile,
+    tone: profile?.tone?.trim() || DEFAULT_SHOT_PROMPT_VOICE_PROFILE.tone,
+  };
+}
+
+function describeVoiceProfile(profile: ShotPromptVoiceProfile) {
+  return [
+    VOICE_GENDER_LABELS[profile.gender],
+    profile.tone,
+    VOICE_PITCH_LABELS[profile.pitch],
+    VOICE_PACE_LABELS[profile.pace],
+  ].join(" · ");
+}
+
+function withDerivedTts(shotPrompt: ShotPromptArtifact): ShotPromptArtifact {
+  return {
+    ...shotPrompt,
+    tts: {
+      ...shotPrompt.tts,
+      source: "shots.voiceover",
+      voiceover: derivedTtsVoiceover(shotPrompt.shots),
+      voiceProfile: normalizeVoiceProfile(shotPrompt.tts.voiceProfile),
+    },
+  };
+}
+
+function layerSectionKey(index: number, layer: ShotPromptLayer) {
+  return `${index}:${layer}`;
+}
+
+function goalSectionKey(index: number) {
+  return `${index}:providerPrompt`;
+}
+
+function layerRequiredKeys(layer: ShotPromptLayer) {
+  return layer === "shotImage" ? SHOT_IMAGE_REQUIRED_KEYS : SHOT_VIDEO_REQUIRED_KEYS;
+}
+
+function validateLayerFields(
+  fields: Record<string, string>,
+  layer: ShotPromptLayer,
+) {
+  return Object.fromEntries(
+    layerRequiredKeys(layer)
+      .filter((key) => !fields[key]?.trim())
+      .map((key) => [key, "必填"]),
+  );
+}
+
+function displayValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join("、");
+  if (isPlainRecord(value)) return JSON.stringify(value);
+  if (value === null || value === undefined || value === "") return "未填写";
+  return String(value);
+}
+
+function shotDuration(shot: ShotPromptArtifact["shots"][number]) {
+  return Math.max(0, shot.endSec - shot.startSec);
+}
+
+function shotLayerEntries(
+  shot: ShotPromptArtifact["shots"][number],
+  layer: "shotImage" | "shotVideo",
+) {
+  const labels = layer === "shotImage" ? SHOT_IMAGE_LABELS : SHOT_VIDEO_LABELS;
+  const order = layer === "shotImage" ? SHOT_IMAGE_ORDER : SHOT_VIDEO_ORDER;
+  const value = layer === "shotImage" ? shot.shotImage : shot.shotVideo;
+  if (!isPlainRecord(value)) return [];
+  return layerKeys(value, order).map((key) => ({
+    key,
+    label: labels[key] ?? key,
+    value: value[key],
+  }));
+}
+
 function shotPromptToForm(shotPrompt: ShotPromptArtifact): ShotPromptFormState {
   return {
-    durationSec: String(shotPrompt.durationSec),
     aspectRatio: shotPrompt.aspectRatio,
     prompt: shotPrompt.prompt,
     negativePrompt: shotPrompt.negativePrompt,
-    ttsVoiceover: shotPrompt.tts.voiceover,
-    assumptions: shotPrompt.assumptions.join("\n"),
+    voiceProfile: normalizeVoiceProfile(shotPrompt.tts.voiceProfile),
     shots: shotPrompt.shots.map((shot) => ({
-      startSec: String(shot.startSec),
-      endSec: String(shot.endSec),
       providerPrompt: shot.providerPrompt,
-      referenceAssetRefs: shot.referenceAssetRefs.join("\n"),
-      voiceover: shot.voiceover,
+      shotImage: layerToForm(shot.shotImage, SHOT_IMAGE_ORDER),
+      shotVideo: layerToForm(shot.shotVideo, SHOT_VIDEO_ORDER),
     })),
   };
 }
 
-function formToShotPrompt(
+function summaryFormToShotPrompt(
   form: ShotPromptFormState,
   current: ShotPromptArtifact,
 ): ShotPromptArtifact {
   return {
     ...current,
-    durationSec: positiveIntegerFromText(form.durationSec, current.durationSec),
     aspectRatio: form.aspectRatio,
     prompt: form.prompt.trim(),
     negativePrompt: form.negativePrompt.trim(),
     tts: {
       ...current.tts,
-      voiceover: form.ttsVoiceover.trim(),
+      voiceProfile: normalizeVoiceProfile(form.voiceProfile),
     },
-    assumptions: linesFromText(form.assumptions),
-    shots: form.shots.map((shot, index) => {
-      const currentShot = current.shots[index] ?? current.shots[0]!;
+  };
+}
+
+function formGoalToShotPrompt(
+  form: ShotPromptFormState,
+  current: ShotPromptArtifact,
+  targetIndex: number,
+): ShotPromptArtifact {
+  return {
+    ...current,
+    shots: form.shots.map((shot, shotIndex) => {
+      const currentShot = current.shots[shotIndex] ?? current.shots[0]!;
+      if (shotIndex !== targetIndex) return currentShot;
       return {
         ...currentShot,
-        index: currentShot.index,
-        startSec: nonNegativeIntegerFromText(shot.startSec, currentShot.startSec),
-        endSec: positiveIntegerFromText(shot.endSec, currentShot.endSec),
         providerPrompt: shot.providerPrompt.trim(),
-        referenceAssetRefs: linesFromText(shot.referenceAssetRefs),
-        voiceover: shot.voiceover.trim(),
       };
     }),
   };
+}
+
+function formLayerToShotPrompt(
+  form: ShotPromptFormState,
+  current: ShotPromptArtifact,
+  targetIndex: number,
+  layer: ShotPromptLayer,
+): ShotPromptArtifact {
+  return {
+    ...current,
+    shots: form.shots.map((shot, shotIndex) => {
+      const currentShot = current.shots[shotIndex] ?? current.shots[0]!;
+      if (shotIndex !== targetIndex) return currentShot;
+      return {
+        ...currentShot,
+        [layer]:
+          formLayerToRecord(shot[layer], currentShot[layer]) ?? currentShot[layer],
+      };
+    }),
+  };
+}
+
+function ShotPromptDict({
+  title,
+  entries,
+}: {
+  title: string;
+  entries: Array<{ key: string; label: string; value: unknown }>;
+}) {
+  return (
+    <section className="shotprompt-dict">
+      <h3>{title}</h3>
+      {entries.length > 0 ? (
+        <dl>
+          {entries.map((entry) => (
+            <div key={entry.key}>
+              <dt>{entry.label}</dt>
+              <dd>{displayValue(entry.value)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p>当前镜头没有独立{title}。</p>
+      )}
+    </section>
+  );
+}
+
+function ShotPromptLayerEditor({
+  title,
+  fields,
+  labels,
+  requiredKeys,
+  errors,
+  saveLabel,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  title: string;
+  fields: Record<string, string>;
+  labels: Record<string, string>;
+  requiredKeys: string[];
+  errors: Record<string, string>;
+  saveLabel: string;
+  onChange: (key: string, value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const entries = Object.entries(fields);
+  if (entries.length === 0) return null;
+  return (
+    <div
+      className="shotprompt-layer-editor shotprompt-edit-form__wide"
+      role="group"
+      aria-label={title}
+    >
+      <h3>{title}</h3>
+      <div className="shotprompt-layer-editor__fields">
+        {entries.map(([key, value]) => (
+          <TextField
+            key={key}
+            label={labels[key] ?? key}
+            value={value}
+            onChange={(event) => onChange(key, event.target.value)}
+            multiline
+            minRows={value.includes("\n") ? 3 : 1}
+            maxRows={6}
+            size="small"
+            fullWidth
+            required={requiredKeys.includes(key)}
+            error={Boolean(errors[key])}
+            helperText={errors[key] ?? " "}
+          />
+        ))}
+      </div>
+      <div className="shotprompt-layer-editor__actions">
+        <Button variant="contained" size="small" onClick={onSave}>
+          {saveLabel}
+        </Button>
+        <Button variant="outlined" size="small" onClick={onCancel}>
+          取消
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function ShotPromptReviewForm({
@@ -1335,184 +2646,537 @@ function ShotPromptReviewForm({
 }) {
   const [form, setForm] = useState(() => shotPromptToForm(shotPrompt));
   const [draft, setDraft] = useState<ShotPromptArtifact>(shotPrompt);
-  const [submitted, setSubmitted] = useState(false);
+  const [openShotIndex, setOpenShotIndex] = useState(0);
+  const [editingSections, setEditingSections] = useState<Record<string, boolean>>({});
+  const [sectionErrors, setSectionErrors] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [editingSummary, setEditingSummary] = useState(false);
 
   useEffect(() => {
     setForm(shotPromptToForm(shotPrompt));
     setDraft(shotPrompt);
-    setSubmitted(false);
+    setOpenShotIndex(0);
+    setEditingSections({});
+    setSectionErrors({});
+    setEditingSummary(false);
   }, [artifactId, shotPrompt]);
 
-  const update = (key: keyof Omit<ShotPromptFormState, "shots">, value: string) => {
+  const update = (
+    key: keyof Omit<ShotPromptFormState, "shots" | "voiceProfile">,
+    value: string,
+  ) => {
     setForm((current) => ({ ...current, [key]: value }));
-    setSubmitted(false);
   };
 
-  const updateShot = (
+  const updateVoiceProfile = <K extends keyof ShotPromptVoiceProfile>(
+    key: K,
+    value: ShotPromptVoiceProfile[K],
+  ) => {
+    setForm((current) => ({
+      ...current,
+      voiceProfile: {
+        ...current.voiceProfile,
+        [key]: value,
+      },
+    }));
+  };
+
+  const updateShotLayer = (
     index: number,
-    key: keyof ShotPromptShotFormState,
+    layer: ShotPromptLayer,
+    key: string,
     value: string,
   ) => {
     setForm((current) => ({
       ...current,
       shots: current.shots.map((shot, shotIndex) =>
-        shotIndex === index ? { ...shot, [key]: value } : shot,
+        shotIndex === index
+          ? { ...shot, [layer]: { ...shot[layer], [key]: value } }
+          : shot,
       ),
     }));
-    setSubmitted(false);
   };
 
-  const submitForm = () => {
-    setDraft((current) => formToShotPrompt(form, current));
-    setSubmitted(true);
+  const updateShotGoal = (index: number, value: string) => {
+    setForm((current) => ({
+      ...current,
+      shots: current.shots.map((shot, shotIndex) =>
+        shotIndex === index ? { ...shot, providerPrompt: value } : shot,
+      ),
+    }));
   };
+
+  const toggleGoalEditor = (index: number) => {
+    const key = goalSectionKey(index);
+    setOpenShotIndex(index);
+    setEditingSections((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  };
+
+  const toggleLayerEditor = (index: number, layer: ShotPromptLayer) => {
+    const key = layerSectionKey(index, layer);
+    setOpenShotIndex(index);
+    setEditingSections((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  };
+
+  const saveSummaryDraft = () => {
+    setDraft((current) => summaryFormToShotPrompt(form, current));
+  };
+
+  const saveGoalDraft = (index: number) => {
+    const key = goalSectionKey(index);
+    const providerPrompt = form.shots[index]?.providerPrompt ?? "";
+    const errors: Record<string, string> = providerPrompt.trim()
+      ? {}
+      : { providerPrompt: "必填" };
+    setSectionErrors((current) => ({ ...current, [key]: errors }));
+    if (Object.keys(errors).length > 0) return;
+    setDraft((current) => formGoalToShotPrompt(form, current, index));
+    setEditingSections((current) => ({ ...current, [key]: false }));
+  };
+
+  const saveLayerDraft = (index: number, layer: ShotPromptLayer) => {
+    const key = layerSectionKey(index, layer);
+    const errors = validateLayerFields(form.shots[index]?.[layer] ?? {}, layer);
+    setSectionErrors((current) => ({ ...current, [key]: errors }));
+    if (Object.keys(errors).length > 0) return;
+    setDraft((current) => formLayerToShotPrompt(form, current, index, layer));
+    setEditingSections((current) => ({ ...current, [key]: false }));
+  };
+
+  const cancelGoalEdit = (index: number) => {
+    const reset = shotPromptToForm(draft);
+    const key = goalSectionKey(index);
+    setForm((current) => ({
+      ...current,
+      shots: current.shots.map((shot, shotIndex) =>
+        shotIndex === index
+          ? {
+              ...shot,
+              providerPrompt: reset.shots[index]?.providerPrompt ?? shot.providerPrompt,
+            }
+          : shot,
+      ),
+    }));
+    setSectionErrors((current) => ({ ...current, [key]: {} }));
+    setEditingSections((current) => ({ ...current, [key]: false }));
+  };
+
+  const cancelLayerEdit = (index: number, layer: ShotPromptLayer) => {
+    const reset = shotPromptToForm(draft);
+    const key = layerSectionKey(index, layer);
+    setForm((current) => ({
+      ...current,
+      shots: current.shots.map((shot, shotIndex) =>
+        shotIndex === index
+          ? { ...shot, [layer]: reset.shots[index]?.[layer] ?? shot[layer] }
+          : shot,
+      ),
+    }));
+    setSectionErrors((current) => ({ ...current, [key]: {} }));
+    setEditingSections((current) => ({ ...current, [key]: false }));
+  };
+
+  const approveDraft = () => {
+    const nextDraft = withDerivedTts(draft);
+    setDraft(nextDraft);
+    onApprove(nextDraft);
+    onActionComplete();
+  };
+  const summaryEditorId = "shotprompt-summary-editor";
+  const draftVoiceProfile = normalizeVoiceProfile(draft.tts.voiceProfile);
 
   return (
     <section className="review-panel">
       <div className="review-panel__header">
         <span>待审创作产物</span>
         <h1>分镜生成要求</h1>
-        <p>确认逐 shot 的分镜图和分镜视频要求。批准后会自动创建分镜任务。</p>
+        <p>确认逐分镜的分镜图和分镜视频要求。批准后可进入应用分镜，创建分镜链路实例。</p>
       </div>
-      <div className="review-business-form" aria-label="分镜生成要求表单">
-        <label>
-          总时长
-          <input
-            type="number"
-            min={1}
-            value={form.durationSec}
-            onChange={(event) => update("durationSec", event.target.value)}
-          />
-        </label>
-        <label>
-          画幅
-          <select
-            value={form.aspectRatio}
-            onChange={(event) =>
-              update("aspectRatio", event.target.value as ShotPromptArtifact["aspectRatio"])
-            }
+      <div className="shotprompt-summary">
+        <div className="shotprompt-summary__metric">
+          <span>总时长</span>
+          <strong>{draft.durationSec}s</strong>
+        </div>
+        <div className="shotprompt-summary__metric">
+          <span>画幅</span>
+          <strong>{draft.aspectRatio}</strong>
+        </div>
+        <div className="shotprompt-summary__text">
+          <span>全片生成要求</span>
+          <p>{draft.prompt}</p>
+        </div>
+        <div className="shotprompt-summary__text">
+          <span>负向约束</span>
+          <p>{draft.negativePrompt || "未填写"}</p>
+        </div>
+        <div className="shotprompt-summary__text">
+          <span>口播声音</span>
+          <p>{describeVoiceProfile(draftVoiceProfile)}</p>
+        </div>
+        <div className="shotprompt-summary__actions">
+          <button
+            type="button"
+            className="review-secondary"
+            onClick={() => setEditingSummary((current) => !current)}
+            aria-expanded={editingSummary}
+            aria-controls={summaryEditorId}
           >
-            <option value="9:16">9:16</option>
-            <option value="16:9">16:9</option>
-            <option value="1:1">1:1</option>
-          </select>
-        </label>
-        <label className="review-business-form__wide">
-          全局视频提示词
-          <textarea
-            rows={3}
-            value={form.prompt}
-            onChange={(event) => update("prompt", event.target.value)}
-          />
-        </label>
-        <label className="review-business-form__wide">
-          负向提示词
-          <textarea
-            rows={3}
-            value={form.negativePrompt}
-            onChange={(event) => update("negativePrompt", event.target.value)}
-          />
-        </label>
-        <label className="review-business-form__wide">
-          TTS 口播
-          <textarea
-            rows={3}
-            value={form.ttsVoiceover}
-            onChange={(event) => update("ttsVoiceover", event.target.value)}
-          />
-        </label>
-        <label className="review-business-form__wide">
-          生成要求假设
-          <textarea
-            rows={3}
-            value={form.assumptions}
-            onChange={(event) => update("assumptions", event.target.value)}
-          />
-        </label>
+            <FileText size={16} />
+            {editingSummary ? "收起全片要求" : "编辑全片要求"}
+          </button>
+        </div>
       </div>
-      <div className="review-shot-form-list">
-        {form.shots.map((shot, index) => (
-          <fieldset key={index} className="review-shot-form">
-            <legend>Shot {index + 1}</legend>
-            <label>
-              Shot {index + 1} 起始秒
-              <input
-                type="number"
-                min={0}
-                value={shot.startSec}
-                onChange={(event) => updateShot(index, "startSec", event.target.value)}
-              />
-            </label>
-            <label>
-              Shot {index + 1} 结束秒
-              <input
-                type="number"
-                min={1}
-                value={shot.endSec}
-                onChange={(event) => updateShot(index, "endSec", event.target.value)}
-              />
-            </label>
-            <label className="review-business-form__wide">
-              Shot {index + 1} 生成提示词
-              <textarea
-                rows={3}
-                value={shot.providerPrompt}
-                onChange={(event) =>
-                  updateShot(index, "providerPrompt", event.target.value)
-                }
-              />
-            </label>
-            <label>
-              Shot {index + 1} 参考素材
-              <textarea
-                rows={3}
-                value={shot.referenceAssetRefs}
-                onChange={(event) =>
-                  updateShot(index, "referenceAssetRefs", event.target.value)
-                }
-              />
-            </label>
-            <label>
-              Shot {index + 1} 口播
-              <textarea
-                rows={3}
-                value={shot.voiceover}
-                onChange={(event) => updateShot(index, "voiceover", event.target.value)}
-              />
-            </label>
-          </fieldset>
-        ))}
+      <Collapse in={editingSummary} timeout="auto" unmountOnExit>
+        <div
+          id={summaryEditorId}
+          className="review-business-form"
+          aria-label="全片分镜生成要求表单"
+        >
+          <label>
+            画幅
+            <select
+              value={form.aspectRatio}
+              onChange={(event) =>
+                update(
+                  "aspectRatio",
+                  event.target.value as ShotPromptArtifact["aspectRatio"],
+                )
+              }
+            >
+              <option value="9:16">9:16</option>
+              <option value="16:9">16:9</option>
+              <option value="1:1">1:1</option>
+            </select>
+          </label>
+          <label>
+            口播音色
+            <select
+              value={form.voiceProfile.gender}
+              onChange={(event) =>
+                updateVoiceProfile(
+                  "gender",
+                  event.target.value as ShotPromptVoiceProfile["gender"],
+                )
+              }
+            >
+              <option value="female">女声</option>
+              <option value="male">男声</option>
+            </select>
+          </label>
+          <label>
+            声调
+            <select
+              value={form.voiceProfile.pitch}
+              onChange={(event) =>
+                updateVoiceProfile(
+                  "pitch",
+                  event.target.value as ShotPromptVoiceProfile["pitch"],
+                )
+              }
+            >
+              <option value="low">低沉</option>
+              <option value="medium">自然中声区</option>
+              <option value="high">明亮偏高</option>
+            </select>
+          </label>
+          <label>
+            语速
+            <select
+              value={form.voiceProfile.pace}
+              onChange={(event) =>
+                updateVoiceProfile(
+                  "pace",
+                  event.target.value as ShotPromptVoiceProfile["pace"],
+                )
+              }
+            >
+              <option value="slow">慢速</option>
+              <option value="medium">中速</option>
+              <option value="fast">中等偏快</option>
+            </select>
+          </label>
+          <label className="review-business-form__wide">
+            全片生成要求
+            <textarea
+              rows={3}
+              value={form.prompt}
+              onChange={(event) => update("prompt", event.target.value)}
+            />
+          </label>
+          <label className="review-business-form__wide">
+            负向约束
+            <textarea
+              rows={3}
+              value={form.negativePrompt}
+              onChange={(event) => update("negativePrompt", event.target.value)}
+            />
+          </label>
+          <label className="review-business-form__wide">
+            口播语气
+            <textarea
+              rows={2}
+              value={form.voiceProfile.tone}
+              onChange={(event) => updateVoiceProfile("tone", event.target.value)}
+            />
+          </label>
+          <div className="review-panel__actions review-business-form__wide">
+            <button
+              type="button"
+              className="review-secondary"
+              onClick={() => {
+                saveSummaryDraft();
+                setEditingSummary(false);
+              }}
+            >
+              <CheckCircle2 size={16} />
+              保存全片要求
+            </button>
+          </div>
+        </div>
+      </Collapse>
+      <div className="shotprompt-list">
+        {draft.shots.map((shot, index) => {
+          const formShot = form.shots[index];
+          const isOpen = openShotIndex === index;
+          const goalKey = goalSectionKey(index);
+          const imageSectionKey = layerSectionKey(index, "shotImage");
+          const videoSectionKey = layerSectionKey(index, "shotVideo");
+          const isEditingGoal = Boolean(editingSections[goalKey]);
+          const isEditingImage = Boolean(editingSections[imageSectionKey]);
+          const isEditingVideo = Boolean(editingSections[videoSectionKey]);
+          const imageEntries = shotLayerEntries(shot, "shotImage");
+          const videoEntries = shotLayerEntries(shot, "shotVideo");
+          const panelId = `shotprompt-shot-${index}-body`;
+          return (
+            <article key={`${shot.index}:${index}`} className="shotprompt-card">
+              <div className="shotprompt-card__head">
+                <button
+                  type="button"
+                  className="shotprompt-card__toggle"
+                  onClick={() => setOpenShotIndex(isOpen ? -1 : index)}
+                  aria-expanded={isOpen}
+                  aria-controls={panelId}
+                >
+                  <span className="shotprompt-card__index">{shot.index}</span>
+                  <span className="shotprompt-card__title">
+                    <strong>分镜 {index + 1}</strong>
+                    <em>
+                      {shot.startSec}-{shot.endSec}s · {shotDuration(shot)}s
+                    </em>
+                    <small>{shot.voiceover}</small>
+                  </span>
+                  {isOpen ? (
+                    <ChevronDown size={16} aria-hidden="true" />
+                  ) : (
+                    <ChevronRight size={16} aria-hidden="true" />
+                  )}
+                </button>
+                <div className="shotprompt-card__actions">
+                  <button
+                    type="button"
+                    className="review-secondary"
+                    onClick={() => toggleGoalEditor(index)}
+                  >
+                    <FileText size={16} />
+                    {isEditingGoal ? "收起镜头目标" : "编辑镜头目标"}
+                  </button>
+                  <button
+                    type="button"
+                    className="review-secondary"
+                    onClick={() => toggleLayerEditor(index, "shotImage")}
+                  >
+                    <FileText size={16} />
+                    {isEditingImage ? "收起分镜图要求" : "编辑分镜图要求"}
+                  </button>
+                  <button
+                    type="button"
+                    className="review-secondary"
+                    onClick={() => toggleLayerEditor(index, "shotVideo")}
+                  >
+                    <FileText size={16} />
+                    {isEditingVideo ? "收起分镜视频要求" : "编辑分镜视频要求"}
+                  </button>
+                </div>
+              </div>
+              <Collapse in={isOpen} timeout="auto" unmountOnExit>
+                <Stack
+                  id={panelId}
+                  className="shotprompt-card__body"
+                  spacing={1.75}
+                  useFlexGap
+                >
+                  {shot.referenceAssetRefs.length > 0 ? (
+                    <Box className="shotprompt-assets">
+                      <span>参考素材</span>
+                      {shot.referenceAssetRefs.map((assetRef) => (
+                        <code key={assetRef}>{assetRef}</code>
+                      ))}
+                    </Box>
+                  ) : null}
+                  <Box className="shotprompt-goal-section">
+                    <div className="shotprompt-provider">
+                      <span>镜头目标</span>
+                      <p>{shot.providerPrompt}</p>
+                    </div>
+                    <Collapse
+                      in={isEditingGoal && Boolean(formShot)}
+                      timeout="auto"
+                      unmountOnExit
+                      sx={{ width: 1 }}
+                    >
+                      {formShot ? (
+                        <div
+                          className="shotprompt-layer-editor shotprompt-edit-form__wide shotprompt-goal-editor"
+                          role="group"
+                          aria-label={`编辑分镜 ${index + 1} 镜头目标`}
+                        >
+                          <h3>编辑分镜 {index + 1} 镜头目标</h3>
+                          <TextField
+                            label="镜头目标"
+                            value={formShot.providerPrompt}
+                            onChange={(event) =>
+                              updateShotGoal(index, event.target.value)
+                            }
+                            multiline
+                            minRows={3}
+                            maxRows={8}
+                            size="small"
+                            fullWidth
+                            required
+                            error={Boolean(
+                              sectionErrors[goalKey]?.providerPrompt,
+                            )}
+                            helperText={
+                              sectionErrors[goalKey]?.providerPrompt ?? " "
+                            }
+                          />
+                          <div className="shotprompt-layer-editor__actions">
+                            <Button
+                              variant="contained"
+                              size="small"
+                              onClick={() => saveGoalDraft(index)}
+                            >
+                              保存镜头目标
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => cancelGoalEdit(index)}
+                            >
+                              取消
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </Collapse>
+                  </Box>
+                  <Box className="shotprompt-requirement-grid">
+                    <Box className="shotprompt-requirement-column shotprompt-requirement-column--image">
+                      <ShotPromptDict
+                        title="分镜图要求"
+                        entries={imageEntries}
+                      />
+                      <Collapse
+                        in={isEditingImage && Boolean(formShot)}
+                        timeout="auto"
+                        unmountOnExit
+                      >
+                        {formShot ? (
+                          <ShotPromptLayerEditor
+                            title={`编辑分镜 ${index + 1} 分镜图要求`}
+                            fields={formShot.shotImage}
+                            labels={SHOT_IMAGE_LABELS}
+                            requiredKeys={SHOT_IMAGE_REQUIRED_KEYS}
+                            errors={sectionErrors[imageSectionKey] ?? {}}
+                            saveLabel="保存分镜图要求"
+                            onChange={(key, value) =>
+                              updateShotLayer(index, "shotImage", key, value)
+                            }
+                            onSave={() => saveLayerDraft(index, "shotImage")}
+                            onCancel={() => cancelLayerEdit(index, "shotImage")}
+                          />
+                        ) : null}
+                      </Collapse>
+                    </Box>
+                    <Box className="shotprompt-requirement-column shotprompt-requirement-column--video">
+                      <ShotPromptDict
+                        title="分镜视频要求"
+                        entries={videoEntries}
+                      />
+                      <Collapse
+                        in={isEditingVideo && Boolean(formShot)}
+                        timeout="auto"
+                        unmountOnExit
+                      >
+                        {formShot ? (
+                          <ShotPromptLayerEditor
+                            title={`编辑分镜 ${index + 1} 分镜视频要求`}
+                            fields={formShot.shotVideo}
+                            labels={SHOT_VIDEO_LABELS}
+                            requiredKeys={SHOT_VIDEO_REQUIRED_KEYS}
+                            errors={sectionErrors[videoSectionKey] ?? {}}
+                            saveLabel="保存分镜视频要求"
+                            onChange={(key, value) =>
+                              updateShotLayer(index, "shotVideo", key, value)
+                            }
+                            onSave={() => saveLayerDraft(index, "shotVideo")}
+                            onCancel={() => cancelLayerEdit(index, "shotVideo")}
+                          />
+                        ) : null}
+                      </Collapse>
+                    </Box>
+                  </Box>
+                </Stack>
+              </Collapse>
+            </article>
+          );
+        })}
       </div>
-      <div className="review-panel__actions">
-        <button type="button" className="review-secondary" onClick={submitForm}>
-          <FileText size={16} />
-          提交分镜生成要求到结构化内容
-        </button>
-        <span className="review-action-note">
-          {submitted ? "表单内容已同步到后端 payload。" : "修改表单后，请先同步到 payload。"}
-        </span>
-      </div>
-      <label className="review-payload-debug">
-        <span>后端 payload（只读）</span>
-        <textarea
-          aria-label="后端 payload（只读）"
-          readOnly
-          value={JSON.stringify(draft, null, 2)}
-        />
-      </label>
       <div className="review-panel__actions">
         <button
           type="button"
           className="review-primary"
-          onClick={() => {
-            onApprove(draft);
-            onActionComplete();
-          }}
+          onClick={approveDraft}
           disabled={busy}
         >
           <CheckCircle2 size={16} />
           批准分镜生成要求
         </button>
+      </div>
+    </section>
+  );
+}
+
+function P0StoryboardRequiredPanel({
+  issues,
+}: {
+  issues: Array<{ message: string }>;
+}) {
+  const issueText = issues
+    .slice(0, 2)
+    .map((issue) => issue.message)
+    .join(" ");
+  return (
+    <section className="review-panel">
+      <div className="review-panel__header">
+        <span>等待上游确认</span>
+        <h1>分镜生成要求</h1>
+        <p>需要先让分镜脚本成为 15 秒三镜版本，再生成逐分镜的分镜图和分镜视频要求。</p>
+      </div>
+      <div className="review-empty-state">
+        <Ban size={22} />
+        <strong>请先批准三镜分镜脚本。</strong>
+        <span>
+          当前生效的分镜脚本仍是旧结构。回到分镜脚本模块，确认三镜整理稿并点击批准生效。
+        </span>
+        {issueText ? <span>{issueText}</span> : null}
       </div>
     </section>
   );
@@ -1526,13 +3190,24 @@ function ShotPromptReview({
   onActionComplete: () => void;
 }) {
   const artifact = vm.artifacts.shotPrompt;
+  const storyboardValidation = vm.artifacts.storyboard
+    ? validateP0StoryboardScript(vm.artifacts.storyboard.data)
+    : null;
+  const pending = Boolean(vm.pending?.shotPrompt);
+  if (storyboardValidation && !storyboardValidation.valid) {
+    return <P0StoryboardRequiredPanel issues={storyboardValidation.issues} />;
+  }
   if (!artifact) {
     return (
       <ProposalPlaceholder
         title="分镜生成要求"
-        description="分镜规划批准后，生成每个 shot 的分镜图和分镜视频要求。"
-        actionLabel="生成分镜生成要求"
-        busy={vm.busy}
+        description={
+          pending
+            ? "系统正在根据已批准的分镜脚本生成分镜图和分镜视频要求，完成后会停在这里供你审核。"
+            : "分镜脚本批准后，生成每个分镜的分镜图和分镜视频要求。"
+        }
+        actionLabel={pending ? "正在生成分镜生成要求..." : "生成分镜生成要求"}
+        busy={vm.busy || pending}
         onAction={() => {
           vm.actions.compileShotPrompt();
           onActionComplete();
@@ -1541,28 +3216,142 @@ function ShotPromptReview({
     );
   }
   const shotPrompt = artifact.data;
-  if (artifact.isCurrent && !vm.workspaceStatus?.activeShotSet) {
-    return (
-      <ProposalPlaceholder
-        title="分镜生成要求"
-        description="已批准分镜生成要求，下一步创建当前分镜链路实例。"
-        actionLabel="创建分镜任务"
-        busy={vm.busy}
-        onAction={() => {
-          vm.actions.applyShotSet();
-          onActionComplete();
-        }}
-      />
-    );
-  }
   return (
     <ShotPromptReviewForm
       artifactId={artifact.id}
       shotPrompt={shotPrompt}
       busy={vm.busy}
-      onApprove={vm.actions.approveShotPromptAndApply}
+      onApprove={vm.actions.approveShotPromptData}
       onActionComplete={onActionComplete}
     />
+  );
+}
+
+function ApplyShotSetPanel({
+  vm,
+  onActionComplete,
+}: {
+  vm: WorkbenchViewModel;
+  onActionComplete: () => void;
+}) {
+  const shotPrompt = vm.artifacts.shotPrompt;
+  const activeShotSet = vm.workspaceStatus?.activeShotSet;
+  const pending = Boolean(vm.pending?.applyShotSet);
+  const storyboardValidation = vm.artifacts.storyboard
+    ? validateP0StoryboardScript(vm.artifacts.storyboard.data)
+    : null;
+  const storyboardRequiresApproval = Boolean(
+    storyboardValidation && !storyboardValidation.valid,
+  );
+  const activeShotRows = [...vm.shotRows].sort(
+    (a, b) => a.orderIndex - b.orderIndex,
+  );
+  const activeChanged = Boolean(activeShotSet?.upstream?.upstreamChanged);
+  const actionClass =
+    activeShotSet && !activeChanged ? "review-secondary" : "review-primary";
+  const actionLabel = pending
+    ? "正在创建分镜链路实例..."
+      : activeShotSet
+        ? activeChanged
+          ? "应用并创建新实例"
+          : "重新创建实例"
+        : "创建分镜链路实例";
+
+  return (
+    <section className="review-panel">
+      <div className="review-panel__header">
+        <span>同步点</span>
+        <h1>应用分镜</h1>
+        <p>
+          将当前生效的分镜生成要求创建为分镜链路实例。旧实例、候选结果和成片会保留。
+        </p>
+      </div>
+      {storyboardRequiresApproval ? (
+        <div className="review-upstream-note">
+          <Ban size={14} />
+          当前生效的分镜脚本仍是旧结构。请先回到分镜脚本模块，批准 15 秒三镜版本。
+        </div>
+      ) : null}
+      {activeShotSet ? (
+        <article className="shot-set-instance shot-set-instance--active">
+          <header className="shot-set-instance__head">
+            <Layers3 size={20} />
+            <div>
+              <strong>
+                当前分镜链路实例{" "}
+                <span className="mono">{shortEntityId(activeShotSet.id)}</span>
+              </strong>
+              <span>
+                创建于 {formatReviewTime(activeShotSet.createdAt)} ·{" "}
+                {activeShotRows.length || activeShotSet.shotCount || 0} 个分镜脚本
+              </span>
+            </div>
+            <span className="review-status review-status--good">当前生效</span>
+          </header>
+          {activeChanged ? (
+            <div className="review-upstream-note">
+              <RefreshCw size={14} />
+              生效分镜生成要求有更新，重新应用会创建新实例并归档当前实例。
+            </div>
+          ) : null}
+          {activeShotRows.length > 0 ? (
+            <div className="shot-set-shot-grid" aria-label="当前分镜脚本摘要">
+              {activeShotRows.map((shot) => (
+                <article key={shot.id} className="shot-set-shot-card">
+                  <span className="mono">
+                    #{shot.orderIndex} · {formatShotDuration(shot)}
+                  </span>
+                  <strong className="u-clip">{shot.title}</strong>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="review-muted">正在同步当前分镜脚本摘要。</p>
+          )}
+        </article>
+      ) : (
+        <div className="review-empty-state">
+          <Layers3 size={22} />
+          <strong>尚未创建分镜链路实例。</strong>
+          <span>
+            需要先把生效的分镜生成要求应用为可执行 shots，再开始逐分镜制作。
+          </span>
+        </div>
+      )}
+      <div className="shot-set-apply-card">
+        <div>
+          <strong>
+            {activeShotSet
+              ? activeChanged
+                ? "生效分镜生成要求有更新"
+                : "当前分镜链路实例已创建"
+              : "等待创建分镜链路实例"}
+          </strong>
+          <span>
+            {activeShotSet
+              ? activeChanged
+                ? "应用后会创建新的分镜链路实例，当前实例进入归档历史。"
+                : "如需强制重新创建，可手动触发；通常可以继续进入分镜图选择。"
+              : "创建后会生成可执行分镜脚本，后续分镜图和分镜视频只读取当前生效实例。"}
+          </span>
+        </div>
+        <button
+          type="button"
+          className={actionClass}
+          disabled={vm.busy || !shotPrompt?.isCurrent || storyboardRequiresApproval}
+          onClick={() => {
+            vm.actions.applyShotSet();
+            onActionComplete();
+          }}
+        >
+          <CheckCircle2 size={16} />
+          {actionLabel}
+        </button>
+      </div>
+      <span className="review-action-note">
+        批准分镜生成要求不会自动清空或重建已有分镜链路。
+      </span>
+    </section>
   );
 }
 
@@ -1579,16 +3368,21 @@ function ImageSelectionPanel({
 }) {
   const nextImageShot = vm.shots.find((shot) => !shot.selectedImageId) ?? null;
   const shot = vm.selectedWorkflowShot ?? nextImageShot;
-  const round = vm.latestImageRound;
-  const batchId = round?.batch?.id ?? null;
+  const rounds = vm.imageRounds;
   const mustSelectNext = nextImageShot && shot?.shotId !== nextImageShot.shotId;
   const selectedWasManual =
     manualShotSelectionId !== null && manualShotSelectionId === vm.selectedShotId;
   const canGenerate =
+    Boolean(vm.selectedShotId) &&
     shot !== null &&
     !mustSelectNext &&
-    !shot.selectedImageId &&
     !["IMAGE_GENERATING", "IMAGE_PROMPT_PROPOSING"].includes(shot.status);
+  const selectedImageRendered = Boolean(
+    shot?.selectedImageId &&
+      rounds.some((round) =>
+        round.candidates.some((candidate) => candidate.id === shot.selectedImageId),
+      ),
+  );
 
   useEffect(() => {
     if (
@@ -1608,10 +3402,10 @@ function ImageSelectionPanel({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>按 shot 顺序推进</span>
+        <span>按分镜顺序推进</span>
         <h1>分镜图选择</h1>
         <p>
-          后一张分镜图会使用前一张 selected image 作为场景连续性锚点，所以这里不能并行生成。
+          后一张分镜图会使用前一张已选分镜图作为场景连续性锚点，所以这里不能并行生成。
         </p>
       </div>
       {!shot ? (
@@ -1620,12 +3414,12 @@ function ImageSelectionPanel({
         <>
           <div className="review-current-shot">
             <span>当前分镜</span>
-            <strong>Shot {shot.orderIndex + 1}</strong>
+            <strong>分镜 {shot.orderIndex + 1}</strong>
             <em>{shot.status}</em>
           </div>
           {mustSelectNext && nextImageShot ? (
             <p className="review-warning">
-              请先完成 Shot {nextImageShot.orderIndex + 1} 的分镜图选择。
+              请先完成分镜 {nextImageShot.orderIndex + 1} 的分镜图选择。
             </p>
           ) : null}
           <div className="review-panel__actions">
@@ -1636,38 +3430,38 @@ function ImageSelectionPanel({
               onClick={vm.actions.proposeImage}
             >
               <ImageIcon size={16} />
-              生成分镜图候选
+              {vm.pending?.image ? "正在生成分镜图..." : "生成分镜图候选"}
             </button>
           </div>
-          {round ? (
+          {rounds.length > 0 ? (
             <>
-              <CandidateImages
-                key={shot.shotId}
-                round={round}
-                batchId={batchId}
-                busy={vm.busy}
-                onSelect={(candidateId, selectedBatchId) => {
-                  vm.actions.selectImageCandidate(candidateId, selectedBatchId);
-                  onImageSelectionConfirmed();
-                }}
-              />
-              <ImagePromptRegenerationForm
-                key={round.artifact.id}
-                artifact={round.artifact}
-                busy={vm.busy || Boolean(vm.hasActiveGeneration)}
-                onSubmit={(prompt) =>
-                  vm.actions.regenerateImage({
-                    baseArtifactId: round.artifact.id,
-                    userDirection: prompt.promptText,
-                  })
-                }
-              />
+              {rounds.map((round, index) => (
+                <CandidateImages
+                  key={round.artifact.id}
+                  round={round}
+                  batchId={round.batch?.id ?? null}
+                  busy={vm.busy}
+                  showDetachedSelection={!selectedImageRendered && index === 0}
+                  allowFeedback={index === 0}
+                  onSelect={(candidateId, selectedBatchId) => {
+                    vm.actions.selectImageCandidate(candidateId, selectedBatchId);
+                    onImageSelectionConfirmed();
+                  }}
+                  onRegenerate={(candidateId, userDirection) =>
+                    vm.actions.regenerateImage({
+                      baseArtifactId: round.artifact.id,
+                      feedbackImageCandidateId: candidateId,
+                      userDirection,
+                    })
+                  }
+                />
+              ))}
             </>
           ) : (
             <div className="review-empty-state">
               <ImageIcon size={22} />
-              <strong>当前 shot 还没有候选图。</strong>
-              <span>生成后，选择一张作为 current image，再进入下一 shot。</span>
+              <strong>当前分镜还没有候选图。</strong>
+              <span>生成后，选择一张作为当前分镜图，再进入下一分镜。</span>
             </div>
           )}
         </>
@@ -1676,173 +3470,34 @@ function ImageSelectionPanel({
   );
 }
 
-function promptJsonFromArtifact(
-  artifact: NonNullable<WorkbenchViewModel["latestImageRound"]>["artifact"],
-): ImagePromptJson {
-  const value =
-    artifact.promptJson && typeof artifact.promptJson === "object"
-      ? (artifact.promptJson as Partial<ImagePromptJson>)
-      : {};
-  return {
-    promptText:
-      typeof value.promptText === "string" ? value.promptText : artifact.promptText,
-    negativePrompt:
-      typeof value.negativePrompt === "string"
-        ? value.negativePrompt
-        : artifact.negativePrompt,
-    visualStyle: typeof value.visualStyle === "string" ? value.visualStyle : null,
-    composition: typeof value.composition === "string" ? value.composition : null,
-    lighting: typeof value.lighting === "string" ? value.lighting : null,
-    productVisibilityRule:
-      typeof value.productVisibilityRule === "string"
-        ? value.productVisibilityRule
-        : "商品完整、清晰、自然可见，不变形，不被遮挡。",
-    referenceImageUsage: Array.isArray(value.referenceImageUsage)
-      ? value.referenceImageUsage
-      : [],
-    qualityChecklist: Array.isArray(value.qualityChecklist)
-      ? value.qualityChecklist.filter((item): item is string => typeof item === "string")
-      : [],
-    context: value.context,
-  };
-}
-
-function ImagePromptRegenerationForm({
-  artifact,
-  busy,
-  onSubmit,
+function RequirementSummarySection({
+  title,
+  value,
+  labels,
+  order,
 }: {
-  artifact: NonNullable<WorkbenchViewModel["latestImageRound"]>["artifact"];
-  busy: boolean;
-  onSubmit: (prompt: ImagePromptJson) => void;
+  title: string;
+  value: unknown;
+  labels: Record<string, string>;
+  order: string[];
 }) {
-  const initial = useMemo(() => promptJsonFromArtifact(artifact), [artifact]);
-  const [promptText, setPromptText] = useState(initial.promptText);
-  const [negativePrompt, setNegativePrompt] = useState(initial.negativePrompt ?? "");
-  const [visualStyle, setVisualStyle] = useState(initial.visualStyle ?? "");
-  const [composition, setComposition] = useState(initial.composition ?? "");
-  const [lighting, setLighting] = useState(initial.lighting ?? "");
-  const [productVisibilityRule, setProductVisibilityRule] = useState(
-    initial.productVisibilityRule,
-  );
-  const [qualityChecklistText, setQualityChecklistText] = useState(
-    initial.qualityChecklist.join("\n"),
-  );
-
-  useEffect(() => {
-    setPromptText(initial.promptText);
-    setNegativePrompt(initial.negativePrompt ?? "");
-    setVisualStyle(initial.visualStyle ?? "");
-    setComposition(initial.composition ?? "");
-    setLighting(initial.lighting ?? "");
-    setProductVisibilityRule(initial.productVisibilityRule);
-    setQualityChecklistText(initial.qualityChecklist.join("\n"));
-  }, [initial]);
-
-  const referenceUsage = initial.referenceImageUsage;
-  const canSubmit = promptText.trim().length > 0 && productVisibilityRule.trim().length > 0;
-
+  const keys = layerKeys(value, order);
   return (
-    <form
-      className="review-image-prompt-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!canSubmit || busy) return;
-        onSubmit({
-          promptText: promptText.trim(),
-          negativePrompt: negativePrompt.trim() || null,
-          visualStyle: visualStyle.trim() || null,
-          composition: composition.trim() || null,
-          lighting: lighting.trim() || null,
-          productVisibilityRule: productVisibilityRule.trim(),
-          referenceImageUsage: referenceUsage,
-          qualityChecklist: qualityChecklistText
-            .split("\n")
-            .map((item) => item.trim())
-            .filter(Boolean),
-          context: initial.context,
-        });
-      }}
-    >
-      <div className="review-round__head">
-        <span className="review-status">调整生成要求</span>
-        <span>基于 v{artifact.version} 重新生成候选图，不会替换当前选择。</span>
-      </div>
-      <div className="review-form-grid">
-        <label className="review-form-grid__wide">
-          画面描述
-          <textarea
-            value={promptText}
-            onChange={(event) => setPromptText(event.target.value)}
-          />
-        </label>
-        <label>
-          负向约束
-          <textarea
-            value={negativePrompt}
-            onChange={(event) => setNegativePrompt(event.target.value)}
-          />
-        </label>
-        <label>
-          视觉风格
-          <textarea
-            value={visualStyle}
-            onChange={(event) => setVisualStyle(event.target.value)}
-          />
-        </label>
-        <label>
-          构图
-          <textarea
-            value={composition}
-            onChange={(event) => setComposition(event.target.value)}
-          />
-        </label>
-        <label>
-          光线
-          <textarea
-            value={lighting}
-            onChange={(event) => setLighting(event.target.value)}
-          />
-        </label>
-        <label className="review-form-grid__wide">
-          商品呈现规则
-          <textarea
-            value={productVisibilityRule}
-            onChange={(event) => setProductVisibilityRule(event.target.value)}
-          />
-        </label>
-        <label className="review-form-grid__wide">
-          质量检查项（每行一条）
-          <textarea
-            value={qualityChecklistText}
-            onChange={(event) => setQualityChecklistText(event.target.value)}
-          />
-        </label>
-      </div>
-      {referenceUsage.length > 0 ? (
-        <div className="review-reference-usage">
-          <span>参考图用途</span>
-          {referenceUsage.map((item) => (
-            <code key={`${item.assetId}:${item.usage}`}>
-              {item.assetId} · {item.usage} · {item.instruction}
-            </code>
+    <section className="review-requirement-summary__section">
+      <strong>{title}</strong>
+      {keys.length > 0 && isPlainRecord(value) ? (
+        <dl>
+          {keys.map((key) => (
+            <div key={key}>
+              <dt>{labels[key] ?? key}</dt>
+              <dd>{displayValue(value[key])}</dd>
+            </div>
           ))}
-        </div>
-      ) : null}
-      <div className="review-panel__actions">
-        <button
-          type="submit"
-          className="review-secondary"
-          disabled={busy || !canSubmit}
-        >
-          <RefreshCw size={16} />
-          重新生成候选图
-        </button>
-        <span className="review-action-note">
-          原 current image 会保留，只有确认新候选后才会更新。
-        </span>
-      </div>
-    </form>
+        </dl>
+      ) : (
+        <p>{displayValue(value)}</p>
+      )}
+    </section>
   );
 }
 
@@ -1850,18 +3505,31 @@ function CandidateImages({
   round,
   batchId,
   busy,
+  showDetachedSelection,
+  allowFeedback,
   onSelect,
+  onRegenerate,
 }: {
   round: NonNullable<WorkbenchViewModel["latestImageRound"]>;
   batchId: string | null;
   busy: boolean;
+  showDetachedSelection: boolean;
+  allowFeedback: boolean;
   onSelect: (candidateId: string, batchId: string) => void;
+  onRegenerate: (candidateId: string, userDirection: string) => void;
 }) {
   const committedId = round.selection?.selectedCandidateId ?? null;
   const [stagedId, setStagedId] = useState<string | null>(committedId);
+  const [feedbackCandidateId, setFeedbackCandidateId] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const candidateAspectRatio = cssAspectRatio(round.batch?.aspectRatio);
   useEffect(() => {
     setStagedId(committedId);
   }, [committedId]);
+  useEffect(() => {
+    setFeedbackCandidateId(null);
+    setFeedbackText("");
+  }, [round.artifact.id]);
 
   const confirmEnabled =
     Boolean(batchId) && canConfirmSelection({ stagedId, committedId, busy });
@@ -1881,7 +3549,8 @@ function CandidateImages({
           {round.batch?.status ?? "等待"}
         </span>
         <span>
-          {round.batch?.succeededCount ?? 0}/{round.batch?.requestedCount ?? round.candidates.length}
+          第 {round.artifact.version} 轮 · {round.batch?.succeededCount ?? 0}/
+          {round.batch?.requestedCount ?? round.candidates.length}
         </span>
       </div>
       {round.upstream?.upstreamChanged ? (
@@ -1894,40 +3563,110 @@ function CandidateImages({
         {round.candidates.map((candidate) => {
           const isStaged = candidate.id === stagedId;
           const isCommitted = candidate.id === committedId;
+          const isFeedbackOpen = feedbackCandidateId === candidate.id;
+          const canFeedback =
+            allowFeedback && candidate.status === "SUCCEEDED" && Boolean(candidate.imageUrl);
           return (
-            <button
+            <div
               key={candidate.id}
-              type="button"
-              disabled={busy || !isSelectableCandidate(candidate.status)}
-              aria-pressed={isStaged}
-              className={[
-                "review-candidate",
-                `review-candidate--${statusTone(candidate.status)}`,
-                isStaged ? "review-candidate--staged" : "",
-                isCommitted ? "review-candidate--committed" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() =>
-                setStagedId((current) =>
-                  stageCandidate(current, candidate.id, round.candidates),
-                )
-              }
+              className="review-candidate-card"
             >
-              {candidate.imageUrl ? (
-                <img src={toAbsoluteAssetUrl(candidate.imageUrl)} alt={candidate.id} />
-              ) : (
-                <span>{candidate.errorMessage ?? candidate.status}</span>
-              )}
-              {isCommitted ? (
-                <span className="review-candidate__badge">当前选择</span>
+              <button
+                type="button"
+                disabled={busy || !isSelectableCandidate(candidate.status)}
+                aria-pressed={isStaged}
+                className={[
+                  "review-candidate",
+                  `review-candidate--${statusTone(candidate.status)}`,
+                  isStaged ? "review-candidate--staged" : "",
+                  isCommitted ? "review-candidate--committed" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() =>
+                  setStagedId((current) =>
+                    stageCandidate(current, candidate.id, round.candidates),
+                  )
+                }
+                style={
+                  candidateAspectRatio
+                    ? { aspectRatio: candidateAspectRatio }
+                    : undefined
+                }
+              >
+                {candidate.imageUrl ? (
+                  <img src={toAbsoluteAssetUrl(candidate.imageUrl)} alt={candidate.id} />
+                ) : (
+                  <span>{candidate.errorMessage ?? candidate.status}</span>
+                )}
+                {isCommitted ? (
+                  <span className="review-candidate__badge">当前选择</span>
+                ) : null}
+              </button>
+              {canFeedback ? (
+                <div className="review-candidate-feedback">
+                  {isFeedbackOpen ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const trimmed = feedbackText.trim();
+                        if (!trimmed || busy) return;
+                        onRegenerate(candidate.id, trimmed);
+                      }}
+                    >
+                      <label>
+                        本次反馈
+                        <textarea
+                          value={feedbackText}
+                          onChange={(event) => setFeedbackText(event.target.value)}
+                          placeholder="填写你的意见"
+                          required
+                        />
+                      </label>
+                      <div className="review-panel__actions">
+                        <button
+                          type="submit"
+                          className="review-secondary"
+                          disabled={busy || !feedbackText.trim()}
+                        >
+                          <RefreshCw size={16} />
+                          按反馈重新生成
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => {
+                            setFeedbackCandidateId(null);
+                            setFeedbackText("");
+                          }}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      className="review-secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        setFeedbackCandidateId(candidate.id);
+                        setFeedbackText("");
+                      }}
+                    >
+                      <RefreshCw size={16} />
+                      基于这张图反馈
+                    </button>
+                  )}
+                </div>
               ) : null}
-            </button>
+            </div>
           );
         })}
       </div>
       {committedId &&
       !round.candidates.some((candidate) => candidate.id === committedId) &&
+      showDetachedSelection &&
       round.selection?.selectedImageUrl ? (
         <div className="review-current-image">
           <img
@@ -1964,16 +3703,15 @@ function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
   const videoTargets = vm.shots.filter(
     (shot) => shot.selectedImageId && !shot.selectedVideoId && !shot.activeVideoBatchId,
   );
-  const round = vm.latestVideoRound;
-  const batchId = round?.batch?.id ?? null;
+  const rounds = vm.videoRounds;
 
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>批量生成，逐 shot 审核</span>
+        <span>批量生成，逐分镜审核</span>
         <h1>分镜视频选择</h1>
         <p>
-          全部分镜图选择完成后，批量生成视频候选；用户仍然逐个 shot 选择 current video。
+          全部分镜图选择完成后，批量生成视频候选；用户仍然逐个分镜选择当前分镜视频。
         </p>
       </div>
       <div className="review-panel__actions">
@@ -1984,33 +3722,46 @@ function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
           onClick={vm.actions.proposeAllVideos}
         >
           <Film size={16} />
-          批量生成分镜视频候选
+          {vm.pending?.video ? "正在生成分镜视频..." : "批量生成分镜视频候选"}
         </button>
         <span className="review-action-note">
           {videoTargets.length > 0
-            ? `待生成 ${videoTargets.length} 个 shot`
+            ? `待生成 ${videoTargets.length} 个分镜`
             : "已有视频候选或已完成选择"}
         </span>
       </div>
       {vm.selectedWorkflowShot ? (
         <div className="review-current-shot">
           <span>当前审核</span>
-          <strong>Shot {vm.selectedWorkflowShot.orderIndex + 1}</strong>
+          <strong>分镜 {vm.selectedWorkflowShot.orderIndex + 1}</strong>
           <em>{vm.selectedWorkflowShot.status}</em>
         </div>
       ) : null}
-      {round ? (
-        <CandidateVideos
-          round={round}
-          batchId={batchId}
-          busy={vm.busy}
-          onSelect={vm.actions.selectVideoCandidate}
-        />
+      {rounds.length > 0 ? (
+        <>
+          {rounds.map((round, index) => (
+            <CandidateVideos
+              key={round.artifact.id}
+              round={round}
+              batchId={round.batch?.id ?? null}
+              busy={vm.busy}
+              allowFeedback={index === 0}
+              onSelect={vm.actions.selectVideoCandidate}
+              onRegenerate={(candidateId, userDirection) =>
+                vm.actions.regenerateVideo({
+                  baseArtifactId: round.artifact.id,
+                  feedbackVideoCandidateId: candidateId,
+                  userDirection,
+                })
+              }
+            />
+          ))}
+        </>
       ) : (
         <div className="review-empty-state">
           <Film size={22} />
-          <strong>当前 shot 还没有视频候选。</strong>
-          <span>批量生成完成后，在左侧切换 shot 逐个审核。</span>
+          <strong>当前分镜还没有视频候选。</strong>
+          <span>批量生成完成后，在左侧切换分镜逐个审核。</span>
         </div>
       )}
     </section>
@@ -2021,13 +3772,24 @@ function CandidateVideos({
   round,
   batchId,
   busy,
+  allowFeedback,
   onSelect,
+  onRegenerate,
 }: {
   round: NonNullable<WorkbenchViewModel["latestVideoRound"]>;
   batchId: string | null;
   busy: boolean;
+  allowFeedback: boolean;
   onSelect: (candidateId: string, batchId: string) => void;
+  onRegenerate: (candidateId: string, userDirection: string) => void;
 }) {
+  const candidateAspectRatio = cssAspectRatio(round.batch?.aspectRatio);
+  const [feedbackCandidateId, setFeedbackCandidateId] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  useEffect(() => {
+    setFeedbackCandidateId(null);
+    setFeedbackText("");
+  }, [round.artifact.id]);
   return (
     <div className="review-round">
       <div className="review-round__head">
@@ -2045,25 +3807,102 @@ function CandidateVideos({
         </div>
       ) : null}
       <div className="review-video-grid">
-        {round.candidates.map((candidate) => (
-          <div
-            key={candidate.id}
-            className={`review-video-candidate review-candidate--${statusTone(candidate.status)}`}
-          >
-            {candidate.videoUrl ? (
-              <video src={toAbsoluteAssetUrl(candidate.videoUrl)} controls preload="metadata" />
-            ) : (
-              <span>{candidate.errorMessage ?? candidate.status}</span>
-            )}
-            <button
-              type="button"
-              disabled={busy || !batchId || candidate.status !== "SUCCEEDED"}
-              onClick={() => batchId && onSelect(candidate.id, batchId)}
+        {round.candidates.map((candidate) => {
+          const isFeedbackOpen = feedbackCandidateId === candidate.id;
+          const isCommitted = candidate.id === round.selection?.selectedCandidateId;
+          const canFeedback =
+            allowFeedback && candidate.status === "SUCCEEDED" && Boolean(candidate.videoUrl);
+          return (
+            <div
+              key={candidate.id}
+              className={`review-video-candidate review-candidate--${statusTone(candidate.status)}`}
             >
-              选择为当前分镜视频
-            </button>
-          </div>
-        ))}
+              {candidate.videoUrl ? (
+                <>
+                  <video
+                    src={toAbsoluteAssetUrl(candidate.videoUrl)}
+                    controls
+                    preload="metadata"
+                    style={
+                      candidateAspectRatio
+                        ? { aspectRatio: candidateAspectRatio }
+                        : undefined
+                    }
+                  />
+                  {isCommitted ? (
+                    <span className="review-candidate__badge">当前选择</span>
+                  ) : null}
+                </>
+              ) : (
+                <span>{candidate.errorMessage ?? candidate.status}</span>
+              )}
+              <button
+                type="button"
+                disabled={busy || !batchId || candidate.status !== "SUCCEEDED"}
+                onClick={() => batchId && onSelect(candidate.id, batchId)}
+              >
+                选择为当前分镜视频
+              </button>
+              {canFeedback ? (
+                <div className="review-candidate-feedback">
+                  {isFeedbackOpen ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const trimmed = feedbackText.trim();
+                        if (!trimmed || busy) return;
+                        onRegenerate(candidate.id, trimmed);
+                      }}
+                    >
+                      <label>
+                        本次反馈
+                        <textarea
+                          value={feedbackText}
+                          onChange={(event) => setFeedbackText(event.target.value)}
+                          placeholder="填写你的意见"
+                          required
+                        />
+                      </label>
+                      <div className="review-panel__actions">
+                        <button
+                          type="submit"
+                          className="review-secondary"
+                          disabled={busy || !feedbackText.trim()}
+                        >
+                          <RefreshCw size={16} />
+                          按反馈重新生成
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => {
+                            setFeedbackCandidateId(null);
+                            setFeedbackText("");
+                          }}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      className="review-secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        setFeedbackCandidateId(candidate.id);
+                        setFeedbackText("");
+                      }}
+                    >
+                      <RefreshCw size={16} />
+                      基于这个视频反馈
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       {!isTerminalReady(round.batch?.status) ? <div className="review-progress" /> : null}
     </div>
@@ -2084,11 +3923,15 @@ function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
         <button
           type="button"
           className="review-primary"
-          disabled={vm.busy || !vm.workflow?.canComposeFinalVideo}
+          disabled={
+            vm.busy ||
+            Boolean(vm.pending?.finalVideo) ||
+            !vm.workflow?.canComposeFinalVideo
+          }
           onClick={vm.actions.composeFinal}
         >
           <Play size={16} />
-          生成成片
+          {vm.pending?.finalVideo ? "正在生成成片..." : "生成成片"}
         </button>
       </div>
       {job ? (
@@ -2132,12 +3975,16 @@ function MainPanel({
   switch (active) {
     case "requirements":
       return <RequirementsStart vm={vm} onActionComplete={onActionComplete} />;
+    case "material":
+      return <MaterialIntakeReview vm={vm} onActionComplete={onActionComplete} />;
     case "brief":
       return <ProductBriefReview vm={vm} onActionComplete={onActionComplete} />;
     case "storyboard":
       return <StoryboardReview vm={vm} onActionComplete={onActionComplete} />;
     case "shotprompt":
       return <ShotPromptReview vm={vm} onActionComplete={onActionComplete} />;
+    case "apply":
+      return <ApplyShotSetPanel vm={vm} onActionComplete={onActionComplete} />;
     case "image":
       return (
         <ImageSelectionPanel
@@ -2171,8 +4018,10 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
     defaultStep,
     selectedStep,
     vm.artifacts.brief?.id,
+    vm.artifacts.material?.id,
     vm.artifacts.promptRequirements?.id,
     vm.artifacts.shotPrompt?.id,
+    vm.artifacts.shotPrompt?.isCurrent,
     vm.artifacts.storyboard?.id,
     vm.shots.length,
     vm.workspaceStatus?.activeShotSet?.id,
@@ -2231,6 +4080,7 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
           <RightRail
             vm={vm}
             onReturnToRequirements={() => setSelectedStep("requirements")}
+            onSelectStep={setSelectedStep}
           />
         </main>
       )}

@@ -519,6 +519,7 @@ async function mockCreativeReviewApi(
 async function mockReviewStartApi(page: Page) {
   let materialUploaded = false;
   let requirementsApproved = false;
+  let materialProposed = false;
   let materialApproved = false;
   let briefProposed = false;
   const calls: string[] = [];
@@ -560,7 +561,20 @@ async function mockReviewStartApi(page: Page) {
   const materialData = {
     scannedAt: now,
     primaryProductRef: "product.png",
-    assets: [],
+    assets: [
+      {
+        ref: "product.png",
+        kind: "image",
+        mime: "image/png",
+        bytes: 100,
+        sha256: "a".repeat(64),
+        role: "product_main",
+        description: "hero product frame",
+        relevance: "high",
+        usable: true,
+        included: true
+      }
+    ],
     rejected: []
   };
   const briefData = {
@@ -633,6 +647,8 @@ async function mockReviewStartApi(page: Page) {
         : null,
       material: materialApproved
         ? artifact("material-intake", materialData, "approved")
+        : materialProposed
+          ? artifact("material-intake", materialData, "proposed")
         : null,
       brief: briefProposed ? artifact("product-brief", briefData, "proposed") : null,
       storyboard: null,
@@ -704,6 +720,7 @@ async function mockReviewStartApi(page: Page) {
       request.method() === "POST" &&
       path === `/api/workspaces/${workspaceId}/material-intake/propose`
     ) {
+      materialProposed = true;
       calls.push("propose-material");
       return json(route, {
         data: artifact("material-intake", materialData, "proposed")
@@ -741,12 +758,15 @@ async function mockReviewStartApi(page: Page) {
   return calls;
 }
 
-async function mockLayeredReviewApi(page: Page) {
-  let briefApproved = false;
-  let storyboardProposed = false;
-  let storyboardApproved = false;
-  let shotPromptProposed = false;
-  let shotPromptApproved = false;
+async function mockLayeredReviewApi(
+  page: Page,
+  options: { legacyApprovedShotPrompt?: boolean } = {}
+) {
+  let briefApproved = Boolean(options.legacyApprovedShotPrompt);
+  let storyboardProposed = Boolean(options.legacyApprovedShotPrompt);
+  let storyboardApproved = Boolean(options.legacyApprovedShotPrompt);
+  let shotPromptProposed = Boolean(options.legacyApprovedShotPrompt);
+  let shotPromptApproved = Boolean(options.legacyApprovedShotPrompt);
   let shotSetApplied = false;
   const state: {
     calls: string[];
@@ -759,7 +779,7 @@ async function mockLayeredReviewApi(page: Page) {
     id: workspaceId,
     localPath: "/tmp/daireel-e2e",
     currentScriptId: "script-e2e",
-    status: "brief_proposed",
+    status: options.legacyApprovedShotPrompt ? "shotprompt_approved" : "brief_proposed",
     traceFile: ".daireel/trace/events.jsonl",
     createdAt: now,
     updatedAt: now,
@@ -808,7 +828,7 @@ async function mockLayeredReviewApi(page: Page) {
   };
   const storyboardData = {
     narrative: "show the product in a consistent workspace",
-    totalDurationSec: 8,
+    totalDurationSec: 15,
     shots: [
       {
         index: 0,
@@ -822,6 +842,16 @@ async function mockLayeredReviewApi(page: Page) {
       },
       {
         index: 1,
+        purpose: "proof",
+        durationSec: 7,
+        scene: "same clean desk with lamp detail",
+        visualDirection: "show soft adjustable light on the desk",
+        productAssetRef: "product.png",
+        voiceover: "柔和光线减少桌面杂乱。",
+        transition: "cut"
+      },
+      {
+        index: 2,
         purpose: "cta",
         durationSec: 4,
         scene: "same clean desk",
@@ -835,9 +865,9 @@ async function mockLayeredReviewApi(page: Page) {
   };
   const shotPromptData = {
     targetProvider: "seedance",
-    durationSec: 8,
+    durationSec: 15,
     aspectRatio: "9:16",
-    prompt: "consistent desk lamp sequence",
+    prompt: "consistent desk lamp three-shot sequence",
     negativePrompt: "",
     shots: [
       {
@@ -846,23 +876,170 @@ async function mockLayeredReviewApi(page: Page) {
         endSec: 4,
         providerPrompt: "clean desk slow push",
         referenceAssetRefs: ["product.png"],
-        voiceover: "整理桌面，从一盏好灯开始。"
+        voiceover: "整理桌面，从一盏好灯开始。",
+        shotImage: {
+          scene: "干净桌面上的台灯",
+          composition: "产品居中，桌面留白",
+          lighting: "真实自然光照亮桌面",
+          productVisibility: "台灯轮廓完整可见",
+          referenceUsage: "参考 product.png 保持台灯外观",
+          style: "真实自然光",
+          negative: ["室内杂物", "产品变形"]
+        },
+        shotVideo: {
+          cameraMotion: "缓慢推进",
+          subjectMotion: "台灯保持静止",
+          firstFrameIntent: "产品完整入画",
+          lastFrameIntent: "停在灯罩细节",
+          durationIntent: "4 秒内完成缓慢推进",
+          continuity: "光线保持一致",
+          negative: ["镜头抖动", "手指遮挡"]
+        }
       },
       {
         index: 1,
         startSec: 4,
-        endSec: 8,
+        endSec: 11,
+        providerPrompt: "same desk lamp proof detail",
+        referenceAssetRefs: ["product.png"],
+        voiceover: "柔和光线减少桌面杂乱。",
+        shotImage: {
+          scene: "桌面台灯细节与柔和光线",
+          composition: "灯罩和桌面光斑清楚可见",
+          lighting: "柔和自然光叠加灯光",
+          productVisibility: "台灯细节完整可见",
+          referenceUsage: "参考 product.png 保持台灯身份",
+          style: "干净可信",
+          negative: ["画面过曝", "商品变形"]
+        },
+        shotVideo: {
+          cameraMotion: "轻微横移",
+          subjectMotion: "光线自然变化",
+          firstFrameIntent: "承接上一镜头台灯主体",
+          lastFrameIntent: "停在桌面柔和光线",
+          durationIntent: "7 秒内展示光线证明",
+          continuity: "桌面方向一致",
+          negative: ["跳切", "色温漂移"]
+        }
+      },
+      {
+        index: 2,
+        startSec: 11,
+        endSec: 15,
         providerPrompt: "same desk hero hold",
         referenceAssetRefs: ["product.png"],
-        voiceover: "现在就把光线调到舒服。"
+        voiceover: "现在就把光线调到舒服。",
+        shotImage: {
+          scene: "同一桌面上的台灯 hero 角度",
+          composition: "产品略偏右，保留按钮区域",
+          lighting: "柔和自然光稳定",
+          productVisibility: "品牌和灯罩完整可见",
+          referenceUsage: "参考 product.png 保持灯罩比例",
+          style: "柔和清爽",
+          negative: ["画面过曝", "背景混乱"]
+        },
+        shotVideo: {
+          cameraMotion: "固定机位",
+          subjectMotion: "灯光逐渐变亮",
+          firstFrameIntent: "承接上一镜头桌面",
+          lastFrameIntent: "停留在舒适光线",
+          durationIntent: "4 秒内完成灯光变化",
+          continuity: "桌面方向一致",
+          negative: ["跳切", "色温漂移"]
+        }
       }
     ],
     tts: {
       enabled: true,
       source: "shots.voiceover",
-      voiceover: "整理桌面，从一盏好灯开始。现在就把光线调到舒服。"
+      voiceover: "整理桌面，从一盏好灯开始。柔和光线减少桌面杂乱。现在就把光线调到舒服。"
     },
     assumptions: []
+  };
+  const legacyStoryboardData = {
+    narrative: "legacy four-shot sequence",
+    totalDurationSec: 14,
+    shots: [
+      {
+        index: 0,
+        purpose: "hook",
+        durationSec: 3,
+        scene: "legacy hook",
+        visualDirection: "old hook direction",
+        productAssetRef: "product.png",
+        voiceover: "旧开场",
+        transition: "cut"
+      },
+      {
+        index: 1,
+        purpose: "benefit",
+        durationSec: 4,
+        scene: "legacy benefit",
+        visualDirection: "old benefit direction",
+        productAssetRef: "product.png",
+        voiceover: "旧卖点",
+        transition: "cut"
+      },
+      {
+        index: 2,
+        purpose: "proof",
+        durationSec: 4,
+        scene: "legacy proof",
+        visualDirection: "old proof direction",
+        productAssetRef: "product.png",
+        voiceover: "旧证明",
+        transition: "cut"
+      },
+      {
+        index: 3,
+        purpose: "cta",
+        durationSec: 3,
+        scene: "legacy cta",
+        visualDirection: "old cta direction",
+        productAssetRef: "product.png",
+        voiceover: "旧行动号召",
+        transition: "fade"
+      }
+    ],
+    assumptions: []
+  };
+  const legacyShotPromptData = {
+    ...shotPromptData,
+    durationSec: 14,
+    prompt: "legacy four-shot shotprompt",
+    shots: [
+      ...shotPromptData.shots,
+      {
+        index: 3,
+        startSec: 11,
+        endSec: 14,
+        providerPrompt: "legacy fourth shot should not be shown",
+        referenceAssetRefs: ["product.png"],
+        voiceover: "旧行动号召",
+        shotImage: {
+          scene: "旧第四镜画面",
+          composition: "旧构图",
+          lighting: "旧光线",
+          productVisibility: "旧商品呈现",
+          referenceUsage: "旧参考",
+          negative: []
+        },
+        shotVideo: {
+          cameraMotion: "旧镜头运动",
+          subjectMotion: "旧主体运动",
+          firstFrameIntent: "旧首帧",
+          lastFrameIntent: "旧末帧",
+          durationIntent: "旧时长",
+          continuity: "旧连续性",
+          negative: []
+        }
+      }
+    ],
+    tts: {
+      enabled: true,
+      source: "shots.voiceover",
+      voiceover: "旧开场旧卖点旧证明旧行动号召"
+    }
   };
 
   const statusBody = () => ({
@@ -907,14 +1084,14 @@ async function mockLayeredReviewApi(page: Page) {
       storyboard: storyboardProposed
         ? artifact(
             "storyboard",
-            storyboardData,
+            options.legacyApprovedShotPrompt ? legacyStoryboardData : storyboardData,
             storyboardApproved ? "approved" : "proposed"
           )
         : null,
       shotPrompt: shotPromptProposed
         ? artifact(
             "shotprompt",
-            shotPromptData,
+            options.legacyApprovedShotPrompt ? legacyShotPromptData : shotPromptData,
             shotPromptApproved ? "approved" : "proposed"
           )
         : null
@@ -1083,7 +1260,7 @@ test("user can open a chosen working directory", async ({ page }) => {
   await expect(page.getByText("创作审核台")).toBeVisible();
 });
 
-test("review desk starts from requirements and stops at product brief review", async ({
+test("review desk starts from requirements and stops at material intake review", async ({
   page
 }) => {
   const calls = await mockReviewStartApi(page);
@@ -1097,6 +1274,9 @@ test("review desk starts from requirements and stops at product brief review", a
   });
   await expect(page.getByRole("button", { name: /提交创作要求/ })).toBeEnabled();
   await page.getByRole("button", { name: /提交创作要求/ }).click();
+  await expect(page.getByRole("heading", { name: "素材解读" })).toBeVisible();
+  await page.getByLabel("解读说明").fill("主商品正面图，瓶身和包装文字清晰");
+  await page.getByRole("button", { name: /批准素材解读并生成商品卖点/ }).click();
   await expect(page.getByRole("heading", { name: "商品卖点审核" })).toBeVisible();
   expect(calls).toEqual([
     "upload-material",
@@ -1130,7 +1310,7 @@ test("product brief review edits business fields before approving", async ({ pag
   await expect(payloadView).toHaveValue(/用户已确认这是旅行服务/);
   await expect(payloadView).not.toHaveValue(/old decorative/);
 
-  await page.getByRole("button", { name: /批准商品卖点并生成分镜规划/ }).click();
+  await page.getByRole("button", { name: /批准商品卖点并生成分镜脚本/ }).click();
   await expect.poll(() => state.calls.includes("approve-brief")).toBe(true);
   expect(state.approveBriefBody).toMatchObject({
     data: {
@@ -1146,26 +1326,26 @@ test("storyboard review edits form fields before approving", async ({ page }) =>
   const state = await mockLayeredReviewApi(page);
 
   await page.goto(`/workspaces/${workspaceId}`);
-  await page.getByRole("button", { name: /批准商品卖点并生成分镜规划/ }).click();
-  await expect(page.getByRole("heading", { name: "分镜规划" })).toBeVisible();
+  await page.getByRole("button", { name: /批准商品卖点并生成分镜脚本/ }).click();
+  await expect(page.getByRole("heading", { name: "分镜脚本" })).toBeVisible();
 
   await expect(page.getByText("编辑结构化内容")).toHaveCount(0);
+  await page.getByRole("button", { name: "调整分镜结构" }).click();
   await page
     .getByLabel("分镜叙事")
     .fill("先展示旅行目的地，再证明路线体验，最后引导咨询");
-  await page.getByLabel("总时长").fill("12");
-  await page.getByLabel("Shot 1 场景").fill("加州海岸公路清晨远景");
-  await page.getByLabel("Shot 1 画面方向").fill("航拍沿海岸线推进，突出路线辽阔感");
-  await page.getByLabel("Shot 1 口播").fill("三天时间，把加州海岸线走进你的假期里。");
   await page.getByLabel("分镜假设").fill("用户已确认旅行服务方向");
-  await page.getByRole("button", { name: "提交分镜规划到结构化内容" }).click();
+  await page.getByRole("button", { name: /开场钩子/ }).last().click();
+  await page.getByLabel("分镜 1 场景").fill("加州海岸公路清晨远景");
+  await page.getByLabel("分镜 1 画面方向").fill("航拍沿海岸线推进，突出路线辽阔感");
 
-  const payloadView = page.getByLabel("后端 payload（只读）");
-  await expect(payloadView).toHaveAttribute("readonly", "");
-  await expect(payloadView).toHaveValue(/加州海岸公路清晨远景/);
-  await expect(payloadView).toHaveValue(/用户已确认旅行服务方向/);
+  await page.getByRole("button", { name: "编辑口播与画面意图" }).first().click();
+  await page
+    .getByRole("textbox", { name: "口播文案" })
+    .first()
+    .fill("三天时间，把海岸线走进假期。");
 
-  await page.getByRole("button", { name: /批准分镜规划并生成分镜生成要求/ }).click();
+  await page.getByRole("button", { name: "批准生效" }).click();
   await expect.poll(() => state.calls.includes("approve-storyboard")).toBe(true);
   const storyboardBody = state.approveStoryboardBody as {
     data: {
@@ -1177,46 +1357,205 @@ test("storyboard review edits form fields before approving", async ({ page }) =>
   };
   expect(storyboardBody.data).toMatchObject({
     narrative: "先展示旅行目的地，再证明路线体验，最后引导咨询",
-    totalDurationSec: 12,
+    totalDurationSec: 15,
     assumptions: ["用户已确认旅行服务方向"]
   });
   expect(storyboardBody.data.shots[0]).toMatchObject({
     scene: "加州海岸公路清晨远景",
     visualDirection: "航拍沿海岸线推进，突出路线辽阔感",
-    voiceover: "三天时间，把加州海岸线走进你的假期里。"
+    voiceover: "三天时间，把海岸线走进假期。"
   });
 });
 
 test("shotprompt review edits form fields before approving", async ({ page }) => {
   const state = await mockLayeredReviewApi(page);
 
+  await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto(`/workspaces/${workspaceId}`);
-  await page.getByRole("button", { name: /批准商品卖点并生成分镜规划/ }).click();
-  await page.getByRole("button", { name: /批准分镜规划并生成分镜生成要求/ }).click();
+  await page.getByRole("button", { name: /批准商品卖点并生成分镜脚本/ }).click();
+  await expect(page.getByRole("heading", { name: "分镜脚本" })).toBeVisible();
+  await page.getByRole("button", { name: "批准生效" }).click();
   await expect(page.getByRole("heading", { name: "分镜生成要求" })).toBeVisible();
 
   await expect(page.getByText("编辑结构化内容")).toHaveCount(0);
-  await page
-    .getByLabel("全局视频提示词")
-    .fill("保持真实旅行 vlog 质感，海岸线和车辆连续");
-  await page.getByLabel("负向提示词").fill("不要出现装饰画、墙面、室内陈列");
-  await page.getByLabel("Shot 1 生成提示词").fill("沿海公路航拍推进，车辆沿右侧车道前进");
-  await page.getByLabel("Shot 1 参考素材").fill("DSC03391.JPG\nDSC03407.JPG");
-  await page.getByLabel("Shot 1 口播").fill("从海边出发，三天看完整条路线。");
-  await page.getByLabel("TTS 口播").fill("从海边出发，三天看完整条路线。");
-  await page.getByLabel("生成要求假设").fill("用户需要旅行服务视频，而不是装饰画视频");
-  await page.getByRole("button", { name: "提交分镜生成要求到结构化内容" }).click();
+  await expect(page.getByLabel("全片分镜生成要求表单")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "编辑镜头要求" })).toHaveCount(0);
+  await expect(page.getByText("干净桌面上的台灯")).toBeVisible();
+  await expect(page.getByText("缓慢推进", { exact: true })).toBeVisible();
 
-  const payloadView = page.getByLabel("后端 payload（只读）");
-  await expect(payloadView).toHaveAttribute("readonly", "");
-  await expect(payloadView).toHaveValue(/真实旅行 vlog/);
-  await expect(payloadView).toHaveValue(/不要出现装饰画/);
-  await expect(payloadView).toHaveValue(/DSC03407.JPG/);
+  await page.getByRole("button", { name: "编辑全片要求" }).click();
+  const summaryForm = page.getByLabel("全片分镜生成要求表单");
+  await expect(summaryForm.getByLabel("全片口播")).toHaveCount(0);
+  await expect(summaryForm.getByLabel("生成要求假设")).toHaveCount(0);
+  await summaryForm.getByLabel("画幅").selectOption("16:9");
+  await summaryForm
+    .getByLabel("全片生成要求")
+    .fill("保持真实旅行 vlog 质感，海岸线和车辆连续");
+  await summaryForm.getByLabel("负向约束").fill("不要出现装饰画、墙面、室内陈列");
+  await page.getByRole("button", { name: "保存全片要求" }).click();
+
+  const firstShotCard = page.locator(".shotprompt-card").first();
+  await firstShotCard.getByRole("button", { name: "编辑镜头目标" }).click();
+  const goalForm = firstShotCard.getByRole("group", {
+    name: "编辑分镜 1 镜头目标",
+  });
+  await expect(goalForm).toBeVisible();
+
+  const readShotpromptLayout = async () => {
+    const cardBodyBox = await firstShotCard
+      .locator(".shotprompt-card__body")
+      .boundingBox();
+    const goalSummaryBox = await firstShotCard
+      .locator(".shotprompt-provider")
+      .boundingBox();
+    const goalTitleBox = await goalForm.getByRole("heading").boundingBox();
+    const goalFieldBox = await goalForm
+      .locator(".MuiFormControl-root")
+      .first()
+      .boundingBox();
+    const goalFormBox = await goalForm.boundingBox();
+    const imageSummaryBox = await firstShotCard
+      .locator(".shotprompt-dict")
+      .filter({ hasText: "分镜图要求" })
+      .boundingBox();
+    const videoSummaryBox = await firstShotCard
+      .locator(".shotprompt-dict")
+      .filter({ hasText: "分镜视频要求" })
+      .boundingBox();
+    if (
+      !cardBodyBox ||
+      !goalSummaryBox ||
+      !goalTitleBox ||
+      !goalFieldBox ||
+      !goalFormBox ||
+      !imageSummaryBox ||
+      !videoSummaryBox
+    ) {
+      throw new Error("Shotprompt layout boxes should be measurable");
+    }
+    return {
+      body: cardBodyBox,
+      goalSummary: goalSummaryBox,
+      goalTitle: goalTitleBox,
+      goalField: goalFieldBox,
+      goal: goalFormBox,
+      imageSummary: imageSummaryBox,
+      videoSummary: videoSummaryBox,
+    };
+  };
+
+  await expect
+    .poll(async () => {
+      const boxes = await readShotpromptLayout();
+      return boxes.goal.width / boxes.body.width;
+    })
+    .toBeGreaterThan(0.9);
+  await expect
+    .poll(async () => {
+      const boxes = await readShotpromptLayout();
+      return boxes.goal.y - (boxes.goalSummary.y + boxes.goalSummary.height);
+    })
+    .toBeGreaterThanOrEqual(-1);
+  await expect
+    .poll(async () => {
+      const boxes = await readShotpromptLayout();
+      return boxes.goalField.y - (boxes.goalTitle.y + boxes.goalTitle.height);
+    })
+    .toBeGreaterThanOrEqual(8);
+  await expect
+    .poll(async () => {
+      const boxes = await readShotpromptLayout();
+      return boxes.imageSummary.y - (boxes.goal.y + boxes.goal.height);
+    })
+    .toBeGreaterThanOrEqual(-1);
+  await expect
+    .poll(async () => {
+      const boxes = await readShotpromptLayout();
+      return boxes.videoSummary.y - (boxes.goal.y + boxes.goal.height);
+    })
+    .toBeGreaterThanOrEqual(-1);
+  const stableLayout = await readShotpromptLayout();
+
+  await page.getByRole("button", { name: "编辑分镜视频要求" }).first().click();
+  const videoForm = page.getByRole("group", { name: "编辑分镜 1 分镜视频要求" });
+  await expect(videoForm).toBeVisible();
+  await expect
+    .poll(async () => {
+      const videoFormBox = await videoForm.boundingBox();
+      const boxes = await readShotpromptLayout();
+      if (!videoFormBox) {
+        throw new Error("Shotprompt video editor box should be measurable");
+      }
+      return Math.abs(videoFormBox.x - boxes.videoSummary.x);
+    })
+    .toBeLessThan(24);
+  await expect
+    .poll(async () => {
+      const videoFormBox = await videoForm.boundingBox();
+      if (!videoFormBox) {
+        throw new Error("Shotprompt video editor box should be measurable");
+      }
+      return videoFormBox.x - (stableLayout.body.x + stableLayout.body.width * 0.45);
+    })
+    .toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "编辑分镜图要求" }).first().click();
+  const imageForm = page.getByRole("group", { name: "编辑分镜 1 分镜图要求" });
+  await expect(imageForm).toBeVisible();
+
+  const readRequirementEditorBoxes = async () => {
+    const imageFormBox = await imageForm.boundingBox();
+    const videoFormBox = await videoForm.boundingBox();
+    if (!imageFormBox || !videoFormBox) {
+      throw new Error("Shotprompt requirement editor boxes should be measurable");
+    }
+    return { image: imageFormBox, video: videoFormBox };
+  };
+  await expect
+    .poll(async () => {
+      const boxes = await readRequirementEditorBoxes();
+      return boxes.image.y - (stableLayout.goal.y + stableLayout.goal.height);
+    })
+    .toBeGreaterThanOrEqual(-1);
+  await expect
+    .poll(async () => {
+      const boxes = await readRequirementEditorBoxes();
+      return boxes.video.y - (stableLayout.goal.y + stableLayout.goal.height);
+    })
+    .toBeGreaterThanOrEqual(-1);
+  await expect
+    .poll(async () => {
+      const boxes = await readRequirementEditorBoxes();
+      return boxes.video.x - boxes.image.x;
+    })
+    .toBeGreaterThan(stableLayout.body.width * 0.4);
+
+  await imageForm.getByLabel("场景").fill("");
+  await imageForm.getByRole("button", { name: "保存分镜图要求" }).click();
+  await expect(imageForm.getByText("必填")).toBeVisible();
+
+  await imageForm.getByLabel("场景").fill("加州海岸公路清晨远景");
+  await imageForm.getByLabel("商品呈现").fill("旅行车辆与海岸线完整可见");
+  await imageForm.getByLabel("负向约束").fill("画面模糊\n商品变形");
+  await imageForm.getByRole("button", { name: "保存分镜图要求" }).click();
+  await expect(imageForm).toBeHidden();
+  await expect(
+    page.getByRole("definition").filter({ hasText: "加州海岸公路清晨远景" }),
+  ).toBeVisible();
+
+  await videoForm.getByLabel("镜头运动").fill("航拍镜头缓慢推进");
+  await videoForm.getByLabel("时长节奏").fill("4 秒内保持平稳推进");
+  await videoForm.getByRole("button", { name: "保存分镜视频要求" }).click();
+  await expect(videoForm).toBeHidden();
+  await expect(
+    page.getByRole("definition").filter({ hasText: "航拍镜头缓慢推进" }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: /批准分镜生成要求/ }).click();
   await expect.poll(() => state.calls.includes("approve-shotprompt")).toBe(true);
   const shotPromptBody = state.approveShotPromptBody as {
     data: {
+      aspectRatio: string;
       prompt: string;
       negativePrompt: string;
       assumptions: string[];
@@ -1225,20 +1564,53 @@ test("shotprompt review edits form fields before approving", async ({ page }) =>
         providerPrompt: string;
         referenceAssetRefs: string[];
         voiceover: string;
+        shotImage: {
+          scene: string;
+          productVisibility: string;
+          negative: string[];
+        };
+        shotVideo: { cameraMotion: string; durationIntent: string };
       }>;
     };
   };
   expect(shotPromptBody.data).toMatchObject({
+    aspectRatio: "16:9",
     prompt: "保持真实旅行 vlog 质感，海岸线和车辆连续",
     negativePrompt: "不要出现装饰画、墙面、室内陈列",
-    assumptions: ["用户需要旅行服务视频，而不是装饰画视频"],
-    tts: { voiceover: "从海边出发，三天看完整条路线。" }
+    assumptions: [],
+    tts: {
+      voiceover:
+        "整理桌面，从一盏好灯开始。\n柔和光线减少桌面杂乱。\n现在就把光线调到舒服。"
+    }
   });
   expect(shotPromptBody.data.shots[0]).toMatchObject({
-    providerPrompt: "沿海公路航拍推进，车辆沿右侧车道前进",
-    referenceAssetRefs: ["DSC03391.JPG", "DSC03407.JPG"],
-    voiceover: "从海边出发，三天看完整条路线。"
+    providerPrompt: "clean desk slow push",
+    referenceAssetRefs: ["product.png"],
+    voiceover: "整理桌面，从一盏好灯开始。"
   });
+  expect(shotPromptBody.data.shots[0].shotImage).toMatchObject({
+    scene: "加州海岸公路清晨远景",
+    productVisibility: "旅行车辆与海岸线完整可见",
+    negative: ["画面模糊", "商品变形"]
+  });
+  expect(shotPromptBody.data.shots[0].shotVideo).toMatchObject({
+    cameraMotion: "航拍镜头缓慢推进",
+    durationIntent: "4 秒内保持平稳推进"
+  });
+});
+
+test("shotprompt review blocks legacy four-shot upstream before showing old requirements", async ({
+  page
+}) => {
+  await mockLayeredReviewApi(page, { legacyApprovedShotPrompt: true });
+
+  await page.goto(`/workspaces/${workspaceId}`);
+  await page.getByRole("button", { name: /分镜生成要求/ }).click();
+
+  await expect(page.getByRole("heading", { name: "分镜生成要求" })).toBeVisible();
+  await expect(page.getByText("请先批准三镜分镜脚本。")).toBeVisible();
+  await expect(page.getByText("legacy fourth shot should not be shown")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /批准分镜生成要求/ })).toHaveCount(0);
 });
 
 test("review desk advances layered approvals into shot production", async ({ page }) => {
@@ -1246,13 +1618,16 @@ test("review desk advances layered approvals into shot production", async ({ pag
 
   await page.goto(`/workspaces/${workspaceId}`);
   await expect(page.getByRole("heading", { name: "商品卖点审核" })).toBeVisible();
-  await page.getByRole("button", { name: /批准商品卖点并生成分镜规划/ }).click();
-  await expect(page.getByRole("heading", { name: "分镜规划" })).toBeVisible();
+  await page.getByRole("button", { name: /批准商品卖点并生成分镜脚本/ }).click();
+  await expect(page.getByRole("heading", { name: "分镜脚本" })).toBeVisible();
 
-  await page.getByRole("button", { name: /批准分镜规划并生成分镜生成要求/ }).click();
+  await page.getByRole("button", { name: "批准生效" }).click();
   await expect(page.getByRole("heading", { name: "分镜生成要求" })).toBeVisible();
 
   await page.getByRole("button", { name: /批准分镜生成要求/ }).click();
+  await expect(page.getByRole("heading", { name: "应用分镜" })).toBeVisible();
+  await expect.poll(() => state.calls.includes("apply-shot-set")).toBe(false);
+  await page.getByRole("button", { name: /创建分镜链路实例/ }).click();
   await expect.poll(() => state.calls.includes("apply-shot-set")).toBe(true);
   await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible({
     timeout: 15_000
@@ -1273,16 +1648,17 @@ test("review desk lets users revisit upstream steps after advancing", async ({
   const state = await mockLayeredReviewApi(page);
 
   await page.goto(`/workspaces/${workspaceId}`);
-  await page.getByRole("button", { name: /批准商品卖点并生成分镜规划/ }).click();
-  await page.getByRole("button", { name: /批准分镜规划并生成分镜生成要求/ }).click();
+  await page.getByRole("button", { name: /批准商品卖点并生成分镜脚本/ }).click();
+  await page.getByRole("button", { name: "批准生效" }).click();
   await page.getByRole("button", { name: /批准分镜生成要求/ }).click();
+  await page.getByRole("button", { name: /创建分镜链路实例/ }).click();
   await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible();
 
   await page.getByRole("button", { name: /商品卖点审核/ }).click();
   await expect(page.getByRole("heading", { name: "商品卖点审核" })).toBeVisible();
   await page.getByLabel("商品名称").fill("回退修改商品");
   await page.getByRole("button", { name: "提交表单到结构化内容" }).click();
-  await page.getByRole("button", { name: /批准商品卖点并生成分镜规划/ }).click();
+  await page.getByRole("button", { name: /批准商品卖点并生成分镜脚本/ }).click();
 
   await expect
     .poll(() => state.calls.filter((call) => call === "approve-brief").length)
@@ -1345,12 +1721,12 @@ test("review desk keeps a manually selected previous image shot visible", async 
   await page.goto(`/workspaces/${workspaceId}`);
   await expect(page.getByRole("heading", { name: "分镜图选择" })).toBeVisible();
   const currentShot = page.locator(".review-current-shot strong");
-  await expect(currentShot).toHaveText("Shot 2");
+  await expect(currentShot).toHaveText("分镜 2");
 
   await page.locator(".review-shot-nav__item").first().click();
-  await expect(currentShot).toHaveText("Shot 1");
+  await expect(currentShot).toHaveText("分镜 1");
   await page.waitForTimeout(150);
-  await expect(currentShot).toHaveText("Shot 1");
+  await expect(currentShot).toHaveText("分镜 1");
 });
 
 test("review desk exposes a final video download link after compose succeeds", async ({

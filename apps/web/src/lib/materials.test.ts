@@ -13,4 +13,3 @@ test("materialAssetFilename displays the file name from an asset ref", () => {
     "海浪.jpg",
   );
 });
-

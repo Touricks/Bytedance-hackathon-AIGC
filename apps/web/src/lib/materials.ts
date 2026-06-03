@@ -7,4 +7,3 @@ export function materialAssetFilename(ref: string) {
     return leaf;
   }
 }
-

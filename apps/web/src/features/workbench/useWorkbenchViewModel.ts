@@ -18,10 +18,15 @@ import {
   proposeWorkspacePromptRequirements,
   proposeWorkspaceBrief,
   proposeWorkspaceStoryboard,
+  proposeWorkspaceStoryboardVoiceover,
   runWorkspaceMaterialIntake,
   uploadWorkspaceMaterial,
 } from "../../lib/api/client.js";
-import type { AspectRatio, PromptRequirementsData } from "../../lib/api/client.js";
+import type {
+  AspectRatio,
+  PromptRequirementsData,
+  ProposeWorkspaceBriefInput,
+} from "../../lib/api/client.js";
 import { createFinalVideo } from "../../lib/api/finalVideo.js";
 import { listImageRounds } from "../../lib/api/imageBatch.js";
 import {
@@ -29,10 +34,18 @@ import {
   regenerateImagePrompt,
 } from "../../lib/api/imagePrompt.js";
 import { selectImage } from "../../lib/api/imageSelect.js";
-import { getWorkflowStatus, listShots, retryShot } from "../../lib/api/shots.js";
+import {
+  getWorkflowStatus,
+  listShots,
+  listWorkspaceShotSets,
+  retryShot,
+} from "../../lib/api/shots.js";
 import { listWorkspaceTraces } from "../../lib/api/trace.js";
 import { listVideoRounds } from "../../lib/api/videoBatch.js";
-import { proposeVideoScript } from "../../lib/api/videoScript.js";
+import {
+  proposeVideoScript,
+  regenerateVideoScript,
+} from "../../lib/api/videoScript.js";
 import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "../workspace/hooks/useFinalVideo.js";
 import { roundPollingInterval } from "./roundPolling.js";
@@ -72,6 +85,12 @@ export function useWorkbenchViewModel(workspaceId: string) {
     queryKey: ["shots", workspaceId],
     queryFn: () => listShots(workspaceId),
     enabled: Boolean(workspaceStatus.data?.activeShotSet),
+    refetchInterval: 30_000,
+  });
+
+  const shotSets = useQuery({
+    queryKey: ["shot-sets", workspaceId],
+    queryFn: () => listWorkspaceShotSets(workspaceId),
     refetchInterval: 30_000,
   });
 
@@ -141,6 +160,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["workspace-status", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["shots", workspaceId] }),
+      qc.invalidateQueries({ queryKey: ["shot-sets", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["traces", workspaceId] }),
     ]);
@@ -192,13 +212,26 @@ export function useWorkbenchViewModel(workspaceId: string) {
     onSuccess: invalidateWorkspace,
   });
 
-  const proposeBrief = useMutation({
-    mutationFn: () =>
-      proposeWorkspaceBrief({
+  const approveMaterialIntakeAndProposeBrief = useMutation({
+    mutationFn: async (data: MaterialIntakeArtifact) => {
+      await approveWorkspaceMaterialIntake(workspaceId, data);
+      return await proposeWorkspaceBrief({
         workspaceId,
         userDirection: briefDirection.trim() || undefined,
+      });
+    },
+    onSettled: invalidateWorkspace,
+  });
+
+  const proposeBrief = useMutation({
+    mutationFn: (input?: Omit<ProposeWorkspaceBriefInput, "workspaceId">) =>
+      proposeWorkspaceBrief({
+        workspaceId,
+        userDirection: (input?.userDirection ?? briefDirection.trim()) || undefined,
+        draft: input?.draft,
+        baseArtifactId: input?.baseArtifactId,
       }),
-    onSuccess: invalidateWorkspace,
+    onSettled: invalidateWorkspace,
   });
 
   const approveBrief = useMutation({
@@ -217,6 +250,21 @@ export function useWorkbenchViewModel(workspaceId: string) {
 
   const proposeStoryboard = useMutation({
     mutationFn: () => proposeWorkspaceStoryboard(workspaceId),
+    onSuccess: invalidateWorkspace,
+  });
+
+  const proposeStoryboardVoiceover = useMutation({
+    mutationFn: (input: {
+      baseArtifactId?: string;
+      draft: StoryboardArtifact;
+      userDirection?: string;
+    }) =>
+      proposeWorkspaceStoryboardVoiceover({
+        workspaceId,
+        baseArtifactId: input.baseArtifactId,
+        draft: input.draft,
+        userDirection: input.userDirection,
+      }),
     onSuccess: invalidateWorkspace,
   });
 
@@ -271,7 +319,11 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const regenerateImage = useMutation({
-    mutationFn: (input: { baseArtifactId: string; userDirection?: string }) =>
+    mutationFn: (input: {
+      baseArtifactId: string;
+      feedbackImageCandidateId: string;
+      userDirection: string;
+    }) =>
       regenerateImagePrompt(workspaceId, selectedShotId!, input),
     onSuccess: invalidateShot,
   });
@@ -290,6 +342,16 @@ export function useWorkbenchViewModel(workspaceId: string) {
       proposeVideoScript(workspaceId, selectedShotId!, {
         userDirection: shotDirection.trim() || undefined,
       }),
+    onSuccess: invalidateShot,
+  });
+
+  const regenerateVideo = useMutation({
+    mutationFn: (input: {
+      baseArtifactId: string;
+      feedbackVideoCandidateId: string;
+      userDirection: string;
+    }) =>
+      regenerateVideoScript(workspaceId, selectedShotId!, input),
     onSuccess: invalidateShot,
   });
 
@@ -361,16 +423,21 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const hasActiveGeneration =
     (latestImageBatch && ACTIVE_STATUSES.has(latestImageBatch.status)) ||
     (latestVideoBatch && ACTIVE_STATUSES.has(latestVideoBatch.status));
+  const finalVideoStatus = finalVideo.data?.data?.status ?? null;
+  const hasActiveFinalVideo =
+    finalVideoStatus === "PENDING" || finalVideoStatus === "RUNNING";
 
   const mutations = [
     uploadMaterial,
     startCreativeReview,
     materialIntake,
     approveMaterialIntake,
+    approveMaterialIntakeAndProposeBrief,
     proposeBrief,
     approveBrief,
     approveBriefAndProposeStoryboard,
     proposeStoryboard,
+    proposeStoryboardVoiceover,
     approveStoryboard,
     approveStoryboardAndProposeShotPrompt,
     compileShotPrompt,
@@ -381,6 +448,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     regenerateImage,
     selectImageCandidate,
     proposeVideo,
+    regenerateVideo,
     proposeAllVideos,
     selectVideoCandidate,
     retryImage,
@@ -403,6 +471,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     workflow: workflow.data?.data ?? null,
     shots: [...workflowShots].sort((a, b) => a.orderIndex - b.orderIndex),
     shotRows: shots.data?.data ?? [],
+    shotSets: shotSets.data?.data ?? [],
     selectedShotId,
     selectedShot,
     selectedWorkflowShot,
@@ -425,6 +494,27 @@ export function useWorkbenchViewModel(workspaceId: string) {
     },
     pending: {
       materialIntake: startCreativeReview.isPending || materialIntake.isPending,
+      productBrief:
+        approveMaterialIntakeAndProposeBrief.isPending || proposeBrief.isPending,
+      storyboard: approveBriefAndProposeStoryboard.isPending || proposeStoryboard.isPending,
+      storyboardVoiceover: proposeStoryboardVoiceover.isPending,
+      shotPrompt:
+        approveStoryboardAndProposeShotPrompt.isPending ||
+        compileShotPrompt.isPending ||
+        approveShotPrompt.isPending,
+      applyShotSet: applyShotSet.isPending || approveShotPromptAndApply.isPending,
+      image:
+        proposeImage.isPending ||
+        regenerateImage.isPending ||
+        selectImageCandidate.isPending ||
+        retryImage.isPending,
+      video:
+        proposeVideo.isPending ||
+        regenerateVideo.isPending ||
+        proposeAllVideos.isPending ||
+        selectVideoCandidate.isPending ||
+        retryVideo.isPending,
+      finalVideo: composeFinal.isPending || hasActiveFinalVideo,
     },
     actions: {
       setSelectedShotId,
@@ -437,7 +527,10 @@ export function useWorkbenchViewModel(workspaceId: string) {
         const data = artifacts?.material?.data;
         if (data) approveMaterialIntake.mutate(data);
       },
-      proposeBrief: () => proposeBrief.mutate(),
+      approveMaterialIntakeAndProposeBrief: (data: MaterialIntakeArtifact) =>
+        approveMaterialIntakeAndProposeBrief.mutate(data),
+      proposeBrief: (input?: Omit<ProposeWorkspaceBriefInput, "workspaceId">) =>
+        proposeBrief.mutateAsync(input),
       approveBrief: () => {
         const data = artifacts?.brief?.data;
         if (data) approveBrief.mutate(data);
@@ -445,6 +538,11 @@ export function useWorkbenchViewModel(workspaceId: string) {
       approveBriefAndProposeStoryboard: (data: ProductBriefArtifact) =>
         approveBriefAndProposeStoryboard.mutate(data),
       proposeStoryboard: () => proposeStoryboard.mutate(),
+      proposeStoryboardVoiceover: (input: {
+        baseArtifactId?: string;
+        draft: StoryboardArtifact;
+        userDirection?: string;
+      }) => proposeStoryboardVoiceover.mutate(input),
       approveStoryboard: () => {
         const data = artifacts?.storyboard?.data;
         if (data) approveStoryboard.mutate(data);
@@ -456,15 +554,26 @@ export function useWorkbenchViewModel(workspaceId: string) {
         const data = artifacts?.shotPrompt?.data;
         if (data) approveShotPrompt.mutate(data);
       },
+      approveShotPromptData: (data: ShotPromptArtifact) =>
+        approveShotPrompt.mutate(data),
       applyShotSet: () => applyShotSet.mutate(),
       approveShotPromptAndApply: (data: ShotPromptArtifact) =>
         approveShotPromptAndApply.mutate(data),
       proposeImage: () => proposeImage.mutate(),
-      regenerateImage: (input: { baseArtifactId: string; userDirection?: string }) =>
+      regenerateImage: (input: {
+        baseArtifactId: string;
+        feedbackImageCandidateId: string;
+        userDirection: string;
+      }) =>
         regenerateImage.mutate(input),
       selectImageCandidate: (candidateId: string, batchId: string) =>
         selectImageCandidate.mutate({ candidateId, batchId }),
       proposeVideo: () => proposeVideo.mutate(),
+      regenerateVideo: (input: {
+        baseArtifactId: string;
+        feedbackVideoCandidateId: string;
+        userDirection: string;
+      }) => regenerateVideo.mutate(input),
       proposeAllVideos: () => proposeAllVideos.mutate(),
       selectVideoCandidate: (candidateId: string, batchId: string) =>
         selectVideoCandidate.mutate({ candidateId, batchId }),
@@ -473,15 +582,22 @@ export function useWorkbenchViewModel(workspaceId: string) {
       composeFinal: () => composeFinal.mutate(),
     },
     loading:
-      workspaceStatus.isLoading || workflow.isLoading || shots.isLoading,
+      workspaceStatus.isLoading ||
+      workflow.isLoading ||
+      shots.isLoading ||
+      shotSets.isLoading,
     refreshing:
-      workspaceStatus.isFetching || workflow.isFetching || shots.isFetching,
+      workspaceStatus.isFetching ||
+      workflow.isFetching ||
+      shots.isFetching ||
+      shotSets.isFetching,
     busy: mutations.some((mutation) => mutation.isPending),
     hasActiveGeneration: Boolean(hasActiveGeneration),
     error:
       errorText(workspaceStatus.error) ??
       errorText(workflow.error) ??
       errorText(shots.error) ??
+      errorText(shotSets.error) ??
       mutationErrorText(mutations),
   };
 }

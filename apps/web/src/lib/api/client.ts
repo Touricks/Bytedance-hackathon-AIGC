@@ -1,5 +1,6 @@
 import type {
   Asset,
+  CreativeRequirementTemplate,
   CreativeWorkspace,
   GenerationJob,
   MaterialIntakeArtifact,
@@ -130,6 +131,10 @@ export interface ReferenceVideoRequirementsImportResult {
   };
 }
 
+export interface CreativeRequirementTemplatesDetail {
+  templates: CreativeRequirementTemplate[];
+}
+
 export interface UpstreamDrift {
   upstreamChanged: boolean;
   changedSources: string[];
@@ -149,6 +154,7 @@ export interface WorkspaceShotSet {
   status: "active" | "archived" | string;
   sourceFingerprint: Record<string, unknown>;
   upstream?: UpstreamDrift;
+  shotCount?: number;
   createdAt: string;
   archivedAt: string | null;
 }
@@ -260,6 +266,13 @@ export interface WorkspaceMaterialDeleteDetail {
   data: {
     workspaceId: string;
     ref: string;
+    deleted: true;
+  };
+}
+
+export interface WorkspaceDeleteDetail {
+  data: {
+    workspaceId: string;
     deleted: true;
   };
 }
@@ -537,6 +550,21 @@ export async function createWorkspace(
   return postJson<WorkspaceInitializeDetail>("/api/workspaces", { name });
 }
 
+export async function deleteWorkspace(
+  workspaceId: string,
+): Promise<WorkspaceDeleteDetail> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}`,
+    { method: "DELETE" },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+
+  return (await response.json()) as WorkspaceDeleteDetail;
+}
+
 export async function selectWorkspaceDirectory(): Promise<WorkspaceDirectorySelectDetail> {
   return postJson<WorkspaceDirectorySelectDetail>(
     "/api/workspaces/directory/select",
@@ -669,6 +697,13 @@ export async function importReferenceVideoRequirements(input: {
   }).data;
 }
 
+export async function listCreativeRequirementTemplates(): Promise<CreativeRequirementTemplatesDetail> {
+  const response = await fetchJson<{ data: CreativeRequirementTemplatesDetail }>(
+    "/api/setup-templates/creative-requirements",
+  );
+  return response.data;
+}
+
 export async function runWorkspaceMaterialIntake(input: {
   workspaceId: string;
   prompt?: string;
@@ -693,14 +728,20 @@ export async function approveWorkspaceMaterialIntake(
   );
 }
 
-export async function proposeWorkspaceBrief(input: {
+export interface ProposeWorkspaceBriefInput {
   workspaceId: string;
   userDirection?: string;
   title?: string;
   sellingPoints?: string;
   audience?: string;
   stylePreference?: string;
-}): Promise<WorkspaceBriefDetail> {
+  draft?: ProductBriefArtifact;
+  baseArtifactId?: string;
+}
+
+export async function proposeWorkspaceBrief(
+  input: ProposeWorkspaceBriefInput,
+): Promise<WorkspaceBriefDetail> {
   return postModuleArtifact<ProductBriefArtifact>(
     `/api/workspaces/${input.workspaceId}/product-brief/propose`,
     {
@@ -709,6 +750,8 @@ export async function proposeWorkspaceBrief(input: {
       sellingPoints: input.sellingPoints,
       audience: input.audience,
       stylePreference: input.stylePreference,
+      draft: input.draft,
+      baseArtifactId: input.baseArtifactId,
     },
   );
 }
@@ -729,6 +772,22 @@ export async function proposeWorkspaceStoryboard(
   return postModuleArtifact<StoryboardArtifact>(
     `/api/workspaces/${workspaceId}/storyboard/propose`,
     {},
+  );
+}
+
+export async function proposeWorkspaceStoryboardVoiceover(input: {
+  workspaceId: string;
+  baseArtifactId?: string;
+  draft: StoryboardArtifact;
+  userDirection?: string;
+}): Promise<WorkspaceStoryboardDetail> {
+  return postModuleArtifact<StoryboardArtifact>(
+    `/api/workspaces/${input.workspaceId}/storyboard/voiceover/propose`,
+    {
+      baseArtifactId: input.baseArtifactId,
+      draft: input.draft,
+      userDirection: input.userDirection,
+    },
   );
 }
 

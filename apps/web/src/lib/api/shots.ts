@@ -4,6 +4,7 @@ import {
   type ShotStatus,
   type NextAction,
   type UpstreamDrift,
+  type WorkspaceShotSet,
 } from "./client.js";
 
 export interface ShotRow {
@@ -19,6 +20,17 @@ export interface ShotRow {
   selectedImageId: string | null;
   activeVideoScriptArtifactId: string | null;
   selectedVideoId: string | null;
+}
+
+export interface ShotSetShot extends ShotRow {
+  shotSetId: string;
+  requirements: {
+    shotImage: unknown;
+    shotVideo: unknown;
+    sourceShotPromptArtifactId: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface WorkflowStatus {
@@ -41,8 +53,14 @@ export interface WorkflowStatus {
 }
 
 export function listShots(workspaceId: string) {
-  return fetchJson<{ data: ShotRow[] }>(
+  return fetchJson<{ data: ShotSetShot[] }>(
     `/api/workspaces/${workspaceId}/shots`,
+  );
+}
+
+export function listWorkspaceShotSets(workspaceId: string) {
+  return fetchJson<{ data: WorkspaceShotSet[] }>(
+    `/api/workspaces/${workspaceId}/shot-sets`,
   );
 }
 

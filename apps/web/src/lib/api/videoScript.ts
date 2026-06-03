@@ -42,6 +42,34 @@ export function proposeVideoScript(
   );
 }
 
+export function regenerateVideoScript(
+  workspaceId: string,
+  shotId: string,
+  body: {
+    baseArtifactId: string;
+    feedbackVideoCandidateId: string;
+    userDirection: string;
+  },
+) {
+  return fetchJson<
+    WorkflowEnvelope<VideoScriptArtifact> & {
+      artifact: VideoScriptArtifact;
+      batch: VideoBatchDetail;
+      candidates: VideoCandidate[];
+      context?: unknown;
+      frames?: {
+        firstFrameCandidateId: string;
+        lastFrameCandidateId: string | null;
+        firstFrameUrl: string | null;
+        lastFrameUrl: string | null;
+      };
+    }
+  >(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/regenerate`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export function listVideoScripts(shotId: string) {
   return fetchJson<{ data: VideoScriptArtifact[] }>(
     `/api/shots/${shotId}/video-scripts`,

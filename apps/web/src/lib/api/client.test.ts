@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
+import type { ProductBriefArtifact, StoryboardArtifact } from "@aigc-video/shared";
 import {
   approveWorkspacePromptRequirements,
   approveWorkspaceBrief,
   createWorkspace,
+  deleteWorkspace,
   deleteWorkspaceMaterial,
   getWorkspaceStatus,
   importReferenceVideoRequirements,
+  listCreativeRequirementTemplates,
   listWorkspaces,
+  proposeWorkspaceBrief,
+  proposeWorkspaceStoryboardVoiceover,
   proposeWorkspacePromptRequirements,
   runWorkspaceMaterialIntake,
   selectWorkspaceDirectory,
@@ -40,6 +45,27 @@ function moduleArtifact(moduleId: string, data: unknown, status = "proposed") {
     approvedAt: status === "approved" ? "2026-05-25T00:00:00.000Z" : null
   };
 }
+
+const sampleProductBrief: ProductBriefArtifact = {
+  product: {
+    name: "山茶花修护精华油",
+    category: "护肤",
+    keyFacts: ["山茶花籽油", "换季修护"],
+    assets: [{ ref: "product.png", useAs: "primary" }]
+  },
+  audience: {
+    who: "换季干燥肌用户",
+    painOrDesire: "想缓解干燥起皮"
+  },
+  coreSellingPoint: "山茶花籽油亲肤修护",
+  proof: ["主图展示产品包装和油体质感"],
+  offer: "下单立减",
+  platform: "抖音",
+  brandTone: "真实直接",
+  bannedExpressions: [],
+  landingInfo: null,
+  assumptions: []
+};
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -82,6 +108,50 @@ describe("api client", () => {
       () => uploadProductImage(file),
       /Uploaded product image must be a valid image file/
     );
+  });
+
+  it("lists creative requirement templates from setup template API", async () => {
+    const calls: unknown[] = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url)
+      });
+      return new Response(
+        JSON.stringify({
+          data: {
+            templates: [
+              {
+                id: "real-product-demo",
+                name: "真实商品讲解",
+                summary: "真实电商摄影，卖点清晰，前后镜头连续。",
+                values: {
+                  imageStyle: "真实电商产品摄影",
+                  imageComposition: "主体稳定",
+                  imageAvoid: "文字贴片",
+                  scriptTone: "直接可信",
+                  storyboardRhythm: "开场快",
+                  shotImageGlobal: "分镜图连续",
+                  shotVideoGlobal: "镜头平滑"
+                }
+              }
+            ]
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const detail = await listCreativeRequirementTemplates();
+
+    assert.equal(detail.templates[0]?.id, "real-product-demo");
+    assert.equal(detail.templates[0]?.values.shotVideoGlobal, "镜头平滑");
+    assert.deepEqual(calls, [
+      {
+        method: "GET",
+        url: "http://localhost:3000/api/setup-templates/creative-requirements"
+      }
+    ]);
   });
 
   it("runs workspace status and material intake by workspaceId", async () => {
@@ -349,6 +419,131 @@ describe("api client", () => {
         method: "POST",
         url: "http://localhost:3000/api/workspaces/workspace_123/prompt-requirements/approve",
         body: { artifactId: "prompt-requirements_artifact_123" }
+      }
+    ]);
+  });
+
+  it("proposes product brief rewrites with draft and merchant direction", async () => {
+    const calls: unknown[] = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return new Response(
+        JSON.stringify({
+          data: moduleArtifact("product-brief", {
+            ...sampleProductBrief,
+            coreSellingPoint: "更适合送礼的年轻化修护卖点"
+          })
+        }),
+        { status: 200 }
+      );
+    };
+
+    const proposed = await proposeWorkspaceBrief({
+      workspaceId: "workspace_123",
+      baseArtifactId: "brief_current_123",
+      userDirection: "更突出送礼场景，语气更年轻",
+      draft: sampleProductBrief
+    });
+
+    assert.equal(proposed.artifact.moduleId, "product-brief");
+    assert.equal(
+      proposed.artifact.data.coreSellingPoint,
+      "更适合送礼的年轻化修护卖点"
+    );
+    assert.deepEqual(calls, [
+      {
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/product-brief/propose",
+        body: {
+          userDirection: "更突出送礼场景，语气更年轻",
+          draft: sampleProductBrief,
+          baseArtifactId: "brief_current_123"
+        }
+      }
+    ]);
+  });
+
+  it("proposes storyboard voiceover rewrites through the server", async () => {
+    const calls: unknown[] = [];
+    const draft: StoryboardArtifact = {
+      narrative: "三镜商品口播",
+      totalDurationSec: 15,
+      shots: [
+        {
+          index: 0,
+          purpose: "hook",
+          durationSec: 4,
+          scene: "开场痛点",
+          visualDirection: "真实场景",
+          productAssetRef: "product.png",
+          voiceover: "旧开场",
+          transition: "cut"
+        },
+        {
+          index: 1,
+          purpose: "proof",
+          durationSec: 7,
+          scene: "卖点证明",
+          visualDirection: "产品展示",
+          productAssetRef: "product.png",
+          voiceover: "旧卖点",
+          transition: "cut"
+        },
+        {
+          index: 2,
+          purpose: "cta",
+          durationSec: 4,
+          scene: "行动号召",
+          visualDirection: "利益点同屏",
+          productAssetRef: "product.png",
+          voiceover: "旧行动",
+          transition: "fade"
+        }
+      ],
+      assumptions: []
+    };
+    globalThis.fetch = async (url, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return new Response(
+        JSON.stringify({
+          data: moduleArtifact("storyboard", {
+            ...draft,
+            shots: draft.shots.map((shot) => ({
+              ...shot,
+              voiceover: `新${shot.voiceover}`
+            }))
+          })
+        }),
+        { status: 200 }
+      );
+    };
+
+    const proposed = await proposeWorkspaceStoryboardVoiceover({
+      workspaceId: "workspace_123",
+      baseArtifactId: "storyboard_current_123",
+      draft,
+      userDirection: "更像真实口播"
+    });
+
+    assert.equal(proposed.artifact.moduleId, "storyboard");
+    assert.equal(proposed.artifact.data.shots[0]?.voiceover, "新旧开场");
+    assert.deepEqual(calls, [
+      {
+        method: "POST",
+        url: "http://localhost:3000/api/workspaces/workspace_123/storyboard/voiceover/propose",
+        body: {
+          baseArtifactId: "storyboard_current_123",
+          draft,
+          userDirection: "更像真实口播"
+        }
       }
     ]);
   });
@@ -665,6 +860,30 @@ describe("api client", () => {
       ref: "product 1.png"
     });
 
+    assert.equal(deleted.data.deleted, true);
+  });
+
+  it("deletes registered workspaces by id", async () => {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(
+        String(url),
+        "http://localhost:3000/api/workspaces/workspace_123"
+      );
+      assert.equal(init?.method, "DELETE");
+      return new Response(
+        JSON.stringify({
+          data: {
+            workspaceId: "workspace_123",
+            deleted: true
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const deleted = await deleteWorkspace("workspace_123");
+
+    assert.equal(deleted.data.workspaceId, "workspace_123");
     assert.equal(deleted.data.deleted, true);
   });
 
