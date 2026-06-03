@@ -4,5 +4,6 @@ export * from "./schemas/creative-blueprint.js";
 export * from "./schemas/artifacts.js";
 export * from "./schemas/storyboard-script.js";
 export * from "./schemas/script.js";
+export * from "./setup_template/creative-requirements.js";
 export * from "./shotprompt/compiler.js";
 export * from "./types/domain.js";

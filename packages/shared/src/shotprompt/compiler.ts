@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
   shotPromptArtifactSchema,
   storyboardArtifactSchema,
   type ShotPromptArtifact,
@@ -53,7 +54,7 @@ function shotVideoFallback(input: {
       : null,
     durationIntent: `${input.shot.durationSec} 秒内完成本镜头目标。`,
     continuity: "保持商品身份、色彩、光线和空间关系连续。",
-    negative: ["商品变形", "镜头抖动", "不自然运动", "字幕或可读文字"],
+    negative: ["商品变形", "镜头抖动", "不自然运动", "旁白文字入画", "乱码贴片"],
     providerPrompt: input.providerPrompt,
   };
 }
@@ -103,6 +104,7 @@ export function compileShotPrompt(
       voiceover: storyboard.shots
         .map((shot) => shot.voiceover.trim())
         .join(" "),
+      voiceProfile: DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
     },
     assumptions: ["已从通过审核的分镜确定性编译。"],
   });

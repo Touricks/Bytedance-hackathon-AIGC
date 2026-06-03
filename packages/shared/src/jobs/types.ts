@@ -39,6 +39,7 @@ export interface GenerateImageCandidateJobData {
   imagePromptArtifactId: string;
   aspectRatio: "9:16" | "16:9" | "1:1";
   referenceImageUrls?: string[];
+  referenceImageUrlsAfterAssets?: string[];
   traceId: string;
 }
 
