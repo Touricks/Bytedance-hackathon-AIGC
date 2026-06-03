@@ -22,15 +22,24 @@ describe("setup template API", () => {
 
     assert.equal(response.statusCode, 200, response.body);
     const body = response.json();
-    assert.equal(body.data.templates.length, 3);
+    assert.equal(body.data.templates.length, 6);
     assert.deepEqual(
       body.data.templates.map((template: { id: string }) => template.id),
-      ["real-product-demo", "ugc-seeding", "premium-showcase"],
+      [
+        "consumable-youth-seeding",
+        "durable-youth-showcase",
+        "virtual-youth-conversion",
+        "consumable-senior-health",
+        "durable-child-parent",
+        "consumable-toddler-mombaby",
+      ],
     );
 
     const [template] = body.data.templates;
-    assert.equal(template.name, "真实商品讲解");
+    assert.equal(template.name, "快消种草·青年");
     assert.equal(typeof template.summary, "string");
+    assert.equal(template.productType, "consumable");
+    assert.deepEqual(template.audiences, ["youth"]);
     assert.deepEqual(Object.keys(template.values).sort(), [
       "imageAvoid",
       "imageComposition",
