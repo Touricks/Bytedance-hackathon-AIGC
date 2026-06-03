@@ -23,7 +23,7 @@
 - `shotprompt approve` 只产生 current approved artifact；只有 `POST /shot-sets` 才创建 active shot set 和 `storyboard_shots`。
 - `image_prompt_artifacts` / `video_script_artifacts` 是 per-shot 版本化 artifact；每次 propose 新增一版，旧 ACTIVE 变 STALE。
 - `shot-workflow-status`、`image-rounds`、`video-rounds` 会基于 `source_fingerprint` 返回 `upstream`，提示当前 shot/round 是否基于旧上游；这是 redo handoff 信号，不会自动删除候选、选择或成片链路。
-- 当前不持久化完整 assembled prompt；完整 prompt 写入 trace，module artifact 的 `prompt_assembly` 保存 subject/contract 模板 id 与 hash。
+- workspace module artifact 的完整 assembled prompt 写入 trace，`prompt_assembly` 保存 subject/contract 模板 id 与 hash；逐 shot 的 `image_prompt_artifacts` / `video_script_artifacts` 当前由后端 deterministic assembler 直接持久化 provider-facing prompt 主体。
 - material-intake 的真实 Ark text provider 请求默认只发送纯文本 runtime context。product-brief 在真实模式下会读取 primary material image，并以 `image_url` 形式附给多模态 Ark text provider，避免只凭空 metadata 生成商品 brief。
 
 ### 1.1 Prompt 组装与跨模块流通
@@ -100,6 +100,8 @@ packages/ai/src/prompts/modules/<module>/
 
 参考视频导入不直接写入 `prompt_requirements_artifacts`。`POST /api/workspaces/:workspaceId/reference-video/import` 只把站外直连视频或上传视频分析为 requirements draft，返回给首屏表单填入现有字段；用户点击提交后才进入 `prompt-requirements/propose` / `approve` 生命周期。参考视频也不写入 `asset`，不参与 `material-intake.assets[]`。
 
+首屏「创作要求模板」来自 `packages/shared/src/setup_template/creative-requirements.ts`。服务端启动/模块加载时校验 shared Zod schema，并通过 `GET /api/setup-templates/creative-requirements` 返回给前端；点击模板只确定性填充这些 requirements draft 字段。它不会创建 `prompt_requirements_artifacts`，也不会批准 current artifact 或触发素材解读。
+
 ### 2.2 `material_intake_artifacts.data`
 
 Schema：`materialIntakeArtifactSchema`
@@ -162,7 +164,7 @@ Schema：`shotPromptArtifactSchema`
 
 表：`shot_sets`
 
-`POST /api/workspaces/:workspaceId/shot-sets` 将当前或指定 approved `shot_prompt_artifacts` apply 为 active shot set。apply 会归档旧 active set，但不会自动清空旧候选或旧选择。
+`POST /api/workspaces/:workspaceId/shot-sets` 将当前或指定 approved `shot_prompt_artifacts` apply 为 active shot set。apply 会归档旧 active set，但不会自动清空旧候选或旧选择；归档实例仅作为数据库历史事实保留，不提供商家工作台打开入口。
 
 | 字段 | 含义 |
 |---|---|
@@ -231,11 +233,11 @@ Schema：`shotPromptArtifactSchema`
 | `negative_prompt` | text | 图像负向提示，可为空。 |
 | `reference_asset_ids` | text[] | 参与 prompt 的素材 id。 |
 | `prompt_json` | jsonb | agent 输出和上下文快照。 |
-| `source_fingerprint` | jsonb | 本次 propose 读取的上游 artifact、shot requirement、`image_ref` 和候选数摘要。 |
-| `prompt_assembly` | jsonb | `image-prompt/subject.md` + `image-prompt/contract.md` 的 assembly metadata，含 subject/contract hash。 |
-| `created_by` | text | 当前通常为 `agent`。 |
-| `agent_name` | text | 当前为 `StoryboardImagePromptAgent`。 |
-| `prompt_template_version` | text | 当前为 `v2`。 |
+| `source_fingerprint` | jsonb | 本次 propose 读取的上游 artifact、shot requirement、`image_ref`、反馈重生成的 `feedbackImageRef` 和候选数摘要。 |
+| `prompt_assembly` | jsonb | 当前为后端 deterministic assembler metadata，包含 `moduleId/source/mode/assemblerVersion`；历史 agent 版本可能包含 subject/contract hash。 |
+| `created_by` | text | `system` 或 `user`；反馈重生成写 `user`。 |
+| `agent_name` | text | 当前为 `DeterministicImagePromptAssembler`。 |
+| `prompt_template_version` | text | 当前为 `server-image-prompt-assembler.v1`。 |
 | `base_artifact_id` | text | 派生来源 artifact，可为空。 |
 | `created_at` | timestamptz | 创建时间。 |
 
@@ -251,13 +253,12 @@ Schema：`shotPromptArtifactSchema`
 | `productVisibilityRule` | agent 输出。 |
 | `referenceImageUsage[]` | agent 输出；每项含 `assetId/usage/instruction`。 |
 | `qualityChecklist[]` | agent 输出。 |
-| `context` | server 注入的装配快照，包括 material/brief/shotprompt、前后镜、当前/前序候选、`image_ref`、`number`、`shotImage`、`shotVideo`、`compiledShotRequirements`、`userDirection` 等。 |
+| `context` | server 注入的装配快照，包括 material/brief/shotprompt、镜头目标 `shotGoal`、前后镜、当前/前序候选、`image_ref`、反馈重生成的 `feedbackImageCandidateId/feedbackImageRef`、`number`、`shotImage`、`shotVideo`、`compiledShotRequirements`、`userDirection`、`assemblerVersion` 等。 |
 
 prompt 装配：
 
-- subject prompt：`packages/ai/src/prompts/modules/image-prompt/subject.md`，负责图像创作主体要求，并把后端从 `shotImage + shotVideo` 编译出的上游分镜生成要求转译为静态关键帧 prompt。
-- contract prompt：`packages/ai/src/prompts/modules/image-prompt/contract.md`，只说明输入 JSON 和 `StoryboardImagePromptOutputSchema` 输出约束。
-- 业务调整分镜图生成策略时改 subject；只有输入字段或输出 schema 变化时才改 contract。
+- 主路径：后端 deterministic assembler，不调用二次创意 agent。prompt 第一块是 `storyboard_shots.objective` / approved `shots[].providerPrompt`（镜头目标），第二块是当前 `shot_prompt_requirements.shot_image`，反馈重生成追加 `userDirection` 和参考图规则。
+- 兼容 prompt 模块：`packages/ai/src/prompts/modules/image-prompt/subject.md` / `contract.md` 仍保留作调试或未来受控转写，不是当前主路径。
 
 相关 batch：`image_generation_batches`
 
@@ -266,7 +267,7 @@ prompt 装配：
 | `image_prompt_artifact_id` | 绑定本次图像提示 artifact。 |
 | `provider` | 当前为 `ark-seedream`。 |
 | `aspect_ratio` | 生成宽高比。 |
-| `provider_request` | provider 请求摘要：`prompt/negativePrompt/image_ref/count/aspectRatio`。 |
+| `provider_request` | provider 请求摘要：`prompt/negativePrompt/image_ref/feedbackImageRef/feedbackImageCandidateId/referenceImageOrder/count/aspectRatio/assemblerVersion`。反馈重生成时 `feedbackImageCandidateId` 对应的候选图进入 Seedream 图片输入第一位，本镜素材图随后，上一镜 selected image 最后。 |
 | `idempotency_key` | propose 内部合成，retry 使用公开请求头。 |
 | `requested_count/succeeded_count/failed_count/status/error_message` | 生成批次状态。 |
 
@@ -304,16 +305,16 @@ prompt 装配：
 | `version` | int | shot 内递增版本。 |
 | `status` | enum | `DRAFT / ACTIVE / APPROVED / STALE / ARCHIVED`。 |
 | `duration_sec` | int | 单镜视频时长。真实 Seedance 要求 4-12 秒。 |
-| `script_json` | jsonb | agent 结构化脚本输出和上下文快照。 |
-| `provider_prompt` | text | agent 输出的 Seedance 画面/运镜提示。真正发给 Seedance 前会经 `buildSeedanceShotVideoPrompt()` 追加旁白音频要求。 |
+| `script_json` | jsonb | deterministic assembler 输出的结构化脚本摘要和上下文快照。 |
+| `provider_prompt` | text | deterministic assembler 输出的 Seedance 画面/运镜提示主体。真正发给 Seedance 前会经 `buildSeedanceShotVideoPrompt()` 追加旁白音频要求。 |
 | `based_on_image_candidate_id` | text | 当前 shot 选中图，作为 first frame。 |
 | `based_on_prev_image_candidate_id` | text | 前一镜图像锚点，当前主线通常为空。 |
 | `based_on_next_image_candidate_id` | text | 下一镜选中图，作为 last frame。 |
-| `source_fingerprint` | jsonb | 本次 propose 读取的上游 artifact、shot requirement、first/last frame 和候选数摘要。 |
-| `prompt_assembly` | jsonb | `video-script/subject.md` + `video-script/contract.md` 的 assembly metadata，含 subject/contract hash。 |
-| `created_by` | text | 当前通常为 `agent`。 |
-| `agent_name` | text | 当前为 `VideoShotScriptAgent`。 |
-| `prompt_template_version` | text | 当前为 `v2`。 |
+| `source_fingerprint` | jsonb | 本次 propose/regenerate 读取的上游 artifact、镜头目标、shot requirement、first/last frame、voiceProfileHash、voiceover、反馈视频候选和候选数摘要。 |
+| `prompt_assembly` | jsonb | 当前为后端 deterministic assembler metadata，包含 `moduleId/source/mode/assemblerVersion`；历史 agent 版本可能包含 subject/contract hash。 |
+| `created_by` | text | `system` 或 `user`；反馈重生成写 `user`。 |
+| `agent_name` | text | 当前为 `DeterministicVideoScriptAssembler`。 |
+| `prompt_template_version` | text | 当前为 `server-video-script-assembler.v1`。 |
 | `base_artifact_id` | text | 派生来源 artifact，可为空。 |
 | `created_at` | timestamptz | 创建时间。 |
 
@@ -321,29 +322,28 @@ prompt 装配：
 
 | 字段 | 来源 |
 |---|---|
-| `durationSec` | agent 输出，来自 server 注入的 shot 时长；server 会按真实 Seedance 约束夹到 4-12 秒范围内。 |
-| `shotGoal` | agent 输出。 |
-| `startFrameDescription` | agent 输出。 |
-| `endFrameDescription` | agent 输出。 |
-| `continuityWithPrevious` | agent 输出，可为空。 |
-| `continuityWithNext` | agent 输出，可为空。 |
-| `cameraMotion` | agent 输出。 |
-| `subjectMotion` | agent 输出。 |
-| `productVisibility` | agent 输出。 |
-| `sceneConsistency` | agent 输出。 |
-| `voiceover` | agent 输出，可为空。 |
-| `onscreenText` | agent 输出，可为空。 |
-| `providerPrompt` | agent 输出，复制到表字段 `provider_prompt`。 |
-| `negativePrompt` | agent 输出，可为空。 |
-| `riskNotes[]` | agent 输出。 |
-| `context` | server 注入的上下文摘要，包括 material/brief/shotprompt、前后镜、已选图等。 |
+| `durationSec` | server 选择的 shot 时长；server 会按真实 Seedance 约束夹到 4-12 秒范围内。 |
+| `shotGoal` | 镜头目标上下文。 |
+| `startFrameDescription` | 基于当前 selected image 首帧候选 id 的描述。 |
+| `endFrameDescription` | 基于下一镜 selected image 尾帧候选 id 的描述；末镜自然收束。 |
+| `continuityWithPrevious` | 当前主线通常为空。 |
+| `continuityWithNext` | 下一镜 selected image 候选 id，可为空。 |
+| `cameraMotion` | 来自 `shotVideo.cameraMotion`。 |
+| `subjectMotion` | 来自 `shotVideo.subjectMotion`。 |
+| `productVisibility` | 来自 `shotVideo.productVisibility/productVis`。 |
+| `sceneConsistency` | 来自 `shotVideo.continuity`。 |
+| `voiceover` | 本镜 approved shotprompt voiceover，可为空。 |
+| `onscreenText` | 当前固定为空；旁白不得复制为画面文字。 |
+| `providerPrompt` | assembler 输出，复制到表字段 `provider_prompt`。 |
+| `negativePrompt` | 来自 `shotVideo.negative`，可为空。 |
+| `riskNotes[]` | 当前通常为空。 |
+| `context` | server 注入的上下文摘要，包括 material/brief/shotprompt、镜头目标、首尾帧、voice profile、反馈视频候选等。 |
 
 prompt 装配：
 
-- subject prompt：`packages/ai/src/prompts/modules/video-script/subject.md`，负责视频运动主体要求和 `shotVideo` dict 的使用方式。
-- contract prompt：`packages/ai/src/prompts/modules/video-script/contract.md`，只说明输入 JSON 和 `VideoShotScriptOutputSchema` 输出约束。
-- 业务调整单镜头视频脚本 / 运镜生成策略时改 subject；只有输入字段、输出 schema 或 Seedance 硬约束变化时才改 contract。
-- provider 请求 prompt：worker 不直接把 `provider_prompt` 原样发给 Seedance，而是调用 `buildSeedanceShotVideoPrompt({ providerPrompt, scriptJson })`。当 `script_json.voiceover` 非空时，会追加中文旁白生成要求，并要求不要在画面中生成字幕/可读文字；同时 `generate_audio` 固定传 `true`。
+- 主路径：后端 deterministic assembler，不调用二次创意 agent。`providerPrompt` 只作为镜头目标上下文，执行约束来自 `shotVideo`、当前 selected image 首帧、下一镜 selected image 尾帧、duration、voiceover 和统一 voice profile。
+- 兼容 prompt 模块：`packages/ai/src/prompts/modules/video-script/subject.md` / `contract.md` 仍保留作调试或未来受控转写，不是当前主路径。
+- provider 请求 prompt：worker 不直接把 `provider_prompt` 原样发给 Seedance，而是调用 `buildSeedanceShotVideoPrompt({ providerPrompt, scriptJson })`。当 `script_json.voiceover` 非空时，会追加中文旁白生成要求；旁白只进入音频，禁止将口播文案、旁白文字或其改写复制、叠加、渲染到视频画面内，不生成字幕样式、标题贴片或乱码文字；同时 `generate_audio` 固定传 `true`。
 
 相关 batch：`video_generation_batches`
 
@@ -352,7 +352,7 @@ prompt 装配：
 | `video_script_artifact_id` | 绑定本次视频脚本 artifact。 |
 | `provider` | 当前为 `seedance`。 |
 | `aspect_ratio` | 生成宽高比。 |
-| `provider_request` | 主线 propose 中保存 `providerPrompt/first_frame_url/last_frame_url/durationSec/count/aspectRatio`。retry 路径当前可能为空对象。 |
+| `provider_request` | 主线 propose/regenerate 中保存最终 Seedance prompt 摘要、`providerPrompt/firstFrameCandidateId/firstFrameUrl/lastFrameCandidateId/lastFrameUrl/durationSec/count/aspectRatio/voiceover/voiceProfileHash/assemblerVersion`；反馈重生成额外记录 `feedbackVideoCandidateId/feedbackVideoUrl/baseArtifactId/userDirection`。retry 路径当前可能为空对象。 |
 | `idempotency_key` | 主线 propose 当前为空；retry 使用公开请求头。 |
 | `requested_count/succeeded_count/failed_count/status/error_message` | 生成批次状态。 |
 
@@ -394,6 +394,12 @@ prompt 装配：
 | `output_preview` | 输出预览，常取 prompt 或 provider prompt 前 200 字。 |
 | `metadata` | prompt template version、context、batch id、candidate ids、frames、provider 信息等。 |
 
+本地 provider 调用审计文件：`.daireel/trace/provider_call.jsonl`
+
+- 仅 `MODEL_MODE=real` 时由 image/video worker 写入，mock 模式不创建。
+- 每行是 `provider_call.v1` 事件，包含 workspace/shot/job/batch/candidate、attempt、provider/model、media type、status、generated count、latency、error、首尾帧或参考图数量。
+- 事件保存 `promptHash`，URL 与 data URL 会通过 trace redaction 脱敏；文件写入失败只记录 warn，不会让候选生成失败。
+
 表：`generation_jobs`
 
 | 字段 | Prompt 链路含义 |
@@ -407,6 +413,6 @@ prompt 装配：
 
 ## 7. 当前缺口
 
-- `prompt_requirements_artifacts` 已能保存用户创作要求；当前 product-brief / storyboard / shotprompt 只把 requirements 作为依赖门槛与 `source_fingerprint` 记录，尚未把 requirements data 系统展开到这三个 module 的 runtime context。逐 shot 阶段则已通过 `shotImage` / `shotVideo` dict 注入 image-prompt / video-script agent。
-- 当前不持久化完整 assembled prompt；完整 prompt 写 trace，artifact 只保存模板 id/hash 与 preview。
+- `prompt_requirements_artifacts` 已能保存用户创作要求；当前 material-intake / product-brief / storyboard 只把 requirements 作为依赖门槛与 `source_fingerprint` 记录，尚未把 requirements data 系统展开到这三个 module 的 runtime context。shotprompt 会把已批准 7 项创作要求格式化注入 Runtime Context 顶部，但不做输出后处理。逐 shot 阶段由后端 deterministic assembler 读取镜头目标、`shotImage` / `shotVideo`、素材图、首尾帧和用户反馈。
+- Workspace module 的完整 assembled prompt 写 trace，artifact 只保存模板 id/hash 与 preview；逐 shot image/video artifact 持久化最终 prompt 主体，并在 batch `provider_request` 中记录 provider 请求摘要。
 - 旧 V1 workspace 静态 builder endpoints 与 `shotprompt approve` delete/reseed 主链路已下线；状态摘要改读 module-owned artifact tables。

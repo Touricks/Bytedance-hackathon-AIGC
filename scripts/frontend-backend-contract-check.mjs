@@ -93,6 +93,51 @@ const promptRequirements = {
   shotVideo: { global: "smooth motion" },
 };
 
+const creativeRequirementTemplates = [
+  {
+    id: "real-product-demo",
+    name: "真实商品讲解",
+    summary: "真实电商摄影，卖点清晰，前后镜头连续。",
+    values: {
+      imageStyle: "真实电商产品摄影，保留商品材质和品牌识别",
+      imageComposition: "干净主视觉，主体稳定，避免无关道具抢占画面",
+      imageAvoid: "文字贴片，商品变形，额外产品变体，环境漂移",
+      scriptTone: "直接、可信、卖点清晰",
+      storyboardRhythm: "开场快，卖点明确，证明充分，结尾行动引导清楚",
+      shotImageGlobal: "每张分镜图延续前一镜环境、灯光、构图和商品身份",
+      shotVideoGlobal: "镜头运动平滑，前后镜头保持空间连续",
+    },
+  },
+  {
+    id: "ugc-seeding",
+    name: "口播种草转化",
+    summary: "自然 UGC 实拍，亲切体验语气，痛点到购买理由。",
+    values: {
+      imageStyle: "自然 UGC 实拍质感，保留商品真实外观、材质和使用场景",
+      imageComposition: "人物或手部互动自然，商品始终是画面焦点，背景生活化但不杂乱",
+      imageAvoid: "硬广摆拍，夸张滤镜，商品变形，字幕贴片，虚假前后对比",
+      scriptTone: "亲切、真实、有体验感，像朋友推荐但卖点明确",
+      storyboardRhythm: "先提出痛点或欲望，再展示使用体验和关键卖点，最后给出购买理由",
+      shotImageGlobal: "分镜图保持真实生活场景连续，商品露出稳定，人物动作自然可信",
+      shotVideoGlobal: "镜头运动轻量自然，贴近手机实拍观感，动作和口播节奏一致",
+    },
+  },
+  {
+    id: "premium-showcase",
+    name: "高端质感展示",
+    summary: "商业质感，克制专业语气，慢速稳定运镜。",
+    values: {
+      imageStyle: "高端商业产品摄影，质感精致，材质、反光和轮廓表现清楚",
+      imageComposition: "主体居中或黄金分割构图，留白克制，背景干净，光影有层次",
+      imageAvoid: "廉价影棚感，过度饱和，杂乱道具，商品变形，低清晰度纹理",
+      scriptTone: "克制、专业、有质感，强调价值感和可信证据",
+      storyboardRhythm: "开场建立质感，中段展示细节和证据，结尾用简洁行动引导收束",
+      shotImageGlobal: "分镜图统一高端光线、色调和商品身份，细节特写必须保持材质真实",
+      shotVideoGlobal: "运镜慢速稳定，强调细节、光影和空间连续，不做突兀转场",
+    },
+  },
+];
+
 const materialIntake = {
   primaryProductRef: "product.png",
   assets: [
@@ -325,6 +370,22 @@ const contracts = [
     },
   },
   {
+    id: "setup-templates.creative-requirements",
+    method: "GET",
+    path: "/api/setup-templates/creative-requirements",
+    source: ['"/api/setup-templates/creative-requirements"'],
+    mock: () => ({
+      data: {
+        templates: creativeRequirementTemplates,
+      },
+    }),
+    validate: (body) => {
+      assert.equal(body.data.templates.length, 3);
+      assert.equal(body.data.templates[0].id, "real-product-demo");
+      assert.equal(typeof body.data.templates[0].values.shotVideoGlobal, "string");
+    },
+  },
+  {
     id: "workspace.list",
     method: "GET",
     path: "/api/workspaces",
@@ -479,14 +540,6 @@ const contracts = [
     source: ['workspaceRoute("/shot-sets")'],
     mock: () => ({ data: [{ id: shotSetId, status: "active" }] }),
     validate: (body) => assert.equal(body.data[0].status, "active"),
-  },
-  {
-    id: "shot-set.shots",
-    method: "GET",
-    path: "/api/workspaces/:workspaceId/shot-sets/:shotSetId/shots",
-    source: ['workspaceRoute("/shot-sets/:shotSetId/shots")'],
-    mock: () => ({ data: [shotRow()] }),
-    validate: validateShotList,
   },
   {
     id: "shots.list",

@@ -16,6 +16,7 @@ servers:
     description: 本地开发（SERVER_PORT 默认 3000）
 tags:
   - name: Platform
+  - name: SetupTemplate
   - name: Material
   - name: Workspace
   - name: ModuleArtifacts
@@ -29,11 +30,6 @@ components:
   parameters:
     WorkspaceId:
       name: workspaceId
-      in: path
-      required: true
-      schema: { type: string }
-    ShotSetId:
-      name: shotSetId
       in: path
       required: true
       schema: { type: string }
@@ -168,17 +164,27 @@ components:
     PromptAssemblyMetadata:
       type: object
       additionalProperties: true
+      description: >
+        Workspace module artifacts usually record subject/contract template ids and hashes.
+        Per-shot image/video artifacts currently use a deterministic server assembler and may
+        only provide moduleId, assemblerVersion, source, and mode.
       required:
         [
           moduleId,
-          assemblerVersion,
-          subjectTemplateId,
-          contractTemplateId,
-          subjectHash,
-          contractHash
+          assemblerVersion
         ]
       properties:
         moduleId: { type: string }
+        source:
+          {
+            type: string,
+            description: 组装来源，例如 server-deterministic-assembler。
+          }
+        mode:
+          {
+            type: string,
+            description: 组装模式，例如 propose 或 user-feedback-regenerate。
+          }
         subjectTemplateId:
           {
             type: string,
@@ -242,6 +248,66 @@ components:
         storyboard: { type: object, additionalProperties: true }
         shotImage: { type: object, additionalProperties: true }
         shotVideo: { type: object, additionalProperties: true }
+
+    CreativeRequirementTemplateValues:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          imageStyle,
+          imageComposition,
+          imageAvoid,
+          scriptTone,
+          storyboardRhythm,
+          shotImageGlobal,
+          shotVideoGlobal
+        ]
+      properties:
+        imageStyle: { type: string, minLength: 1 }
+        imageComposition: { type: string, minLength: 1 }
+        imageAvoid: { type: string, minLength: 1 }
+        scriptTone: { type: string, minLength: 1 }
+        storyboardRhythm: { type: string, minLength: 1 }
+        shotImageGlobal: { type: string, minLength: 1 }
+        shotVideoGlobal: { type: string, minLength: 1 }
+
+    CreativeRequirementTemplate:
+      type: object
+      additionalProperties: false
+      required: [id, name, summary, productType, audiences, values]
+      properties:
+        id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        summary: { type: string, minLength: 1 }
+        productType:
+          {
+            type: string,
+            enum: [virtual-service, consumable, durable],
+            description: 模板适用的商品种类。
+          }
+        audiences:
+          type: array
+          minItems: 1
+          description: 模板适用人群，可覆盖多个年龄/决策人群。
+          items:
+            type: string
+            enum: [toddler, child, youth, senior]
+        values:
+          $ref: "#/components/schemas/CreativeRequirementTemplateValues"
+
+    CreativeRequirementTemplatesResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [templates]
+          properties:
+            templates:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/CreativeRequirementTemplate"
 
     ReferenceVideoImportRequest:
       type: object
@@ -321,16 +387,16 @@ components:
           description: 商家本次自然语言调整要求。带 draft 或 baseArtifactId 时必填。
         title:
           type: string
-          description: 兼容旧入口的商品标题预填字段。
+          description: 可选内联表单 seed：商品标题预填字段。
         sellingPoints:
           type: string
-          description: 兼容旧入口的卖点预填字段。
+          description: 可选内联表单 seed：卖点预填字段。
         audience:
           type: string
-          description: 兼容旧入口的人群预填字段。
+          description: 可选内联表单 seed：人群预填字段。
         stylePreference:
           type: string
-          description: 兼容旧入口的风格偏好预填字段。
+          description: 可选内联表单 seed：风格偏好预填字段。
         draft:
           type: object
           additionalProperties: true
@@ -674,13 +740,18 @@ components:
 
     ImagePromptRegenerateRequest:
       type: object
-      required: [baseArtifactId]
+      required: [baseArtifactId, feedbackImageCandidateId, userDirection]
       additionalProperties: false
       properties:
         baseArtifactId: { type: string }
+        feedbackImageCandidateId:
+          type: string
+          description: 必须属于当前 shot 最新 image round 的成功候选；作为本轮改稿视觉基准。
         userDirection:
           type: string
-          description: 用户对本次重新生成的补充反馈；最终 prompt 仍由后端基于 shotImage 和 shotVideo 重新装配。
+          minLength: 1
+          maxLength: 1000
+          description: 用户对本次重新生成的文字反馈；必填。
 
     VideoScriptJson:
       type: object
@@ -743,7 +814,25 @@ components:
           $ref: "#/components/schemas/SourceFingerprint"
         promptAssembly:
           $ref: "#/components/schemas/PromptAssemblyMetadata"
+        createdBy: { type: string, enum: [agent, user, system] }
+        agentName: { type: string, nullable: true }
+        baseArtifactId: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+
+    VideoScriptRegenerateRequest:
+      type: object
+      required: [baseArtifactId, feedbackVideoCandidateId, userDirection]
+      additionalProperties: false
+      properties:
+        baseArtifactId: { type: string }
+        feedbackVideoCandidateId:
+          type: string
+          description: 必须属于当前 shot 最新 video round 的成功候选；仅记录为反馈对象，不作为 provider 视频输入。
+        userDirection:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: 用户对本次重新生成的文字反馈；必填。
 
     GenerationBatch:
       type: object
@@ -1005,6 +1094,22 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+
+  /api/setup-templates/creative-requirements:
+    get:
+      tags: [SetupTemplate]
+      summary: 获取内置创作要求模板
+      description: >
+        返回 server 启动时从 @aigc-video/shared setup_template 校验通过的创作要求模板。
+        只用于前端填充首屏 7 项 requirements draft；不创建 artifact、不 approve、
+        不触发素材解读，也不支持运行时编辑模板。
+      responses:
+        "200":
+          description: Creative requirement templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreativeRequirementTemplatesResponse"
 
   /api/test-runs/{runId}:
     delete:
@@ -1621,16 +1726,12 @@ paths:
   /api/workspaces/{workspaceId}/shot-sets:
     get:
       tags: [ShotSet]
-      summary: 列出 shot sets
+      summary: 列出 active shot set
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
-        - name: includeArchived
-          in: query
-          required: false
-          schema: { type: boolean, default: false }
       responses:
         "200":
-          description: Shot sets
+          description: Active shot sets only
           content:
             application/json:
               schema:
@@ -1666,26 +1767,6 @@ paths:
                     $ref: "#/components/schemas/ShotSet"
         "400":
           $ref: "#/components/responses/Error"
-
-  /api/workspaces/{workspaceId}/shot-sets/{shotSetId}/shots:
-    get:
-      tags: [ShotSet, Shot]
-      summary: 获取指定 shot set 下的 shots
-      parameters:
-        - $ref: "#/components/parameters/WorkspaceId"
-        - $ref: "#/components/parameters/ShotSetId"
-      responses:
-        "200":
-          description: Shots
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Shot"
 
   /api/workspaces/{workspaceId}/shots:
     get:
@@ -1781,7 +1862,7 @@ paths:
   /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/propose:
     post:
       tags: [Shot]
-      summary: 运行图像 prompt agent 并创建图像候选 batch
+      summary: 确定性装配图像 prompt 并创建图像候选 batch
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - $ref: "#/components/parameters/ShotId"
@@ -1828,9 +1909,11 @@ paths:
       tags: [Shot]
       summary: 用户反馈后重新装配 image prompt 并生成候选图
       description: >-
-        基于 base image prompt artifact、当前 shotImage/shotVideo 和用户反馈重新调用
-        image-prompt agent，创建新的 user-created image prompt artifact 和 image batch。
-        不清空当前 selected image，旧候选仍保留可回看。
+        基于 base image prompt artifact、最新轮成功反馈候选、当前镜头目标
+        providerPrompt、shotImage 和用户反馈，用后端确定性 assembler 创建新的
+        user-created image prompt artifact 和 image batch。feedbackImageCandidateId
+        的图片作为 Seedream 第一参考图；本镜素材图随后；上一镜 selected image
+        最后用于连续性。不清空当前 selected image，旧候选仍保留可回看。
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - $ref: "#/components/parameters/ShotId"
@@ -1868,6 +1951,8 @@ paths:
                     type: object
                     additionalProperties: true
         "400":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/shots/{shotId}/image-prompts:
@@ -1962,10 +2047,12 @@ paths:
   /api/workspaces/{workspaceId}/shots/{shotId}/video-scripts/propose:
     post:
       tags: [Shot]
-      summary: 运行视频脚本 agent，异步入队每候选一个视频生成 job
+      summary: 确定性装配视频脚本并异步入队每候选一个视频生成 job
       description: >
-        写 ACTIVE video_script_artifacts 后，每个候选入队一个 generate_video_candidate
-        job 并立即返回 PENDING batch + PENDING candidates；shot 进入 VIDEO_GENERATING。
+        读取当前镜头目标 providerPrompt、shotVideo、当前 selected image 首帧、下一镜
+        selected image 尾帧、duration、voiceover 和 voice profile，写 ACTIVE
+        video_script_artifacts 后，每个候选入队一个 generate_video_candidate job
+        并立即返回 PENDING batch + PENDING candidates；shot 进入 VIDEO_GENERATING。
         客户端轮询 video-rounds 直到 VIDEO_CANDIDATES_READY。video 同时在飞的 Seedance
         调用数被进程级信号量限制为 VIDEO_PROVIDER_CONCURRENCY，并对 429/限流做退避重试。
       parameters:
@@ -2020,6 +2107,69 @@ paths:
                       videoRoundsUrl: { type: string }
                       batchId: { type: string }
         "400":
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-scripts/regenerate:
+    post:
+      tags: [Shot]
+      summary: 用户反馈后重新装配 video script 并生成候选视频
+      description: >-
+        基于 base video script artifact、最新轮成功反馈视频候选、当前镜头目标
+        providerPrompt、shotVideo、首尾帧、duration、voiceover 和 voice profile，
+        用后端确定性 assembler 创建新的 user-created video script artifact 和 video
+        batch。feedbackVideoCandidateId 只记录为反馈对象和 trace，不作为 Seedance
+        视频输入。不会清空当前 selected video。
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoScriptRegenerateRequest"
+      responses:
+        "200":
+          description: User-feedback video script artifact plus a PENDING batch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/VideoScriptArtifact"
+                  artifact:
+                    $ref: "#/components/schemas/VideoScriptArtifact"
+                  batch:
+                    $ref: "#/components/schemas/GenerationBatch"
+                  candidates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VideoCandidate"
+                  shotStatus:
+                    $ref: "#/components/schemas/ShotStatus"
+                  nextAction:
+                    type: object
+                    additionalProperties: true
+                  traceId: { type: string }
+                  context:
+                    type: object
+                    additionalProperties: true
+                  frames:
+                    type: object
+                    properties:
+                      firstFrameCandidateId: { type: string }
+                      lastFrameCandidateId: { type: string, nullable: true }
+                      firstFrameUrl: { type: string, nullable: true }
+                      lastFrameUrl: { type: string, nullable: true }
+                  poll:
+                    type: object
+                    properties:
+                      videoRoundsUrl: { type: string }
+                      batchId: { type: string }
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/shots/{shotId}/video-scripts:
@@ -2225,7 +2375,6 @@ paths:
             schema:
               type: object
               properties:
-                shotSetId: { type: string }
                 outputAspectRatio:
                   $ref: "#/components/schemas/AspectRatio"
       responses:

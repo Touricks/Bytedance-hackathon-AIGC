@@ -727,35 +727,6 @@
           ]
         },
         {
-          "name": "Get Shot Set Shots",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-sets/{{shotSetId}}/shots"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.response.to.have.status(200);",
-                  "var shots = pm.response.json().data;",
-                  "pm.test(\"shot set creates shots with requirements\", function () {",
-                  "  pm.expect(shots.length).to.eql(Number(pm.environment.get(\"shotPromptShotCount\")));",
-                  "  for (const shot of shots) {",
-                  "    pm.expect(shot.shotSetId).to.eql(pm.environment.get(\"shotSetId\"));",
-                  "    pm.expect(shot.requirements.shotImage).to.be.an(\"object\");",
-                  "    pm.expect(shot.requirements.shotVideo).to.be.an(\"object\");",
-                  "  }",
-                  "});",
-                  "pm.environment.set(\"shotIds\", JSON.stringify(shots.map((shot) => shot.id)));"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "List Active Shots",
           "request": {
             "method": "GET",
@@ -770,10 +741,15 @@
                 "exec": [
                   "pm.response.to.have.status(200);",
                   "var shots = pm.response.json().data;",
-                  "pm.test(\"active shots match shot set\", function () {",
+                  "pm.test(\"active shots match shot set and include requirements\", function () {",
                   "  pm.expect(shots.length).to.eql(Number(pm.environment.get(\"shotPromptShotCount\")));",
-                  "  pm.expect(shots.map((shot) => shot.id)).to.eql(JSON.parse(pm.environment.get(\"shotIds\")));",
-                  "});"
+                  "  for (const shot of shots) {",
+                  "    pm.expect(shot.shotSetId).to.eql(pm.environment.get(\"shotSetId\"));",
+                  "    pm.expect(shot.requirements.shotImage).to.be.an(\"object\");",
+                  "    pm.expect(shot.requirements.shotVideo).to.be.an(\"object\");",
+                  "  }",
+                  "});",
+                  "pm.environment.set(\"shotIds\", JSON.stringify(shots.map((shot) => shot.id)));"
                 ]
               }
             }

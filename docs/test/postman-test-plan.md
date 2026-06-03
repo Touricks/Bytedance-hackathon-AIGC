@@ -130,14 +130,15 @@ pnpm --filter @aigc-video/server test:integration:smoke
 |---|---|---|
 | 1 | `GET /api/workspaces/:workspaceId/shots` | 在 apply 前返回 `400 NO_ACTIVE_SHOT_SET` 或空 active 语义。 |
 | 2 | `POST /api/workspaces/:workspaceId/shot-sets` | `200`；创建 active shot set；回填 `shotSetId`。 |
-| 3 | `GET /api/workspaces/:workspaceId/shot-sets/:shotSetId/shots` | `shots.length === approvedShotPrompt.shots.length`；每个 shot 有 `requirements.shotImage` 与 `requirements.shotVideo`。 |
-| 4 | `GET /api/workspaces/:workspaceId/shot-sets?includeArchived=true` | active shot set 唯一；每条记录包含 `shotCount` 与 `upstream`。 |
+| 3 | `GET /api/workspaces/:workspaceId/shots` | 只返回 active shot set 的 shots；`shots.length === approvedShotPrompt.shots.length`；每个 shot 有 `requirements.shotImage` 与 `requirements.shotVideo`。 |
+| 4 | `GET /api/workspaces/:workspaceId/shot-sets` | 只返回 active shot set；每条记录包含 `shotCount` 与 `upstream`。 |
 | 5 | `GET /api/shots/:shotId/asset-refs` | `200`；返回 shot 当前素材引用，包含 `assetId`、`role`、`weight`、`position`。 |
 | 6 | `PATCH /api/shots/:shotId/asset-refs` | `200`；按请求体顺序替换素材引用；返回更新后的 refs；不重跑图像/视频链路。 |
 
 负向断言：
 
 - `shotprompt approve` 之后、`shot-sets` apply 之前，DB 中不应出现新 `storyboard_shots`。
+- `GET /api/workspaces/:workspaceId/shot-sets/:shotSetId/shots` 不再是业务接口；请求旧归档实例路径应返回不可用响应。
 - 重新 propose/approve shotprompt 不应归档当前 active shot set，只应让 `/status.activeShotSet.upstream.upstreamChanged === true`。
 - 重新 apply 新 shotprompt 后，`shot-workflow-status.data.shots.length` 等于新 active shot set shot 数，不混入 archived rows。
 - `PATCH /api/shots/:shotId/asset-refs` 传不存在或跨 workspace asset 时返回 `400 INVALID_ASSET_REF`；对 archived shot 返回 `400 SHOT_NOT_IN_ACTIVE_SET`。
@@ -151,7 +152,7 @@ pnpm --filter @aigc-video/server test:integration:smoke
 | 1 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose` | `200`；返回 image prompt artifact 与 batch；artifact 有 prompt assembly metadata。 |
 | 2 | `GET /api/workspaces/:workspaceId/shots/:shotId/image-rounds` | 轮询到 batch `SUCCEEDED`；候选数达到 `imageCandidateCount`。 |
 | 3 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | `200`；返回 `imageSelectArtifact.imageCandidateId`；重复选择可覆盖。 |
-| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | `200`；请求只含 `baseArtifactId` 与可选 `userDirection`；新 artifact `createdBy === "user"`，`baseArtifactId` 等于旧 artifact；`promptJson.context` 包含 `shotImage`、`shotVideo`、`compiledShotRequirements`；原 `selectedImageId` 保留。 |
+| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | `200`；请求必须包含 `baseArtifactId`、最新轮成功候选 `feedbackImageCandidateId` 与非空 `userDirection`；新 artifact `createdBy === "user"`，`baseArtifactId` 等于旧 artifact；`promptJson.context/source_fingerprint` 包含 `shotGoal`、`shotImage`、`feedbackImageCandidateId`、`userDirection`；Seedream 参考图第一位为反馈候选图；原 `selectedImageId` 保留。 |
 
 选择断言：
 
@@ -169,6 +170,7 @@ pnpm --filter @aigc-video/server test:integration:smoke
 | 1 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | `200`；输入使用当前 selected image 和下一镜 selected image；artifact 有 prompt assembly metadata。 |
 | 2 | `GET /api/workspaces/:workspaceId/shots/:shotId/video-rounds` | 轮询到 batch `SUCCEEDED`；候选数达到 `videoCandidateCount`。 |
 | 3 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | `200`；返回 `videoSelectArtifact.videoCandidateId`；重复选择可覆盖。 |
+| 4 | `POST /api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate` | `200`；请求必须包含 `baseArtifactId`、最新轮成功候选 `feedbackVideoCandidateId` 与非空 `userDirection`；新 artifact `createdBy === "user"`；providerRequest 记录 `feedbackVideoCandidateId`、首尾帧、voiceover、voiceProfileHash；原 `selectedVideoId` 保留。 |
 
 负向断言：
 
@@ -176,7 +178,7 @@ pnpm --filter @aigc-video/server test:integration:smoke
 - storyboard shot 低于 4 秒时，server 创建 video script 会夹到 Seedance 允许的 4 秒下限，避免真实 provider 返回 duration boundary error。
 - first/last frame 查询只读 active shot set；archived selected images 不参与 next frame。
 - `video_script_artifacts.source_fingerprint` 包含 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfileHash` 和本镜 `voiceover`。
-- Seedance provider prompt 包含统一 narrator / voice profile、只朗读本镜口播、禁止字幕/标题/可读文字。
+- Seedance provider prompt 包含统一 narrator / voice profile、只朗读本镜口播，并明确旁白只进入音频，禁止将口播文案/旁白文字复制、叠加或渲染到视频画面内。
 
 ### 8. Final Compose
 

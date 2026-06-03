@@ -15,8 +15,8 @@
 - **主体 prompt 可业务迭代，契约 prompt 工程锁定**：业务/剧本同学修改 `packages/ai/src/prompts/modules/<module>/subject.md`；`contract.md` 只随输入输出 schema 或 provider 硬约束变化。两者的 hash 都写入 `prompt_assembly`。
 - **只有 approved/current 进入下游**：proposed artifact 供用户审核，不自动驱动后续模块。
 - **上游变更只提示，不级联重置**：下游已生成内容保留可用；通过 `source_fingerprint` 对比暴露 `upstreamChanged`。
-- **shot set 是分镜链路实例**：approved shot prompt 只有在显式 apply 后才创建新的 active `shot_sets`。旧 shot set 归档但候选、选择、trace 继续保留。
-- **当前工作流只读 active shot set**：`shot-workflow-status`、next shot、首尾帧、选图/选视频完成度和视频生成前置检查都限定在当前 active `shot_sets`；archived rows 只用于历史/调试。
+- **shot set 是分镜链路实例**：approved shot prompt 只有在显式 apply 后才创建新的 active `shot_sets`。旧 shot set 归档但候选、选择、trace 继续作为数据库事实保留。
+- **当前工作流只读 active shot set**：`shot-workflow-status`、next shot、首尾帧、选图/选视频完成度和视频生成前置检查都限定在当前 active `shot_sets`；archived rows 不提供商家工作台读取或操作入口。
 - **选择是 current 指针**：每个 shot 至多一个 selected image 和 selected video，写入 `image_select_artifacts` / `video_select_artifacts`。重复选择用 UPSERT 覆盖，不使未选候选 stale。
 - **工作区身份持久于磁盘**：`.daireel/workspace.json` 保存 `workspaceId` 作为持久身份；DB `creative_workspace` 行是可被 `reset:dev` 清空的业务状态。DB 行缺失时 `POST /api/workspaces/init` 复用磁盘 manifest 的原始 `workspaceId` 重新登记（不新建），`GET /api/workspaces` 经 `WORKSPACE_DISCOVERY_ROOTS` 扫描出磁盘有 manifest 但 DB 无行的草稿（`discovered`）。详见 `arc_v2.md` §13。
 
@@ -490,7 +490,7 @@ create unique index if not exists prompt_requirements_current_approved_idx
 `image_prompt_artifacts` / `video_script_artifacts` 继续保留版本号和 ACTIVE 状态，用于多轮候选生成。与工作区级模块 artifact 的区别：
 
 - image prompt 用户编辑重生成会新增 `created_by='user'`、`base_artifact_id=<旧 artifact>` 的 ACTIVE 行，并创建新的 `image_generation_batches`；不会清空 `storyboard_shots.selected_image_id`。
-- video script 的 `source_fingerprint` 除上游 artifact 外，还记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfileHash` 和本镜 `voiceover`，用于审计画面锚点和声音锚点。
+- video script 的 `source_fingerprint` 除上游 artifact 外，还记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfile`、`voiceProfileHash` 和本镜 `voiceover`，用于审计画面锚点和声音锚点。
 
 - 作用域是 shot，不是 workspace。
 - 一次 propose 通常立即创建 generation batch。
@@ -520,11 +520,12 @@ create unique index if not exists prompt_requirements_current_approved_idx
 - `trace_events` 同时写 DB 和 `.daireel/trace/events.jsonl`。agent/provider 调用必须记录：
   - module id / shot id
   - input artifact ids
-  - prompt template ids
-  - subject/contract hash
-  - 完整 assembled prompt
+  - prompt template ids 或 deterministic assembler version
+  - subject/contract hash（agent 模块）或 assembler version（逐 shot 确定性装配）
+  - 完整 assembled prompt / provider prompt 摘要
   - provider request/response 摘要
   - error code / retry 信息
+- 真实 provider 模式下，image/video worker 额外写 workspace 本地 `.daireel/trace/provider_call.jsonl`。事件 schema 为 `provider_call.v1`，包含 job/batch/candidate/attempt、provider/model、media type、生成数量、延迟、错误、首尾帧/参考图数量、`promptHash` 和脱敏后的 URL。该文件用于 provider 调用审计；写入失败不影响候选生成。
 
 ---
 

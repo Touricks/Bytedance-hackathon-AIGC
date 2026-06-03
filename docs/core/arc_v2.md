@@ -149,7 +149,7 @@ approved_at
 }
 ```
 
-完整 assembled prompt 写入 `trace_events.metadata.finalPrompt` 和工作区本地 trace jsonl，用于调试和真实 provider 追溯。
+完整 assembled prompt 写入 `trace_events.metadata.finalPrompt` 和工作区本地 `.daireel/trace/events.jsonl`，用于调试和真实 provider 追溯。真实 image/video provider 调用还会写 `.daireel/trace/provider_call.jsonl`；该文件只在 `MODEL_MODE=real` 下创建，事件 schema 为 `provider_call.v1`，记录 job/batch/candidate/attempt、provider/model、media type、latency、generated count、错误、首尾帧或参考图数量、`promptHash` 和脱敏 URL。写入失败只记录 warn，不阻塞候选生成。
 
 ---
 
@@ -258,7 +258,7 @@ workspace 级创作要求保存在 `prompt_requirements_artifacts`，作为当�
 
 `shotprompt approve` 与创建逐分镜链路必须解耦。
 
-当前代码会在 `shotprompt/approve` 中删除并重建 `storyboard_shots`；V2 禁止这种级联 reset。
+旧实现曾在 `shotprompt/approve` 中删除并重建 `storyboard_shots`；当前主线已改为 approve 与 shot-set apply 解耦，禁止这种级联 reset。
 
 目标行为：
 
@@ -279,7 +279,7 @@ POST /api/workspaces/:workspaceId/shot-sets
   -> 旧 candidates/selections/final jobs 不物理删除
 ```
 
-`storyboard_shots` 增加 `shot_set_id`。API 默认只返回 active shot set 的 shots；调试接口可按 archived shot set 查询旧事实。
+`storyboard_shots` 增加 `shot_set_id`。业务 API 只返回 active shot set 的 shots；archived shot set 的 shots、候选和选择记录作为数据库历史事实保留，不提供商家工作台打开入口。
 
 ---
 
