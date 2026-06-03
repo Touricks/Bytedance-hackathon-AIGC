@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { getFinalVideo } from "../../../lib/api/finalVideo.js";
+import { getFinalVideo } from "../../lib/api/finalVideo.js";
 import { useVisibilityActive } from "./useVisibilityActive.js";
 
 const TERMINAL = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
 
 export function useFinalVideo(finalVideoJobId: string | null) {
   const visible = useVisibilityActive();
+
   return useQuery({
     queryKey: ["final-video", finalVideoJobId],
     queryFn: () => getFinalVideo(finalVideoJobId!),

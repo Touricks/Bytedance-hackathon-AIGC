@@ -165,25 +165,38 @@ components:
       type: object
       additionalProperties: true
       description: >
-        Workspace module artifacts usually record subject/contract template ids and hashes.
-        Per-shot image/video artifacts currently use a deterministic server assembler and may
-        only provide moduleId, assemblerVersion, source, and mode.
+        Prompt 组装元数据。workspace module artifact 记录 subject/contract 模板 id
+        与 hash；逐 shot image/video artifact 由后端确定性 assembler 装配，通常只
+        记录 moduleId、assemblerVersion、source、mode。
       required:
         [
           moduleId,
           assemblerVersion
         ]
       properties:
-        moduleId: { type: string }
+        moduleId:
+          type: string
+          enum:
+            [
+              prompt-requirements,
+              material-intake,
+              product-brief,
+              storyboard,
+              shotprompt,
+              image-prompt,
+              video-script
+            ]
         source:
           {
             type: string,
-            description: 组装来源，例如 server-deterministic-assembler。
+            enum: [server-deterministic-assembler],
+            description: 逐 shot 确定性装配来源；workspace module artifact 可为空。
           }
         mode:
           {
             type: string,
-            description: 组装模式，例如 propose 或 user-feedback-regenerate。
+            enum: [propose, user-feedback-regenerate],
+            description: 逐 shot 装配模式；workspace module artifact 可为空。
           }
         subjectTemplateId:
           {
@@ -194,7 +207,11 @@ components:
           { type: string, description: 输入 artifact 与输出 schema 契约模板。 }
         subjectHash: { type: string, description: subject.md 内容 SHA-256。 }
         contractHash: { type: string, description: contract.md 内容 SHA-256。 }
-        assemblerVersion: { type: string }
+        assemblerVersion:
+          {
+            type: string,
+            description: workspace module 当前为 v2；逐 shot 使用对应 assembler 常量版本。
+          }
         requirementArtifactId: { type: string }
         provider: { type: string }
         model: { type: string }

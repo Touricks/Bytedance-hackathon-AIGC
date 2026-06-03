@@ -151,6 +151,8 @@ approved_at
 
 完整 assembled prompt 写入 `trace_events.metadata.finalPrompt` 和工作区本地 `.daireel/trace/events.jsonl`，用于调试和真实 provider 追溯。真实 image/video provider 调用还会写 `.daireel/trace/provider_call.jsonl`；该文件只在 `MODEL_MODE=real` 下创建，事件 schema 为 `provider_call.v1`，记录 job/batch/candidate/attempt、provider/model、media type、latency、generated count、错误、首尾帧或参考图数量、`promptHash` 和脱敏 URL。写入失败只记录 warn，不阻塞候选生成。
 
+逐 shot `image_prompt_artifacts` / `video_script_artifacts` 不保存 subject/contract template id；它们的 `prompt_assembly` 记录 `moduleId`、`assemblerVersion`、`source: "server-deterministic-assembler"` 和 `mode`。
+
 ---
 
 ## 5. 主体 Prompt 与 Contract Prompt 分离

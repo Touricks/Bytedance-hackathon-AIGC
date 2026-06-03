@@ -338,7 +338,7 @@ trace 必须能回答 agent 链路调试问题：
 - provider 请求/响应摘要是什么。
 - batch/job 状态如何变化。
 
-真实 provider 模式下，image/video worker 还会写 workspace 本地 `.daireel/trace/provider_call.jsonl`。该文件使用 `provider_call.v1` 事件，记录 job、batch、candidate、attempt、provider/model、生成数量、延迟、错误、首尾帧/参考图数量、`promptHash` 和已脱敏 URL；写入失败只记录 warn，不会让候选生成失败。mock 模式不创建该文件。
+真实 provider 模式下，image/video worker 还会写 workspace 本地 `.daireel/trace/provider_call.jsonl`。该文件使用 `provider_call.v1` 事件，记录 job、batch、candidate、attempt、provider/model、`mediaType`、`status`、生成数量、延迟、错误、首尾帧/参考图数量、`promptHash` 和已脱敏 URL；写入失败只记录 warn，不会让候选生成失败。mock 模式不创建该文件。
 
 ---
 

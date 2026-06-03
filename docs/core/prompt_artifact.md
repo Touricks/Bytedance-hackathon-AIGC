@@ -1,6 +1,6 @@
 # prompt_artifact — Prompt Artifact 字段与存储契约
 
-更新时间：2026-06-02
+更新时间：2026-06-03
 
 本文只描述当前架构中与 prompt 链路相关的 artifact、状态锚点和 provider 生成记录。跨 module 的 prompt 组装顺序、artifact 流通和上下游读取规则见 [`prompt_workflow.md`](./prompt_workflow.md)。机器契约以 `apps/server/src/db/schema/schema.sql`、`packages/shared/src/schemas/artifacts.ts`、`packages/ai/src/schemas/*` 为准。
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | Workspace module artifacts | `prompt_requirements_artifacts`、`material_intake_artifacts`、`product_brief_artifacts`、`storyboard_artifacts`、`shot_prompt_artifacts` | 保存 workspace 级 current approved / latest proposed 产物。 |
 | Shot set artifacts | `shot_sets`、`storyboard_shots`、`shot_prompt_requirements` | 把 approved shotprompt 显式 apply 为一个 active shot set，并保存每个 shot 的 image/video 要求 dict。 |
-| Shot agent artifacts | `image_prompt_artifacts`、`video_script_artifacts`、`image_select_artifacts`、`video_select_artifacts` | 存单个 shot 的图像提示词、视频脚本和当前选择，并驱动 image/video candidate 与 final compose。 |
+| Per-shot artifacts | `image_prompt_artifacts`、`video_script_artifacts`、`image_select_artifacts`、`video_select_artifacts` | 存单个 shot 的图像提示词、视频脚本和当前选择，并驱动 image/video candidate 与 final compose。 |
 
 重要区别：
 
@@ -28,7 +28,7 @@
 
 ### 1.1 Prompt 组装与跨模块流通
 
-当前 prompt 组装由 `packages/ai/src/prompts/module-prompt-assembler.ts` 统一完成，模板目录只包含 `subject.md` 和 `contract.md`。逐节点读取哪些 artifact、怎样写入下游、哪些步骤没有模型 prompt，统一维护在 [`prompt_workflow.md`](./prompt_workflow.md)。
+workspace module prompt 组装由 `packages/ai/src/prompts/module-prompt-assembler.ts` 统一完成，模板目录只包含 `subject.md` 和 `contract.md`。逐 shot image/video prompt 由 server deterministic assembler 完成，不恢复二次创意 agent 主路径。逐节点读取哪些 artifact、怎样写入下游、哪些步骤没有模型 prompt，统一维护在 [`prompt_workflow.md`](./prompt_workflow.md)。
 
 ---
 
@@ -44,7 +44,7 @@
 | `is_current` | boolean | 是否为当前 approved 版本；同一 workspace 每表最多一条 current approved。 |
 | `data` | jsonb | 该阶段结构化输出，是后续 prompt 的主要输入。 |
 | `source_fingerprint` | jsonb | 生成本产物时读取的上游 artifact id。 |
-| `prompt_assembly` | jsonb | 主体 prompt / contract prompt 的模板 id、hash、assembler 版本和 preview。 |
+| `prompt_assembly` | jsonb | workspace module 的主体 prompt / contract prompt 模板 id、hash、assembler 版本和 preview。 |
 | `created_at` | timestamptz | 创建时间。 |
 | `updated_at` | timestamptz | 更新时间。 |
 | `approved_at` | timestamptz | 批准时间。 |
@@ -53,7 +53,7 @@
 
 `product-brief/propose` 在商品卖点审核页按商家自然语言重生成时，会读取请求内的当前页面草稿 `draft`，并写入新的 proposed `product_brief_artifacts`。此时 `source_fingerprint` 仍保留 current prompt requirements/material intake id，并额外记录 `baseProductBriefArtifactId` 与 `rewriteKind: "merchant_direction"`。该 proposed 产物不会改变 current；只有 approve 后，storyboard/shotprompt 才会因 current product brief id 变化显示上游变化。
 
-`prompt_assembly` 当前形态：
+workspace module `prompt_assembly` 当前形态：
 
 | 字段 | 含义 |
 |---|---|
@@ -65,6 +65,17 @@
 | `contractHash` | contract.md 内容 SHA-256。 |
 | `requirementArtifactId` | 生成时读取的 current prompt requirements id；prompt-requirements 自身为空。 |
 | `preview` | artifact data 的短摘要；完整 assembled prompt 写 trace。 |
+
+逐 shot `image_prompt_artifacts` / `video_script_artifacts` 的 `prompt_assembly` 不包含 subject/contract 字段。它们主路径由后端 deterministic assembler 直接装配 provider-facing prompt，形态为：
+
+| 字段 | 含义 |
+|---|---|
+| `moduleId` | `image-prompt / video-script`。 |
+| `assemblerVersion` | 对应 `SHOT_IMAGE_ASSEMBLER_VERSION` 或 `SHOT_VIDEO_ASSEMBLER_VERSION`。 |
+| `source` | 固定为 `server-deterministic-assembler`。 |
+| `mode` | `propose` 或 `user-feedback-regenerate`。 |
+
+这意味着单镜图像/视频要求调整应修改 server deterministic assembler，而不是新增或恢复旧二次创意 agent 主路径。
 
 模板文件位于：
 

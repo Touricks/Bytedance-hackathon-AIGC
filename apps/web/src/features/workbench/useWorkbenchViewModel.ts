@@ -47,7 +47,7 @@ import {
   regenerateVideoScript,
 } from "../../lib/api/videoScript.js";
 import { selectVideo } from "../../lib/api/videoSelect.js";
-import { useFinalVideo } from "../workspace/hooks/useFinalVideo.js";
+import { useFinalVideo } from "./useFinalVideo.js";
 import { roundPollingInterval } from "./roundPolling.js";
 
 const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);

@@ -1,14 +1,14 @@
 # prompt_workflow — Prompt 组装流程与 Artifact 流通
 
-更新时间：2026-06-02
+更新时间：2026-06-03
 
-本文记录当前版本 prompt 的实际组装方式，以及 workspace module、shot set、per-shot agent 之间的 artifact 流通。字段、表结构、状态锚点和 provider 生成记录见 [`prompt_artifact.md`](./prompt_artifact.md)。
+本文记录当前版本 prompt 的实际组装方式，以及 workspace module、shot set、per-shot artifact 之间的流通。字段、表结构、状态锚点和 provider 生成记录见 [`prompt_artifact.md`](./prompt_artifact.md)。
 
 ---
 
 ## 1. 组装原语
 
-所有带 subject/contract 的 module 都通过 `packages/ai/src/prompts/module-prompt-assembler.ts` 拼装：
+所有带 subject/contract 的 workspace module 都通过 `packages/ai/src/prompts/module-prompt-assembler.ts` 拼装：
 
 ```text
 ## Subject Prompt
@@ -41,6 +41,15 @@ packages/ai/src/prompts/modules/<module>/
 | `contractHash` | contract 模板 SHA-256。 |
 
 完整 assembled prompt 不持久化到 workspace module artifact 表；真实 provider 调用前后的 prompt/request/response 摘要通过 trace 写入 `trace_events` 和 workspace 本地 `.daireel/trace/events.jsonl`。真实 image/video provider 调用还会写 `.daireel/trace/provider_call.jsonl`，事件 schema 为 `provider_call.v1`，保存 `promptHash`、provider/model、attempt、candidate、latency、错误和脱敏 URL；写入失败不影响候选生成。artifact 表只保存 `prompt_assembly`、`source_fingerprint` 和结构化结果；逐 shot image/video artifact 持久化最终 provider-facing prompt 主体。
+
+逐 shot `image-prompt` / `video-script` 主路径不走 subject/contract 二次 agent。后端 deterministic assembler 写入的 `prompt_assembly` 只要求：
+
+| 字段 | 含义 |
+|---|---|
+| `moduleId` | `image-prompt` 或 `video-script`。 |
+| `assemblerVersion` | 对应 server assembler 常量版本。 |
+| `source` | `server-deterministic-assembler`。 |
+| `mode` | `propose` 或 `user-feedback-regenerate`。 |
 
 ---
 
@@ -89,8 +98,8 @@ prompt-requirements approve
 `shot_prompt_artifacts.data.shots[]` 必须基于 P0 15 秒三镜 approved storyboard 生成，并与该 storyboard 的 `shots[]` 数量、顺序和 `index` 完全一致，不得省略、合并、拆分或新增镜头。每个 shot 必须包含：
 
 - `providerPrompt`：镜头叙事和语境锚点，不是最终 image prompt 或 video provider prompt。
-- `shotImage`：静态关键帧要求，进入 image-prompt agent。
-- `shotVideo`：动态运动 / 首末帧 / 运镜要求，进入 video-script agent。
+- `shotImage`：静态关键帧要求，进入 image-prompt deterministic assembler。
+- `shotVideo`：动态运动 / 首末帧 / 运镜要求，进入 video-script deterministic assembler。
 - `voiceover`：从 storyboard 继承的本镜口播，进入 video-script 和 Seedance 音频块。
 - `tts.voiceProfile`：全片统一旁白声音策略，包含 `gender`、`tone`、`pitch`、`pace`；video-script 和最终 Seedance prompt 都读取该策略，保证三段视频口播听感一致。
 

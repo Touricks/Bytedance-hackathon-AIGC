@@ -346,7 +346,7 @@ erDiagram
 | `is_current` | 当前业务指针。每个 workspace + module 最多一条 `approved/current`。 |
 | `data` | 模块输出 JSON。只存结构化产物，不存完整 final prompt。 |
 | `source_fingerprint` | 本产物生成时读取的上游 current artifact id/hash。用于检测上游变更。 |
-| `prompt_assembly` | `subjectTemplateId`、`contractTemplateId`、`subjectHash`、`contractHash`、`templateVersion`、`requirementArtifactId`、`preview`、provider/model 等。 |
+| `prompt_assembly` | workspace module 的 prompt 组装元数据：`moduleId`、`assemblerVersion`、`subjectTemplateId`、`contractTemplateId`、`subjectHash`、`contractHash`、`requirementArtifactId`、`preview`、provider/model 等。 |
 | `approved_at` | 用户 approve 时间。 |
 
 推荐约束：
@@ -398,7 +398,7 @@ create unique index if not exists prompt_requirements_current_approved_idx
 
 ### 4.2 Prompt assembly
 
-所有 agent 产物表的 `prompt_assembly` 都保存同一类元数据：
+workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模板元数据：
 
 ```json
 {
@@ -415,9 +415,20 @@ create unique index if not exists prompt_requirements_current_approved_idx
 }
 ```
 
-`subjectTemplateId` 指向 workspace module 的业务主体 prompt。剧本同学如果要改主剧本 / shotprompt 的生成策略，应修改 `packages/ai/src/prompts/modules/shotprompt/subject.md`；如果要改单个 shot 的图像或视频执行 prompt，应修改 server deterministic assembler。`contractTemplateId` 指向工程契约 prompt，不作为日常业务自定义入口。
+逐 shot `image_prompt_artifacts` / `video_script_artifacts` 不走 subject/contract 二次 agent。它们由后端 deterministic assembler 生成 provider-facing prompt，`prompt_assembly` 形态为：
 
-完整 assembled prompt 进入 `trace_events.payload`，便于通过 trace 回放 agent 链路。
+```json
+{
+  "moduleId": "image-prompt",
+  "assemblerVersion": "shot-image-assembler-version",
+  "source": "server-deterministic-assembler",
+  "mode": "propose"
+}
+```
+
+反馈重生成时 `mode="user-feedback-regenerate"`，`moduleId` 可为 `image-prompt` 或 `video-script`。`subjectTemplateId` 指向 workspace module 的业务主体 prompt。剧本同学如果要改主剧本 / shotprompt 的生成策略，应修改 `packages/ai/src/prompts/modules/shotprompt/subject.md`；如果要改单个 shot 的图像或视频执行 prompt，应修改 server deterministic assembler。`contractTemplateId` 指向工程契约 prompt，不作为日常业务自定义入口。
+
+完整 assembled prompt / provider prompt 摘要进入 `trace_events.metadata` 和 workspace 本地 `.daireel/trace/events.jsonl`，便于通过 trace 回放链路。
 
 ---
 
