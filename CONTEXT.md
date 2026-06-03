@@ -68,6 +68,10 @@ _Avoid_: raw prompt
 Merchant-authored creative instructions that guide prompt assembly while the final prompt text remains system-owned.
 _Avoid_: raw prompt, system prompt override
 
+**创作要求模板**:
+An inline preset that fills the creative requirements draft fields without creating, approving, or running a creative artifact.
+_Avoid_: system prompt template, automatic approval
+
 **创作会话**:
 A working unit centered on one creative-blueprint attempt. It may fail before a blueprint exists, stop after blueprint generation, or continue into one or more final-video jobs.
 _Avoid_: provider request, isolated video job

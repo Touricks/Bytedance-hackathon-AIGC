@@ -6,7 +6,7 @@ This directory contains local development scripts and retired real-chain accepta
 
 | Command | Script | Purpose |
 |---|---|---|
-| `pnpm reset:dev -- --yes` | `reset-dev-session.mjs` | Stop current `SERVER_PORT` / `WEB_PORT` / `WEB_LATEST_PORT` listeners, clear Postgres business tables and BullMQ Redis queues, then start `pnpm dev-latest` unless `--no-dev` is passed. |
+| `pnpm reset:dev -- --yes` | `reset-dev-session.mjs` | Stop current `SERVER_PORT` / `WEB_PORT` listeners, clear Postgres business tables and BullMQ Redis queues, then start `pnpm dev` unless `--no-dev` is passed. |
 | `pnpm db:clear -- --yes` | `clear-postgres.mjs` | Clear Postgres business tables without touching workspace files. |
 | `pnpm redis:clear -- --yes` | `clear-redis.mjs` | Clear BullMQ `generation` and `generation_v2` queue state. |
 | `pnpm contract:frontend-backend` | `frontend-backend-contract-check.mjs` | Checks the frontend API surface against `docs/core/openapi.yaml`, validates mock response shapes, and records backend route gaps. |

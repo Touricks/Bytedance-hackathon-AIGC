@@ -41,7 +41,7 @@ ByteDance Hackathon AIGC 电商带货视频项目。根 README 只做项目入�
 Bytedancehack/
 ├── apps/
 │   ├── server/          # 后端：Fastify API、BullMQ worker、Postgres、文件落盘、ffmpeg compose
-│   └── web/             # 前端：React/Vite
+│   └── web/             # 当前前端：React/Vite
 ├── packages/
 │   ├── ai/              # provider、agent/workflow、prompt assembly
 │   ├── shared/          # Zod 契约、领域类型、job payload 类型
@@ -228,7 +228,7 @@ pnpm dev:mock
 pnpm reset:dev -- --yes
 ```
 
-该命令会清理开发端口、Postgres 业务表和 Redis 队列，然后启动 `pnpm dev-latest`。
+该命令会清理开发端口、Postgres 业务表和 Redis 队列，然后启动 `pnpm dev`。
 
 只清空、不重启服务：
 

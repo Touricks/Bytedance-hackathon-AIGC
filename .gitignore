@@ -14,27 +14,11 @@ logs/
 storage/
 apps/web/test-results/
 apps/web/playwright-report/
-apps/web_latest/test-results/
-apps/web_latest/playwright-report/
 .claude/
 .claire/
 .codex/
 
 # Keep most design docs locally only; some test/core specs are shared.
 docs/*
-!docs/core/
-!docs/core/**
-!docs/plan/
-!docs/plan/**
-!docs/feat/
-!docs/feat/**
 !docs/test/
 !docs/test/**
-!docs/issues/
-docs/issues/*
-!docs/issues/P0/
-docs/issues/P0/*
-!docs/issues/P0/backend/
-!docs/issues/P0/backend/**
-!docs/issues/P0/frontend/
-!docs/issues/P0/frontend/**

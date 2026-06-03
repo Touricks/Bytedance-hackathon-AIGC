@@ -5,7 +5,6 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "dev": "turbo dev",
-    "dev-latest": "WEB_LATEST_PORT=${WEB_LATEST_PORT:-5174} turbo dev --filter=@aigc-video/server --filter=@aigc-video/web-latest",
     "dev:mock": "MODEL_MODE=mock turbo dev",
     "dev:real": "MODEL_MODE=real turbo dev",
     "build": "turbo build",

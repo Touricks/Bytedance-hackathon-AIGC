@@ -38,11 +38,11 @@ function usage() {
     "  node scripts/reset-dev-session.mjs --yes",
     "  pnpm reset:dev -- --yes",
     "",
-    "Stops dev listeners, clears Postgres + Redis queues, then starts pnpm dev-latest.",
+    "Stops dev listeners, clears Postgres + Redis queues, then starts pnpm dev.",
     "",
     "Options:",
     "  --yes     Required. Execute cleanup and restart.",
-    "  --no-dev  Stop and clean only; do not start pnpm dev-latest.",
+    "  --no-dev  Stop and clean only; do not start pnpm dev.",
     "  --help    Show this help text.",
   ].join("\n");
 }
@@ -168,8 +168,8 @@ function stopPortListeners(ports) {
 }
 
 function startDev() {
-  console.log("Starting pnpm dev-latest...");
-  const child = spawn("pnpm", ["dev-latest"], {
+  console.log("Starting pnpm dev...");
+  const child = spawn("pnpm", ["dev"], {
     cwd: repoRoot,
     stdio: "inherit",
     env: process.env,
@@ -194,9 +194,8 @@ function main() {
   Object.assign(process.env, Object.fromEntries(Object.entries(repoEnv).filter(([key]) => !(key in process.env))));
   const serverPort = process.env.SERVER_PORT || "3000";
   const webPort = process.env.WEB_PORT || "5173";
-  const webLatestPort = process.env.WEB_LATEST_PORT || "5174";
 
-  stopPortListeners([serverPort, webPort, webLatestPort]);
+  stopPortListeners([serverPort, webPort]);
   run("node", ["scripts/clear-postgres.mjs", "--yes"]);
   run("node", ["scripts/clear-redis.mjs", "--yes"]);
   if (!args.noDev) startDev();
