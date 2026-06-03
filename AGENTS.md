@@ -38,7 +38,7 @@ This file is the project constitution for Codex. Keep it short, factual, and spe
 - Unit tests: `pnpm --filter @aigc-video/ai test`, `pnpm --filter @aigc-video/server test`, or `pnpm --filter @aigc-video/web test`.
 - Frontend/backend contract check: `pnpm contract:frontend-backend`.
 - Backend real-provider smoke: `pnpm --filter @aigc-video/server test:integration:smoke` runs only the backend image-flow and video-flow smoke files, with image/video candidates fixed to 1 each.
-- Removed multi-real-model package scripts: `realitest`, `realitest:parallel`, `agenttest:real`, `test:agent-chain`, `test:integration:provider`, `test:integration:expensive`, `smoke:providers`, and `smoke:real-providers`. Legacy direct runner files remain guarded and must not trigger provider calls if invoked manually.
+- Removed multi-real-model package scripts and direct-provider runner files are not kept as guarded stubs.
 
 ### Repo layout
 
@@ -183,7 +183,7 @@ It runs:
 - `apps/server/test/integration/image-flow.integration.test.ts`
 - `apps/server/test/integration/video-flow.integration.test.ts`
 
-Full agent-chain, multi-shot parallel, final-compose, direct provider probes, and frontend real-provider E2E are intentionally disabled to avoid multi-real-model联调.
+Full agent-chain, multi-shot parallel, final-compose, direct-provider one-off runners, and frontend real-provider E2E are intentionally not present as active scripts to avoid multi-real-model联调.
 
 ## Reference
 

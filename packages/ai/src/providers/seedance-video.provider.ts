@@ -65,9 +65,11 @@ function resolveRetryConfig(options: SeedanceProviderOptions): ArkRetryConfig {
 }
 
 // Ark meters the shared text+video account by RPM and a concurrent-task budget.
-// 429 (rate limit), 408 (timeout) and 5xx are transient: wait and retry instead
-// of hard-failing the candidate. Other 4xx (e.g. 400 invalid request) are not
-// retried so genuine contract errors still surface immediately.
+// 429 (rate limit), 408 (timeout) and 5xx are transient by default, but the
+// Seedance task-create endpoint overrides create-time 429 to fail immediately
+// so BullMQ can reschedule the job without holding a video provider slot.
+// Other 4xx (e.g. 400 invalid request) are not retried so genuine contract
+// errors still surface immediately.
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 408 || status >= 500;
 }
@@ -98,9 +100,14 @@ async function fetchWithArkRetry(
   init: RequestInit,
   retry: ArkRetryConfig,
   traceLogger: Pick<FileTraceLogger, "append"> | undefined,
-  meta: { jobId?: string; model: string }
+  meta: {
+    jobId?: string;
+    model: string;
+    isRetryableStatus?: (status: number) => boolean;
+  }
 ): Promise<Response> {
   let lastError: unknown;
+  const shouldRetryStatus = meta.isRetryableStatus ?? isRetryableStatus;
   for (let attempt = 0; attempt <= retry.maxRetries; attempt += 1) {
     let response: Response | null = null;
     try {
@@ -111,7 +118,7 @@ async function fetchWithArkRetry(
         throw err;
       }
     }
-    if (response && (response.ok || !isRetryableStatus(response.status))) {
+    if (response && (response.ok || !shouldRetryStatus(response.status))) {
       return response;
     }
     if (attempt >= retry.maxRetries) {
@@ -492,7 +499,12 @@ export async function generateVideoWithSeedance(
       },
       retry,
       options.traceLogger,
-      { jobId: options.jobId, model: config.model }
+      {
+        jobId: options.jobId,
+        model: config.model,
+        isRetryableStatus: (status) =>
+          status !== 429 && isRetryableStatus(status)
+      }
     );
 
     if (!response.ok) {

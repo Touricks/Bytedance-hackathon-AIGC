@@ -415,7 +415,7 @@ create unique index if not exists prompt_requirements_current_approved_idx
 }
 ```
 
-`subjectTemplateId` 指向业务主体 prompt。剧本同学如果要改主剧本 / shotprompt 的生成策略，应修改 `packages/ai/src/prompts/modules/shotprompt/subject.md`；如果要改单个 shot 的视频运镜脚本，应修改 `packages/ai/src/prompts/modules/video-script/subject.md`。`contractTemplateId` 指向工程契约 prompt，不作为日常业务自定义入口。
+`subjectTemplateId` 指向 workspace module 的业务主体 prompt。剧本同学如果要改主剧本 / shotprompt 的生成策略，应修改 `packages/ai/src/prompts/modules/shotprompt/subject.md`；如果要改单个 shot 的图像或视频执行 prompt，应修改 server deterministic assembler。`contractTemplateId` 指向工程契约 prompt，不作为日常业务自定义入口。
 
 完整 assembled prompt 进入 `trace_events.payload`，便于通过 trace 回放 agent 链路。
 

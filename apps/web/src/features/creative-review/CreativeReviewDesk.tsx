@@ -5,6 +5,9 @@ import AccordionDetails from "@mui/material/AccordionDetails";
 import AccordionSummary from "@mui/material/AccordionSummary";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardActions from "@mui/material/CardActions";
+import CardMedia from "@mui/material/CardMedia";
 import Collapse from "@mui/material/Collapse";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -61,6 +64,7 @@ import {
   uploadWorkspaceMaterial,
   workspaceMaterialFileRejectionReason,
 } from "../../lib/api/client.js";
+import { finalVideoDownloadUrl } from "../../lib/api/finalVideo.js";
 import type { ShotSetShot } from "../../lib/api/shots.js";
 import { materialAssetFilename } from "../../lib/materials.js";
 import { shotStatusLabel } from "../../lib/shotStatusLabel.js";
@@ -93,6 +97,10 @@ import {
   formToBrief,
   type ProductBriefFormState,
 } from "./productBriefForm.js";
+import {
+  CANDIDATE_MEDIA_FRAME_WIDTH,
+  candidateMediaAspectRatio,
+} from "./candidateMediaLayout.js";
 
 function backToWorkspaces() {
   window.history.pushState({}, "", "/");
@@ -120,17 +128,6 @@ function formatShotDuration(shot: Pick<ShotSetShot, "defaultDurationSec">) {
   return typeof shot.defaultDurationSec === "number"
     ? `约 ${Math.round(shot.defaultDurationSec)} 秒`
     : "时长待定";
-}
-
-function cssAspectRatio(value: string | null | undefined) {
-  const match = value?.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
-  if (!match) return undefined;
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    return undefined;
-  }
-  return `${width} / ${height}`;
 }
 
 function MaterialAssetPreview({
@@ -184,6 +181,60 @@ function MaterialAssetPreview({
         {materialPreviewModeLabel(mode)}
       </span>
     </div>
+  );
+}
+
+function CandidateMediaFrame({
+  kind,
+  src,
+  alt,
+  statusText,
+  aspectRatio,
+  badge,
+}: {
+  kind: "image" | "video";
+  src: string | null | undefined;
+  alt: string;
+  statusText: string;
+  aspectRatio: string;
+  badge?: string | null;
+}) {
+  return (
+    <Box
+      className={`review-candidate-media review-candidate-media--${kind} ${
+        src ? "review-candidate-media--ready" : "review-candidate-media--empty"
+      }`}
+      data-aspect-ratio={aspectRatio}
+      sx={{
+        width: CANDIDATE_MEDIA_FRAME_WIDTH,
+        aspectRatio,
+      }}
+    >
+      {src ? (
+        kind === "image" ? (
+          <Box
+            component="img"
+            src={src}
+            alt={alt}
+            className="review-candidate-media__asset"
+          />
+        ) : (
+          <CardMedia
+            component="video"
+            src={src}
+            aria-label={alt}
+            controls
+            preload="metadata"
+            className="review-candidate-media__asset"
+          />
+        )
+      ) : (
+        <div className="review-candidate-media__empty">
+          <span>{statusText}</span>
+        </div>
+      )}
+      {badge ? <span className="review-candidate__badge">{badge}</span> : null}
+    </Box>
   );
 }
 
@@ -3522,7 +3573,7 @@ function CandidateImages({
   const [stagedId, setStagedId] = useState<string | null>(committedId);
   const [feedbackCandidateId, setFeedbackCandidateId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
-  const candidateAspectRatio = cssAspectRatio(round.batch?.aspectRatio);
+  const candidateAspectRatio = candidateMediaAspectRatio(round.batch?.aspectRatio);
   useEffect(() => {
     setStagedId(committedId);
   }, [committedId]);
@@ -3567,9 +3618,11 @@ function CandidateImages({
           const canFeedback =
             allowFeedback && candidate.status === "SUCCEEDED" && Boolean(candidate.imageUrl);
           return (
-            <div
+            <Card
+              variant="outlined"
               key={candidate.id}
               className="review-candidate-card"
+              sx={{ width: "fit-content", maxWidth: "100%", overflow: "visible" }}
             >
               <button
                 type="button"
@@ -3588,79 +3641,81 @@ function CandidateImages({
                     stageCandidate(current, candidate.id, round.candidates),
                   )
                 }
-                style={
-                  candidateAspectRatio
-                    ? { aspectRatio: candidateAspectRatio }
-                    : undefined
-                }
               >
-                {candidate.imageUrl ? (
-                  <img src={toAbsoluteAssetUrl(candidate.imageUrl)} alt={candidate.id} />
-                ) : (
-                  <span>{candidate.errorMessage ?? candidate.status}</span>
-                )}
-                {isCommitted ? (
-                  <span className="review-candidate__badge">当前选择</span>
-                ) : null}
+                <CandidateMediaFrame
+                  kind="image"
+                  src={
+                    candidate.imageUrl ? toAbsoluteAssetUrl(candidate.imageUrl) : null
+                  }
+                  alt={candidate.id}
+                  statusText={candidate.errorMessage ?? candidate.status}
+                  aspectRatio={candidateAspectRatio}
+                  badge={isCommitted ? "当前选择" : null}
+                />
               </button>
               {canFeedback ? (
-                <div className="review-candidate-feedback">
-                  {isFeedbackOpen ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const trimmed = feedbackText.trim();
-                        if (!trimmed || busy) return;
-                        onRegenerate(candidate.id, trimmed);
-                      }}
-                    >
-                      <label>
-                        本次反馈
-                        <textarea
-                          value={feedbackText}
-                          onChange={(event) => setFeedbackText(event.target.value)}
-                          placeholder="填写你的意见"
-                          required
-                        />
-                      </label>
-                      <div className="review-panel__actions">
-                        <button
-                          type="submit"
-                          className="review-secondary"
-                          disabled={busy || !feedbackText.trim()}
-                        >
-                          <RefreshCw size={16} />
-                          按反馈重新生成
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--ghost"
-                          onClick={() => {
-                            setFeedbackCandidateId(null);
-                            setFeedbackText("");
-                          }}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      className="review-secondary"
-                      disabled={busy}
-                      onClick={() => {
-                        setFeedbackCandidateId(candidate.id);
-                        setFeedbackText("");
-                      }}
-                    >
-                      <RefreshCw size={16} />
-                      基于这张图反馈
-                    </button>
-                  )}
-                </div>
+                <CardActions
+                  className="review-candidate-actions"
+                  sx={{ display: "grid", width: "100%", p: 0 }}
+                >
+                  <div className="review-candidate-feedback">
+                    {isFeedbackOpen ? (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const trimmed = feedbackText.trim();
+                          if (!trimmed || busy) return;
+                          onRegenerate(candidate.id, trimmed);
+                        }}
+                      >
+                        <label>
+                          本次反馈
+                          <textarea
+                            value={feedbackText}
+                            onChange={(event) => setFeedbackText(event.target.value)}
+                            placeholder="填写你的意见"
+                            required
+                          />
+                        </label>
+                        <div className="review-panel__actions">
+                          <button
+                            type="submit"
+                            className="review-secondary"
+                            disabled={busy || !feedbackText.trim()}
+                          >
+                            <RefreshCw size={16} />
+                            按反馈重新生成
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            onClick={() => {
+                              setFeedbackCandidateId(null);
+                              setFeedbackText("");
+                            }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        className="review-secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setFeedbackCandidateId(candidate.id);
+                          setFeedbackText("");
+                        }}
+                      >
+                        <RefreshCw size={16} />
+                        基于这张图反馈
+                      </button>
+                    )}
+                  </div>
+                </CardActions>
               ) : null}
-            </div>
+            </Card>
           );
         })}
       </div>
@@ -3783,7 +3838,7 @@ function CandidateVideos({
   onSelect: (candidateId: string, batchId: string) => void;
   onRegenerate: (candidateId: string, userDirection: string) => void;
 }) {
-  const candidateAspectRatio = cssAspectRatio(round.batch?.aspectRatio);
+  const candidateAspectRatio = candidateMediaAspectRatio(round.batch?.aspectRatio);
   const [feedbackCandidateId, setFeedbackCandidateId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   useEffect(() => {
@@ -3813,94 +3868,105 @@ function CandidateVideos({
           const canFeedback =
             allowFeedback && candidate.status === "SUCCEEDED" && Boolean(candidate.videoUrl);
           return (
-            <div
+            <Card
+              variant="outlined"
               key={candidate.id}
-              className={`review-video-candidate review-candidate--${statusTone(candidate.status)}`}
+              className={[
+                "review-candidate-card",
+                "review-video-candidate",
+                `review-candidate--${statusTone(candidate.status)}`,
+                isCommitted ? "review-candidate--committed" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              sx={{ width: "fit-content", maxWidth: "100%", overflow: "visible" }}
             >
-              {candidate.videoUrl ? (
-                <>
-                  <video
-                    src={toAbsoluteAssetUrl(candidate.videoUrl)}
-                    controls
-                    preload="metadata"
-                    style={
-                      candidateAspectRatio
-                        ? { aspectRatio: candidateAspectRatio }
-                        : undefined
-                    }
-                  />
-                  {isCommitted ? (
-                    <span className="review-candidate__badge">当前选择</span>
-                  ) : null}
-                </>
-              ) : (
-                <span>{candidate.errorMessage ?? candidate.status}</span>
-              )}
-              <button
-                type="button"
-                disabled={busy || !batchId || candidate.status !== "SUCCEEDED"}
-                onClick={() => batchId && onSelect(candidate.id, batchId)}
+              <CandidateMediaFrame
+                kind="video"
+                src={
+                  candidate.videoUrl ? toAbsoluteAssetUrl(candidate.videoUrl) : null
+                }
+                alt={candidate.id}
+                statusText={candidate.errorMessage ?? candidate.status}
+                aspectRatio={candidateAspectRatio}
+                badge={isCommitted ? "当前选择" : null}
+              />
+              <CardActions
+                className="review-candidate-actions"
+                sx={{ display: "grid", width: "100%", p: 0 }}
               >
-                选择为当前分镜视频
-              </button>
+                <button
+                  type="button"
+                  className="review-secondary"
+                  disabled={busy || !batchId || candidate.status !== "SUCCEEDED"}
+                  onClick={() => batchId && onSelect(candidate.id, batchId)}
+                >
+                  选择为当前分镜视频
+                </button>
+              </CardActions>
               {canFeedback ? (
-                <div className="review-candidate-feedback">
-                  {isFeedbackOpen ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const trimmed = feedbackText.trim();
-                        if (!trimmed || busy) return;
-                        onRegenerate(candidate.id, trimmed);
-                      }}
-                    >
-                      <label>
-                        本次反馈
-                        <textarea
-                          value={feedbackText}
-                          onChange={(event) => setFeedbackText(event.target.value)}
-                          placeholder="填写你的意见"
-                          required
-                        />
-                      </label>
-                      <div className="review-panel__actions">
-                        <button
-                          type="submit"
-                          className="review-secondary"
-                          disabled={busy || !feedbackText.trim()}
-                        >
-                          <RefreshCw size={16} />
-                          按反馈重新生成
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--ghost"
-                          onClick={() => {
-                            setFeedbackCandidateId(null);
-                            setFeedbackText("");
-                          }}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      className="review-secondary"
-                      disabled={busy}
-                      onClick={() => {
-                        setFeedbackCandidateId(candidate.id);
-                        setFeedbackText("");
-                      }}
-                    >
-                      <RefreshCw size={16} />
-                      基于这个视频反馈
-                    </button>
-                  )}
-                </div>
+                <CardActions
+                  className="review-candidate-actions"
+                  sx={{ display: "grid", width: "100%", p: 0 }}
+                >
+                  <div className="review-candidate-feedback">
+                    {isFeedbackOpen ? (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const trimmed = feedbackText.trim();
+                          if (!trimmed || busy) return;
+                          onRegenerate(candidate.id, trimmed);
+                        }}
+                      >
+                        <label>
+                          本次反馈
+                          <textarea
+                            value={feedbackText}
+                            onChange={(event) => setFeedbackText(event.target.value)}
+                            placeholder="填写你的意见"
+                            required
+                          />
+                        </label>
+                        <div className="review-panel__actions">
+                          <button
+                            type="submit"
+                            className="review-secondary"
+                            disabled={busy || !feedbackText.trim()}
+                          >
+                            <RefreshCw size={16} />
+                            按反馈重新生成
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            onClick={() => {
+                              setFeedbackCandidateId(null);
+                              setFeedbackText("");
+                            }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        className="review-secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setFeedbackCandidateId(candidate.id);
+                          setFeedbackText("");
+                        }}
+                      >
+                        <RefreshCw size={16} />
+                        基于这个视频反馈
+                      </button>
+                    )}
+                  </div>
+                </CardActions>
               ) : null}
-            </div>
+            </Card>
           );
         })}
       </div>
@@ -3912,6 +3978,7 @@ function CandidateVideos({
 function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
   const job = vm.finalVideo;
   const finalUrl = job?.localUrl ? toAbsoluteAssetUrl(job.localUrl) : null;
+  const downloadUrl = finalUrl ? finalVideoDownloadUrl(finalUrl) : null;
   return (
     <section className="review-panel">
       <div className="review-panel__header">
@@ -3942,7 +4009,11 @@ function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
           {finalUrl ? (
             <>
               <video src={finalUrl} controls />
-              <a className="download-link" href={finalUrl} download>
+              <a
+                className="download-link"
+                href={downloadUrl ?? finalUrl}
+                download={`final-video-${job.id}.mp4`}
+              >
                 <Download size={14} />
                 下载 MP4
               </a>

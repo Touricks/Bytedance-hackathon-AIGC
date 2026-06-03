@@ -73,7 +73,7 @@ An inline preset that fills the creative requirements draft fields without creat
 _Avoid_: system prompt template, automatic approval
 
 **创作会话**:
-A working unit centered on one creative-blueprint attempt. It may fail before a blueprint exists, stop after blueprint generation, or continue into one or more final-video jobs.
+A working unit centered on one approved artifact chain. It may fail before a downstream artifact exists, stop after review, or continue into one or more final-video jobs.
 _Avoid_: provider request, isolated video job
 
 **创作工作目录**:
@@ -81,7 +81,7 @@ A registered merchant-owned project folder that scopes product material and crea
 _Avoid_: thread, random folder, deployment workspace
 
 **创作线路**:
-The single current path of work inside a creative workspace, from material intake through blueprint review to final-video attempts.
+The single current path of work inside a creative workspace, from material intake through module artifact review to final-video attempts.
 _Avoid_: version history, multi-branch workflow
 
 **创作会话追踪**:

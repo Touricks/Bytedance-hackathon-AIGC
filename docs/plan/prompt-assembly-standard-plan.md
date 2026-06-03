@@ -212,14 +212,11 @@ effective requirements =
 
 real provider 调用使用 `assembly.finalPrompt`。
 
-### 6.2 Shot agents
+### 6.2 Shot-level assembler
 
 改造：
 
-- `storyboard-image-prompt.agent.ts`
-- `video-shot-script.agent.ts`
-- `storyboard-image-prompt.workflow.ts`
-- `video-shot-script.workflow.ts`
+- server-side deterministic shot prompt assembler
 
 要求：
 

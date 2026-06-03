@@ -4,13 +4,13 @@
 
 ## 目标
 
-Postman collection 是后端公开契约的可读测试定义。当前真实 provider 自动测试策略已经收敛：只保留后端图像链路和视频链路 smoke，不再运行完整 real provider agent-chain、多 shot 并行验收、direct provider probe 或 final compose 联调。
+Postman collection 是后端公开契约的可读测试定义。当前真实 provider 自动测试策略已经收敛：只保留后端图像链路和视频链路 smoke，不再运行完整 real provider agent-chain、多 shot 并行验收、direct-provider one-off runner 或 final compose 联调。
 
 | 测试 | 入口 | Provider | 目的 |
 |---|---|---|---|
 | 后端图像/视频链路 smoke | `pnpm --filter @aigc-video/server test:integration:smoke` | real | 仅验证后端 `image-flow` 与 `video-flow` 两条链路；图像/视频候选数固定为 1。 |
 | V2 agent-chain | package script removed | removed | 关闭完整多真实模型联调，Postman 资产仅作为契约参考保留。 |
-| 多 shot 并行验收 | package script removed | removed | 关闭 4-shot image/video/final compose 联调，历史 runner 仅保留禁用保护。 |
+| 多 shot 并行验收 | package script removed | removed | 关闭 4-shot image/video/final compose 联调，历史 runner 已删除。 |
 
 V2 collection 建议放在：
 
@@ -37,7 +37,7 @@ pnpm --filter @aigc-video/server test:integration:smoke
 1. 连接已运行的后端服务，默认 `TEST_API_BASE_URL=http://localhost:3000`。
 2. 以 `DEFAULT_IMAGE_CANDIDATES=1` / `MAX_IMAGE_CANDIDATES_PER_SHOT=1` 执行 `apps/server/test/integration/image-flow.integration.test.ts`。
 3. 以 `DEFAULT_VIDEO_CANDIDATES=1` / `MAX_VIDEO_CANDIDATES_PER_SHOT=1` 执行 `apps/server/test/integration/video-flow.integration.test.ts`。
-4. 不执行 Newman agent-chain、final compose、direct provider probe 或前端 real-provider E2E。
+4. 不执行 Newman agent-chain、final compose、direct-provider one-off runner 或前端 real-provider E2E。
 
 ---
 
@@ -200,11 +200,7 @@ DB 断言：
 | `GET /api/workspaces/:workspaceId/traces` | 包含 module agent run、provider call、state transition。 |
 | `GET /api/shots/:shotId/traces` | 包含 image/video prompt assembly、batch events、provider request/response 摘要。 |
 
-本地文件断言：
-
-```bash
-node scripts/extract-one-picture-events.mjs
-```
+本地文件断言：直接读取 `<workspaceDirectory>/.daireel/trace/events.jsonl` 与 `<workspaceDirectory>/.daireel/trace/provider_call.jsonl`。
 
 trace 中不应出现：
 

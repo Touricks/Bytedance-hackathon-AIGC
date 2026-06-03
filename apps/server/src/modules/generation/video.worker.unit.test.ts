@@ -2,6 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   processGenerateVideos,
+  processGenerateVideoCandidate,
   __setGeneratedAssetPersisterForTests,
   __setVideoProviderForTests,
 } from "./video.worker.js";
@@ -274,5 +275,56 @@ describe("processGenerateVideos", () => {
         "https://provider/video.mp4",
       );
     });
+  });
+
+  it("leaves a video candidate retryable before the final queue attempt on provider rate limit", async () => {
+    __setVideoProviderForTests(async () => {
+      throw new Error(
+        "Seedance request failed with status 429: EndpointAccountRpmRateLimitExceeded | rpm exceeded",
+      );
+    });
+
+    const fakeDb = makeFakeDb();
+    const ctx = await fakeDb.bootstrap("RUNNING");
+    await fakeDb.adapter.insertVideoCandidate({
+      id: "vcd-rate-limit",
+      batchId: ctx.batchId,
+      workspaceId: "ws-1",
+      shotId: "shot-1",
+      videoUrl: null,
+      objectKey: null,
+      thumbnailUrl: null,
+      durationSec: null,
+      width: null,
+      height: null,
+      provider: "seedance",
+      providerResponse: { candidateIndex: 0 },
+      status: "PENDING",
+      errorMessage: null,
+    });
+
+    await assert.rejects(
+      processGenerateVideoCandidate(
+        {
+          kind: "generate_video_candidate",
+          jobId: "job-v-rate-limit",
+          batchId: ctx.batchId,
+          candidateId: "vcd-rate-limit",
+          candidateIndex: 0,
+          shotId: "shot-1",
+          workspaceId: "ws-1",
+          videoScriptArtifactId: "art-vid-1",
+          aspectRatio: "9:16",
+          traceId: "trace-v-rate-limit",
+        },
+        fakeDb.adapter as any,
+        { attemptsMade: 0, attempts: 2 },
+      ),
+      /EndpointAccountRpmRateLimitExceeded/,
+    );
+
+    const retryable = fakeDb.videoCandidateRows.get("vcd-rate-limit");
+    assert.equal(retryable.status, "RUNNING");
+    assert.equal(retryable.errorMessage, null);
   });
 });

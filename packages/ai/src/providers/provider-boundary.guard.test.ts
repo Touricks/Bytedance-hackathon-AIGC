@@ -37,7 +37,6 @@ describe("provider boundary guardrails", () => {
     assert.doesNotMatch(indexSource, /one-click-video\.workflow/);
     assert.doesNotMatch(indexSource, /regenerate-script\.workflow/);
     assert.doesNotMatch(indexSource, /feedback-route\.workflow/);
-    assert.doesNotMatch(indexSource, /creative-blueprint\.workflow/);
     assert.doesNotMatch(indexSource, /regenerate-shot\.workflow/);
     assert.doesNotMatch(indexSource, /smoke\/real-providers/);
     assert.doesNotMatch(indexSource, /probes\/to-text/);

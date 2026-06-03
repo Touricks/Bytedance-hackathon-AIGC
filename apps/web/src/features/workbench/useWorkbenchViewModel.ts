@@ -27,7 +27,7 @@ import type {
   PromptRequirementsData,
   ProposeWorkspaceBriefInput,
 } from "../../lib/api/client.js";
-import { createFinalVideo } from "../../lib/api/finalVideo.js";
+import { createFinalVideo, listFinalVideos } from "../../lib/api/finalVideo.js";
 import { listImageRounds } from "../../lib/api/imageBatch.js";
 import {
   proposeImagePrompt,
@@ -154,7 +154,21 @@ export function useWorkbenchViewModel(workspaceId: string) {
     refetchInterval: 15_000,
   });
 
-  const finalVideo = useFinalVideo(activeFinalJobId);
+  const finalVideoJobs = useQuery({
+    queryKey: ["final-videos", workspaceId],
+    queryFn: () => listFinalVideos(workspaceId),
+    refetchInterval: 15_000,
+  });
+
+  const latestFinalJobId =
+    finalVideoJobs.data?.data.find((job) => job.status === "PENDING" || job.status === "RUNNING")
+      ?.id ??
+    finalVideoJobs.data?.data.find((job) => job.status === "SUCCEEDED" && job.localUrl)
+      ?.id ??
+    finalVideoJobs.data?.data[0]?.id ??
+    null;
+  const displayedFinalJobId = activeFinalJobId ?? latestFinalJobId;
+  const finalVideo = useFinalVideo(displayedFinalJobId);
 
   const invalidateWorkspace = async () => {
     await Promise.all([
@@ -163,6 +177,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       qc.invalidateQueries({ queryKey: ["shot-sets", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["traces", workspaceId] }),
+      qc.invalidateQueries({ queryKey: ["final-videos", workspaceId] }),
     ]);
   };
 
@@ -481,7 +496,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     latestVideoRound,
     traces: traces.data?.data ?? [],
     finalVideo: finalVideo.data?.data ?? null,
-    activeFinalJobId,
+    activeFinalJobId: displayedFinalJobId,
     inputs: {
       materialPrompt,
       setMaterialPrompt,

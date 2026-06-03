@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import {
   createFinalVideo,
+  finalVideoDownloadUrl,
   type FinalVideoJob,
 } from "../../../lib/api/finalVideo.js";
 import { useShotWorkflowStatus } from "../hooks/useShotWorkflowStatus.js";
@@ -52,7 +53,11 @@ export function FinalComposeStep({ workspaceId }: { workspaceId: string }) {
                     controls
                     className="review-video"
                   />
-                  <a className="download-link" href={job.localUrl} download>
+                  <a
+                    className="download-link"
+                    href={finalVideoDownloadUrl(job.localUrl)}
+                    download={`final-video-${job.id}.mp4`}
+                  >
                     <Download size={14} /> 下载 MP4
                   </a>
                   <button onClick={() => start.mutate()}>再次合成</button>

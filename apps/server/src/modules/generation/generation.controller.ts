@@ -4,6 +4,10 @@ import { toHttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { generationService } from "./generation.service.js";
 
+function finalVideoDownloadFilename(finalVideoJobId: string) {
+  return `final-video-${finalVideoJobId.replace(/[^a-zA-Z0-9_.-]/g, "-")}.mp4`;
+}
+
 export async function registerGenerationController(app: FastifyInstance) {
   app.post("/api/workspaces/:workspaceId/final-videos", async (req, reply) => {
     try {
@@ -41,7 +45,20 @@ export async function registerGenerationController(app: FastifyInstance) {
       const result = await db.db2
         .pool()
         .query(
-          `select id, status, created_at, updated_at, completed_at from final_video_jobs where workspace_id=$1 order by created_at desc limit 50`,
+          `select id,
+                  workspace_id as "workspaceId",
+                  status,
+                  local_url as "localUrl",
+                  duration_sec as "durationSec",
+                  compiled_manifest_hash as "compiledManifestHash",
+                  error_message as "errorMessage",
+                  created_at as "createdAt",
+                  updated_at as "updatedAt",
+                  completed_at as "completedAt"
+             from final_video_jobs
+            where workspace_id=$1
+            order by created_at desc
+            limit 50`,
           [params.workspaceId],
         );
       return { data: result.rows };
@@ -59,9 +76,19 @@ export async function registerGenerationController(app: FastifyInstance) {
           workspaceId: string;
           finalVideoJobId: string;
         };
+        const query = req.query as { download?: string };
         const row = await db.db2.getFinalVideoJob(params.finalVideoJobId);
+        if (row.workspaceId !== params.workspaceId) {
+          return reply.status(404).send({ code: "NOT_FOUND" });
+        }
         if (!row.localPath) return reply.status(404).send({ code: "NOT_READY" });
         reply.header("Content-Type", "video/mp4");
+        if (query.download === "1" || query.download === "true") {
+          reply.header(
+            "Content-Disposition",
+            `attachment; filename="${finalVideoDownloadFilename(row.id)}"`,
+          );
+        }
         return reply.send(createReadStream(row.localPath));
       } catch (e) {
         const err = toHttpError(e);

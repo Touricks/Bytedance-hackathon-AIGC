@@ -43,7 +43,7 @@ Bytedancehack/
 │   ├── server/          # 后端：Fastify API、BullMQ worker、Postgres、文件落盘、ffmpeg compose
 │   └── web/             # 当前前端：React/Vite
 ├── packages/
-│   ├── ai/              # provider、agent/workflow、prompt assembly
+│   ├── ai/              # provider、workspace workflow、prompt assembly
 │   ├── shared/          # Zod 契约、领域类型、job payload 类型
 │   └── config/          # lint/format/tsconfig 预设
 ├── docs/
@@ -58,7 +58,7 @@ Bytedancehack/
 
 ```text
 shared  -> zod
-ai      -> shared, @openai/agents, openai, zod
+ai      -> shared, openai, zod
 web     -> shared
 server  -> shared, ai
 ```
@@ -114,11 +114,11 @@ packages/ai/src/prompts/
 - 用户编辑的是结构化“创作要求”，不是 raw prompt 或 system prompt。
 - `subject.md` 可以迭代创作策略；`contract.md` 锁定输入、输出和 provider 约束。
 - `module-prompt-assembler.ts` 统一拼装 `Subject Prompt`、`Runtime Context` 和 `Schema Contract`，并生成 subject/contract 模板 id 与 hash。
-- workspace module 的 runtime context 由各 prompt builder 注入 approved artifact 与请求参数；per-shot `image-prompt` / `video-script` agent 的 instructions 也使用同一 assembler，真实业务上下文以 JSON user message 传入。
-- `prompt_requirements_artifacts.data` 当前主要作为 workspace module 的依赖门槛和 source fingerprint；逐 shot 阶段通过 approved shotprompt 的 `shotImage` / `shotVideo` dict 注入图像和视频 agent。
+- workspace module 的 runtime context 由各 prompt builder 注入 approved artifact 与请求参数。
+- `prompt_requirements_artifacts.data` 当前主要作为 workspace module 的依赖门槛和 source fingerprint；逐 shot 阶段由 server deterministic assembler 读取 approved shotprompt 的 `providerPrompt`、`shotImage` / `shotVideo` dict 来组装图像和视频 provider prompt。
 - artifact 表保存 `prompt_assembly` 元数据和短 preview；完整 assembled prompt 写入 `trace_events` 和 workspace 本地 `.daireel/trace/events.jsonl`。
 - 跨 module artifact 流通和每个节点的读取/写入规则见 [docs/core/prompt_workflow.md](./docs/core/prompt_workflow.md)。
-- 文本 agent 走 `@openai/agents` Runner + Zod outputType；`MODEL_MODE != real` 时 workflow wrapper 可短路到确定性 fixture。
+- 文本 workflow 走 OpenAI-compatible provider boundary + Zod schema contract；`MODEL_MODE != real` 时 workflow wrapper 可短路到确定性 fixture。
 
 ## 数据与运行时
 
@@ -264,13 +264,9 @@ pnpm build
 pnpm --filter @aigc-video/server test:integration:smoke
 ```
 
-多真实模型联调 package scripts 已移除，包括 `realitest`、`realitest:parallel`、`agenttest:real`、`test:agent-chain`、`smoke:providers` 和 `smoke:real-providers`。历史直连脚本仍保留禁用保护，手动调用时只会打印停用说明，不会发起 provider 请求。
+多真实模型联调 package scripts 已移除。历史直连脚本不再保留兼容入口；旧命令应直接失败为 missing script/file。
 
-查看 one-picture trace：
-
-```bash
-node scripts/extract-one-picture-events.mjs
-```
+查看 workspace-local trace 时，直接打开 `<workspaceDirectory>/.daireel/trace/events.jsonl` 或 `<workspaceDirectory>/.daireel/trace/provider_call.jsonl`。
 
 集成测试：
 

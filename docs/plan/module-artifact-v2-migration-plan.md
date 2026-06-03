@@ -394,8 +394,7 @@ POST /api/workspaces/:workspaceId/shots/:shotId/video-candidates/select
   - product-brief
   - storyboard
   - shotprompt
-  - storyboard-image-prompt
-  - video-shot-script
+- shot-level prompt assembly now lives in the server deterministic assembler
 - mock 模式也走 assembly，以便测试 prompt metadata。
 
 ---

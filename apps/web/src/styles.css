@@ -3179,40 +3179,34 @@ label {
 
 .review-image-grid,
 .review-video-grid {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 12px;
-}
-
-.review-image-grid {
-  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-}
-
-.review-video-grid {
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
 }
 
 .review-candidate-card {
   display: grid;
   gap: 8px;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
+  overflow: visible;
 }
 
-.review-candidate,
-.review-video-candidate {
+.review-candidate {
   position: relative;
+  display: block;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 2px solid transparent;
   border-radius: calc(var(--r) * var(--radius-scale));
   padding: 0;
   color: var(--ink);
-  background: var(--surface);
+  background: transparent;
   cursor: pointer;
   transition: border-color .14s, box-shadow .14s, transform .14s;
-}
-
-.review-candidate {
-  aspect-ratio: 9 / 16;
 }
 
 .review-candidate:hover:not(:disabled) {
@@ -3227,13 +3221,6 @@ label {
 
 .review-candidate--committed {
   border-color: var(--green);
-}
-
-.review-candidate img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .review-candidate__badge {
@@ -3282,9 +3269,45 @@ label {
   padding: 8px;
 }
 
+.review-candidate-actions {
+  display: grid;
+  width: 100%;
+  padding: 0;
+}
+
+.review-candidate-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: calc(var(--r-sm) * var(--radius-scale));
+  background: var(--surface-3);
+}
+
+.review-candidate-media__asset {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-candidate-media__empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .review-candidate-feedback {
   display: grid;
   gap: 8px;
+  width: 100%;
 }
 
 .review-candidate-feedback form {
@@ -3305,7 +3328,6 @@ label {
   resize: vertical;
 }
 
-.review-video-candidate video,
 .review-final video,
 .review-video {
   display: block;
@@ -3314,7 +3336,6 @@ label {
   background: var(--surface-3);
 }
 
-.review-video-candidate video,
 .review-video {
   aspect-ratio: 9 / 16;
 }

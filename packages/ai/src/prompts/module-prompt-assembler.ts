@@ -8,9 +8,7 @@ export type PromptModuleId =
   | "material-intake"
   | "product-brief"
   | "storyboard"
-  | "shotprompt"
-  | "image-prompt"
-  | "video-script";
+  | "shotprompt";
 
 export interface ModulePromptAssemblyMetadata {
   moduleId: PromptModuleId;

@@ -441,8 +441,9 @@ describe("generateVideoWithSeedance", () => {
     assert.equal(queryCount, 20);
   });
 
-  it("retries on 429 then succeeds, honoring a bounded backoff", async () => {
-    let attempts = 0;
+  it("retries polling 429 then succeeds, honoring a bounded backoff", async () => {
+    let createCount = 0;
+    let queryCount = 0;
     const sleeps: number[] = [];
 
     const result = await generateVideoWithSeedance(
@@ -462,9 +463,19 @@ describe("generateVideoWithSeedance", () => {
         sleep: async (ms) => {
           sleeps.push(ms);
         },
-        fetch: async () => {
-          attempts += 1;
-          if (attempts < 3) {
+        fetch: async (url, init) => {
+          if (String(init?.method).toUpperCase() === "POST") {
+            createCount += 1;
+            return new Response(JSON.stringify({ task_id: "task-429" }), {
+              status: 200
+            });
+          }
+          assert.equal(
+            String(url),
+            "https://ark.example/api/v3/contents/generations/tasks/task-429"
+          );
+          queryCount += 1;
+          if (queryCount < 3) {
             return new Response(
               JSON.stringify({ error: { code: "RateLimitExceeded", message: "tpm" } }),
               { status: 429, headers: { "retry-after": "0" } }
@@ -479,13 +490,15 @@ describe("generateVideoWithSeedance", () => {
     );
 
     assert.equal(result.videoUrl, "https://cdn.example/video.mp4");
-    assert.equal(attempts, 3);
+    assert.equal(createCount, 1);
+    assert.equal(queryCount, 3);
     assert.equal(sleeps.length, 2);
     assert.deepEqual(sleeps, [0, 0]);
   });
 
-  it("throws a sanitized failure after exhausting retries on repeated 429", async () => {
+  it("does not retry create-task account RPM 429 inside the provider", async () => {
     let attempts = 0;
+    const sleeps: number[] = [];
     await assert.rejects(
       () =>
         generateVideoWithSeedance(
@@ -502,21 +515,27 @@ describe("generateVideoWithSeedance", () => {
             maxRetries: 2,
             retryBaseMs: 1,
             random: () => 0,
-            sleep: async () => undefined,
+            sleep: async (ms) => {
+              sleeps.push(ms);
+            },
             fetch: async () => {
               attempts += 1;
               return new Response(
                 JSON.stringify({
-                  error: { code: "RateLimitExceeded", message: "tpm exceeded" }
+                  error: {
+                    code: "EndpointAccountRpmRateLimitExceeded",
+                    message: "rpm exceeded"
+                  }
                 }),
                 { status: 429 }
               );
             }
           }
         ),
-      /status 429/
+      /EndpointAccountRpmRateLimitExceeded/
     );
-    assert.equal(attempts, 3);
+    assert.equal(attempts, 1);
+    assert.deepEqual(sleeps, []);
   });
 
   it("does not retry non-retryable 4xx responses", async () => {

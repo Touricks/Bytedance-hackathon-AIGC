@@ -281,7 +281,7 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 - active shot set 内全部需要的视频锚点图已选择；否则返回 `IMAGE_SELECTION_INCOMPLETE`。
 - Shot N 的 `first_frame` 来自 Shot N 的 current selected image；非最后一个 Shot N 的 `last_frame` 来自 Shot N+1 的 current selected image；最后一个 shot 的 `last_frame` 为 `null`。
 - Seedance 单个候选视频时长必须在 4-12 秒范围内。server 会在创建 video script 时把 shot 默认时长夹到 provider 允许范围内，避免 3 秒 storyboard shot 直接传入 Seedance。
-- video provider 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。命中 429/限流时按 `Retry-After` / 指数退避重试，而不是直接失败候选。
+- video provider 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。Seedance task-create 阶段命中账号 RPM 429（如 `EndpointAccountRpmRateLimitExceeded`）时不在 provider 内原地等待，立即抛给 `generate_video_candidate` 的队列重试，释放 video provider slot；task polling 阶段的 429/5xx/超时仍按 `Retry-After` / 指数退避重试。
 - Seedance prompt 追加 approved shotprompt 的统一旁白 voice profile：同一说话人、`gender`、`tone`、`pitch`、`pace`、自然清晰普通话和电商短视频播报风格。每个 shot 只朗读本镜头 `voiceover`；旁白只进入音频，禁止将口播文案、旁白文字或其改写复制、叠加、渲染到视频画面内，也不要生成字幕样式、标题贴片或乱码文字。`video_script_artifacts.source_fingerprint` 记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfile`、`voiceProfileHash` 和本镜 `voiceover`。
 
 ---

@@ -79,9 +79,8 @@ packages/ai/src/prompts/modules/<module>/
 | 角色 / 目标 | 修改入口 | 不应修改 |
 |---|---|---|
 | 剧本同学调整主剧本 / shotprompt 生成策略 | `packages/ai/src/prompts/modules/shotprompt/subject.md` | `shotprompt/contract.md` |
-| 剧本同学调整单镜头视频脚本 / 运镜生成策略 | `packages/ai/src/prompts/modules/video-script/subject.md` | `video-script/contract.md` |
 | 分镜同学调整 storyboard 叙事节奏 | `packages/ai/src/prompts/modules/storyboard/subject.md` | `storyboard/contract.md` |
-| 图像 prompt 同学调整分镜图生成策略 | `packages/ai/src/prompts/modules/image-prompt/subject.md` | `image-prompt/contract.md` |
+| 图像 / 视频 prompt 同学调整单镜执行策略 | `apps/server/src/modules/shot/prompt-assembler.ts` | workspace module `contract.md` |
 | 工程侧修改输入输出 schema/provider 硬约束 | 对应 module 的 `contract.md` 与 schema/response_format 同步修改 | 仅改 subject 绕过契约 |
 
 `subject.md` 是主体创作 prompt，允许业务迭代生成策略、风格、表达偏好和素材使用策略。`contract.md` 是工程契约，定义 agent 可见输入、必须输出的 JSON schema、字段语义和 provider 限制；业务自定义不应覆盖 contract。每次生成都会把 `subjectTemplateId`、`contractTemplateId`、`subjectHash`、`contractHash` 写入 `prompt_assembly`，完整 assembled prompt 写入 trace。
@@ -258,7 +257,6 @@ Schema：`shotPromptArtifactSchema`
 prompt 装配：
 
 - 主路径：后端 deterministic assembler，不调用二次创意 agent。prompt 第一块是 `storyboard_shots.objective` / approved `shots[].providerPrompt`（镜头目标），第二块是当前 `shot_prompt_requirements.shot_image`，反馈重生成追加 `userDirection` 和参考图规则。
-- 兼容 prompt 模块：`packages/ai/src/prompts/modules/image-prompt/subject.md` / `contract.md` 仍保留作调试或未来受控转写，不是当前主路径。
 
 相关 batch：`image_generation_batches`
 
@@ -342,7 +340,6 @@ prompt 装配：
 prompt 装配：
 
 - 主路径：后端 deterministic assembler，不调用二次创意 agent。`providerPrompt` 只作为镜头目标上下文，执行约束来自 `shotVideo`、当前 selected image 首帧、下一镜 selected image 尾帧、duration、voiceover 和统一 voice profile。
-- 兼容 prompt 模块：`packages/ai/src/prompts/modules/video-script/subject.md` / `contract.md` 仍保留作调试或未来受控转写，不是当前主路径。
 - provider 请求 prompt：worker 不直接把 `provider_prompt` 原样发给 Seedance，而是调用 `buildSeedanceShotVideoPrompt({ providerPrompt, scriptJson })`。当 `script_json.voiceover` 非空时，会追加中文旁白生成要求；旁白只进入音频，禁止将口播文案、旁白文字或其改写复制、叠加、渲染到视频画面内，不生成字幕样式、标题贴片或乱码文字；同时 `generate_audio` 固定传 `true`。
 
 相关 batch：`video_generation_batches`

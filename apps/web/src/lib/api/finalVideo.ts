@@ -15,6 +15,11 @@ export interface FinalVideoJob {
   createdAt: string;
 }
 
+export interface FinalVideoJobSummary extends FinalVideoJob {
+  updatedAt?: string;
+  completedAt?: string | null;
+}
+
 export function createFinalVideo(
   workspaceId: string,
   body: { outputAspectRatio: AspectRatio },
@@ -37,4 +42,15 @@ export function getFinalVideo(finalVideoJobId: string) {
   return fetchJson<{ data: FinalVideoJob }>(
     `/api/final-videos/${finalVideoJobId}`,
   );
+}
+
+export function listFinalVideos(workspaceId: string) {
+  return fetchJson<{ data: FinalVideoJobSummary[] }>(
+    `/api/workspaces/${workspaceId}/final-videos`,
+  );
+}
+
+export function finalVideoDownloadUrl(localUrl: string) {
+  const separator = localUrl.includes("?") ? "&" : "?";
+  return `${localUrl}${separator}download=1`;
 }

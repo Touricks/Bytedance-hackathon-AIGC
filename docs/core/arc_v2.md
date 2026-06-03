@@ -48,7 +48,7 @@ Bytedancehack/
 
 ```
 shared  ──────────────► zod
-ai      ──────────────► shared, @openai/agents, openai, zod
+ai      ──────────────► shared, openai, zod
 web     ──────────────► shared
 server  ──────────────► shared, ai
 ```
@@ -182,8 +182,7 @@ packages/ai/src/prompts/modules/<module>/
 | 商品 brief 写法                     | `packages/ai/src/prompts/modules/product-brief/subject.md`   |
 | 分镜叙事/节奏                       | `packages/ai/src/prompts/modules/storyboard/subject.md`      |
 | 主剧本 / shotprompt 生成            | `packages/ai/src/prompts/modules/shotprompt/subject.md`      |
-| 单个 shot 的分镜图 prompt           | `packages/ai/src/prompts/modules/image-prompt/subject.md`    |
-| 单个 shot 的分镜视频脚本 / 运镜脚本 | `packages/ai/src/prompts/modules/video-script/subject.md`    |
+| 单个 shot 的分镜图 / 视频 prompt    | `apps/server/src/modules/shot/prompt-assembler.ts`           |
 
 `contract.md` 属于工程契约：只在输入 artifact、输出 schema、JSON 格式、provider 限制发生变化时由工程侧修改。业务自定义不应修改 `contract.md`，否则会改变 agent 可见输入和输出结构。
 
@@ -356,7 +355,7 @@ provider 走独立配额：text/image/video provider 调用分别由 `TEXT_PROVI
 真实 provider 限制：
 
 - Seedance 单 clip `durationSec` 必须 4-12 秒。
-- video 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。多会话共享账号时实际可用名额可能更少，因此 Seedance 调用对 429/5xx/超时做指数退避重试（`ARK_MAX_RETRIES` / `ARK_RETRY_BASE_MS`，遵循 `Retry-After`），把瞬时限流转成等待而非候选失败。
+- video 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。多会话共享账号时实际可用名额可能更少；Seedance task-create 阶段命中账号 RPM 429（如 `EndpointAccountRpmRateLimitExceeded`）时立即抛给 `generate_video_candidate` 的队列重试，释放 video provider slot，不进入 200s task polling。task polling 阶段的 429/5xx/超时仍做指数退避重试（`ARK_MAX_RETRIES` / `ARK_RETRY_BASE_MS`，遵循 `Retry-After`）。
 - real-provider acceptance 应控制 video candidate 数量，避免把架构问题和 RPM/TPM 限流混在一起。
 - image provider 同时在飞调用数 ≤ `IMAGE_PROVIDER_CONCURRENCY`；调高该值前需确认 image provider 的 TPM 余量。
 
@@ -375,7 +374,7 @@ pnpm --filter @aigc-video/server test:integration:smoke
 - `apps/server/test/integration/image-flow.integration.test.ts`
 - `apps/server/test/integration/video-flow.integration.test.ts`
 
-完整 real-provider agent-chain、Newman agent-chain、多 shot parallel、final compose、direct provider probes 与 frontend real-provider E2E 均已关闭，避免把多真实模型联调、provider 配额和产品链路回归混在同一个自动测试入口里。
+完整 real-provider agent-chain、Newman agent-chain、多 shot parallel、final compose、direct-provider one-off runners 与 frontend real-provider E2E 均不作为当前脚本入口，避免把多真实模型联调、provider 配额和产品链路回归混在同一个自动测试入口里。
 
 `docs/test/agent-chain/` 里的 Postman 资产可保留为公开契约参考，但不再作为当前自动真实 provider 验收入口。
 

@@ -2054,7 +2054,9 @@ paths:
         video_script_artifacts 后，每个候选入队一个 generate_video_candidate job
         并立即返回 PENDING batch + PENDING candidates；shot 进入 VIDEO_GENERATING。
         客户端轮询 video-rounds 直到 VIDEO_CANDIDATES_READY。video 同时在飞的 Seedance
-        调用数被进程级信号量限制为 VIDEO_PROVIDER_CONCURRENCY，并对 429/限流做退避重试。
+        调用数被进程级信号量限制为 VIDEO_PROVIDER_CONCURRENCY。Seedance task-create
+        阶段的账号 RPM 429 立即交给 generate_video_candidate 队列重试并释放 provider
+        slot；task polling 阶段的 429/5xx/超时仍做退避重试。
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - $ref: "#/components/parameters/ShotId"
