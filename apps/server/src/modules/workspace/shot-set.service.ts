@@ -276,7 +276,7 @@ export const shotSetService = {
       : null;
   },
 
-  async listShotSets(workspaceId: string, includeArchived = false) {
+  async listShotSets(workspaceId: string) {
     await db.getWorkspace(workspaceId);
     const [result, currentShotPromptArtifactId] = await Promise.all([
       db.db2.pool().query(
@@ -285,10 +285,10 @@ export const shotSetService = {
          from shot_sets ss
          left join storyboard_shots s on s.shot_set_id = ss.id
          where ss.workspace_id = $1
-           and ($2::boolean or ss.status = 'active')
+           and ss.status = 'active'
          group by ss.id
          order by ss.created_at desc, ss.id desc`,
-        [workspaceId, includeArchived],
+        [workspaceId],
       ),
       getCurrentApprovedShotPromptId(workspaceId),
     ]);

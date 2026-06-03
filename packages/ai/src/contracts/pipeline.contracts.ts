@@ -2,26 +2,20 @@ import { MATERIAL_INTAKE_PROMPT_VERSION } from "../prompts/material-intake.promp
 import { PRODUCT_BRIEF_PROMPT_VERSION } from "../prompts/product-brief.prompt.js";
 import { SHOTPROMPT_PROMPT_VERSION } from "../prompts/shotprompt.prompt.js";
 import { STORYBOARD_PROMPT_VERSION } from "../prompts/storyboard.prompt.js";
-import { FEEDBACK_ROUTE_PROMPT_VERSION } from "../prompts/feedback-route.prompt.js";
 import { STORYBOARD_SCRIPT_TOTAL_DURATION_SEC } from "@aigc-video/shared";
-
-export const VIDEO_EXPORT_CONTRACT_VERSION = "seedance-video-export.v1";
 
 export interface PipelineContractStep {
   id:
     | "material_intake"
     | "product_brief"
     | "storyboard"
-    | "shotprompt"
-    | "feedback_route"
-    | "video_export";
+    | "shotprompt";
   activeVersion: string;
   promptBuilder: string;
-  provider: "ark" | "seedance";
+  provider: "ark";
   inputJsonSchema: Record<string, unknown>;
   outputJsonSchema: Record<string, unknown>;
   targetSharedArtifact?: string;
-  promptSource?: "compiled_shotprompt";
 }
 
 export interface PipelineContractRegistry {
@@ -163,52 +157,6 @@ const steps: PipelineContractStep[] = [
       ]
     ),
     targetSharedArtifact: "ShotPromptArtifact"
-  },
-  {
-    id: "feedback_route",
-    activeVersion: FEEDBACK_ROUTE_PROMPT_VERSION,
-    promptBuilder: "buildFeedbackRoutePrompt",
-    provider: "ark",
-    inputJsonSchema: objectSchema(
-      {
-        feedback: stringSchema,
-        brief: objectSchema({}, []),
-        storyboard: objectSchema({}, []),
-        shotprompt: objectSchema({}, [])
-      },
-      ["feedback", "brief", "storyboard", "shotprompt"]
-    ),
-    outputJsonSchema: objectSchema(
-      {
-        targetArtifact: stringSchema,
-        reason: stringSchema,
-        revisionInstruction: stringSchema,
-        confidence: stringSchema
-      },
-      ["targetArtifact", "reason", "revisionInstruction", "confidence"]
-    ),
-    targetSharedArtifact: "FeedbackRouteArtifact"
-  },
-  {
-    id: "video_export",
-    activeVersion: VIDEO_EXPORT_CONTRACT_VERSION,
-    promptBuilder: "buildSeedanceVideoExportPrompt",
-    provider: "seedance",
-    inputJsonSchema: objectSchema(
-      {
-        shotprompt: objectSchema({}, []),
-        imageUrl: stringSchema
-      },
-      ["shotprompt", "imageUrl"]
-    ),
-    outputJsonSchema: objectSchema(
-      {
-        jobId: stringSchema,
-        videoUrl: stringSchema
-      },
-      ["jobId", "videoUrl"]
-    ),
-    promptSource: "compiled_shotprompt"
   }
 ];
 

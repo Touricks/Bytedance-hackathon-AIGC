@@ -260,6 +260,11 @@ export async function recoverInflightGenerationJobs() {
                 (url): url is string => typeof url === "string"
               )
             : undefined,
+          referenceImageUrlsAfterAssets: Array.isArray(payload.referenceImageUrlsAfterAssets)
+            ? payload.referenceImageUrlsAfterAssets.filter(
+                (url): url is string => typeof url === "string"
+              )
+            : undefined,
           traceId: "recover"
         });
         if (queueJobId) {

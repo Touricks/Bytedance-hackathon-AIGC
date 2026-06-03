@@ -58,15 +58,15 @@ describe("module prompt assembler", () => {
       runtimeContext: "shotImage dict: { scene: '商品在桌面上' }",
     });
 
-    assert.match(imagePrompt.prompt, /still-image prompt/);
-    assert.match(imagePrompt.prompt, /single key frame/);
-    assert.match(imagePrompt.prompt, /Use compiledShotRequirements as the authoritative creative requirement/);
-    assert.match(imagePrompt.prompt, /full shotImage and shotVideo dictionaries/);
-    assert.match(imagePrompt.prompt, /camera motion/);
-    assert.match(imagePrompt.prompt, /duration/);
-    assert.match(imagePrompt.prompt, /voiceover/);
+    assert.match(imagePrompt.prompt, /静态图提示/);
+    assert.match(imagePrompt.prompt, /单张关键帧/);
+    assert.match(imagePrompt.prompt, /以 compiledShotRequirements 作为权威创作要求/);
+    assert.match(imagePrompt.prompt, /完整的 shotImage 和 shotVideo 字典/);
+    assert.match(imagePrompt.prompt, /镜头运动/);
+    assert.match(imagePrompt.prompt, /时长/);
+    assert.match(imagePrompt.prompt, /旁白/);
     assert.match(imagePrompt.prompt, /JSON null/);
-    assert.match(imagePrompt.prompt, /Simplified Chinese/);
+    assert.match(imagePrompt.prompt, /简体中文/);
   });
 
   it("keeps video-script instructions motion-provider only", () => {

@@ -84,6 +84,18 @@ const storyboard = {
   assumptions: [],
 };
 
+const creativeRequirements = {
+  image: {
+    style: "高端商业产品摄影",
+    composition: "主体稳定居中",
+    avoid: ["文字贴片", "商品变形"],
+  },
+  script: { tone: "克制、专业" },
+  storyboard: { rhythm: "慢速展示细节" },
+  shotImage: { global: "统一高端光线" },
+  shotVideo: { global: "慢速稳定运镜" },
+};
+
 const oneShotProviderOutput = {
   targetProvider: "seedance",
   durationSec: 15,
@@ -104,6 +116,12 @@ const oneShotProviderOutput = {
     enabled: true,
     source: "shots.voiceover",
     voiceover: "墙面空着太单调",
+    voiceProfile: {
+      gender: "female",
+      tone: "自信、友好、可信",
+      pitch: "medium",
+      pace: "medium",
+    },
   },
   assumptions: [],
 };
@@ -152,7 +170,13 @@ describe("shotprompt workflow", () => {
       await assert.rejects(
         () =>
           generateShotPromptWithArk(
-            { brief, material, storyboard, aspectRatio: "9:16" },
+            {
+              brief,
+              material,
+              storyboard,
+              aspectRatio: "9:16",
+              creativeRequirements,
+            },
             {
               env: {
                 MODEL_MODE: "real",
@@ -175,6 +199,15 @@ describe("shotprompt workflow", () => {
       );
       assert.ok(parseFailed);
       assert.equal(parseFailed.meta?.parsedOutputStatus, "invalid");
+      const prepared = events.find(
+        (event) => event.kind === "shotprompt.request_prepared",
+      );
+      assert.ok(prepared);
+      assert.match(
+        String(prepared.meta?.prompt),
+        /已批准创作要求（导演约束）：/,
+      );
+      assert.match(String(prepared.meta?.prompt), /- 分镜视频全局要求：慢速稳定运镜/);
     } finally {
       await arkText.close();
     }

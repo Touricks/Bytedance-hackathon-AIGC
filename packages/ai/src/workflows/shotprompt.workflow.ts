@@ -26,6 +26,7 @@ export interface GenerateShotPromptInput {
   material: MaterialIntakeArtifact;
   storyboard: StoryboardArtifact;
   aspectRatio: "9:16" | "16:9" | "1:1";
+  creativeRequirements?: unknown;
 }
 
 export interface ShotPromptTrace {

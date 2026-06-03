@@ -20,6 +20,7 @@ export interface VideoScriptAgentInput {
     voiceover?: string;
     providerPromptFromShotPrompt?: string;
     shotVideo?: unknown;
+    voiceProfile?: unknown;
   };
   selectedImage: { id: string; summary: string; url: string };
   neighborImages: { prev?: { id: string; summary: string; url: string }; next?: { id: string; summary: string; url: string } };

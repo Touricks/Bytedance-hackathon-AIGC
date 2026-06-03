@@ -1,5 +1,4 @@
 import { nanoid } from "nanoid";
-import { runStoryboardImagePromptAgent, runVideoShotScriptAgent } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
   productBriefArtifactSchema,
@@ -12,6 +11,7 @@ import {
   createImagePromptVersionAtomic,
   createVideoScriptVersionAtomic
 } from "../artifact/artifact.versioning.js";
+import { buildSeedanceShotVideoPrompt } from "../generation/direct-generation.js";
 import { generationService } from "../generation/generation.service.js";
 import { seedanceVoiceProfileHash } from "../generation/voice-profile.js";
 import { traceService } from "../trace/trace.service.js";
@@ -20,6 +20,12 @@ import {
   compareSourceFingerprint,
   type UpstreamDrift
 } from "../workspace/upstream-drift-v2.service.js";
+import {
+  assembleShotImagePrompt,
+  assembleShotVideoScript,
+  SHOT_IMAGE_ASSEMBLER_VERSION,
+  SHOT_VIDEO_ASSEMBLER_VERSION
+} from "./prompt-assembler.js";
 import { getNextAction, type ShotStatus } from "./shot.state.js";
 import { buildWorkflowShotRow } from "./shot.view.js";
 
@@ -411,6 +417,7 @@ function currentImagePromptSources(
     materialIntakeArtifactId: hydrated.summary.materialIntakeArtifactId,
     shotPromptArtifactId: hydrated.summary.shotPromptArtifactId,
     shotPromptRequirementsId: hydrated.summary.shotPromptRequirementsId,
+    shotGoal: hydrated.shotPromptShot?.providerPrompt ?? null,
     sceneAnchorImageUrl: hydrated.summary.sceneAnchorImageUrl
   };
 }
@@ -423,8 +430,12 @@ function currentVideoScriptSources(
     materialIntakeArtifactId: hydrated.summary.materialIntakeArtifactId,
     shotPromptArtifactId: hydrated.summary.shotPromptArtifactId,
     shotPromptRequirementsId: hydrated.summary.shotPromptRequirementsId,
+    shotGoal: hydrated.shotPromptShot?.providerPrompt ?? null,
     firstFrameCandidateId: hydrated.currentImageCandidate?.id ?? null,
-    lastFrameCandidateId: hydrated.nextImageCandidate?.id ?? null
+    lastFrameCandidateId: hydrated.nextImageCandidate?.id ?? null,
+    voiceProfileHash: hydrated.shotPrompt
+      ? seedanceVoiceProfileHash(hydrated.shotPrompt.tts.voiceProfile)
+      : null
   };
 }
 
@@ -519,6 +530,89 @@ function providerTemporaryUrl(
   return typeof response?.providerTemporaryUrl === "string"
     ? response.providerTemporaryUrl
     : (row?.imageUrl ?? null);
+}
+
+function uniqueReferenceImageUrls(values: Array<string | null | undefined>) {
+  return values.filter(
+    (value, index, all): value is string =>
+      Boolean(value) && all.indexOf(value) === index
+  );
+}
+
+function shotGoalFor(
+  shot: PromptContextShot,
+  hydrated: Awaited<ReturnType<typeof hydratePromptContext>>,
+) {
+  return hydrated.shotPromptShot?.providerPrompt ?? shot.objective ?? shot.title;
+}
+
+function promptAssembly(moduleId: "image-prompt" | "video-script", mode: string) {
+  const assemblerVersion =
+    moduleId === "image-prompt"
+      ? SHOT_IMAGE_ASSEMBLER_VERSION
+      : SHOT_VIDEO_ASSEMBLER_VERSION;
+  return {
+    moduleId,
+    assemblerVersion,
+    mode,
+    source: "server-deterministic-assembler",
+  };
+}
+
+async function assertLatestImageFeedbackCandidate(input: {
+  workspaceId: string;
+  shotId: string;
+  baseArtifactId: string;
+  candidateId: string;
+}) {
+  const [candidate, latestBatch] = await Promise.all([
+    db.db2.getImageCandidate(input.candidateId),
+    db.db2.getLatestImageBatchForShot(input.shotId),
+  ]);
+  if (
+    candidate.workspaceId !== input.workspaceId ||
+    candidate.shotId !== input.shotId
+  ) {
+    throw new HttpError(400, "INVALID_FEEDBACK_CANDIDATE", "Feedback image candidate does not belong to this shot");
+  }
+  if (candidate.status !== "SUCCEEDED" || !candidate.imageUrl) {
+    throw new HttpError(400, "INVALID_FEEDBACK_CANDIDATE", "Feedback image candidate must be a succeeded candidate");
+  }
+  if (!latestBatch || latestBatch.id !== candidate.batchId) {
+    throw new HttpError(409, "STALE_FEEDBACK_CANDIDATE", "Feedback image candidate must come from the latest image round");
+  }
+  if (latestBatch.imagePromptArtifactId !== input.baseArtifactId) {
+    throw new HttpError(409, "STALE_BASE_IMAGE_PROMPT", "Base image prompt must be the latest image round artifact");
+  }
+  return { candidate, batch: latestBatch };
+}
+
+async function assertLatestVideoFeedbackCandidate(input: {
+  workspaceId: string;
+  shotId: string;
+  baseArtifactId: string;
+  candidateId: string;
+}) {
+  const [candidate, latestBatch] = await Promise.all([
+    db.db2.getVideoCandidate(input.candidateId),
+    db.db2.getLatestVideoBatchForShot(input.shotId),
+  ]);
+  if (
+    candidate.workspaceId !== input.workspaceId ||
+    candidate.shotId !== input.shotId
+  ) {
+    throw new HttpError(400, "INVALID_FEEDBACK_CANDIDATE", "Feedback video candidate does not belong to this shot");
+  }
+  if (candidate.status !== "SUCCEEDED" || !candidate.videoUrl) {
+    throw new HttpError(400, "INVALID_FEEDBACK_CANDIDATE", "Feedback video candidate must be a succeeded candidate");
+  }
+  if (!latestBatch || latestBatch.id !== candidate.batchId) {
+    throw new HttpError(409, "STALE_FEEDBACK_CANDIDATE", "Feedback video candidate must come from the latest video round");
+  }
+  if (latestBatch.videoScriptArtifactId !== input.baseArtifactId) {
+    throw new HttpError(409, "STALE_BASE_VIDEO_SCRIPT", "Base video script must be the latest video round artifact");
+  }
+  return { candidate, batch: latestBatch };
 }
 
 type ShotPromptRequirementContext = {
@@ -628,12 +722,6 @@ function imagePromptContextSnapshot(input: {
   };
 }
 
-function promptAssemblyWithEditMode(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>), mode: "user-feedback-regenerate" }
-    : { mode: "user-feedback-regenerate" };
-}
-
 export const shotWorkflowService = {
   resolveBatchCount,
 
@@ -650,7 +738,7 @@ export const shotWorkflowService = {
   },
 
   async getShot(shotId: string) {
-    const shot = await db.db2.getShot(shotId);
+    const shot = await getEditableShotOrThrow(shotId);
     const refs = await listShotAssetRefs(shotId);
     return {
       data: {
@@ -772,77 +860,43 @@ export const shotWorkflowService = {
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const traceId = nanoid();
     const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
+    const shotGoal = shotGoalFor(shot, hydrated);
+    const userDirection = args.userDirection?.trim() || undefined;
+    const assembled = assembleShotImagePrompt({
+      shotGoal,
+      shotImage: shotRequirements.shotImage,
+      userDirection,
+      mode: "propose",
+    });
 
     await db.db2.updateShot(args.shotId, { status: "IMAGE_PROMPT_PROPOSING" });
     try {
-      const result = await runStoryboardImagePromptAgent({
-        payload: {
-          productBrief: hydrated.brief ?? {},
-          shot: {
-            index: shot.orderIndex,
-            objective:
-              hydrated.shotPromptShot?.providerPrompt ?? shot.objective ?? shot.title,
-            sceneDescription: hydrated.shotPromptShot?.providerPrompt ?? undefined,
-            defaultDurationSec: shot.defaultDurationSec ?? undefined,
-            productAssetRef: hydrated.shotPromptShot?.referenceAssetRefs[0],
-            referenceAssetRefs: hydrated.shotPromptShot?.referenceAssetRefs ?? [],
-            providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
-            shotImage: shotRequirements.shotImage,
-            shotVideo: shotRequirements.shotVideo
-          },
-          compiledShotRequirements: shotRequirements.compiledText,
-          workspaceId: args.workspaceId,
-          shotId: args.shotId,
-          userDirection: args.userDirection,
-          number: count,
-          image_ref: imageRef,
-          materialIntake: hydrated.material ?? {},
-          previousImagePromptText:
-            typeof hydrated.summary.previousPromptArtifactId === "string"
-              ? (await db.db2.listImagePromptArtifacts(args.shotId))[0]?.promptText
-              : undefined,
-          referenceAssets: referenceAssetIds.map((id) => ({
-            id,
-            role:
-              hydrated.referenceAssets.find((asset) => asset.id === id)?.role ??
-              "product_identity",
-            summary:
-              hydrated.referenceAssets.find((asset) => asset.id === id)?.summary ?? ""
-          })),
-          userHint: args.userDirection
-        },
-        context: {
-          workspaceId: args.workspaceId,
-          shotId: args.shotId,
-          traceId,
-          runtimeMode: process.env.MODEL_MODE === "real" ? "real" : "mock"
-        }
-      });
-
       const sourceFingerprint = {
         ...hydrated.summary,
+        shotGoal,
         image_ref: imageRef,
-        number: count
+        number: count,
+        assemblerVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
       };
       const contextSnapshot = imagePromptContextSnapshot({
         sourceFingerprint,
         requirements: shotRequirements,
-        userDirection: args.userDirection,
+        userDirection,
       });
       const artifact = await createImagePromptVersionAtomic({
         shotId: args.shotId,
-        promptText: result.output.promptText,
-        negativePrompt: result.output.negativePrompt ?? undefined,
+        promptText: assembled.promptText,
+        negativePrompt: assembled.negativePrompt || undefined,
         referenceAssetIds,
         sourceFingerprint,
-        promptAssembly: result.promptAssembly,
+        promptAssembly: promptAssembly("image-prompt", "propose"),
         promptJson: {
-          ...result.output,
+          ...assembled.promptJson,
           context: contextSnapshot
         },
-        createdBy: "agent",
-        agentName: "StoryboardImagePromptAgent",
-        promptTemplateVersion: result.templateVersion
+        createdBy: "system",
+        agentName: "DeterministicImagePromptAssembler",
+        promptTemplateVersion: SHOT_IMAGE_ASSEMBLER_VERSION
       });
       const artifactView = promptArtifactView(artifact);
 
@@ -854,13 +908,24 @@ export const shotWorkflowService = {
         aspectRatio,
         idempotencyKey: `image:${artifact.id}:${traceId}`,
         providerRequest: {
-          prompt: result.output.promptText,
-          negativePrompt: result.output.negativePrompt ?? null,
+          prompt: assembled.promptText,
+          negativePrompt: assembled.negativePrompt || null,
           image_ref: imageRef,
+          referenceImageOrder: [
+            ...hydrated.referenceAssets.map((asset) => ({
+              role: "material_reference",
+              assetId: asset.id,
+              ref: asset.ref,
+            })),
+            ...(imageRefProviderUrl
+              ? [{ role: "previous_shot_image", url: imageRefProviderUrl }]
+              : []),
+          ],
           count,
-          aspectRatio
+          aspectRatio,
+          assemblerVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
         },
-        referenceImageUrls: imageRefProviderUrl ? [imageRefProviderUrl] : []
+        referenceImageUrlsAfterAssets: imageRefProviderUrl ? [imageRefProviderUrl] : []
       });
       const batchId =
         "batchId" in enqueued.data ? enqueued.data.batchId : enqueued.data.id;
@@ -876,10 +941,10 @@ export const shotWorkflowService = {
         shotId: args.shotId,
         traceType: "agent_run",
         name: "image_prompt_proposed",
-        outputPreview: result.output.promptText.slice(0, 200),
+        outputPreview: assembled.promptText.slice(0, 200),
         metadata: {
-          templateVersion: result.templateVersion,
-          promptAssembly: result.promptAssembly,
+          templateVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
+          promptAssembly: promptAssembly("image-prompt", "propose"),
           context: contextSnapshot,
           batchId: batch.id,
           candidates: candidates.map((candidate) => candidate.id)
@@ -909,7 +974,8 @@ export const shotWorkflowService = {
     workspaceId: string;
     shotId: string;
     baseArtifactId: string;
-    userDirection?: string;
+    feedbackImageCandidateId: string;
+    userDirection: string;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -943,26 +1009,48 @@ export const shotWorkflowService = {
         "No product or previous-shot image is available as scene anchor"
       );
     }
+    const userDirection = args.userDirection.trim();
+    if (!userDirection) {
+      throw new HttpError(400, "USER_DIRECTION_REQUIRED", "userDirection is required for image feedback regeneration");
+    }
+    const { candidate: feedbackImageCandidate } = await assertLatestImageFeedbackCandidate({
+      workspaceId: args.workspaceId,
+      shotId: args.shotId,
+      baseArtifactId: baseArtifact.id,
+      candidateId: args.feedbackImageCandidateId,
+    });
 
     const traceId = nanoid();
     const count = resolveBatchCount("image");
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const imageRefProviderUrl =
       shot.orderIndex > 0 ? providerTemporaryUrl(hydrated.previousImageCandidate) : null;
+    const feedbackImageRef = feedbackImageCandidate?.imageUrl ?? null;
+    const feedbackImageProviderUrl = providerTemporaryUrl(feedbackImageCandidate);
     const editedAt = new Date().toISOString();
-    const userDirection = args.userDirection?.trim() || undefined;
     const referenceAssetIds = hydrated.referenceAssets.map((asset) => asset.id);
     const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
+    const shotGoal = shotGoalFor(shot, hydrated);
+    const assembled = assembleShotImagePrompt({
+      shotGoal,
+      shotImage: shotRequirements.shotImage,
+      userDirection,
+      mode: "regenerate",
+    });
     const sourceFingerprint = {
       ...hydrated.summary,
       ...(baseArtifact.sourceFingerprint && typeof baseArtifact.sourceFingerprint === "object"
         ? { baseSourceFingerprint: baseArtifact.sourceFingerprint }
         : {}),
       baseArtifactId: baseArtifact.id,
-      userDirection: userDirection ?? null,
+      userDirection,
       editedAt,
+      shotGoal,
       image_ref: imageRef,
-      number: count
+      feedbackImageRef,
+      feedbackImageCandidateId: feedbackImageCandidate.id,
+      number: count,
+      assemblerVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
     };
     const contextSnapshot = imagePromptContextSnapshot({
       sourceFingerprint,
@@ -971,61 +1059,20 @@ export const shotWorkflowService = {
       baseArtifactId: baseArtifact.id,
     });
 
-    const result = await runStoryboardImagePromptAgent({
-      payload: {
-        productBrief: hydrated.brief ?? {},
-        shot: {
-          index: shot.orderIndex,
-          objective:
-            hydrated.shotPromptShot?.providerPrompt ?? shot.objective ?? shot.title,
-          sceneDescription: hydrated.shotPromptShot?.providerPrompt ?? undefined,
-          defaultDurationSec: shot.defaultDurationSec ?? undefined,
-          productAssetRef: hydrated.shotPromptShot?.referenceAssetRefs[0],
-          referenceAssetRefs: hydrated.shotPromptShot?.referenceAssetRefs ?? [],
-          providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
-          shotImage: shotRequirements.shotImage,
-          shotVideo: shotRequirements.shotVideo,
-        },
-        compiledShotRequirements: shotRequirements.compiledText,
-        workspaceId: args.workspaceId,
-        shotId: args.shotId,
-        userDirection,
-        number: count,
-        image_ref: imageRef,
-        materialIntake: hydrated.material ?? {},
-        previousImagePromptText: baseArtifact.promptText,
-        referenceAssets: referenceAssetIds.map((id) => ({
-          id,
-          role:
-            hydrated.referenceAssets.find((asset) => asset.id === id)?.role ??
-            "product_identity",
-          summary:
-            hydrated.referenceAssets.find((asset) => asset.id === id)?.summary ?? "",
-        })),
-        userHint: userDirection,
-      },
-      context: {
-        workspaceId: args.workspaceId,
-        shotId: args.shotId,
-        traceId,
-        runtimeMode: process.env.MODEL_MODE === "real" ? "real" : "mock",
-      },
-    });
-
     const artifact = await createImagePromptVersionAtomic({
       shotId: args.shotId,
-      promptText: result.output.promptText,
-      negativePrompt: result.output.negativePrompt ?? undefined,
+      promptText: assembled.promptText,
+      negativePrompt: assembled.negativePrompt || undefined,
       referenceAssetIds,
       sourceFingerprint,
-      promptAssembly: promptAssemblyWithEditMode(result.promptAssembly),
+      promptAssembly: promptAssembly("image-prompt", "user-feedback-regenerate"),
       promptJson: {
-        ...result.output,
+        ...assembled.promptJson,
         context: contextSnapshot,
       },
       createdBy: "user",
-      agentName: "StoryboardImagePromptAgent",
-      promptTemplateVersion: result.templateVersion,
+      agentName: "DeterministicImagePromptAssembler",
+      promptTemplateVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
       baseArtifactId: baseArtifact.id
     });
     const artifactView = promptArtifactView(artifact);
@@ -1038,16 +1085,33 @@ export const shotWorkflowService = {
       aspectRatio,
       idempotencyKey: `image-regenerate:${artifact.id}:${traceId}`,
       providerRequest: {
-        prompt: result.output.promptText,
-        negativePrompt: result.output.negativePrompt ?? null,
+        prompt: assembled.promptText,
+        negativePrompt: assembled.negativePrompt || null,
         image_ref: imageRef,
+        feedbackImageRef,
+        feedbackImageCandidateId: feedbackImageCandidate.id,
+        referenceImageOrder: [
+          { role: "feedback_image", candidateId: feedbackImageCandidate.id, url: feedbackImageRef },
+          ...hydrated.referenceAssets.map((asset) => ({
+            role: "material_reference",
+            assetId: asset.id,
+            ref: asset.ref,
+          })),
+          ...(imageRefProviderUrl
+            ? [{ role: "previous_shot_image", url: imageRefProviderUrl }]
+            : []),
+        ],
         count,
         aspectRatio,
         source: "user-feedback-regenerate",
         baseArtifactId: baseArtifact.id,
-        userDirection: userDirection ?? null,
+        userDirection,
+        assemblerVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
       },
-      referenceImageUrls: imageRefProviderUrl ? [imageRefProviderUrl] : []
+      referenceImageUrls: uniqueReferenceImageUrls([
+        feedbackImageProviderUrl,
+      ]),
+      referenceImageUrlsAfterAssets: imageRefProviderUrl ? [imageRefProviderUrl] : [],
     });
     const batchId =
       "batchId" in enqueued.data ? enqueued.data.batchId : enqueued.data.id;
@@ -1063,7 +1127,7 @@ export const shotWorkflowService = {
       shotId: args.shotId,
       traceType: "user_action",
       name: "image_prompt_regenerated",
-      outputPreview: result.output.promptText.slice(0, 200),
+      outputPreview: assembled.promptText.slice(0, 200),
       metadata: {
         baseArtifactId: baseArtifact.id,
         newArtifactId: artifact.id,
@@ -1085,21 +1149,20 @@ export const shotWorkflowService = {
   },
 
   async listImagePrompts(shotId: string) {
+    await getEditableShotOrThrow(shotId);
     return { data: await db.db2.listImagePromptArtifacts(shotId) };
   },
 
   async selectImage(args: {
-    workspaceId?: string;
+    workspaceId: string;
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId?: string;
     selectedBy?: string;
   }) {
     const shot = await db.db2.getShot(args.shotId);
-    if (args.workspaceId) {
-      assertShotInWorkspace(shot, args.workspaceId);
-      await assertShotInActiveShotSet(args.workspaceId, args.shotId);
-    }
+    assertShotInWorkspace(shot, args.workspaceId);
+    await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     const candidate = await db.db2.getImageCandidate(args.imageCandidateId);
     if (candidate.shotId !== args.shotId || candidate.workspaceId !== shot.workspaceId) {
       throw new HttpError(
@@ -1132,19 +1195,6 @@ export const shotWorkflowService = {
     if (batch.shotId !== args.shotId || batch.workspaceId !== shot.workspaceId) {
       throw new HttpError(400, "INVALID_CANDIDATE", "Batch does not belong to this shot");
     }
-    const latestBatch = await db.db2.getLatestImageBatchForShot(args.shotId);
-    if (
-      !latestBatch ||
-      latestBatch.id !== candidate.batchId ||
-      batch.imagePromptArtifactId !== shot.activeImagePromptArtifactId
-    ) {
-      throw new HttpError(
-        409,
-        "STALE_CANDIDATE",
-        "Candidate is not from the active image round"
-      );
-    }
-
     await db.db2.upsertSelectedImage({
       shotId: args.shotId,
       imageCandidateId: args.imageCandidateId,
@@ -1224,66 +1274,48 @@ export const shotWorkflowService = {
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     await db.db2.updateShot(args.shotId, { status: "VIDEO_SCRIPT_PROPOSING" });
     try {
-      const result = await runVideoShotScriptAgent({
-        payload: {
-          productBrief: hydrated.brief ?? {},
-          shot: {
-            index: shot.orderIndex,
-            objective:
-              hydrated.shotPromptShot?.providerPrompt ?? shot.objective ?? shot.title,
-            sceneDescription: hydrated.shotPromptShot?.providerPrompt ?? undefined,
-            voiceover: hydrated.shotPromptShot?.voiceover ?? "",
-            providerPromptFromShotPrompt: hydrated.shotPromptShot?.providerPrompt,
-            shotVideo: hydrated.shotPromptShot?.shotVideo
-          },
-          workspaceId: args.workspaceId,
-          shotId: args.shotId,
-          userDirection: args.userDirection,
-          number: count,
-          first_frame_url: selectedImage.imageUrl ?? "",
-          last_frame_url: neighbors.next?.url ?? null,
-          selectedImage: {
-            id: selectedImage.id,
-            summary: "",
-            url: selectedImage.imageUrl ?? ""
-          },
-          neighborImages: neighbors,
-          durationSec,
-          userHint: args.userDirection,
-          previousVideoScript:
-            typeof hydrated.summary.previousPromptArtifactId === "string"
-              ? (await db.db2.listVideoScriptArtifacts(args.shotId))[0]?.scriptJson
-              : undefined
-        },
-        context: {
-          workspaceId: args.workspaceId,
-          shotId: args.shotId,
-          traceId,
-          runtimeMode: process.env.MODEL_MODE === "real" ? "real" : "mock"
-        }
+      const shotGoal = shotGoalFor(shot, hydrated);
+      const voiceProfile = hydrated.shotPrompt?.tts.voiceProfile;
+      const assembled = assembleShotVideoScript({
+        shotGoal,
+        shotVideo: hydrated.shotPromptShot?.shotVideo ?? {},
+        durationSec,
+        voiceover: hydrated.shotPromptShot?.voiceover ?? "",
+        voiceProfile,
+        firstFrameCandidateId: selectedImage.id,
+        firstFrameUrl: selectedImage.imageUrl ?? null,
+        lastFrameCandidateId: neighbors.next?.id ?? null,
+        lastFrameUrl: neighbors.next?.url ?? null,
+        userDirection: args.userDirection,
+        mode: "propose",
       });
 
       const sourceFingerprint = {
         ...hydrated.summary,
+        shotGoal,
         firstFrameCandidateId: selectedImage.id,
         lastFrameCandidateId: neighbors.next?.id ?? null,
-        voiceProfileHash: seedanceVoiceProfileHash(),
+        voiceProfile: voiceProfile ?? null,
+        voiceProfileHash: seedanceVoiceProfileHash(
+          voiceProfile,
+        ),
         voiceover: hydrated.shotPromptShot?.voiceover ?? "",
-        number: count
+        number: count,
+        assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
       };
       const artifact = await createVideoScriptVersionAtomic({
         shotId: args.shotId,
-        durationSec: result.output.durationSec,
-        scriptJson: { ...result.output, context: sourceFingerprint },
-        providerPrompt: result.output.providerPrompt,
+        durationSec: assembled.durationSec,
+        scriptJson: { ...assembled.scriptJson, context: sourceFingerprint },
+        providerPrompt: assembled.providerPrompt,
         basedOnImageCandidateId: selectedImage.id,
         basedOnPrevImageCandidateId: undefined,
         basedOnNextImageCandidateId: neighbors.next?.id,
         sourceFingerprint,
-        promptAssembly: result.promptAssembly,
-        createdBy: "agent",
-        agentName: "VideoShotScriptAgent",
-        promptTemplateVersion: result.templateVersion
+        promptAssembly: promptAssembly("video-script", "propose"),
+        createdBy: "system",
+        agentName: "DeterministicVideoScriptAssembler",
+        promptTemplateVersion: SHOT_VIDEO_ASSEMBLER_VERSION
       });
       const artifactView = promptArtifactView(artifact);
 
@@ -1302,17 +1334,34 @@ export const shotWorkflowService = {
         videoScriptArtifactId: artifact.id,
         count,
         aspectRatio,
-        idempotencyKey: `video:${artifact.id}:${traceId}`
+        idempotencyKey: `video:${artifact.id}:${traceId}`,
+        providerRequest: {
+          prompt: buildSeedanceShotVideoPrompt({
+            providerPrompt: assembled.providerPrompt,
+            scriptJson: { ...assembled.scriptJson, context: sourceFingerprint },
+          }),
+          providerPrompt: assembled.providerPrompt,
+          firstFrameCandidateId: selectedImage.id,
+          firstFrameUrl: selectedImage.imageUrl ?? null,
+          lastFrameCandidateId: neighbors.next?.id ?? null,
+          lastFrameUrl: neighbors.next?.url ?? null,
+          durationSec,
+          count,
+          aspectRatio,
+          voiceover: hydrated.shotPromptShot?.voiceover ?? "",
+          voiceProfileHash: sourceFingerprint.voiceProfileHash,
+          assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
+        },
       });
       await traceService.record({
         workspaceId: args.workspaceId,
         shotId: args.shotId,
         traceType: "agent_run",
         name: "video_script_proposed",
-        outputPreview: result.output.providerPrompt.slice(0, 200),
+        outputPreview: assembled.providerPrompt.slice(0, 200),
         metadata: {
-          templateVersion: result.templateVersion,
-          promptAssembly: result.promptAssembly,
+          templateVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
+          promptAssembly: promptAssembly("video-script", "propose"),
           context: sourceFingerprint,
           frames: {
             firstFrameCandidateId: selectedImage.id,
@@ -1353,21 +1402,206 @@ export const shotWorkflowService = {
     }
   },
 
+  async regenerateVideoScript(args: {
+    workspaceId: string;
+    shotId: string;
+    baseArtifactId: string;
+    feedbackVideoCandidateId: string;
+    userDirection: string;
+  }) {
+    const shot = await db.db2.getShot(args.shotId);
+    assertShotInWorkspace(shot, args.workspaceId);
+    const { shots } = await assertShotInActiveShotSet(args.workspaceId, args.shotId);
+    const userDirection = args.userDirection.trim();
+    if (!userDirection) {
+      throw new HttpError(400, "USER_DIRECTION_REQUIRED", "userDirection is required for video feedback regeneration");
+    }
+    const baseArtifact = await db.db2.getVideoScriptArtifact(args.baseArtifactId);
+    if (baseArtifact.shotId !== args.shotId) {
+      throw new HttpError(
+        400,
+        "INVALID_BASE_VIDEO_SCRIPT",
+        "Base video script artifact does not belong to this shot"
+      );
+    }
+    const { candidate: feedbackVideoCandidate } = await assertLatestVideoFeedbackCandidate({
+      workspaceId: args.workspaceId,
+      shotId: args.shotId,
+      baseArtifactId: baseArtifact.id,
+      candidateId: args.feedbackVideoCandidateId,
+    });
+    const missingImageSelections = shots
+      .filter((item) => !item.selectedImageId)
+      .map((item) => item.id);
+    if (missingImageSelections.length > 0) {
+      throw new HttpError(
+        400,
+        "IMAGE_SELECTION_INCOMPLETE",
+        `All shots must have selected images before video scripting: ${missingImageSelections.join(", ")}`
+      );
+    }
+    const selected = await db.db2.getSelectedImage(args.shotId);
+    if (!selected) {
+      throw new HttpError(
+        400,
+        "IMAGE_SELECTION_INCOMPLETE",
+        "Cannot regenerate video script without a selected image"
+      );
+    }
+    const selectedImage = await db.db2.getImageCandidate(selected.imageCandidateId);
+    const hydrated = await hydratePromptContext({
+      workspaceId: args.workspaceId,
+      shot,
+      kind: "video"
+    });
+    const frameNeighbors = await neighborImagesFor(args.workspaceId, args.shotId);
+    const neighbors = { prev: undefined, next: frameNeighbors.next };
+    const traceId = nanoid();
+    const durationSec = durationForVideoScript(shot);
+    const count = resolveBatchCount("video");
+    const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
+    const shotGoal = shotGoalFor(shot, hydrated);
+    const voiceProfile = hydrated.shotPrompt?.tts.voiceProfile;
+    const assembled = assembleShotVideoScript({
+      shotGoal,
+      shotVideo: hydrated.shotPromptShot?.shotVideo ?? {},
+      durationSec,
+      voiceover: hydrated.shotPromptShot?.voiceover ?? "",
+      voiceProfile,
+      firstFrameCandidateId: selectedImage.id,
+      firstFrameUrl: selectedImage.imageUrl ?? null,
+      lastFrameCandidateId: neighbors.next?.id ?? null,
+      lastFrameUrl: neighbors.next?.url ?? null,
+      userDirection,
+      feedbackVideoCandidateId: feedbackVideoCandidate.id,
+      mode: "regenerate",
+    });
+    const sourceFingerprint = {
+      ...hydrated.summary,
+      ...(baseArtifact.sourceFingerprint && typeof baseArtifact.sourceFingerprint === "object"
+        ? { baseSourceFingerprint: baseArtifact.sourceFingerprint }
+        : {}),
+      baseArtifactId: baseArtifact.id,
+      userDirection,
+      editedAt: new Date().toISOString(),
+      shotGoal,
+      firstFrameCandidateId: selectedImage.id,
+      lastFrameCandidateId: neighbors.next?.id ?? null,
+      voiceProfile: voiceProfile ?? null,
+      voiceProfileHash: seedanceVoiceProfileHash(voiceProfile),
+      voiceover: hydrated.shotPromptShot?.voiceover ?? "",
+      feedbackVideoCandidateId: feedbackVideoCandidate.id,
+      feedbackVideoUrl: feedbackVideoCandidate.videoUrl,
+      number: count,
+      assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
+    };
+    const artifact = await createVideoScriptVersionAtomic({
+      shotId: args.shotId,
+      durationSec: assembled.durationSec,
+      scriptJson: { ...assembled.scriptJson, context: sourceFingerprint },
+      providerPrompt: assembled.providerPrompt,
+      basedOnImageCandidateId: selectedImage.id,
+      basedOnPrevImageCandidateId: undefined,
+      basedOnNextImageCandidateId: neighbors.next?.id,
+      sourceFingerprint,
+      promptAssembly: promptAssembly("video-script", "user-feedback-regenerate"),
+      createdBy: "user",
+      agentName: "DeterministicVideoScriptAssembler",
+      promptTemplateVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
+      baseArtifactId: baseArtifact.id,
+    });
+    const artifactView = promptArtifactView(artifact);
+    await db.db2.updateShot(args.shotId, {
+      activeVideoScriptArtifactId: artifact.id
+    });
+    const providerPrompt = buildSeedanceShotVideoPrompt({
+      providerPrompt: assembled.providerPrompt,
+      scriptJson: { ...assembled.scriptJson, context: sourceFingerprint },
+    });
+    const enqueued = await generationService.createVideoBatch({
+      workspaceId: args.workspaceId,
+      shotId: args.shotId,
+      videoScriptArtifactId: artifact.id,
+      count,
+      aspectRatio,
+      idempotencyKey: `video-regenerate:${artifact.id}:${traceId}`,
+      providerRequest: {
+        prompt: providerPrompt,
+        providerPrompt: assembled.providerPrompt,
+        firstFrameCandidateId: selectedImage.id,
+        firstFrameUrl: selectedImage.imageUrl ?? null,
+        lastFrameCandidateId: neighbors.next?.id ?? null,
+        lastFrameUrl: neighbors.next?.url ?? null,
+        durationSec,
+        count,
+        aspectRatio,
+        voiceover: hydrated.shotPromptShot?.voiceover ?? "",
+        voiceProfileHash: sourceFingerprint.voiceProfileHash,
+        feedbackVideoCandidateId: feedbackVideoCandidate.id,
+        feedbackVideoUrl: feedbackVideoCandidate.videoUrl,
+        source: "user-feedback-regenerate",
+        baseArtifactId: baseArtifact.id,
+        userDirection,
+        assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
+      },
+    });
+    await traceService.record({
+      workspaceId: args.workspaceId,
+      shotId: args.shotId,
+      traceType: "user_action",
+      name: "video_script_regenerated",
+      outputPreview: assembled.providerPrompt.slice(0, 200),
+      metadata: {
+        baseArtifactId: baseArtifact.id,
+        newArtifactId: artifact.id,
+        context: sourceFingerprint,
+        frames: {
+          firstFrameCandidateId: selectedImage.id,
+          lastFrameCandidateId: neighbors.next?.id ?? null,
+          firstFrameUrl: selectedImage.imageUrl ?? null,
+          lastFrameUrl: neighbors.next?.url ?? null
+        },
+        feedbackVideoCandidateId: feedbackVideoCandidate.id,
+        batchId: enqueued.batch.id,
+        requestedCount: count
+      }
+    });
+    return {
+      data: artifactView,
+      artifact: artifactView,
+      batch: enqueued.batch,
+      candidates: enqueued.candidates,
+      shotStatus: "VIDEO_GENERATING" as const,
+      nextAction: getNextAction("VIDEO_GENERATING"),
+      traceId,
+      context: sourceFingerprint,
+      frames: {
+        firstFrameCandidateId: selectedImage.id,
+        lastFrameCandidateId: neighbors.next?.id ?? null,
+        firstFrameUrl: selectedImage.imageUrl ?? null,
+        lastFrameUrl: neighbors.next?.url ?? null
+      },
+      poll: {
+        videoRoundsUrl: `/api/workspaces/${args.workspaceId}/shots/${args.shotId}/video-rounds`,
+        batchId: enqueued.batch.id
+      }
+    };
+  },
+
   async listVideoScripts(shotId: string) {
+    await getEditableShotOrThrow(shotId);
     return { data: await db.db2.listVideoScriptArtifacts(shotId) };
   },
 
   async selectVideo(args: {
-    workspaceId?: string;
+    workspaceId: string;
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId?: string;
   }) {
     const shot = await db.db2.getShot(args.shotId);
-    if (args.workspaceId) {
-      assertShotInWorkspace(shot, args.workspaceId);
-      await assertShotInActiveShotSet(args.workspaceId, args.shotId);
-    }
+    assertShotInWorkspace(shot, args.workspaceId);
+    await assertShotInActiveShotSet(args.workspaceId, args.shotId);
     const candidate = await db.db2.getVideoCandidate(args.videoCandidateId);
     if (candidate.shotId !== args.shotId || candidate.workspaceId !== shot.workspaceId) {
       throw new HttpError(
@@ -1393,19 +1627,6 @@ export const shotWorkflowService = {
     if (batch.shotId !== args.shotId || batch.workspaceId !== shot.workspaceId) {
       throw new HttpError(400, "INVALID_CANDIDATE", "Batch does not belong to this shot");
     }
-    const latestBatch = await db.db2.getLatestVideoBatchForShot(args.shotId);
-    if (
-      !latestBatch ||
-      latestBatch.id !== candidate.batchId ||
-      batch.videoScriptArtifactId !== shot.activeVideoScriptArtifactId
-    ) {
-      throw new HttpError(
-        409,
-        "STALE_CANDIDATE",
-        "Candidate is not from the active video round"
-      );
-    }
-
     await db.db2.upsertSelectedVideo({
       shotId: args.shotId,
       videoCandidateId: args.videoCandidateId,
@@ -1556,7 +1777,7 @@ export const shotWorkflowService = {
     what: "image_batch" | "video_batch";
     idempotencyKey: string;
   }) {
-    const shot = await db.db2.getShot(args.shotId);
+    const shot = await getEditableShotOrThrow(args.shotId);
     if (args.what === "image_batch") {
       if (!shot.activeImagePromptArtifactId) {
         throw new HttpError(409, "NO_ACTIVE_IMAGE_PROMPT");

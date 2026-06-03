@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/prompts','dist/prompts',{recursive:true,filter:(s)=>!/\\.(ts|tsx)$/.test(s)})\"",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/prompts','dist/prompts',{recursive:true,filter:(s)=>!/\\.(ts|tsx)$/.test(s)})\"",
     "pretest": "pnpm --filter @aigc-video/shared build",
     "test": "TRACE_LOG_SCOPE=tests AIGC_VIDEO_SKIP_ENV_FILE=true MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= node --import tsx --test \"src/**/*.test.ts\"",
     "probe:to-text": "tsx src/probes/to-text.ts",

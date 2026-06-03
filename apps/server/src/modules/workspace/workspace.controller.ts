@@ -468,14 +468,8 @@ export async function registerWorkspaceController(
   app.get(workspaceRoute("/shot-sets"), async (request, reply) => {
     try {
       const params = request.params as { workspaceId: string };
-      const query = request.query as { includeArchived?: string | boolean };
-      const includeArchived =
-        query.includeArchived === true || query.includeArchived === "true";
       return {
-        data: await shotSetService.listShotSets(
-          params.workspaceId,
-          includeArchived,
-        ),
+        data: await shotSetService.listShotSets(params.workspaceId),
       };
     } catch (error) {
       const httpError = toHttpError(error);
@@ -498,27 +492,6 @@ export async function registerWorkspaceController(
       return reply.status(httpError.statusCode).send(httpError);
     }
   });
-
-  app.get(
-    workspaceRoute("/shot-sets/:shotSetId/shots"),
-    async (request, reply) => {
-      try {
-        const params = request.params as {
-          workspaceId: string;
-          shotSetId: string;
-        };
-        return {
-          data: await shotSetService.listShotSetShots({
-            workspaceId: params.workspaceId,
-            shotSetId: params.shotSetId,
-          }),
-        };
-      } catch (error) {
-        const httpError = toHttpError(error);
-        return reply.status(httpError.statusCode).send(httpError);
-      }
-    },
-  );
 
   app.post("/api/workspaces/init", async (request, reply) => {
     try {

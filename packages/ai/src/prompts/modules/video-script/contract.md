@@ -1,6 +1,6 @@
 Input contract:
 - productBrief: approved product brief artifact.
-- shot: { index, objective, sceneDescription, voiceover, providerPromptFromShotPrompt, shotVideo }.
+- shot: { index, objective, sceneDescription, voiceover, providerPromptFromShotPrompt, shotVideo, voiceProfile }.
 - first_frame_url: backend-injected selected image URL for this shot.
 - last_frame_url: backend-injected selected image URL for the next shot, or null for the final shot.
 - number: backend-injected candidate count.
@@ -24,6 +24,8 @@ Required output behavior:
 6. providerPrompt must include camera motion, subject motion, duration/tempo, first-to-last-frame transition intent, and product visibility during motion.
 7. voiceover must equal shot.voiceover exactly when shot.voiceover is present.
 8. When voiceover is non-empty, providerPrompt must include the exact voiceover line as an audio/narration requirement, not as on-screen text.
+8a. When shot.voiceProfile is present, use it as the single voice style for this shot's narration wording. Do not change the voiceover text.
+8b. Do not copy, overlay, rewrite, or render the voiceover as subtitles, title cards, stickers, captions, or garbled text in the video frame.
 9. negativePrompt must include product deformation, camera shake, and unnatural motion constraints.
 10. Do not invent product attributes not present in approved upstream artifacts.
 11. Do not simply copy image prompt wording or describe only static composition; visual details may appear only as anchors for motion generation.

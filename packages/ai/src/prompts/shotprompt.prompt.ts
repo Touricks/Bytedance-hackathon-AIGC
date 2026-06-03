@@ -13,6 +13,7 @@ export interface BuildShotPromptPromptInput {
   material: MaterialIntakeArtifact;
   storyboard: StoryboardArtifact;
   aspectRatio: "9:16" | "16:9" | "1:1";
+  creativeRequirements?: unknown;
 }
 
 export interface BuildShotPromptPromptViewInput extends BuildShotPromptPromptInput {
@@ -26,6 +27,58 @@ function voiceoverPreview(input: StoryboardArtifact) {
   return input.shots
     .map((shot) => `${shot.index + 1}. ${shot.voiceover}`)
     .join("\n");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function requirementSection(
+  data: unknown,
+  section: "image" | "script" | "storyboard" | "shotImage" | "shotVideo",
+) {
+  if (!isRecord(data)) return {};
+  const value = data[section];
+  return isRecord(value) ? value : {};
+}
+
+function formatRequirementValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    const items = value
+      .map((item) => formatRequirementValue(item))
+      .filter((item) => item && item !== "未填写");
+    return items.length > 0 ? items.join("，") : "未填写";
+  }
+  if (typeof value === "string") {
+    return value.trim() || "未填写";
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (isRecord(value)) {
+    return JSON.stringify(value);
+  }
+  return "未填写";
+}
+
+function formatCreativeRequirementsForShotPrompt(data: unknown) {
+  if (data === undefined) return null;
+  const image = requirementSection(data, "image");
+  const script = requirementSection(data, "script");
+  const storyboard = requirementSection(data, "storyboard");
+  const shotImage = requirementSection(data, "shotImage");
+  const shotVideo = requirementSection(data, "shotVideo");
+  return [
+    "已批准创作要求（导演约束）：",
+    "以下内容来自 current approved prompt_requirements_artifacts.data。生成分镜生成要求时优先遵守，并按 providerPrompt / shotImage / shotVideo / tts.voiceProfile 各自职责吸收。",
+    `- 图像风格：${formatRequirementValue(image.style)}`,
+    `- 图像构图：${formatRequirementValue(image.composition)}`,
+    `- 图像避免项：${formatRequirementValue(image.avoid)}`,
+    `- 剧本语气：${formatRequirementValue(script.tone)}`,
+    `- 分镜节奏：${formatRequirementValue(storyboard.rhythm)}`,
+    `- 分镜图全局要求：${formatRequirementValue(shotImage.global)}`,
+    `- 分镜视频全局要求：${formatRequirementValue(shotVideo.global)}`,
+  ].join("\n");
 }
 
 export function buildShotPromptPromptView(
@@ -80,9 +133,13 @@ export function buildShotPromptPromptView(
 }
 
 export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
+  const creativeRequirements = formatCreativeRequirementsForShotPrompt(
+    input.creativeRequirements,
+  );
   return buildModulePrompt({
     moduleId: "shotprompt",
     runtimeContext: [
+      creativeRequirements,
       "输入：",
       `画幅比例：${input.aspectRatio}`,
       `必须输出 shot 数量：${input.storyboard.shots.length}`,
@@ -93,6 +150,8 @@ export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
       JSON.stringify(input.material.assets),
       "已确认分镜：",
       JSON.stringify(input.storyboard),
-    ].join("\n"),
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join("\n"),
   }).prompt;
 }

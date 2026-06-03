@@ -326,8 +326,17 @@ export function buildShotPromptResponseFormat(input: {
             enabled: booleanSchema,
             source: { type: "string", enum: ["shots.voiceover"] },
             voiceover: plainString,
+            voiceProfile: strictObject(
+              {
+                gender: { type: "string", enum: ["female", "male"] },
+                tone: nonEmptyString,
+                pitch: { type: "string", enum: ["low", "medium", "high"] },
+                pace: { type: "string", enum: ["slow", "medium", "fast"] },
+              },
+              ["gender", "tone", "pitch", "pace"],
+            ),
           },
-          ["enabled", "source", "voiceover"],
+          ["enabled", "source", "voiceover", "voiceProfile"],
         ),
         assumptions: arrayOf(plainString),
       },
@@ -341,28 +350,6 @@ export function buildShotPromptResponseFormat(input: {
         "tts",
         "assumptions",
       ],
-    ),
-  });
-}
-
-export function buildFeedbackRouteResponseFormat(
-  schemaVersion: string,
-): ArkJsonSchemaResponseFormat {
-  return responseFormat({
-    name: "feedback_route_v1",
-    description: "把成片反馈结构化路由到 brief、storyboard 或 shotprompt。",
-    schemaVersion,
-    schema: strictObject(
-      {
-        targetArtifact: {
-          type: "string",
-          enum: ["brief", "storyboard", "shotprompt"],
-        },
-        reason: nonEmptyString,
-        revisionInstruction: nonEmptyString,
-        confidence: { type: "string", enum: ["high", "medium", "low"] },
-      },
-      ["targetArtifact", "reason", "revisionInstruction", "confidence"],
     ),
   });
 }

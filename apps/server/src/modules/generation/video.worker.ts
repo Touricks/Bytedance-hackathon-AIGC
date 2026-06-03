@@ -116,6 +116,14 @@ export async function processGenerateVideoCandidate(
       candidateId: data.candidateId,
       aspectRatio: data.aspectRatio,
       failCandidateOnError: isFinalAttempt,
+      providerTrace: {
+        workspaceId: data.workspaceId,
+        shotId: data.shotId,
+        jobId: data.jobId,
+        attempt: currentAttempt,
+        maxAttempts: attempts,
+        candidateIndex: data.candidateIndex,
+      },
       adapter,
     });
     await jobRepository.update(data.jobId, {
@@ -209,6 +217,13 @@ export async function processGenerateVideos(
       batchId: data.batchId,
       count: data.count,
       aspectRatio: data.aspectRatio,
+      providerTrace: {
+        workspaceId: data.workspaceId,
+        shotId: data.shotId,
+        jobId: data.jobId,
+        attempt: 1,
+        maxAttempts: 1,
+      },
       adapter,
     });
   } catch (err) {

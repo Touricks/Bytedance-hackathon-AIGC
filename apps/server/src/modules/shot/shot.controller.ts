@@ -6,6 +6,7 @@ import {
   proposeImagePromptRequest,
   proposeVideoScriptRequest,
   regenerateImagePromptRequest,
+  regenerateVideoScriptRequest,
   retryRequest,
   selectImageRequest,
   selectVideoRequest,
@@ -91,6 +92,7 @@ export async function registerShotController(app: FastifyInstance) {
           workspaceId: params.workspaceId,
           shotId: params.shotId,
           baseArtifactId: body.baseArtifactId,
+          feedbackImageCandidateId: body.feedbackImageCandidateId,
           userDirection: body.userDirection,
         });
       } catch (e) {
@@ -155,6 +157,26 @@ export async function registerShotController(app: FastifyInstance) {
         return await shotWorkflowService.proposeVideoScript({
           workspaceId: params.workspaceId,
           shotId: params.shotId,
+          userDirection: body.userDirection,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = regenerateVideoScriptRequest.parse(req.body);
+        return await shotWorkflowService.regenerateVideoScript({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+          baseArtifactId: body.baseArtifactId,
+          feedbackVideoCandidateId: body.feedbackVideoCandidateId,
           userDirection: body.userDirection,
         });
       } catch (e) {

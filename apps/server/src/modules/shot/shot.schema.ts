@@ -28,7 +28,8 @@ export const patchShotAssetRefsRequest = z
 
 export const regenerateImagePromptRequest = z.object({
   baseArtifactId: z.string().min(1),
-  userDirection: z.string().optional(),
+  feedbackImageCandidateId: z.string().min(1),
+  userDirection: z.string().trim().min(1).max(1000),
 }).strict();
 
 export const selectImageRequest = z.object({
@@ -53,6 +54,12 @@ export const selectImageRequest = z.object({
 
 export const proposeVideoScriptRequest = z.object({
   userDirection: z.string().optional(),
+}).strict();
+
+export const regenerateVideoScriptRequest = z.object({
+  baseArtifactId: z.string().min(1),
+  feedbackVideoCandidateId: z.string().min(1),
+  userDirection: z.string().trim().min(1).max(1000),
 }).strict();
 
 export const selectVideoRequest = z.object({

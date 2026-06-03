@@ -1,14 +1,5 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Agent, Runner, OpenAIProvider } from "@openai/agents";
 import type { TaskProviderConfig } from "../providers/provider-config.js";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-
-export function loadSystemPrompt(relativePath: string): string {
-  return readFileSync(path.join(here, "..", "prompts", relativePath), "utf8");
-}
 
 export interface RunnerContext {
   workspaceId: string;

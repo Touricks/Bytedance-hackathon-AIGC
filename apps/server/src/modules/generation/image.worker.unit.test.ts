@@ -7,6 +7,10 @@ import {
   __setGeneratedAssetPersisterForTests,
 } from "./image.worker.js";
 import { runImageGenerationCandidate } from "./direct-generation.js";
+import {
+  __setProviderCallTraceRecorderForTests,
+  type ProviderCallTraceInput,
+} from "../trace/provider-call-trace.js";
 
 type ProviderCall = {
   args: unknown;
@@ -123,6 +127,29 @@ import { jobRepository } from "../job/job.repository.js";
 
 const origRecord = traceService.record;
 const origJobUpdate = jobRepository.update;
+const origModelMode = process.env.MODEL_MODE;
+
+async function withModelMode<T>(
+  value: string | undefined,
+  fn: () => Promise<T>,
+) {
+  const previous = process.env.MODEL_MODE;
+  if (value === undefined) {
+    delete process.env.MODEL_MODE;
+  } else {
+    process.env.MODEL_MODE = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.MODEL_MODE;
+    } else {
+      process.env.MODEL_MODE = previous;
+    }
+    __setProviderCallTraceRecorderForTests(undefined);
+  }
+}
 
 describe("processGenerateImages", () => {
   before(() => {
@@ -136,6 +163,12 @@ describe("processGenerateImages", () => {
     __setImageProviderForTests(undefined);
     __setAssetUrlResolverForTests(undefined);
     __setGeneratedAssetPersisterForTests(undefined);
+    __setProviderCallTraceRecorderForTests(undefined);
+    if (origModelMode === undefined) {
+      delete process.env.MODEL_MODE;
+    } else {
+      process.env.MODEL_MODE = origModelMode;
+    }
   });
 
   it("creates candidates, updates batch to SUCCEEDED, transitions shot", async () => {
@@ -259,6 +292,242 @@ describe("processGenerateImages", () => {
       result.candidate.imageUrl,
       "/api/workspaces/ws-1/materials/generated-images/imc-1.jpg",
     );
+  });
+
+  it("records provider call trace for a successful queued image candidate in real mode", async () => {
+    await withModelMode("real", async () => {
+      const traces: ProviderCallTraceInput[] = [];
+      __setProviderCallTraceRecorderForTests(async (input) => {
+        traces.push(input);
+      });
+      __setImageProviderForTests(async () => ({
+        provider: "ark-seedream",
+        model: "ep-image",
+        candidates: [{ imageUrl: "https://provider/image.jpg" }],
+        candidateErrors: [],
+      }));
+      __setGeneratedAssetPersisterForTests(async (input) => ({
+        stableUrl: `/api/workspaces/${input.workspaceId}/materials/generated-images/${input.candidateId}.jpg`,
+        objectKey: `materials/generated-images/${input.candidateId}.jpg`,
+        providerTemporaryUrl: input.sourceUrl,
+      }));
+
+      const fakeDb = makeFakeDb();
+      const ctx = await fakeDb.bootstrap("RUNNING");
+      await fakeDb.adapter.insertImageCandidate({
+        id: "imc-trace",
+        batchId: ctx.batchId,
+        workspaceId: "ws-1",
+        shotId: "shot-1",
+        imageUrl: null,
+        objectKey: null,
+        width: null,
+        height: null,
+        seed: null,
+        provider: "ark-seedream",
+        providerResponse: { candidateIndex: 0 },
+        status: "PENDING",
+        errorMessage: null,
+      });
+
+      await runImageGenerationCandidate({
+        batchId: ctx.batchId,
+        candidateId: "imc-trace",
+        aspectRatio: "9:16",
+        providerTrace: {
+          workspaceId: "ws-1",
+          shotId: "shot-1",
+          jobId: "job-image-trace",
+          attempt: 2,
+          maxAttempts: 3,
+          candidateIndex: 0,
+        },
+        adapter: fakeDb.adapter as any,
+      });
+
+      assert.equal(traces.length, 1);
+      assert.equal(traces[0]?.mediaType, "image");
+      assert.equal(traces[0]?.status, "succeeded");
+      assert.equal(traces[0]?.jobId, "job-image-trace");
+      assert.equal(traces[0]?.attempt, 2);
+      assert.equal(traces[0]?.maxAttempts, 3);
+      assert.equal(traces[0]?.candidateId, "imc-trace");
+      assert.equal(traces[0]?.candidateIndex, 0);
+      assert.equal(traces[0]?.prompt, "p");
+      assert.equal(traces[0]?.generatedCount, 1);
+      assert.equal(
+        traces[0]?.stableUrl,
+        "/api/workspaces/ws-1/materials/generated-images/imc-trace.jpg",
+      );
+      assert.equal(
+        traces[0]?.providerTemporaryUrl,
+        "https://provider/image.jpg",
+      );
+    });
+  });
+
+  it("records provider call trace for a failed queued image candidate in real mode", async () => {
+    await withModelMode("real", async () => {
+      const traces: ProviderCallTraceInput[] = [];
+      __setProviderCallTraceRecorderForTests(async (input) => {
+        traces.push(input);
+      });
+      __setImageProviderForTests(async () => {
+        throw new Error("temporary provider limit");
+      });
+
+      const fakeDb = makeFakeDb();
+      const ctx = await fakeDb.bootstrap("RUNNING");
+      await fakeDb.adapter.insertImageCandidate({
+        id: "imc-trace-fail",
+        batchId: ctx.batchId,
+        workspaceId: "ws-1",
+        shotId: "shot-1",
+        imageUrl: null,
+        objectKey: null,
+        width: null,
+        height: null,
+        seed: null,
+        provider: "ark-seedream",
+        providerResponse: { candidateIndex: 0 },
+        status: "PENDING",
+        errorMessage: null,
+      });
+
+      await assert.rejects(
+        runImageGenerationCandidate({
+          batchId: ctx.batchId,
+          candidateId: "imc-trace-fail",
+          aspectRatio: "9:16",
+          providerTrace: {
+            workspaceId: "ws-1",
+            shotId: "shot-1",
+            jobId: "job-image-fail",
+            attempt: 1,
+            maxAttempts: 2,
+            candidateIndex: 0,
+          },
+          adapter: fakeDb.adapter as any,
+        }),
+        /temporary provider limit/,
+      );
+
+      assert.equal(traces.length, 1);
+      assert.equal(traces[0]?.mediaType, "image");
+      assert.equal(traces[0]?.status, "failed");
+      assert.equal(traces[0]?.generatedCount, 0);
+      assert.equal(traces[0]?.error, "temporary provider limit");
+      assert.equal(traces[0]?.jobId, "job-image-fail");
+    });
+  });
+
+  it("does not record provider call trace outside real mode", async () => {
+    await withModelMode("mock", async () => {
+      const traces: ProviderCallTraceInput[] = [];
+      __setProviderCallTraceRecorderForTests(async (input) => {
+        traces.push(input);
+      });
+      __setImageProviderForTests(async () => ({
+        provider: "ark-seedream",
+        model: "ep-image",
+        candidates: [{ imageUrl: "https://provider/image.jpg" }],
+        candidateErrors: [],
+      }));
+      __setGeneratedAssetPersisterForTests(async (input) => ({
+        stableUrl: input.sourceUrl,
+        objectKey: null,
+        providerTemporaryUrl: input.sourceUrl,
+      }));
+
+      const fakeDb = makeFakeDb();
+      const ctx = await fakeDb.bootstrap("RUNNING");
+      await fakeDb.adapter.insertImageCandidate({
+        id: "imc-mock-trace",
+        batchId: ctx.batchId,
+        workspaceId: "ws-1",
+        shotId: "shot-1",
+        imageUrl: null,
+        objectKey: null,
+        width: null,
+        height: null,
+        seed: null,
+        provider: "ark-seedream",
+        providerResponse: { candidateIndex: 0 },
+        status: "PENDING",
+        errorMessage: null,
+      });
+
+      await runImageGenerationCandidate({
+        batchId: ctx.batchId,
+        candidateId: "imc-mock-trace",
+        aspectRatio: "9:16",
+        providerTrace: {
+          workspaceId: "ws-1",
+          shotId: "shot-1",
+          jobId: "job-image-mock",
+          attempt: 1,
+          maxAttempts: 1,
+          candidateIndex: 0,
+        },
+        adapter: fakeDb.adapter as any,
+      });
+
+      assert.equal(traces.length, 0);
+    });
+  });
+
+  it("does not fail image generation when provider call trace append fails", async () => {
+    await withModelMode("real", async () => {
+      __setProviderCallTraceRecorderForTests(async () => {
+        throw new Error("disk full");
+      });
+      __setImageProviderForTests(async () => ({
+        provider: "ark-seedream",
+        model: "ep-image",
+        candidates: [{ imageUrl: "https://provider/image.jpg" }],
+        candidateErrors: [],
+      }));
+      __setGeneratedAssetPersisterForTests(async (input) => ({
+        stableUrl: `/api/workspaces/${input.workspaceId}/materials/generated-images/${input.candidateId}.jpg`,
+        objectKey: null,
+        providerTemporaryUrl: input.sourceUrl,
+      }));
+
+      const fakeDb = makeFakeDb();
+      const ctx = await fakeDb.bootstrap("RUNNING");
+      await fakeDb.adapter.insertImageCandidate({
+        id: "imc-trace-append-fail",
+        batchId: ctx.batchId,
+        workspaceId: "ws-1",
+        shotId: "shot-1",
+        imageUrl: null,
+        objectKey: null,
+        width: null,
+        height: null,
+        seed: null,
+        provider: "ark-seedream",
+        providerResponse: { candidateIndex: 0 },
+        status: "PENDING",
+        errorMessage: null,
+      });
+
+      const result = await runImageGenerationCandidate({
+        batchId: ctx.batchId,
+        candidateId: "imc-trace-append-fail",
+        aspectRatio: "9:16",
+        providerTrace: {
+          workspaceId: "ws-1",
+          shotId: "shot-1",
+          jobId: "job-image-append-fail",
+          attempt: 1,
+          maxAttempts: 1,
+          candidateIndex: 0,
+        },
+        adapter: fakeDb.adapter as any,
+      });
+
+      assert.equal(result.candidate.status, "SUCCEEDED");
+    });
   });
 
   it("leaves a candidate retryable before the final queue attempt", async () => {

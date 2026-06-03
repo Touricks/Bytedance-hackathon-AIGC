@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe("pipeline contract registry", () => {
-  it("uses default V1 contract versions", () => {
+  it("uses current workspace module contract versions", () => {
     const registry = getPipelineContracts();
 
     assert.equal(registry.contractSet, "v1");
@@ -32,9 +32,7 @@ describe("pipeline contract registry", () => {
         ["material_intake", "material-intake.v1"],
         ["product_brief", "product-brief.v1"],
         ["storyboard", "ugc-storyboard.v1"],
-        ["shotprompt", "video-shotprompt.v1"],
-        ["feedback_route", "feedback-route.v1"],
-        ["video_export", "seedance-video-export.v1"]
+        ["shotprompt", "video-shotprompt.v1"]
       ]
     );
   });
@@ -43,15 +41,15 @@ describe("pipeline contract registry", () => {
     process.env.AIGC_VIDEO_PIPELINE_CONTRACT_SET = "local-exp";
     process.env.AIGC_VIDEO_PIPELINE_CONTRACT_OVERRIDES = JSON.stringify({
       material_intake: "material-intake.local-exp",
-      video_export: "seedance-video-export.local-exp"
+      shotprompt: "video-shotprompt.local-exp"
     });
 
     const registry = getPipelineContracts();
     const material = getPipelineContractStep("material_intake");
-    const video = getPipelineContractStep("video_export");
+    const shotprompt = getPipelineContractStep("shotprompt");
 
     assert.equal(registry.contractSet, "local-exp");
     assert.equal(material.activeVersion, "material-intake.local-exp");
-    assert.equal(video.activeVersion, "seedance-video-export.local-exp");
+    assert.equal(shotprompt.activeVersion, "video-shotprompt.local-exp");
   });
 });

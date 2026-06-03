@@ -484,26 +484,31 @@ describe("workspace API", () => {
 
   it("rejects deleting a workspace with active generation work", async () => {
     const { workspaceId, directory } = await createInitializedWorkspace(app);
+    const jobId = `delete-busy-${Date.now()}`;
     await db.db2.pool().query(
       `insert into generation_jobs
          (id, workspace_id, job_type, status, queue_name, payload)
        values ($1, $2, 'generate_images', 'PENDING', 'generation_v2', '{}'::jsonb)`,
-      [`delete-busy-${Date.now()}`, workspaceId],
+      [jobId, workspaceId],
     );
 
-    const deleteResponse = await app.inject({
-      method: "DELETE",
-      url: `/api/workspaces/${workspaceId}`,
-    });
+    try {
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/workspaces/${workspaceId}`,
+      });
 
-    assert.equal(deleteResponse.statusCode, 409, deleteResponse.body);
-    assert.equal(deleteResponse.json().code, "WORKSPACE_DELETE_BUSY");
-    await stat(path.join(directory, ".daireel", "workspace.json"));
-    const statusResponse = await app.inject({
-      method: "GET",
-      url: `/api/workspaces/${workspaceId}/status`,
-    });
-    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+      assert.equal(deleteResponse.statusCode, 409, deleteResponse.body);
+      assert.equal(deleteResponse.json().code, "WORKSPACE_DELETE_BUSY");
+      await stat(path.join(directory, ".daireel", "workspace.json"));
+      const statusResponse = await app.inject({
+        method: "GET",
+        url: `/api/workspaces/${workspaceId}/status`,
+      });
+      assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    } finally {
+      await db.db2.pool().query(`delete from generation_jobs where id = $1`, [jobId]);
+    }
   });
 
   it("rejects S3 workspace deletion as explicitly unsupported in the MVP", async () => {

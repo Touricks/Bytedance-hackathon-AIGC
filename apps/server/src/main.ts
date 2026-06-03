@@ -1,4 +1,4 @@
-import { config, shouldStartApi } from "./common/config.js";
+import { config, shouldStartApi, shouldStartWorker } from "./common/config.js";
 import { logger } from "./common/logger.js";
 import { buildServer } from "./app.js";
 import { db } from "./db/client.js";
@@ -29,15 +29,19 @@ registerGenerationV2Processor(async (data, meta) => {
   }
   if (data.kind === "compose_final_video") return processComposeFinalVideo(data);
 });
-startGenerationV2Worker();
+if (shouldStartWorker()) {
+  startGenerationV2Worker();
+}
 
 if (shouldStartApi()) {
   const app = await buildServer();
   // Sweep any in-flight jobs left over from a previous boot.
-  try {
-    await recoverInflightGenerationJobs();
-  } catch (err) {
-    logger.error("recoverInflightGenerationJobs failed", { err });
+  if (shouldStartWorker()) {
+    try {
+      await recoverInflightGenerationJobs();
+    } catch (err) {
+      logger.error("recoverInflightGenerationJobs failed", { err });
+    }
   }
   await app.listen({ port: config.port, host: "0.0.0.0" });
   logger.info(`API listening on http://localhost:${config.port}`);

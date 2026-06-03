@@ -10,6 +10,8 @@ export interface ImagePromptAgentInput {
   userDirection?: string;
   number?: number;
   image_ref?: string;
+  feedbackImageRef?: string;
+  feedbackImageCandidateId?: string;
   materialIntake?: unknown;
   previousImagePromptText?: string;
   compiledShotRequirements?: string;
@@ -53,6 +55,15 @@ export async function runStoryboardImagePromptAgent(input: {
               assetId: input.payload.image_ref,
               usage: "scene_reference" as const,
               instruction: "保留 image_ref 的静态场景、光线、色调和构图连续性",
+            },
+          ]
+        : []),
+      ...(input.payload.feedbackImageRef
+        ? [
+            {
+              assetId: input.payload.feedbackImageRef,
+              usage: "composition_reference" as const,
+              instruction: "以当前已生成分镜图作为反馈基准，保留可用的主体、构图和场景基础，并按本次反馈调整",
             },
           ]
         : []),

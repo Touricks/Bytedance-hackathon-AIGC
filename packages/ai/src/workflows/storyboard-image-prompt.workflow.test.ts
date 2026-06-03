@@ -31,6 +31,8 @@ describe("runStoryboardImagePromptAgent", () => {
           "shotImage 静态关键帧要求:\n- scene: 桌面静物\n\nshotVideo 动态与连续性要求:\n- cameraMotion: 缓慢推进",
         userDirection: "减少背景杂物",
         image_ref: "asset_previous_still",
+        feedbackImageRef: "asset_current_generated_still",
+        feedbackImageCandidateId: "imc_current",
         referenceAssets: [{ id: "asset_product", role: "product_identity", summary: "主商品图" }],
       },
     });
@@ -39,7 +41,12 @@ describe("runStoryboardImagePromptAgent", () => {
     assert.equal(result.output.visualStyle, null);
     assert.equal(result.output.composition, null);
     assert.equal(result.output.lighting, null);
-    assert.equal(result.output.referenceImageUsage.length, 2);
+    assert.equal(result.output.referenceImageUsage.length, 3);
+    assert.deepEqual(result.output.referenceImageUsage[2], {
+      assetId: "asset_current_generated_still",
+      usage: "composition_reference",
+      instruction: "以当前已生成分镜图作为反馈基准，保留可用的主体、构图和场景基础，并按本次反馈调整",
+    });
     assert.match(result.output.promptText, /减少背景杂物/);
 
     const outputText = JSON.stringify(result.output);

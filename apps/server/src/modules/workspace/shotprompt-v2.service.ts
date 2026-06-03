@@ -296,7 +296,13 @@ export const shotPromptV2Service = {
       runtimeMode() === "real"
         ? (
             await generateShotPromptWithArk(
-              { brief, material, storyboard, aspectRatio },
+              {
+                brief,
+                material,
+                storyboard,
+                aspectRatio,
+                creativeRequirements: sources.requirements.data,
+              },
               {
                 traceLogger: createWorkspaceTraceLogger(localPath, workspace),
               },

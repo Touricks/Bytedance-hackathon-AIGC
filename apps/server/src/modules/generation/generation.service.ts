@@ -16,6 +16,7 @@ export const generationService = {
     idempotencyKey: string;
     providerRequest?: Record<string, unknown>;
     referenceImageUrls?: string[];
+    referenceImageUrlsAfterAssets?: string[];
   }) {
     const existing = await db.db2.getImageBatchByIdempotencyKey(input.idempotencyKey);
     if (existing) {
@@ -67,6 +68,7 @@ export const generationService = {
         imagePromptArtifactId: input.imagePromptArtifactId,
         aspectRatio: input.aspectRatio,
         referenceImageUrls: input.referenceImageUrls ?? [],
+        referenceImageUrlsAfterAssets: input.referenceImageUrlsAfterAssets ?? [],
       };
       const job = await jobRepository.insert({
         id: "job_" + nanoid(10),
@@ -97,6 +99,7 @@ export const generationService = {
         imagePromptArtifactId: input.imagePromptArtifactId,
         aspectRatio: input.aspectRatio,
         referenceImageUrls: input.referenceImageUrls,
+        referenceImageUrlsAfterAssets: input.referenceImageUrlsAfterAssets,
         traceId: nanoid(),
       });
       jobIds.push(job.id);
@@ -126,6 +129,7 @@ export const generationService = {
     count?: number;
     aspectRatio: "9:16" | "16:9" | "1:1";
     idempotencyKey: string;
+    providerRequest?: Record<string, unknown>;
   }) {
     const existing = await db.db2.getVideoBatchByIdempotencyKey(input.idempotencyKey);
     if (existing) {
@@ -148,7 +152,7 @@ export const generationService = {
       failedCount: 0,
       provider: "seedance",
       aspectRatio: input.aspectRatio,
-      providerRequest: {},
+      providerRequest: input.providerRequest ?? {},
       errorMessage: null,
       idempotencyKey: input.idempotencyKey,
     });
@@ -257,9 +261,11 @@ export const generationService = {
       `select s.id as shot_id,
               s.order_index,
               s.active_video_script_artifact_id,
-              v.video_candidate_id
+              v.video_candidate_id,
+              b.video_script_artifact_id as selected_video_script_artifact_id
        from storyboard_shots s
        left join video_select_artifacts v on v.shot_id = s.id
+       left join video_generation_batches b on b.id = v.video_generation_batch_id
        where s.workspace_id = $1
          and s.shot_set_id = $2
        order by s.order_index asc`,
@@ -270,6 +276,10 @@ export const generationService = {
       activeVideoScriptArtifactId:
         typeof row.active_video_script_artifact_id === "string"
           ? row.active_video_script_artifact_id
+          : null,
+      selectedVideoScriptArtifactId:
+        typeof row.selected_video_script_artifact_id === "string"
+          ? row.selected_video_script_artifact_id
           : null,
       selectedVideoId:
         typeof row.video_candidate_id === "string" ? row.video_candidate_id : null,
@@ -282,7 +292,7 @@ export const generationService = {
     const sourceScriptIds: string[] = [];
     for (const s of shots) {
       sourceShotVideoIds.push(s.selectedVideoId!);
-      const script = s.activeVideoScriptArtifactId;
+      const script = s.selectedVideoScriptArtifactId ?? s.activeVideoScriptArtifactId;
       if (!script) {
         throw new HttpError(409, "STALE_SELECTIONS", `Shot ${s.id} has no active script`);
       }
