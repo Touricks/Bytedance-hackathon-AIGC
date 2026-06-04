@@ -14,6 +14,7 @@ import {
   type ProviderEnv,
 } from "../providers/provider-config.js";
 import { buildViralImitationResponseFormat } from "../contracts/response-formats.js";
+import { searchTemplates } from "../data/viral-templates.js";
 import type { FileTraceLogger } from "../trace/trace-log.js";
 
 export type { ViralImitationInput };
@@ -36,7 +37,15 @@ export async function generateViralImitationWithArk(
 ): Promise<ViralImitationResult> {
   const contract = getPipelineContractStep("storyboard");
   const env = options.env ?? process.env;
-  const prompt = buildViralImitationPrompt(input);
+
+  const candidateTemplates =
+    input.candidateTemplates ??
+    searchTemplates(
+      { product: input.brief.product },
+      3,
+    );
+
+  const prompt = buildViralImitationPrompt({ ...input, candidateTemplates });
   const responseFormat = buildViralImitationResponseFormat({
     schemaVersion: contract.activeVersion,
     material: input.material,
@@ -57,7 +66,10 @@ export async function generateViralImitationWithArk(
     model: config.model,
     contractId: contract.id,
     contractVersion: contract.activeVersion,
-    meta: { promptVersion: VIRAL_IMITATION_PROMPT_VERSION },
+    meta: {
+      promptVersion: VIRAL_IMITATION_PROMPT_VERSION,
+      candidateTemplates: candidateTemplates.map((t) => t.id),
+    },
   });
 
   const rawOutput = (

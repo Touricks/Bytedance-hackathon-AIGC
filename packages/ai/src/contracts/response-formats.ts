@@ -140,26 +140,6 @@ export function buildProductBriefResponseFormat(
         bannedExpressions: arrayOf(plainString),
         landingInfo: nullableString(),
         assumptions: arrayOf(plainString),
-        angleType: {
-          type: "string",
-          enum: [
-            "problem_solution",
-            "before_after",
-            "lifestyle_upgrade",
-            "trust_proof",
-            "budget_value",
-          ],
-        },
-        emotionalTrigger: nonEmptyString,
-        conversionStyle: {
-          type: "string",
-          enum: [
-            "soft_cta",
-            "direct_cta",
-            "personal_recommendation",
-            "problem_triggered_cta",
-          ],
-        },
       },
       [
         "product",
@@ -172,9 +152,6 @@ export function buildProductBriefResponseFormat(
         "bannedExpressions",
         "landingInfo",
         "assumptions",
-        "angleType",
-        "emotionalTrigger",
-        "conversionStyle",
       ],
     ),
   });
@@ -225,50 +202,6 @@ export function buildStoryboardResponseFormat(input: {
   });
 }
 
-export function buildStoryboardVariantsResponseFormat(input: {
-  schemaVersion: string;
-  material: MaterialIntakeArtifact;
-}): ArkJsonSchemaResponseFormat {
-  const refs = materialRefs(input.material);
-  const shotSchema = strictObject(
-    {
-      index: integer,
-      purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
-      durationSec: positiveInteger,
-      scene: nonEmptyString,
-      visualDirection: nonEmptyString,
-      productAssetRef: refSchema(refs),
-      voiceover: nonEmptyString,
-      transition: nonEmptyString,
-    },
-    ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"],
-  );
-  const variantSchema = strictObject(
-    {
-      variantLabel: nonEmptyString,
-      templateStyle: { type: "string", enum: ["种草", "开箱", "lifestyle", "卖点"] },
-      angleType: {
-        type: "string",
-        enum: ["problem_solution", "before_after", "lifestyle_upgrade", "trust_proof", "budget_value"],
-      },
-      narrative: nonEmptyString,
-      totalDurationSec: positiveInteger,
-      shots: arrayOf(shotSchema, { minItems: 1 }),
-      sellingReason: nonEmptyString,
-    },
-    ["variantLabel", "templateStyle", "angleType", "narrative", "totalDurationSec", "shots", "sellingReason"],
-  );
-  return responseFormat({
-    name: "storyboard_variants_v1",
-    description: "一次生成 2-3 套不同风格的分镜候选，供用户选择。",
-    schemaVersion: input.schemaVersion,
-    schema: strictObject(
-      { variants: arrayOf(variantSchema, { minItems: 2, maxItems: 3 }) },
-      ["variants"],
-    ),
-  });
-}
-
 export function buildShotPromptResponseFormat(input: {
   schemaVersion: string;
   material: MaterialIntakeArtifact;
@@ -294,6 +227,27 @@ export function buildShotPromptResponseFormat(input: {
               providerPrompt: nonEmptyString,
               referenceAssetRefs: arrayOf(refSchema(refs)),
               voiceover: nonEmptyString,
+              shotImage: strictObject(
+                {
+                  scene: nonEmptyString,
+                  composition: nonEmptyString,
+                  productVisibility: nonEmptyString,
+                  style: nonEmptyString,
+                  negative: arrayOf(plainString),
+                },
+                ["scene", "composition", "productVisibility", "style", "negative"],
+              ),
+              shotVideo: strictObject(
+                {
+                  cameraMotion: nonEmptyString,
+                  subjectMotion: nonEmptyString,
+                  firstFrameIntent: nonEmptyString,
+                  lastFrameIntent: nonEmptyString,
+                  continuity: nonEmptyString,
+                  negative: arrayOf(plainString),
+                },
+                ["cameraMotion", "subjectMotion", "firstFrameIntent", "lastFrameIntent", "continuity", "negative"],
+              ),
             },
             [
               "index",
@@ -302,6 +256,8 @@ export function buildShotPromptResponseFormat(input: {
               "providerPrompt",
               "referenceAssetRefs",
               "voiceover",
+              "shotImage",
+              "shotVideo",
             ],
           ),
           { minItems: 1 },
@@ -387,6 +343,90 @@ export function buildViralImitationResponseFormat(input: {
         assumptions: arrayOf(plainString),
       },
       ["viralTemplateUsed", "matchReason", "narrative", "totalDurationSec", "shots", "assumptions"],
+    ),
+  });
+}
+
+export function buildRegenerateShotPromptResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  return responseFormat({
+    name: "regenerate_shotprompt_v1",
+    description: "重新生成单个 shotprompt shot（含 shotImage / shotVideo 完整结构）。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        index: integer,
+        startSec: integer,
+        endSec: positiveInteger,
+        providerPrompt: nonEmptyString,
+        referenceAssetRefs: arrayOf(refSchema(refs)),
+        voiceover: nonEmptyString,
+        shotImage: strictObject(
+          {
+            scene: nonEmptyString,
+            composition: nonEmptyString,
+            productVisibility: nonEmptyString,
+            style: nonEmptyString,
+            negative: arrayOf(plainString),
+          },
+          ["scene", "composition", "productVisibility", "style", "negative"],
+        ),
+        shotVideo: strictObject(
+          {
+            cameraMotion: nonEmptyString,
+            subjectMotion: nonEmptyString,
+            firstFrameIntent: nonEmptyString,
+            lastFrameIntent: nonEmptyString,
+            continuity: nonEmptyString,
+            negative: arrayOf(plainString),
+          },
+          ["cameraMotion", "subjectMotion", "firstFrameIntent", "lastFrameIntent", "continuity", "negative"],
+        ),
+      },
+      ["index", "startSec", "endSec", "providerPrompt", "referenceAssetRefs", "voiceover", "shotImage", "shotVideo"],
+    ),
+  });
+}
+
+export function buildVideoBreakdownResponseFormat(
+  schemaVersion: string,
+): ArkJsonSchemaResponseFormat {
+  const shotSchema = strictObject(
+    {
+      purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+      description: nonEmptyString,
+      durationSec: positiveInteger,
+    },
+    ["purpose", "description", "durationSec"],
+  );
+  return responseFormat({
+    name: "video_breakdown_v1",
+    description: "对一段爆款视频进行结构化拆解，输出可复用的模板字段。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        hookTechnique: nonEmptyString,
+        sellingPoints: arrayOf(nonEmptyString, { minItems: 1 }),
+        structure: arrayOf(shotSchema, { minItems: 3 }),
+        emotionalArc: nonEmptyString,
+        copyStyle: nonEmptyString,
+        suggestedCategories: arrayOf(nonEmptyString, { minItems: 1 }),
+        suggestedName: nonEmptyString,
+        whyViral: nonEmptyString,
+      },
+      [
+        "hookTechnique",
+        "sellingPoints",
+        "structure",
+        "emotionalArc",
+        "copyStyle",
+        "suggestedCategories",
+        "suggestedName",
+        "whyViral",
+      ],
     ),
   });
 }

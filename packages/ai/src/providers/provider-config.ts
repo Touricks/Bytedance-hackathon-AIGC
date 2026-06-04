@@ -66,6 +66,16 @@ export function maskSecret(value: string): string {
   return `${value.slice(0, 4)}****${value.slice(-4)}`;
 }
 
+export function resolveTtsProviderConfig(
+  env: ProviderEnv = process.env,
+): import("./ark-tts.provider.js").TtsProviderConfig | null {
+  const apiKey = pickFirst(env, ["TTS_API_KEY", "ARK_API_KEY"]);
+  const endpointId = pickFirst(env, ["TTS_ENDPOINT_ID"]);
+  if (!apiKey || !endpointId) return null;
+  const baseURL = pickFirst(env, ["TTS_BASE_URL", "ARK_BASE_URL"]) ?? DEFAULT_ARK_BASE_URL;
+  return { provider: "ark-tts", apiKey, endpointId, baseURL };
+}
+
 // ----- legacy aliases (kept for callers in this wave; removed in Wave 2) -----
 export interface TextProviderConfig {
   provider: "ark";

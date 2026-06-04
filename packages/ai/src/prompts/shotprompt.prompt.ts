@@ -4,6 +4,7 @@ import type {
   StoryboardArtifact,
 } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
+import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const SHOTPROMPT_PROMPT_VERSION = "video-shotprompt.v1";
 
@@ -19,6 +20,61 @@ export interface BuildShotPromptPromptViewInput extends BuildShotPromptPromptInp
   promptVersion: string;
   provider: RuntimePromptView["provider"];
   model?: string;
+}
+
+interface CategoryVisualPreset {
+  label: string;
+  providerPromptStyle: string;
+  shotImageStyle: string;
+  keywords: RegExp;
+}
+
+const CATEGORY_VISUAL_PRESETS: CategoryVisualPreset[] = [
+  {
+    label: "食品饮品",
+    keywords: /食品|零食|饮品|餐饮|食物|美食|茶|咖啡|烘焙|糖果|坚果|乳制|调味|速食|特产|预制/,
+    providerPromptStyle:
+      "【食品品类】美食写真风格：暖橙金色调高饱和，侧逆光让食材纹理发光通透，食物表面有细腻光泽；hook 镜头必须有动态元素（蒸汽/流动/拉伸/掰开瞬间）；benefit/proof 强调质地细节（酥脆纹理/流心截面/水珠食材）；禁止冷色调，禁止平铺俯拍无光感构图",
+    shotImageStyle:
+      "美食写真，暖橙金色调，高饱和，侧逆光使食材纹理发光，食物表面有细腻光泽，背景浅焦虚化，画面通透有食欲感",
+  },
+  {
+    label: "美妆护肤",
+    keywords: /护肤|彩妆|美妆|面膜|精华|口红|粉底|眼影|防晒|美容|护发|香水/,
+    providerPromptStyle:
+      "【美妆品类】柔光美肤风格：柔和漫射光突出肌肤质感，产品质地特写（膏体/液体流动/涂抹过程），色彩准确还原产品色号，皮肤细腻无瑕疵感，整体干净明亮",
+    shotImageStyle:
+      "美妆写真，柔和漫射光，色彩准确高还原，产品质地特写清晰，肤感细腻，背景简洁不抢镜，整体明亮通透",
+  },
+  {
+    label: "3C数码",
+    keywords: /数码|3C|耳机|手机|电脑|平板|相机|充电|智能|电子|小家电|数码配件/,
+    providerPromptStyle:
+      "【数码品类】科技产品摄影风格：冷白或深色简洁背景，产品光泽金属感突出，边缘线条清晰锐利，功能细节特写（接口/按键/屏幕显示），光线方向明确制造高光和阴影对比",
+    shotImageStyle:
+      "科技产品摄影，冷白简洁背景，金属光泽感，边缘线条锐利，细节特写清晰，方向光制造高光对比，整体干净精致",
+  },
+  {
+    label: "运动健身",
+    keywords: /运动|健身|户外|跑步|瑜伽|球|器材|保健|营养|蛋白/,
+    providerPromptStyle:
+      "【运动品类】高动感风格：高对比度+高饱和，运动状态中的人物动态抓拍感，汗水质感真实，光线强调肌肉轮廓和运动张力，整体充满能量感",
+    shotImageStyle:
+      "运动写真，高对比度高饱和，动态抓拍感，汗水质感，强方向光强调轮廓，充满能量",
+  },
+  {
+    label: "母婴",
+    keywords: /母婴|婴儿|儿童|宝宝|孕妇|玩具|辅食|奶粉|纸尿裤/,
+    providerPromptStyle:
+      "【母婴品类】温馨柔和风格：暖白柔光无硬阴影，色调温和干净，画面传递安全感和温柔感，场景真实家庭感，禁止强对比或冷色调",
+    shotImageStyle:
+      "母婴写真，暖白柔光，色调温和，安全感温馨感，真实家庭场景，整体柔和明亮",
+  },
+];
+
+function getCategoryVisualPreset(category: string | undefined): CategoryVisualPreset | null {
+  if (!category) return null;
+  return CATEGORY_VISUAL_PRESETS.find((p) => p.keywords.test(category)) ?? null;
 }
 
 function voiceoverPreview(input: StoryboardArtifact) {
@@ -51,9 +107,7 @@ export function buildShotPromptPromptView(
         {
           id: "voiceover_source",
           label: "口播来源",
-          body:
-            voiceoverPreview(input.storyboard) ||
-            "分镜中没有可用口播。",
+          body: voiceoverPreview(input.storyboard) || "分镜中没有可用口播。",
         },
         {
           id: "task",
@@ -61,14 +115,9 @@ export function buildShotPromptPromptView(
           body: "生成面向 Seedance 的提示词，必须保留商品、时间、参考素材和口播。V1 不生成字幕。",
         },
         {
-          id: "provider_prompt_format",
-          label: "providerPrompt 格式",
-          body: "每个 shots[].providerPrompt 必须按「主体 + 动作/状态 + 镜头运动 + 光线风格 + 情绪氛围」五要素构建中文画面指令。禁止使用抽象词（高级感、精致、美好），必须写可视化的具体动作和构图。",
-        },
-        {
           id: "output_contract",
           label: "输出契约",
-          body: "返回严格 JSON，包含 targetProvider、durationSec、aspectRatio、prompt、negativePrompt、shots、tts 和 assumptions。shots 只包含 providerPrompt、参考素材和口播。",
+          body: "返回严格 JSON，包含 targetProvider、durationSec、aspectRatio、prompt、negativePrompt、shots、tts 和 assumptions。",
         },
       ],
     },
@@ -84,49 +133,55 @@ export function buildShotPromptPromptView(
 }
 
 export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
-  return [
-    "角色：",
-    "你是 Seedance 图生视频提示词构建器。你要把已确认分镜转成一份商家可编辑、可传给 provider 的 shotprompt artifact。",
-    "",
+  const categoryPreset = getCategoryVisualPreset(input.brief.product.category);
+
+  const runtimeLines = [
     "输入：",
     `画幅比例：${input.aspectRatio}`,
     "已确认商品 brief：",
-    JSON.stringify(input.brief),
+    JSON.stringify({
+      product: { name: input.brief.product.name, category: input.brief.product.category },
+      audience: input.brief.audience,
+      coreSellingPoint: input.brief.coreSellingPoint,
+      brandTone: input.brief.brandTone,
+      bannedExpressions: input.brief.bannedExpressions,
+    }),
     "已确认素材清单：",
     JSON.stringify(input.material.assets),
     "已确认分镜：",
-    JSON.stringify(input.storyboard),
-    "",
-    "任务：",
-    "生成面向 Seedance 的 shotprompt artifact，必须准确保持被引用商品。",
-    "referenceAssetRefs 只能来自已确认素材清单。",
-    "保持分镜时间和口播对齐。",
-    "V1 不生成字幕，不要把可读文字作为视频生成要求。",
-    "启用 tts，并从 shots[].voiceover 汇总完整 voiceover。tts 是渲染计划/结果，不是第二份可编辑脚本。",
-    "不要改变上游商品主张或目标人群。",
-    "",
-    "输出：",
-    "返回一个严格 JSON object，不要包含 Markdown。",
-    "结构契约由 Ark response_format.json_schema 强制约束；不要依赖 prompt 里的示例推断字段。",
-    "字段名、enum 和 schema key 必须严格使用机器契约中的英文值，例如 targetProvider、durationSec、aspectRatio、providerPrompt、shots.voiceover。",
-    "字段值中的自然语言内容必须使用中文构建。",
-    "prompt（全局主提示词）：描述整条视频的情绪转变弧线和商业目标，格式为：",
-    "「[目标人群] 在 [场景/痛点] 下发现 [商品]，感受从 [负面情绪] 转变为 [正面情绪]，最终产生购买冲动。」",
-    "不要重复堆砌所有逐镜头描述，保持在 2-3 句以内。",
-    "negativePrompt：中文负向约束；如没有额外负向要求，可以返回空字符串。",
-    "shots[].providerPrompt：逐镜头中文 Seedance 画面指令，必须来自已确认分镜和素材绑定。",
-    "providerPrompt 必须按「主体 + 动作/状态 + 镜头运动 + 光线风格 + 情绪氛围」五要素构建，缺一不可。",
-    "同时，每段 providerPrompt 的情绪氛围必须匹配对应 shot 的 purpose：",
-    "- hook shot：画面要有张力/悬念/冲突感，让人停下来想知道接下来发生什么",
-    "- benefit shot：画面要有生活真实感和代入感，像朋友随手拍的 UGC，不像广告",
-    "- proof shot：画面要有细节质感和可信度，特写、纹理、使用过程都能建立信任",
-    "- cta shot：画面要有美好向往感，让人觉得「拥有这个商品后生活会更好」",
-    "✅ 合格示例（benefit shot）：「年轻女性坐在阳光充足的窗边随手拿起保温杯喝水，镜头跟随手部动作自然晃动，暖白自然光，轻松日常质感」",
-    "❌ 禁止写法：仅有商品名（「保温杯展示」）、仅有情绪（「温馨的场景」）、抽象词（「高级感」「精致」「美好」）。",
-    "negativePrompt 必须包含：文字水印、字幕叠加、变形扭曲、额外品牌标志、与素材不符的商品形态。",
-    "shots[].referenceAssetRefs：只能使用已确认素材清单里的 ref。",
-    "tts.voiceover：从 shots[].voiceover 汇总，不新增第二份脚本。",
-    "assumptions：只记录必要且可审计的中文假设。",
-    "禁止输出占位符值，例如：字符串、string、TODO、N/A、示例、待补充。",
-  ].join("\n");
+    JSON.stringify({
+      narrative: input.storyboard.narrative,
+      totalDurationSec: input.storyboard.totalDurationSec,
+      shots: input.storyboard.shots.map((s) => ({
+        index: s.index,
+        purpose: s.purpose,
+        durationSec: s.durationSec,
+        scene: s.scene,
+        visualDirection: s.visualDirection,
+        productAssetRef: s.productAssetRef,
+        voiceover: s.voiceover,
+      })),
+    }),
+  ];
+
+  if (categoryPreset) {
+    runtimeLines.push(
+      "",
+      `品类视觉风格预设（${categoryPreset.label}）：`,
+      `providerPrompt 风格基调：${categoryPreset.providerPromptStyle}`,
+      `shotImage style：${categoryPreset.shotImageStyle}`,
+    );
+  }
+
+  if (input.brief.bannedExpressions.length > 0) {
+    runtimeLines.push(
+      "",
+      `合规禁用词（providerPrompt 和 voiceover 中绝对不得出现）：${input.brief.bannedExpressions.join("、")}`,
+    );
+  }
+
+  return buildModulePrompt({
+    moduleId: "shotprompt",
+    runtimeContext: runtimeLines.join("\n"),
+  }).prompt;
 }

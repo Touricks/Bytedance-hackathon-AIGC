@@ -22,7 +22,7 @@ function notImplemented(reply: { status: (code: number) => { send: (body: unknow
 export async function registerShotController(app: FastifyInstance) {
   app.get("/api/workspaces/:workspaceId/shots", async (req, reply) => {
     try {
-      return await shotWorkflowService.listShots((req.params as Record<string, string>).workspaceId);
+      return await shotWorkflowService.listShots((req.params as Record<string, string>).workspaceId!);
     } catch (e) {
       const err = toHttpError(e);
       if (err.message === "NOT_IMPLEMENTED") return notImplemented(reply);
@@ -32,7 +32,7 @@ export async function registerShotController(app: FastifyInstance) {
 
   app.get("/api/shots/:shotId", async (req, reply) => {
     try {
-      return await shotWorkflowService.getShot((req.params as Record<string, string>).shotId);
+      return await shotWorkflowService.getShot((req.params as Record<string, string>).shotId!);
     } catch (e) {
       const err = toHttpError(e);
       if (err.message === "NOT_IMPLEMENTED") return notImplemented(reply);
@@ -42,7 +42,7 @@ export async function registerShotController(app: FastifyInstance) {
 
   app.get("/api/workspaces/:workspaceId/shot-workflow-status", async (req, reply) => {
     try {
-      return await shotWorkflowService.workflowStatus((req.params as Record<string, string>).workspaceId);
+      return await shotWorkflowService.workflowStatus((req.params as Record<string, string>).workspaceId!);
     } catch (e) {
       const err = toHttpError(e);
       if (err.message === "NOT_IMPLEMENTED") return notImplemented(reply);

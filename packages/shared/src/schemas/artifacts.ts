@@ -65,20 +65,6 @@ export const productBriefArtifactSchema = z.object({
   bannedExpressions: z.array(z.string()),
   landingInfo: z.string().nullable(),
   assumptions: z.array(z.string()),
-  angleType: z.enum([
-    "problem_solution",
-    "before_after",
-    "lifestyle_upgrade",
-    "trust_proof",
-    "budget_value",
-  ]).optional(),
-  emotionalTrigger: z.string().min(1).optional(),
-  conversionStyle: z.enum([
-    "soft_cta",
-    "direct_cta",
-    "personal_recommendation",
-    "problem_triggered_cta",
-  ]).optional(),
 });
 
 export const storyboardShotArtifactSchema = z.object({
@@ -99,29 +85,6 @@ export const storyboardArtifactSchema = z.object({
   assumptions: z.array(z.string()),
 });
 
-export const storyboardVariantSchema = z.object({
-  variantLabel: z.string().min(1),
-  templateStyle: z.enum(["种草", "开箱", "lifestyle", "卖点"]),
-  angleType: z.enum([
-    "problem_solution",
-    "before_after",
-    "lifestyle_upgrade",
-    "trust_proof",
-    "budget_value",
-  ]),
-  narrative: z.string().min(1),
-  totalDurationSec: z.number().int().positive(),
-  shots: z.array(storyboardShotArtifactSchema).min(1),
-  sellingReason: z.string().min(1),
-});
-
-export const storyboardVariantsArtifactSchema = z.object({
-  variants: z.array(storyboardVariantSchema).min(2).max(3),
-});
-
-export type StoryboardVariant = z.infer<typeof storyboardVariantSchema>;
-export type StoryboardVariantsArtifact = z.infer<typeof storyboardVariantsArtifactSchema>;
-
 export const shotPromptShotArtifactSchema = z.object({
   index: z.number().int().nonnegative(),
   startSec: z.number().int().nonnegative(),
@@ -129,6 +92,8 @@ export const shotPromptShotArtifactSchema = z.object({
   providerPrompt: z.string().min(1),
   referenceAssetRefs: z.array(z.string().min(1)),
   voiceover: z.string().min(1),
+  shotImage: z.record(z.unknown()).optional(),
+  shotVideo: z.record(z.unknown()).optional(),
 });
 
 export const shotPromptArtifactSchema = z.object({
@@ -146,6 +111,25 @@ export const shotPromptArtifactSchema = z.object({
   }),
   assumptions: z.array(z.string()),
 });
+
+export const videoBreakdownShotSchema = z.object({
+  purpose: z.enum(["hook", "benefit", "proof", "cta"]),
+  description: z.string().min(1),
+  durationSec: z.number().int().positive(),
+});
+
+export const videoBreakdownArtifactSchema = z.object({
+  hookTechnique: z.string().min(1),
+  sellingPoints: z.array(z.string().min(1)).min(1),
+  structure: z.array(videoBreakdownShotSchema).min(3),
+  emotionalArc: z.string().min(1),
+  copyStyle: z.string().min(1),
+  suggestedCategories: z.array(z.string().min(1)).min(1),
+  suggestedName: z.string().min(1),
+  whyViral: z.string().min(1),
+});
+
+export type VideoBreakdownArtifact = z.infer<typeof videoBreakdownArtifactSchema>;
 
 export const feedbackRouteArtifactSchema = z.object({
   feedback: z.string().min(1),
@@ -166,3 +150,41 @@ export type ProductBriefArtifact = z.infer<typeof productBriefArtifactSchema>;
 export type StoryboardArtifact = z.infer<typeof storyboardArtifactSchema>;
 export type ShotPromptArtifact = z.infer<typeof shotPromptArtifactSchema>;
 export type FeedbackRouteArtifact = z.infer<typeof feedbackRouteArtifactSchema>;
+
+function isRecord(value: unknown) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function assertShotPromptMatchesStoryboard(
+  shotPrompt: ShotPromptArtifact,
+  storyboard: StoryboardArtifact,
+  options: { requireShotLayers?: boolean } = {},
+) {
+  const expectedIndexes = storyboard.shots.map((shot) => shot.index);
+  const actualIndexes = shotPrompt.shots.map((shot) => shot.index);
+  if (actualIndexes.length !== expectedIndexes.length) {
+    throw new Error(
+      `Shotprompt provider output does not match storyboard shot count: expected ${expectedIndexes.length}, got ${actualIndexes.length}`,
+    );
+  }
+
+  const mismatchedIndex = actualIndexes.findIndex(
+    (index, position) => index !== expectedIndexes[position],
+  );
+  if (mismatchedIndex >= 0) {
+    throw new Error(
+      `Shotprompt provider output index mismatch at position ${mismatchedIndex}: expected ${expectedIndexes[mismatchedIndex]}, got ${actualIndexes[mismatchedIndex]}`,
+    );
+  }
+
+  if (options.requireShotLayers) {
+    const missingLayer = shotPrompt.shots.find((shot) => {
+      return !isRecord(shot.shotImage) || !isRecord(shot.shotVideo);
+    });
+    if (missingLayer) {
+      throw new Error(
+        `Shotprompt provider output missing shotImage/shotVideo for shot index ${missingLayer.index}`,
+      );
+    }
+  }
+}

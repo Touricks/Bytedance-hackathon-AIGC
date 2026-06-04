@@ -9,6 +9,23 @@ function countOccurrences(input: string, pattern: string) {
   return input.split(pattern).length - 1;
 }
 
+const mockShotImage = {
+  scene: "测试场景",
+  composition: "平视中景",
+  productVisibility: "商品清晰可见",
+  style: "真实生活写真",
+  negative: ["模糊", "变形"],
+};
+
+const mockShotVideo = {
+  cameraMotion: "固定不动",
+  subjectMotion: "静置展示",
+  firstFrameIntent: "商品静置在桌面",
+  lastFrameIntent: "商品静置在桌面",
+  continuity: "cut 切入下一镜头",
+  negative: ["画面闪烁", "背景突变"],
+};
+
 describe("buildSeedanceVideoExportPrompt", () => {
   it("compiles approved shotprompt fields directly for V1 Seedance export", () => {
     const prompt = buildSeedanceVideoExportPrompt({
@@ -28,6 +45,8 @@ describe("buildSeedanceVideoExportPrompt", () => {
               "普通家用或办公桌面场景，特写显示器窄边框边缘，突出和宽边框显示器的差异。",
             referenceAssetRefs: ["display_1.png"],
             voiceover: "窄边框，让桌面更清爽。",
+            shotImage: mockShotImage,
+            shotVideo: mockShotVideo,
           },
           {
             index: 1,
@@ -37,6 +56,8 @@ describe("buildSeedanceVideoExportPrompt", () => {
               "简约桌面摆放场景，展示显示器完整放在桌面的状态，凸显外观适配性。",
             referenceAssetRefs: ["display_1.png"],
             voiceover: "工作和娱乐都能自然融入。",
+            shotImage: mockShotImage,
+            shotVideo: mockShotVideo,
           },
         ],
         tts: {
@@ -84,6 +105,8 @@ describe("buildSeedanceVideoExportPrompt", () => {
             providerPrompt: "商品居中展示，背景干净，保持外观一致。",
             referenceAssetRefs: [],
             voiceover: "看清商品细节。",
+            shotImage: mockShotImage,
+            shotVideo: mockShotVideo,
           },
         ],
         tts: {
