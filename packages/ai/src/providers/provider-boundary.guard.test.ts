@@ -29,13 +29,18 @@ async function collectTypeScriptFiles(root: string): Promise<string[]> {
 }
 
 describe("provider boundary guardrails", () => {
-  it("does not export legacy Seed text or P1 TTS shims as active providers", async () => {
+  it("does not export legacy or diagnostic-only modules from the package root", async () => {
     const indexSource = await readFile(path.join(aiSrcRoot, "index.ts"), "utf8");
 
     assert.doesNotMatch(indexSource, /seed-text\.provider/);
     assert.doesNotMatch(indexSource, /tts\.provider/);
     assert.doesNotMatch(indexSource, /one-click-video\.workflow/);
     assert.doesNotMatch(indexSource, /regenerate-script\.workflow/);
+    assert.doesNotMatch(indexSource, /feedback-route\.workflow/);
+    assert.doesNotMatch(indexSource, /regenerate-shot\.workflow/);
+    assert.doesNotMatch(indexSource, /smoke\/real-providers/);
+    assert.doesNotMatch(indexSource, /probes\/to-text/);
+    assert.doesNotMatch(indexSource, /probes\/image-to-video/);
   });
 
   it("keeps direct model SDK and provider transport construction inside approved provider modules", async () => {

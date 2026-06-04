@@ -8,11 +8,21 @@ import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const SHOTPROMPT_PROMPT_VERSION = "video-shotprompt.v1";
 
+export interface CreativeRequirements {
+  image?: Record<string, unknown>;
+  script?: Record<string, unknown>;
+  storyboard?: Record<string, unknown>;
+  shotImage?: Record<string, unknown>;
+  shotVideo?: Record<string, unknown>;
+  [key: string]: Record<string, unknown> | undefined;
+}
+
 export interface BuildShotPromptPromptInput {
   brief: ProductBriefArtifact;
   material: MaterialIntakeArtifact;
   storyboard: StoryboardArtifact;
   aspectRatio: "9:16" | "16:9" | "1:1";
+  creativeRequirements?: CreativeRequirements;
 }
 
 export interface BuildShotPromptPromptViewInput extends BuildShotPromptPromptInput {
@@ -171,6 +181,16 @@ export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
       `providerPrompt 风格基调：${categoryPreset.providerPromptStyle}`,
       `shotImage style：${categoryPreset.shotImageStyle}`,
     );
+  }
+
+  if (input.creativeRequirements) {
+    const allowed = ["image", "script", "storyboard", "shotImage", "shotVideo"];
+    const filtered = Object.fromEntries(
+      Object.entries(input.creativeRequirements).filter(([k]) => allowed.includes(k)),
+    );
+    if (Object.keys(filtered).length > 0) {
+      runtimeLines.push("", "已批准创作要求（导演约束）：", JSON.stringify(filtered));
+    }
   }
 
   if (input.brief.bannedExpressions.length > 0) {

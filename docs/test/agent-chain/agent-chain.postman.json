@@ -1,0 +1,761 @@
+{
+  "info": {
+    "name": "Bytedancehack V2 Agent Chain",
+    "description": "TDD tracer collection for the V2 module artifact chain. It starts with prompt requirements propose/approve through public HTTP APIs, then grows vertically with each backend slice.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"response is not 5xx\", function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});",
+          "var contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "if (contentType.includes(\"application/json\")) {",
+          "  pm.response.json();",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "workspaceName", "value": "agent-chain-v2" },
+    {
+      "key": "workspaceDirectory",
+      "value": "/Users/carrick/TestWorkspace/Project-AIGC/IntegrationTest_v0/onePicture/"
+    },
+    { "key": "workspaceId", "value": "" },
+    { "key": "materialRef", "value": "display_1.png" },
+    {
+      "key": "materialFileBase64",
+      "value": "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAUklEQVR42u3PMQ0AAAgDMIRNCYqRhQQuviY10JrkVXpelYCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDAZQHIEvEtQ7Jm2gAAAABJRU5ErkJggg=="
+    },
+    { "key": "promptRequirementsProposedArtifactId", "value": "" },
+    { "key": "promptRequirementsArtifactId", "value": "" },
+    { "key": "materialIntakeProposedArtifactId", "value": "" },
+    { "key": "materialIntakeArtifactId", "value": "" },
+    { "key": "productBriefProposedArtifactId", "value": "" },
+    { "key": "productBriefArtifactId", "value": "" },
+    { "key": "storyboardProposedArtifactId", "value": "" },
+    { "key": "storyboardArtifactId", "value": "" },
+    { "key": "shotPromptProposedArtifactId", "value": "" },
+    { "key": "shotPromptArtifactId", "value": "" },
+    { "key": "shotPromptShotCount", "value": "" },
+    { "key": "shotSetId", "value": "" },
+    { "key": "shotIds", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var json = pm.response.json();",
+                  "pm.test(\"health is ok\", function () {",
+                  "  pm.expect(json.ok).to.eql(true);",
+                  "  pm.expect(json.runtime).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Config Limits",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/config/limits"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var data = pm.response.json().data;",
+                  "pm.test(\"generation limits exist\", function () {",
+                  "  pm.expect(data.defaultImageCandidates).to.be.a(\"number\");",
+                  "  pm.expect(data.defaultVideoCandidates).to.be.a(\"number\");",
+                  "  pm.expect(data.aspectRatios).to.include(\"9:16\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Workspace",
+      "item": [
+        {
+          "name": "Create Workspace",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{workspaceName}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var json = pm.response.json();",
+                  "var workspace = json.data?.workspace || json.data || json.workspace;",
+                  "pm.test(\"workspace id is returned\", function () {",
+                  "  pm.expect(workspace.id).to.be.a(\"string\");",
+                  "});",
+                  "pm.environment.set(\"workspaceId\", workspace.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bind Local Storage",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storage/bind",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"local\",\n  \"localPath\": \"{{workspaceDirectory}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var json = pm.response.json();",
+                  "var payload = json.data || json;",
+                  "var storage = payload.storage || payload;",
+                  "pm.test(\"local storage is bound\", function () {",
+                  "  pm.expect(storage.bound === true || storage.kind === \"LOCAL\" || storage.kind === \"local\").to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Workspace Material",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/materials",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filename\": \"{{materialRef}}\",\n  \"dataBase64\": \"{{materialFileBase64}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var json = pm.response.json();",
+                  "var asset = json.data?.asset || json.asset || json.data || json;",
+                  "pm.test(\"workspace material has stable URL\", function () {",
+                  "  pm.expect(asset.url || asset.material?.url).to.be.a(\"string\");",
+                  "  pm.expect(asset.url || asset.material?.url).to.include(pm.environment.get(\"workspaceId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Prompt Requirements",
+      "item": [
+        {
+          "name": "Propose Prompt Requirements",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/prompt-requirements/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": {\n    \"image\": {\n      \"style\": \"{{imageStyle}}\",\n      \"composition\": \"{{imageComposition}}\",\n      \"avoid\": [\"{{imageAvoid}}\"]\n    },\n    \"script\": {\n      \"tone\": \"{{scriptTone}}\"\n    },\n    \"storyboard\": {\n      \"rhythm\": \"{{storyboardRhythm}}\"\n    },\n    \"shotImage\": {\n      \"global\": \"{{shotImageGlobal}}\"\n    },\n    \"shotVideo\": {\n      \"global\": \"{{shotVideoGlobal}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var json = pm.response.json();",
+                  "var artifact = json.data?.artifact || json.data;",
+                  "pm.test(\"proposed requirements artifact is returned\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"prompt-requirements\");",
+                  "  pm.expect(artifact.status).to.eql(\"proposed\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(false);",
+                  "  pm.expect(artifact.data.shotImage).to.be.an(\"object\");",
+                  "  pm.expect(artifact.data.shotVideo).to.be.an(\"object\");",
+                  "});",
+                  "pm.environment.set(\"promptRequirementsProposedArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Prompt Requirements",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/prompt-requirements/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artifactId\": \"{{promptRequirementsProposedArtifactId}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var json = pm.response.json();",
+                  "var artifact = json.data?.artifact || json.data;",
+                  "pm.test(\"approved requirements artifact is current\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"prompt-requirements\");",
+                  "  pm.expect(artifact.status).to.eql(\"approved\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(true);",
+                  "});",
+                  "pm.environment.set(\"promptRequirementsArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Prompt Requirements State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/prompt-requirements"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var state = pm.response.json().data;",
+                  "pm.test(\"current requirements match approved artifact\", function () {",
+                  "  pm.expect(state.moduleId).to.eql(\"prompt-requirements\");",
+                  "  pm.expect(state.current.id).to.eql(pm.environment.get(\"promptRequirementsArtifactId\"));",
+                  "  pm.expect(state.current.status).to.eql(\"approved\");",
+                  "  pm.expect(state.proposed).to.not.eql(null);",
+                  "  pm.expect(state.upstream.upstreamChanged).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Material Intake",
+      "item": [
+        {
+          "name": "Propose Material Intake",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/material-intake/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"selectedMaterialRefs\": [\"{{materialRef}}\"],\n  \"userDirection\": \"Use the uploaded product image as the primary product material.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"proposed material-intake artifact is returned\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"material-intake\");",
+                  "  pm.expect(artifact.status).to.eql(\"proposed\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(false);",
+                  "  pm.expect(artifact.sourceFingerprint.promptRequirementsArtifactId).to.be.a(\"string\");",
+                  "});",
+                  "pm.environment.set(\"materialIntakeProposedArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Material Intake",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/material-intake/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artifactId\": \"{{materialIntakeProposedArtifactId}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"approved material-intake artifact is current\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"material-intake\");",
+                  "  pm.expect(artifact.status).to.eql(\"approved\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(true);",
+                  "});",
+                  "pm.environment.set(\"materialIntakeArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Material Intake State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/material-intake"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var state = pm.response.json().data;",
+                  "pm.test(\"current material-intake matches approved artifact\", function () {",
+                  "  pm.expect(state.moduleId).to.eql(\"material-intake\");",
+                  "  pm.expect(state.current.id).to.eql(pm.environment.get(\"materialIntakeArtifactId\"));",
+                  "  pm.expect(state.current.status).to.eql(\"approved\");",
+                  "  pm.expect(state.proposed).to.not.eql(null);",
+                  "  pm.expect(state.upstream.upstreamChanged).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Product Brief",
+      "item": [
+        {
+          "name": "Propose Product Brief",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/product-brief/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userDirection\": \"Create a concise ecommerce brief focused on practical product benefits.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"proposed product-brief artifact is returned\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"product-brief\");",
+                  "  pm.expect(artifact.status).to.eql(\"proposed\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(false);",
+                  "  pm.expect(artifact.sourceFingerprint.materialIntakeArtifactId).to.eql(pm.environment.get(\"materialIntakeArtifactId\"));",
+                  "});",
+                  "pm.environment.set(\"productBriefProposedArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Product Brief",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/product-brief/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artifactId\": \"{{productBriefProposedArtifactId}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"approved product-brief artifact is current\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"product-brief\");",
+                  "  pm.expect(artifact.status).to.eql(\"approved\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(true);",
+                  "});",
+                  "pm.environment.set(\"productBriefArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product Brief State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/product-brief"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var state = pm.response.json().data;",
+                  "pm.test(\"current product-brief matches approved artifact\", function () {",
+                  "  pm.expect(state.moduleId).to.eql(\"product-brief\");",
+                  "  pm.expect(state.current.id).to.eql(pm.environment.get(\"productBriefArtifactId\"));",
+                  "  pm.expect(state.current.status).to.eql(\"approved\");",
+                  "  pm.expect(state.proposed).to.not.eql(null);",
+                  "  pm.expect(state.upstream.upstreamChanged).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Storyboard",
+      "item": [
+        {
+          "name": "Propose Storyboard",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storyboard/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userDirection\": \"Keep the sequence to four clear product-focused shots.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"proposed storyboard artifact is returned\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"storyboard\");",
+                  "  pm.expect(artifact.status).to.eql(\"proposed\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(false);",
+                  "  pm.expect(artifact.sourceFingerprint.productBriefArtifactId).to.eql(pm.environment.get(\"productBriefArtifactId\"));",
+                  "  pm.expect(artifact.data.shots).to.be.an(\"array\");",
+                  "});",
+                  "pm.environment.set(\"storyboardProposedArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Storyboard",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storyboard/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artifactId\": \"{{storyboardProposedArtifactId}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"approved storyboard artifact is current\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"storyboard\");",
+                  "  pm.expect(artifact.status).to.eql(\"approved\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(true);",
+                  "});",
+                  "pm.environment.set(\"storyboardArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Storyboard State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/storyboard"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var state = pm.response.json().data;",
+                  "pm.test(\"current storyboard matches approved artifact\", function () {",
+                  "  pm.expect(state.moduleId).to.eql(\"storyboard\");",
+                  "  pm.expect(state.current.id).to.eql(pm.environment.get(\"storyboardArtifactId\"));",
+                  "  pm.expect(state.current.status).to.eql(\"approved\");",
+                  "  pm.expect(state.proposed).to.not.eql(null);",
+                  "  pm.expect(state.upstream.upstreamChanged).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Shot Prompt",
+      "item": [
+        {
+          "name": "Propose Shot Prompt",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shotprompt/propose",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aspectRatio\": \"9:16\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"proposed shotprompt artifact is returned with per-shot requirements\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"shotprompt\");",
+                  "  pm.expect(artifact.status).to.eql(\"proposed\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(false);",
+                  "  pm.expect(artifact.sourceFingerprint.storyboardArtifactId).to.eql(pm.environment.get(\"storyboardArtifactId\"));",
+                  "  pm.expect(artifact.data.shots).to.be.an(\"array\");",
+                  "  pm.expect(artifact.data.shots.length).to.be.above(0);",
+                  "  for (const shot of artifact.data.shots) {",
+                  "    pm.expect(shot.shotImage).to.be.an(\"object\");",
+                  "    pm.expect(shot.shotVideo).to.be.an(\"object\");",
+                  "  }",
+                  "});",
+                  "pm.environment.set(\"shotPromptShotCount\", String(artifact.data.shots.length));",
+                  "pm.environment.set(\"shotPromptProposedArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Shot Prompt",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shotprompt/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artifactId\": \"{{shotPromptProposedArtifactId}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var artifact = pm.response.json().data?.artifact || pm.response.json().data;",
+                  "pm.test(\"approved shotprompt artifact is current\", function () {",
+                  "  pm.expect(artifact.moduleId).to.eql(\"shotprompt\");",
+                  "  pm.expect(artifact.status).to.eql(\"approved\");",
+                  "  pm.expect(artifact.isCurrent).to.eql(true);",
+                  "});",
+                  "pm.environment.set(\"shotPromptArtifactId\", artifact.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Shot Prompt State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shotprompt"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var state = pm.response.json().data;",
+                  "pm.test(\"current shotprompt matches approved artifact\", function () {",
+                  "  pm.expect(state.moduleId).to.eql(\"shotprompt\");",
+                  "  pm.expect(state.current.id).to.eql(pm.environment.get(\"shotPromptArtifactId\"));",
+                  "  pm.expect(state.current.status).to.eql(\"approved\");",
+                  "  pm.expect(state.proposed).to.not.eql(null);",
+                  "  pm.expect(state.upstream.upstreamChanged).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Shot Sets",
+      "item": [
+        {
+          "name": "List Shots Before Apply",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(400);",
+                  "var json = pm.response.json();",
+                  "pm.test(\"shots require active shot set\", function () {",
+                  "  pm.expect(json.code).to.eql(\"NO_ACTIVE_SHOT_SET\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Apply Shot Set",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shot-sets",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shotPromptArtifactId\": \"{{shotPromptArtifactId}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var shotSet = pm.response.json().data;",
+                  "pm.test(\"active shot set is created\", function () {",
+                  "  pm.expect(shotSet.status).to.eql(\"active\");",
+                  "  pm.expect(shotSet.shotPromptArtifactId).to.eql(pm.environment.get(\"shotPromptArtifactId\"));",
+                  "});",
+                  "pm.environment.set(\"shotSetId\", shotSet.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Active Shots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspaces/{{workspaceId}}/shots"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "var shots = pm.response.json().data;",
+                  "pm.test(\"active shots match shot set and include requirements\", function () {",
+                  "  pm.expect(shots.length).to.eql(Number(pm.environment.get(\"shotPromptShotCount\")));",
+                  "  for (const shot of shots) {",
+                  "    pm.expect(shot.shotSetId).to.eql(pm.environment.get(\"shotSetId\"));",
+                  "    pm.expect(shot.requirements.shotImage).to.be.an(\"object\");",
+                  "    pm.expect(shot.requirements.shotVideo).to.be.an(\"object\");",
+                  "  }",
+                  "});",
+                  "pm.environment.set(\"shotIds\", JSON.stringify(shots.map((shot) => shot.id)));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -6,15 +6,22 @@ import type { FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { config } from "./common/config.js";
+import { toHttpError } from "./common/errors.js";
 import { db } from "./db/client.js";
 import { registerMaterialController } from "./modules/material/material.controller.js";
 import { registerPipelineController } from "./modules/pipeline/pipeline.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
 import { registerWorkspaceController } from "./modules/workspace/workspace.controller.js";
-import { maxWorkspaceMaterialBytes } from "./modules/workspace/workspace.service.js";
+import {
+  maxWorkspaceMaterialBytes,
+  resolveWorkspaceStorageLocalPath
+} from "./modules/workspace/workspace.service.js";
 import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
+import { registerCampaignController } from "./modules/campaign/campaign.controller.js";
 import { registerTraceController } from "./modules/trace/trace.routes.js";
+import { registerReferenceVideoController } from "./modules/reference-video/reference-video.controller.js";
+import { registerSetupTemplateController } from "./modules/setup-template/setup-template.controller.js";
 import type { WorkspaceDirectorySelectResponse } from "./modules/workspace/workdir-picker.js";
 
 interface BuildServerOptions {
@@ -35,10 +42,10 @@ async function sendWorkspaceFile(
   relativePath: string,
   directoryName: "materials" | "videos",
   invalidPathMessage: string,
-  reply: FastifyReply,
+  reply: FastifyReply
 ) {
-  const workspace = await db.getWorkspace(workspaceId);
-  const root = path.resolve(workspace.localPath, ".daireel", directoryName);
+  const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(workspaceId);
+  const root = path.resolve(workspaceLocalPath, ".daireel", directoryName);
   const filePath = path.resolve(root, relativePath);
 
   if (!isInsideDirectory(filePath, root)) {
@@ -56,8 +63,8 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await app.register(multipart, {
     limits: {
       fileSize: maxWorkspaceMaterialBytes + 1,
-      files: 1,
-    },
+      files: 1
+    }
   });
 
   app.addHook("onClose", async () => {
@@ -66,39 +73,71 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
   app.get("/api/health", async () => ({
     ok: true,
-    runtime: config.runtime,
+    runtime: config.runtime
   }));
 
   app.get("/api/config/limits", async () => ({
     data: {
-      defaultImageBatchSize: config.defaultImageBatchSize,
-      maxImageBatchSize: config.maxImageBatchSize,
-      defaultVideoBatchSize: config.defaultVideoBatchSize,
-      maxVideoBatchSize: config.maxVideoBatchSize,
-      aspectRatios: ["9:16", "16:9", "1:1"],
-    },
+      defaultImageCandidates: config.defaultImageCandidates,
+      maxImageCandidatesPerShot: config.maxImageCandidatesPerShot,
+      defaultVideoCandidates: config.defaultVideoCandidates,
+      maxVideoCandidatesPerShot: config.maxVideoCandidatesPerShot,
+      generationWorkerConcurrency: config.generationWorkerConcurrency,
+      providerConcurrency: {
+        text: config.textProviderConcurrency,
+        image: config.imageProviderConcurrency,
+        video: config.videoProviderConcurrency
+      },
+      aspectRatios: ["9:16", "16:9", "1:1"]
+    }
   }));
 
   app.get("/api/workspaces/:workspaceId/videos/*", async (request, reply) => {
     const params = request.params as { workspaceId: string; "*": string };
-    return sendWorkspaceFile(
-      params.workspaceId,
-      params["*"],
-      "videos",
-      "Invalid workspace video path",
-      reply,
-    );
+    try {
+      return await sendWorkspaceFile(
+        params.workspaceId,
+        params["*"],
+        "videos",
+        "Invalid workspace video path",
+        reply
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return reply.status(404).send({ message: "Workspace video not found" });
+      }
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
   });
 
   app.get("/api/workspaces/:workspaceId/materials/*", async (request, reply) => {
     const params = request.params as { workspaceId: string; "*": string };
-    return sendWorkspaceFile(
-      params.workspaceId,
-      params["*"],
-      "materials",
-      "Invalid workspace material path",
-      reply,
-    );
+    try {
+      return await sendWorkspaceFile(
+        params.workspaceId,
+        params["*"],
+        "materials",
+        "Invalid workspace material path",
+        reply
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return reply.status(404).send({ message: "Workspace material not found" });
+      }
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
   });
 
   const legacyUploadDir = config.uploadDir;
@@ -117,9 +156,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
           params["*"],
           "videos",
           "Invalid workspace video path",
-          reply,
+          reply
         );
-      },
+      }
     );
 
     app.get(
@@ -131,9 +170,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
           params["*"],
           "materials",
           "Invalid workspace material path",
-          reply,
+          reply
         );
-      },
+      }
     );
 
     app.get(`${legacyUploadUrlPrefix}/*`, async (request, reply) => {
@@ -154,24 +193,24 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerPipelineController(app);
   await registerScriptController(app);
   await registerWorkspaceController(app, {
-    selectWorkspaceDirectory: options.selectWorkspaceDirectory,
+    selectWorkspaceDirectory: options.selectWorkspaceDirectory
   });
   await registerShotController(app);
   await registerGenerationController(app);
+  await registerCampaignController(app);
   await registerTraceController(app);
+  await registerReferenceVideoController(app);
+  await registerSetupTemplateController(app);
 
   app.delete("/api/test-runs/:runId", async (req, reply) => {
-    if (
-      process.env.NODE_ENV !== "test" &&
-      process.env.ALLOW_TEST_CLEANUP !== "true"
-    ) {
+    if (process.env.ALLOW_TEST_CLEANUP !== "true") {
       return reply.status(403).send({ code: "DISABLED_IN_THIS_ENV" });
     }
     const params = req.params as { runId: string };
     const pool = db.db2.pool();
     // Wipe creative_workspace rows by id-prefix; cascade handles downstream.
     await pool.query("delete from creative_workspace where id like $1", [
-      `%${params.runId}%`,
+      `%${params.runId}%`
     ]);
     return { data: { ok: true } };
   });

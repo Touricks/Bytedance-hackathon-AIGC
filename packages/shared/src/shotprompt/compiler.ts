@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
   shotPromptArtifactSchema,
   storyboardArtifactSchema,
   type ShotPromptArtifact,
@@ -24,6 +25,40 @@ function sentence(text: string) {
   return `${text.trim().replace(/[。.!?！？]+$/u, "")}。`;
 }
 
+function shotImageFallback(input: {
+  shot: StoryboardArtifact["shots"][number];
+  providerPrompt: string;
+}) {
+  return {
+    scene: `静态关键帧场景：${sentence(input.shot.scene)}`,
+    composition: sentence(input.shot.visualDirection),
+    lighting: "保持真实电商短视频场景光线，主体清晰稳定。",
+    productVisibility: `参考素材 ${input.shot.productAssetRef} 中的商品/主体必须清晰可见。`,
+    referenceUsage: `使用 ${input.shot.productAssetRef} 保持商品身份和画面语境。`,
+    negative: ["商品变形", "文字乱码", "画面模糊", "场景漂移"],
+    providerPrompt: input.providerPrompt,
+  };
+}
+
+function shotVideoFallback(input: {
+  shot: StoryboardArtifact["shots"][number];
+  providerPrompt: string;
+  nextShot?: StoryboardArtifact["shots"][number];
+}) {
+  return {
+    cameraMotion: sentence(input.shot.visualDirection),
+    subjectMotion: "商品/主体保持真实稳定，只做与分镜目标一致的轻微自然运动。",
+    firstFrameIntent: `从本镜头静态关键帧开始：${sentence(input.shot.scene)}`,
+    lastFrameIntent: input.nextShot
+      ? `自然过渡到下一镜头语境：${sentence(input.nextShot.scene)}`
+      : null,
+    durationIntent: `${input.shot.durationSec} 秒内完成本镜头目标。`,
+    continuity: "保持商品身份、色彩、光线和空间关系连续。",
+    negative: ["商品变形", "镜头抖动", "不自然运动", "旁白文字入画", "乱码贴片"],
+    providerPrompt: input.providerPrompt,
+  };
+}
+
 export function compileShotPrompt(
   input: StoryboardArtifact,
   options: CompileShotPromptOptions = {},
@@ -31,11 +66,12 @@ export function compileShotPrompt(
   const storyboard = storyboardArtifactSchema.parse(input);
   const aspectRatio = options.aspectRatio ?? "9:16";
   let cursor = 0;
-  const shots = storyboard.shots.map((shot) => {
+  const shots = storyboard.shots.map((shot, index) => {
     const startSec = cursor;
     const endSec = cursor + shot.durationSec;
     cursor = endSec;
     const providerPrompt = `${startSec}-${endSec} 秒 ${purposeLabel(shot.purpose)}：${sentence(shot.scene)}${sentence(shot.visualDirection)}参考素材：${shot.productAssetRef}。`;
+    const nextShot = storyboard.shots[index + 1];
 
     return {
       index: shot.index,
@@ -44,6 +80,8 @@ export function compileShotPrompt(
       providerPrompt,
       referenceAssetRefs: [shot.productAssetRef],
       voiceover: shot.voiceover,
+      shotImage: shotImageFallback({ shot, providerPrompt }),
+      shotVideo: shotVideoFallback({ shot, providerPrompt, nextShot }),
     };
   });
 
@@ -66,6 +104,7 @@ export function compileShotPrompt(
       voiceover: storyboard.shots
         .map((shot) => shot.voiceover.trim())
         .join(" "),
+      voiceProfile: DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
     },
     assumptions: ["已从通过审核的分镜确定性编译。"],
   });

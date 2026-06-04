@@ -18,14 +18,16 @@ export interface AssetUrlResolverDeps {
 const DEFAULT_LOOKUP: AssetUrlResolverDeps["lookup"] = async (id) => {
   try {
     const row = await db.getAsset(id);
-    const mime = (row.metadata as Record<string, unknown> | null)?.mimeType as string | undefined;
+    const metadata = row.metadata as Record<string, unknown> | null;
+    const mime = (metadata?.mimeType ?? metadata?.contentType) as string | undefined;
+    const storagePath = metadata?.storagePath as string | undefined;
     if (row.url.startsWith("file://")) {
       return { id, url: row.url, localPath: row.url.replace(/^file:\/\//, ""), mime };
     }
     if (row.url.startsWith("http://") || row.url.startsWith("https://")) {
       return { id, url: row.url, mime };
     }
-    return { id, url: row.url, localPath: row.url, mime };
+    return { id, url: row.url, localPath: storagePath ?? row.url, mime };
   } catch (err) {
     if (err instanceof NotFoundError) return null;
     throw err;

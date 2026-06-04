@@ -11,6 +11,9 @@ export interface ShotAssetRef {
     | "first_frame_hint"
     | "other";
   weight: number;
+  position: number;
+  ref?: string;
+  url?: string;
 }
 
 export function patchShotAssetRefs(

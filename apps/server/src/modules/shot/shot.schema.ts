@@ -1,52 +1,85 @@
 import { z } from "zod";
 
-export const aspectRatioSchema = z.enum(["9:16", "16:9", "1:1"]);
-
 export const proposeImagePromptRequest = z.object({
-  referenceAssetIds: z.array(z.string()).default([]),
-  userHint: z.string().optional(),
-  stylePresetId: z.string().optional(),
-});
+  userDirection: z.string().optional(),
+}).strict();
 
-export const patchImagePromptRequest = z.object({
-  promptText: z.string().min(1),
-  negativePrompt: z.string().optional(),
-  referenceAssetIds: z.array(z.string()).default([]),
-});
+const shotAssetRefRoleSchema = z.enum([
+  "product_identity",
+  "reference_style",
+  "reference_scene",
+  "first_frame_hint",
+  "other",
+]);
 
-export const createImageBatchRequest = z.object({
-  imagePromptArtifactId: z.string(),
-  count: z.number().int().min(1).optional(),
-  aspectRatio: aspectRatioSchema.default("9:16"),
-});
+export const patchShotAssetRefsRequest = z
+  .object({
+    refs: z.array(
+      z
+        .object({
+          assetId: z.string().min(1),
+          role: shotAssetRefRoleSchema,
+          weight: z.number().finite().positive().optional(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const regenerateImagePromptRequest = z.object({
+  baseArtifactId: z.string().min(1),
+  feedbackImageCandidateId: z.string().min(1),
+  userDirection: z.string().trim().min(1).max(1000),
+}).strict();
 
 export const selectImageRequest = z.object({
-  imageCandidateId: z.string(),
-  imageGenerationBatchId: z.string(),
+  candidateId: z.string().optional(),
+  imageCandidateId: z.string().optional(),
+  imageGenerationBatchId: z.string().optional(),
+}).transform((value, ctx) => {
+  const imageCandidateId = value.candidateId ?? value.imageCandidateId;
+  if (!imageCandidateId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "candidateId is required",
+      path: ["candidateId"],
+    });
+    return z.NEVER;
+  }
+  return {
+    imageCandidateId,
+    imageGenerationBatchId: value.imageGenerationBatchId,
+  };
 });
 
 export const proposeVideoScriptRequest = z.object({
-  durationSec: z.number().int().min(1).max(8),
-  useNeighborFrames: z.boolean().default(true),
-  userHint: z.string().optional(),
-});
+  userDirection: z.string().optional(),
+}).strict();
 
-export const patchVideoScriptRequest = z.object({
-  baseVersion: z.number().int().min(1),
-  durationSec: z.number().int().min(1).max(8),
-  scriptJson: z.unknown(),
-  providerPrompt: z.string().min(30),
-});
-
-export const createVideoBatchRequest = z.object({
-  videoScriptArtifactId: z.string(),
-  count: z.number().int().min(1).optional(),
-  aspectRatio: aspectRatioSchema.default("9:16"),
-});
+export const regenerateVideoScriptRequest = z.object({
+  baseArtifactId: z.string().min(1),
+  feedbackVideoCandidateId: z.string().min(1),
+  userDirection: z.string().trim().min(1).max(1000),
+}).strict();
 
 export const selectVideoRequest = z.object({
-  videoCandidateId: z.string(),
-  videoGenerationBatchId: z.string(),
+  candidateId: z.string().optional(),
+  videoCandidateId: z.string().optional(),
+  videoGenerationBatchId: z.string().optional(),
+}).transform((value, ctx) => {
+  const videoCandidateId = value.candidateId ?? value.videoCandidateId;
+  if (!videoCandidateId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "candidateId is required",
+      path: ["candidateId"],
+    });
+    return z.NEVER;
+  }
+  return {
+    videoCandidateId,
+    videoGenerationBatchId: value.videoGenerationBatchId,
+  };
 });
 
 export const retryRequest = z.object({

@@ -1,4 +1,5 @@
 import {
+  assertShotPromptMatchesStoryboard,
   shotPromptArtifactSchema,
   type MaterialIntakeArtifact,
   type ProductBriefArtifact,
@@ -7,7 +8,8 @@ import {
 } from "@aigc-video/shared";
 import {
   buildShotPromptPrompt,
-  SHOTPROMPT_PROMPT_VERSION
+  SHOTPROMPT_PROMPT_VERSION,
+  type CreativeRequirements,
 } from "../prompts/shotprompt.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
 import { generateTextWithArk } from "../providers/ark-text.provider.js";
@@ -25,6 +27,7 @@ export interface GenerateShotPromptInput {
   material: MaterialIntakeArtifact;
   storyboard: StoryboardArtifact;
   aspectRatio: "9:16" | "16:9" | "1:1";
+  creativeRequirements?: CreativeRequirements;
 }
 
 export interface ShotPromptTrace {
@@ -39,8 +42,15 @@ export interface GenerateShotPromptOptions {
   traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
-function parseShotPrompt(rawOutput: string): ShotPromptArtifact {
-  return shotPromptArtifactSchema.parse(JSON.parse(rawOutput));
+function parseShotPrompt(
+  rawOutput: string,
+  storyboard: StoryboardArtifact,
+): ShotPromptArtifact {
+  const shotPrompt = shotPromptArtifactSchema.parse(JSON.parse(rawOutput));
+  assertShotPromptMatchesStoryboard(shotPrompt, storyboard, {
+    requireShotLayers: true,
+  });
+  return shotPrompt;
 }
 
 export async function generateShotPromptWithArk(
@@ -52,12 +62,13 @@ export async function generateShotPromptWithArk(
   const prompt = buildShotPromptPrompt(input);
   const responseFormat = buildShotPromptResponseFormat({
     schemaVersion: contract.activeVersion,
-    material: input.material
+    material: input.material,
+    expectedShotCount: input.storyboard.shots.length
   });
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
     const message =
-      "real-provider mode requires Ark text config: ARK_API_KEY and ARK_TEXT_ENDPOINT_ID";
+      "real-provider mode requires Ark text config: ARK_API_KEY, ARK_BASE_URL, and ARK_TEXT_ENDPOINT_ID";
     await options.traceLogger?.append({
       kind: "shotprompt.failed",
       pipeline: "shotprompt",
@@ -115,7 +126,7 @@ export async function generateShotPromptWithArk(
   ).output;
   let shotPrompt: ShotPromptArtifact;
   try {
-    shotPrompt = parseShotPrompt(rawOutput);
+    shotPrompt = parseShotPrompt(rawOutput, input.storyboard);
   } catch (error) {
     await options.traceLogger?.append({
       kind: "shotprompt.parse_failed",

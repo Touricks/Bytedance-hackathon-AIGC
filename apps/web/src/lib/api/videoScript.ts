@@ -1,4 +1,5 @@
 import { fetchJson, type WorkflowEnvelope } from "./client.js";
+import type { VideoBatchDetail, VideoCandidate } from "./videoBatch.js";
 
 export interface VideoScriptArtifact {
   id: string;
@@ -19,30 +20,53 @@ export function proposeVideoScript(
   workspaceId: string,
   shotId: string,
   body: {
-    durationSec: number;
-    useNeighborFrames: boolean;
-    userHint?: string;
+    userDirection?: string;
   },
 ) {
-  return fetchJson<WorkflowEnvelope<VideoScriptArtifact>>(
+  return fetchJson<
+    WorkflowEnvelope<VideoScriptArtifact> & {
+      artifact: VideoScriptArtifact;
+      batch: VideoBatchDetail;
+      candidates: VideoCandidate[];
+      context?: unknown;
+      frames?: {
+        firstFrameCandidateId: string;
+        lastFrameCandidateId: string | null;
+        firstFrameUrl: string | null;
+        lastFrameUrl: string | null;
+      };
+    }
+  >(
     `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/propose`,
     { method: "POST", body: JSON.stringify(body) },
   );
 }
 
-export function patchVideoScript(
+export function regenerateVideoScript(
+  workspaceId: string,
   shotId: string,
-  scriptId: string,
   body: {
-    baseVersion: number;
-    durationSec: number;
-    scriptJson: Record<string, unknown>;
-    providerPrompt: string;
+    baseArtifactId: string;
+    feedbackVideoCandidateId: string;
+    userDirection: string;
   },
 ) {
-  return fetchJson<WorkflowEnvelope<VideoScriptArtifact>>(
-    `/api/shots/${shotId}/video-scripts/${scriptId}`,
-    { method: "PATCH", body: JSON.stringify(body) },
+  return fetchJson<
+    WorkflowEnvelope<VideoScriptArtifact> & {
+      artifact: VideoScriptArtifact;
+      batch: VideoBatchDetail;
+      candidates: VideoCandidate[];
+      context?: unknown;
+      frames?: {
+        firstFrameCandidateId: string;
+        lastFrameCandidateId: string | null;
+        firstFrameUrl: string | null;
+        lastFrameUrl: string | null;
+      };
+    }
+  >(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/video-scripts/regenerate`,
+    { method: "POST", body: JSON.stringify(body) },
   );
 }
 

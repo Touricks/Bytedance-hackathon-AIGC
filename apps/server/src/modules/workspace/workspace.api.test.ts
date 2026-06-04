@@ -1,184 +1,193 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
-import {
-  maxWorkspaceMaterialBytes,
-  workspaceService,
-} from "./workspace.service.js";
 
-const providerBrief = {
-  product: {
-    name: "Provider Mini Blender",
-    category: "portable blender",
-    keyFacts: ["USB-C charging", "easy cleaning"],
-    assets: [{ ref: "product.png", useAs: "primary" }],
-  },
-  audience: {
-    who: "busy office workers",
-    painOrDesire: "wants quick smoothies at work",
-  },
-  coreSellingPoint: "easy cleaning",
-  proof: ["Product image shows a compact cup and blade base."],
-  offer: null,
-  platform: "Seedance",
-  brandTone: "clean premium ecommerce",
-  bannedExpressions: [],
-  landingInfo: null,
-  assumptions: ["Capacity is not specified by the source material."],
-} as const;
+const cleanupDirs: string[] = [];
 
-const providerStoryboard = {
-  narrative:
-    "A busy office worker uses Provider Mini Blender for a quick desk smoothie.",
-  totalDurationSec: 12,
-  shots: [
-    {
-      index: 0,
-      purpose: "hook",
-      durationSec: 3,
-      scene: "Office desk hook with a rushed morning",
-      visualDirection:
-        "Hand places product.png next to a laptop before meetings.",
-      productAssetRef: "product.png",
-      voiceover: "No time for breakfast before calls?",
-      onScreenText: "No time before calls?",
-      transition: "cut",
-    },
-    {
-      index: 1,
-      purpose: "benefit",
-      durationSec: 3,
-      scene: "USB-C powered quick blend",
-      visualDirection: "Show the compact blender charging and blending fruit.",
-      productAssetRef: "product.png",
-      voiceover: "This little blender charges by USB-C.",
-      onScreenText: "USB-C charging",
-      transition: "match cut",
-    },
-    {
-      index: 2,
-      purpose: "proof",
-      durationSec: 3,
-      scene: "Easy rinse after use",
-      visualDirection: "Rinse the cup under the office pantry tap.",
-      productAssetRef: "product.png",
-      voiceover: "And cleanup is just a quick rinse.",
-      onScreenText: "Easy rinse cleanup",
-      transition: "push",
-    },
-    {
-      index: 3,
-      purpose: "cta",
-      durationSec: 3,
-      scene: "Packshot on office desk",
-      visualDirection: "End with a stable packshot and smoothie cup.",
-      productAssetRef: "product.png",
-      voiceover: "Keep one at your desk.",
-      onScreenText: "Desk smoothie, done",
-      transition: "fade",
-    },
-  ],
-  assumptions: ["Office usage is inferred from the target audience."],
-};
+async function createBoundWorkspace(app: FastifyInstance) {
+  const createResponse = await app.inject({
+    method: "POST",
+    url: "/api/workspaces",
+    payload: { name: `workspace-v2-${Date.now()}` },
+  });
+  assert.equal(createResponse.statusCode, 200, createResponse.body);
+  const workspace = createResponse.json().workspace as { id: string };
 
-const providerShotPrompt = {
-  targetProvider: "seedance",
-  durationSec: 12,
-  aspectRatio: "9:16",
-  prompt:
-    "Seedance 已批准总提示词：保持 product.png 的商品外观稳定，在办公桌场景展示快速制作果昔的完整流程。",
-  negativePrompt: "禁止额外商品、变形 Logo、不可读标签和任何字幕水印。",
-  shots: [
-    {
-      index: 0,
-      startSec: 0,
-      endSec: 3,
-      providerPrompt:
-        "办公桌开场镜头，手把 product.png 放在笔记本电脑旁，商品形状保持稳定。",
-      referenceAssetRefs: ["product.png"],
-      voiceover: "开会前来不及准备早餐？",
-      onScreenText: "No time before calls?",
-    },
-    {
-      index: 1,
-      startSec: 3,
-      endSec: 6,
-      providerPrompt:
-        "展示 USB-C 充电和快速搅拌，product.png 的杯身与底座保持不变。",
-      referenceAssetRefs: ["product.png"],
-      voiceover: "这台小型搅拌杯支持 USB-C 充电。",
-      onScreenText: "USB-C charging",
-    },
-    {
-      index: 2,
-      startSec: 6,
-      endSec: 9,
-      providerPrompt: "在办公室茶水间水龙头下冲洗杯身，突出清洁方便。",
-      referenceAssetRefs: ["product.png"],
-      voiceover: "用完简单一冲就干净。",
-      onScreenText: "Easy rinse cleanup",
-    },
-    {
-      index: 3,
-      startSec: 9,
-      endSec: 12,
-      providerPrompt: "回到办公桌稳定产品主视觉，形成清爽可信的收束画面。",
-      referenceAssetRefs: ["product.png"],
-      voiceover: "放在桌上，随时补充能量。",
-      onScreenText: "Desk smoothie, done",
-    },
-  ],
-  tts: {
-    enabled: true,
-    voiceover:
-      "开会前来不及准备早餐？这台小型搅拌杯支持 USB-C 充电。用完简单一冲就干净。放在桌上，随时补充能量。",
-  },
-  assumptions: ["Shotprompt 保持 product.png 作为唯一视觉参考。"],
-};
+  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-v2-"));
+  cleanupDirs.push(directory);
+  const bindResponse = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspace.id}/storage/bind`,
+    payload: { kind: "local", localPath: directory },
+  });
+  assert.equal(bindResponse.statusCode, 200, bindResponse.body);
 
-function assertNoEnglishPromptScaffold(text: string) {
-  const forbidden = [
-    /Material intake prompt/i,
-    /\bRole:/,
-    /\bInputs:/,
-    /\bTask:/,
-    /\bOutput:/,
-    /Return strict JSON/i,
-    /You are a material intake/i,
-    /Validated material manifest/i,
-    /Rejected files/i,
-    /Text previews/i,
-    /For each validated asset/i,
-  ];
-  for (const pattern of forbidden) {
-    assert.doesNotMatch(text, pattern);
-  }
+  return { workspaceId: workspace.id, directory };
 }
 
-async function startArkJsonServer(responses: unknown[]) {
-  const bodies: unknown[] = [];
-  let responseIndex = 0;
+async function createInitializedWorkspace(app: FastifyInstance) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-v2-init-"));
+  cleanupDirs.push(directory);
+  const initResponse = await app.inject({
+    method: "POST",
+    url: "/api/workspaces/init",
+    payload: { directory },
+  });
+  assert.equal(initResponse.statusCode, 200, initResponse.body);
+  return {
+    workspaceId: initResponse.json().workspace.id as string,
+    directory,
+  };
+}
+
+async function approveMinimumWorkspaceInputs(app: FastifyInstance, workspaceId: string) {
+  const requirementsApprove = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+    payload: {
+      data: {
+        image: { style: "真实商品或服务素材" },
+        script: { tone: "direct" },
+        storyboard: { structure: "开场钩子-卖点证明-行动号召" },
+        shotImage: { global: "保持商品身份一致" },
+        shotVideo: { global: "镜头运动稳定" },
+      },
+    },
+  });
+  assert.equal(requirementsApprove.statusCode, 200, requirementsApprove.body);
+
+  const materialApprove = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspaceId}/material-intake/approve`,
+    payload: {
+      data: {
+        scannedAt: "2026-06-02T00:00:00.000Z",
+        primaryProductRef: "product.png",
+        assets: [
+          {
+            ref: "product.png",
+            kind: "image",
+            mime: "image/png",
+            bytes: transparentPngBytes.length,
+            sha256: sha256(transparentPngBytes),
+            role: "product_main",
+            description: "商品主图素材 product.png",
+            relevance: "high",
+            usable: true,
+            included: true,
+          },
+        ],
+        rejected: [],
+      },
+    },
+  });
+  assert.equal(materialApprove.statusCode, 200, materialApprove.body);
+
+  const briefApprove = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspaceId}/product-brief/approve`,
+    payload: {
+      data: {
+        product: {
+          name: "山茶花修护精华油",
+          category: "护肤",
+          keyFacts: ["山茶花籽油", "换季修护"],
+          assets: [{ ref: "product.png", useAs: "primary" }],
+        },
+        audience: {
+          who: "换季干燥肌用户",
+          painOrDesire: "想要快速缓解干燥起皮",
+        },
+        coreSellingPoint: "山茶花籽油亲肤修护",
+        proof: ["主图展示产品包装和油体质感"],
+        offer: "下单立减",
+        platform: "抖音",
+        brandTone: "真实直接",
+        bannedExpressions: [],
+        landingInfo: null,
+        assumptions: [],
+      },
+    },
+  });
+  assert.equal(briefApprove.statusCode, 200, briefApprove.body);
+}
+
+function assertPromptAssembly(value: unknown, moduleId: string) {
+  assert.ok(value && typeof value === "object", "expected promptAssembly object");
+  const assembly = value as Record<string, unknown>;
+  assert.equal(assembly.moduleId, moduleId);
+  assert.equal(assembly.assemblerVersion, "v2");
+  assert.match(String(assembly.subjectHash), /^[a-f0-9]{64}$/);
+  assert.match(String(assembly.contractHash), /^[a-f0-9]{64}$/);
+}
+
+function multipartFilePayload(input: {
+  fieldName: string;
+  filename: string;
+  contentType: string;
+  bytes: Buffer;
+}) {
+  const boundary = `----workspace-test-${Date.now()}`;
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${input.fieldName}"; filename="${input.filename}"\r\n` +
+      `Content-Type: ${input.contentType}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    headers: {
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    },
+    payload: Buffer.concat([head, input.bytes, tail]),
+  };
+}
+
+function sha256(bytes: Buffer) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function startArkProductBriefServer() {
+  const requests: unknown[] = [];
   const server: Server = createServer(async (request, response) => {
-    let body = "";
+    const chunks: Buffer[] = [];
     for await (const chunk of request) {
-      body += String(chunk);
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    bodies.push(body ? JSON.parse(body) : {});
-    const content = responses[Math.min(responseIndex, responses.length - 1)];
-    responseIndex += 1;
+    requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
         choices: [
           {
             message: {
-              content: JSON.stringify(content),
+              content: JSON.stringify({
+                product: {
+                  name: "城市地标旅行素材",
+                  category: "旅游服务",
+                  keyFacts: ["洛杉矶城市道路实拍", "Route 66 地标"],
+                  assets: [{ ref: "product.png", useAs: "primary" }],
+                },
+                audience: {
+                  who: "计划城市旅行的用户",
+                  painOrDesire: "想快速了解城市地标体验",
+                },
+                coreSellingPoint: "用真实城市街景展示洛杉矶旅行氛围",
+                proof: ["主图展示城市道路、车辆、棕榈树和 Route 66 标识"],
+                offer: null,
+                platform: "抖音",
+                brandTone: "真实直接",
+                bannedExpressions: [],
+                landingInfo: null,
+                assumptions: [],
+              }),
             },
           },
         ],
@@ -189,13 +198,11 @@ async function startArkJsonServer(responses: unknown[]) {
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
   });
-
   const address = server.address();
   assert(address && typeof address === "object");
-
   return {
+    requests,
     url: `http://127.0.0.1:${address.port}`,
-    bodies,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -203,174 +210,35 @@ async function startArkJsonServer(responses: unknown[]) {
   };
 }
 
-async function _startArkVideoServer() {
-  const bodies: unknown[] = [];
-  const server: Server = createServer(async (request, response) => {
-    let body = "";
-    for await (const chunk of request) {
-      body += String(chunk);
-    }
-    bodies.push(body ? JSON.parse(body) : {});
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(
-      JSON.stringify({ videoUrl: "/mocks/videos/fallback-flower.mp4" }),
-    );
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-
-  const address = server.address();
-  assert(address && typeof address === "object");
-
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    bodies,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
-  };
-}
-
-async function startArkBriefServer() {
-  return startArkJsonServer([
-    {
-      primaryProductRef: "product.png",
-      tags: [
-        {
-          ref: "product.png",
-          role: "product_main",
-          description: "Main product image showing the portable blender.",
-          relevance: "high",
-          included: true,
-        },
-      ],
-    },
-    providerBrief,
-  ]);
-}
-
-function setRealArkTextEnv(url: string) {
-  const previousModelMode = process.env.MODEL_MODE;
-  const previousArkBaseUrl = process.env.ARK_BASE_URL;
-  const previousArkKey = process.env.ARK_API_KEY;
-  const previousArkTextEndpoint = process.env.ARK_TEXT_ENDPOINT_ID;
-  process.env.MODEL_MODE = "real";
-  process.env.ARK_BASE_URL = url;
-  process.env.ARK_API_KEY = "test-key";
-  process.env.ARK_TEXT_ENDPOINT_ID = "doubao-seed-2-0-pro-test";
-
-  return () => {
-    if (previousModelMode === undefined) {
-      delete process.env.MODEL_MODE;
+async function withEnv<T>(
+  patch: Record<string, string | undefined>,
+  run: () => Promise<T>,
+) {
+  const previous = new Map(
+    Object.keys(patch).map((key) => [key, process.env[key]]),
+  );
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete process.env[key];
     } else {
-      process.env.MODEL_MODE = previousModelMode;
+      process.env[key] = value;
     }
-    if (previousArkBaseUrl === undefined) {
-      delete process.env.ARK_BASE_URL;
-    } else {
-      process.env.ARK_BASE_URL = previousArkBaseUrl;
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
-    if (previousArkKey === undefined) {
-      delete process.env.ARK_API_KEY;
-    } else {
-      process.env.ARK_API_KEY = previousArkKey;
-    }
-    if (previousArkTextEndpoint === undefined) {
-      delete process.env.ARK_TEXT_ENDPOINT_ID;
-    } else {
-      process.env.ARK_TEXT_ENDPOINT_ID = previousArkTextEndpoint;
-    }
-  };
-}
-
-function _setRealArkVideoEnv(url: string) {
-  const previousArkBaseUrl = process.env.ARK_BASE_URL;
-  const previousArkKey = process.env.ARK_API_KEY;
-  const previousArkVideoEndpoint = process.env.ARK_VIDEO_ENDPOINT_ID;
-  process.env.ARK_BASE_URL = url;
-  process.env.ARK_API_KEY = "test-key";
-  process.env.ARK_VIDEO_ENDPOINT_ID = "seedance-video-test";
-
-  return () => {
-    if (previousArkBaseUrl === undefined) {
-      delete process.env.ARK_BASE_URL;
-    } else {
-      process.env.ARK_BASE_URL = previousArkBaseUrl;
-    }
-    if (previousArkKey === undefined) {
-      delete process.env.ARK_API_KEY;
-    } else {
-      process.env.ARK_API_KEY = previousArkKey;
-    }
-    if (previousArkVideoEndpoint === undefined) {
-      delete process.env.ARK_VIDEO_ENDPOINT_ID;
-    } else {
-      process.env.ARK_VIDEO_ENDPOINT_ID = previousArkVideoEndpoint;
-    }
-  };
-}
-
-function setRealMissingArkTextEnv() {
-  const previousModelMode = process.env.MODEL_MODE;
-  const previousArkKey = process.env.ARK_API_KEY;
-  const previousArkTextEndpoint = process.env.ARK_TEXT_ENDPOINT_ID;
-  const previousSkipEnvFile = process.env.AIGC_VIDEO_SKIP_ENV_FILE;
-  process.env.MODEL_MODE = "real";
-  process.env.AIGC_VIDEO_SKIP_ENV_FILE = "true";
-  delete process.env.ARK_API_KEY;
-  delete process.env.ARK_TEXT_ENDPOINT_ID;
-
-  return () => {
-    if (previousModelMode === undefined) {
-      delete process.env.MODEL_MODE;
-    } else {
-      process.env.MODEL_MODE = previousModelMode;
-    }
-    if (previousArkKey === undefined) {
-      delete process.env.ARK_API_KEY;
-    } else {
-      process.env.ARK_API_KEY = previousArkKey;
-    }
-    if (previousArkTextEndpoint === undefined) {
-      delete process.env.ARK_TEXT_ENDPOINT_ID;
-    } else {
-      process.env.ARK_TEXT_ENDPOINT_ID = previousArkTextEndpoint;
-    }
-    if (previousSkipEnvFile === undefined) {
-      delete process.env.AIGC_VIDEO_SKIP_ENV_FILE;
-    } else {
-      process.env.AIGC_VIDEO_SKIP_ENV_FILE = previousSkipEnvFile;
-    }
-  };
-}
-
-function assertStrictJsonSchemaResponseFormat(
-  body: unknown,
-  name: string,
-): Record<string, unknown> {
-  const requestBody = body as {
-    response_format?: {
-      type?: string;
-      json_schema?: {
-        name?: string;
-        strict?: boolean;
-        schema?: Record<string, unknown>;
-      };
-    };
-  };
-  assert.equal(requestBody.response_format?.type, "json_schema");
-  assert.equal(requestBody.response_format?.json_schema?.name, name);
-  assert.equal(requestBody.response_format?.json_schema?.strict, true);
-  assert.equal(typeof requestBody.response_format?.json_schema?.schema, "object");
-  return requestBody.response_format!.json_schema!.schema!;
+  }
 }
 
 describe("workspace API", () => {
   let app: FastifyInstance;
-  const cleanupDirs: string[] = [];
 
   before(async () => {
     app = await buildServer();
@@ -383,249 +251,134 @@ describe("workspace API", () => {
     );
   });
 
-  async function createWorkspaceDir() {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "daireel-workspace-"));
-    cleanupDirs.push(dir);
-    return dir;
-  }
+  it("creates a logical workspace, binds local storage, and uploads managed material", async () => {
+    const { workspaceId, directory } = await createBoundWorkspace(app);
 
-  async function writeWorkspaceMaterial(
-    directory: string,
-    filename: string,
-    data: string | Uint8Array,
-  ) {
-    const materialDirectory = path.join(directory, ".daireel", "materials");
-    await mkdir(materialDirectory, { recursive: true });
-    await writeFile(path.join(materialDirectory, filename), data);
-  }
-
-  async function openWorkspaceMaterial(directory: string, filename: string) {
-    const materialDirectory = path.join(directory, ".daireel", "materials");
-    await mkdir(materialDirectory, { recursive: true });
-    return open(path.join(materialDirectory, filename), "w");
-  }
-
-  async function uploadWorkspaceMaterialMultipart(input: {
-    workspaceId: string;
-    filename: string;
-    content: string | Uint8Array;
-    contentType?: string;
-  }) {
-    const boundary = `----daireel-material-${Math.random().toString(36).slice(2)}`;
-    const bytes =
-      typeof input.content === "string"
-        ? Buffer.from(input.content)
-        : Buffer.from(input.content);
-    const payload = Buffer.concat([
-      Buffer.from(
-        [
-          `--${boundary}`,
-          'Content-Disposition: form-data; name="workspaceId"',
-          "",
-          input.workspaceId,
-          `--${boundary}`,
-          `Content-Disposition: form-data; name="file"; filename="${input.filename}"`,
-          `Content-Type: ${input.contentType ?? "text/plain"}`,
-          "",
-        ].join("\r\n") + "\r\n",
-      ),
-      bytes,
-      Buffer.from(`\r\n--${boundary}--\r\n`),
-    ]);
-
-    return app.inject({
-      method: "POST",
-      url: "/api/workspaces/materials",
-      headers: {
-        "content-type": `multipart/form-data; boundary=${boundary}`,
-      },
-      payload,
+    const directoryResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/directory`,
     });
-  }
-
-  async function createWorkspaceWithApprovedBrief() {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: { directory, prompt: "Make a compact product demo" },
-    });
-    const proposedResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/brief/propose",
-      payload: {
-        directory,
-        title: "Portable Mini Blender",
-        sellingPoints: "USB-C charging, easy cleaning",
-        audience: "busy office workers",
-        stylePreference: "clean premium ecommerce",
-      },
-    });
-    const proposed = proposedResponse.json();
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/brief/approve",
-      payload: { directory, data: proposed.artifact.data },
-    });
-    return directory;
-  }
-
-  async function createWorkspaceWithApprovedStoryboard() {
-    const directory = await createWorkspaceWithApprovedBrief();
-    const proposedResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/storyboard/propose",
-      payload: { directory },
-    });
-    const proposed = proposedResponse.json();
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/storyboard/approve",
-      payload: { directory, data: proposed.artifact.data },
-    });
-    return directory;
-  }
-
-  async function createWorkspaceWithApprovedShotPrompt() {
-    const directory = await createWorkspaceWithApprovedStoryboard();
-    const proposedResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/shotprompt/compile",
-      payload: { directory, aspectRatio: "9:16" },
-    });
-    const proposed = proposedResponse.json();
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/shotprompt/approve",
-      payload: { directory, data: proposed.artifact.data },
-    });
-    return directory;
-  }
-
-  async function _waitForCompletedJob(jobId: string) {
-    let detail;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const detailResponse = await app.inject({
-        method: "GET",
-        url: `/api/jobs/${jobId}`,
-      });
-      detail = detailResponse.json();
-      if (detail.job.status === "completed") {
-        return detail;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-
-    assert.fail(`Timed out waiting for workspace job ${jobId}`);
-  }
-
-  async function _waitForTerminalJob(jobId: string) {
-    let detail;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const detailResponse = await app.inject({
-        method: "GET",
-        url: `/api/jobs/${jobId}`,
-      });
-      detail = detailResponse.json();
-      if (["completed", "failed"].includes(detail.job.status)) {
-        return detail;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-
-    assert.fail(`Timed out waiting for terminal workspace job ${jobId}`);
-  }
-
-  it("initializes a local workspace manifest and hydrates it from Postgres", async () => {
-    const directory = await createWorkspaceDir();
-
-    const initResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-
-    assert.equal(initResponse.statusCode, 200, initResponse.body);
-    const created = initResponse.json();
-    assert.equal(created.workspace.localPath, directory);
-    assert.equal(created.workspace.status, "draft");
-    assert.equal(typeof created.workspace.id, "string");
-    assert.equal(typeof created.workspace.currentScriptId, "string");
-    assert.equal(created.workspace.currentJobId, undefined);
-    assert.equal(created.manifest.traceFile, ".daireel/trace/events.jsonl");
-
-    const manifest = JSON.parse(
-      await readFile(
-        path.join(directory, ".daireel", "workspace.json"),
-        "utf8",
-      ),
-    );
-    assert.deepEqual(manifest, {
-      schemaVersion: 1,
-      workspaceId: created.workspace.id,
-      currentScriptId: created.workspace.currentScriptId,
-      traceFile: ".daireel/trace/events.jsonl",
-    });
-
-    const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { directory },
-    });
-
-    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
-    const hydrated = statusResponse.json();
-    assert.equal(hydrated.workspace.id, created.workspace.id);
-    assert.equal(
-      hydrated.workspace.currentScriptId,
-      created.workspace.currentScriptId,
-    );
-    assert.equal(hydrated.manifest.workspaceId, created.workspace.id);
-  });
-
-  it("creates and serves a Fastify-managed workspace without a client path", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Desk Demo" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
-    assert.match(path.basename(created.workspace.localPath), /^desk-demo-/);
-    assert.equal(created.workspace.status, "draft");
+    assert.equal(directoryResponse.statusCode, 200, directoryResponse.body);
+    assert.equal(directoryResponse.json().data.directory, directory);
 
     const uploadResponse = await app.inject({
       method: "POST",
-      url: "/api/workspaces/materials",
+      url: `/api/workspaces/${workspaceId}/materials`,
       payload: {
-        workspaceId: created.workspace.id,
-        filename: "notes.txt",
-        dataBase64: Buffer.from("office UGC demo notes").toString("base64"),
+        filename: "product.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
       },
+    });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+    assert.equal(uploadResponse.json().workspace.id, workspaceId);
+    assert.match(
+      uploadResponse.json().material.url,
+      new RegExp(`/api/workspaces/${workspaceId}/materials/product\\.png$`),
+    );
+  });
+
+  it("rejects workspace image materials over the model input limit", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const multipart = multipartFilePayload({
+      fieldName: "file",
+      filename: "too-large.png",
+      contentType: "image/png",
+      bytes: Buffer.alloc(10 * 1024 * 1024 + 1),
+    });
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      headers: multipart.headers,
+      payload: multipart.payload,
+    });
+
+    assert.equal(uploadResponse.statusCode, 400, uploadResponse.body);
+    assert.equal(uploadResponse.json().code, "IMAGE_TOO_LARGE_FOR_MODEL");
+  });
+
+  it("keeps non-image workspace materials on the 50MB limit", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const multipart = multipartFilePayload({
+      fieldName: "file",
+      filename: "large-notes.txt",
+      contentType: "text/plain",
+      bytes: Buffer.alloc(10 * 1024 * 1024 + 1, "a"),
+    });
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      headers: multipart.headers,
+      payload: multipart.payload,
     });
 
     assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
-    const uploaded = uploadResponse.json();
-    assert.equal(uploaded.material.ref, "notes.txt");
-    assert.equal(
-      uploaded.material.url,
-      `/api/workspaces/${created.workspace.id}/materials/notes.txt`,
-    );
+    assert.equal(uploadResponse.json().material.ref, "large-notes.txt");
+  });
 
-    const servedResponse = await app.inject({
-      method: "GET",
-      url: uploaded.material.url,
+  it("deletes workspace material files and asset records", async () => {
+    const { workspaceId, directory } = await createBoundWorkspace(app);
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      payload: {
+        filename: "delete-me.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+      },
     });
-    assert.equal(servedResponse.statusCode, 200, servedResponse.body);
-    assert.equal(servedResponse.body, "office UGC demo notes");
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+    const materialPath = path.join(
+      directory,
+      ".daireel",
+      "materials",
+      "delete-me.png",
+    );
+    await stat(materialPath);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}/materials/delete-me.png`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    assert.deepEqual(deleteResponse.json().data, {
+      workspaceId,
+      ref: "delete-me.png",
+      deleted: true,
+    });
+    await assert.rejects(() => stat(materialPath), { code: "ENOENT" });
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    assert.equal(statusResponse.json().materialLibrary.assets.length, 0);
+
+    const assetRows = await db.db2.pool().query(
+      `select count(*)::integer as count
+       from asset
+       where metadata->>'workspaceId' = $1 and metadata->>'ref' = 'delete-me.png'`,
+      [workspaceId],
+    );
+    assert.equal(assetRows.rows[0]?.count, 0);
+  });
+
+  it("deletes a registered local workspace and removes its .daireel directory", async () => {
+    const { workspaceId, directory } = await createInitializedWorkspace(app);
+    const daireelPath = path.join(directory, ".daireel");
+    await stat(path.join(daireelPath, "workspace.json"));
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    assert.deepEqual(deleteResponse.json().data, {
+      workspaceId,
+      deleted: true,
+    });
+    await assert.rejects(() => stat(daireelPath), { code: "ENOENT" });
 
     const listResponse = await app.inject({
       method: "GET",
@@ -635,1348 +388,658 @@ describe("workspace API", () => {
     assert.equal(
       listResponse
         .json()
-        .workspaces.some(
-          (workspace: { id: string }) => workspace.id === created.workspace.id,
-        ),
-      true,
-    );
-
-    const intakeResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        directory: created.workspace.localPath,
-        prompt: "Make a quick UGC demo",
-      },
-    });
-    assert.equal(intakeResponse.statusCode, 200, intakeResponse.body);
-    assert.deepEqual(
-      intakeResponse
-        .json()
-        .artifact.data.assets.map((asset: { ref: string }) => asset.ref),
-      ["notes.txt"],
-    );
-  });
-
-  it("uploads workspace materials as multipart into the managed materials directory", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Multipart Materials" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
-
-    const boundary = "----daireel-material-boundary";
-    const payload = [
-      `--${boundary}`,
-      'Content-Disposition: form-data; name="workspaceId"',
-      "",
-      created.workspace.id,
-      `--${boundary}`,
-      'Content-Disposition: form-data; name="file"; filename="notes.txt"',
-      "Content-Type: text/plain",
-      "",
-      "office UGC demo notes",
-      `--${boundary}--`,
-      "",
-    ].join("\r\n");
-
-    const uploadResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/materials",
-      headers: {
-        "content-type": `multipart/form-data; boundary=${boundary}`,
-      },
-      payload,
-    });
-
-    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
-    const uploaded = uploadResponse.json();
-    assert.equal(uploaded.material.ref, "notes.txt");
-    assert.equal(
-      await readFile(
-        path.join(created.workspace.localPath, ".daireel", "materials", "notes.txt"),
-        "utf8",
-      ),
-      "office UGC demo notes",
-    );
-    await assert.rejects(
-      () => readFile(path.join(created.workspace.localPath, "notes.txt"), "utf8"),
-      /ENOENT/,
-    );
-
-    const servedResponse = await app.inject({
-      method: "GET",
-      url: uploaded.material.url,
-    });
-    assert.equal(servedResponse.statusCode, 200, servedResponse.body);
-    assert.equal(servedResponse.body, "office UGC demo notes");
-
-    await writeFile(
-      path.join(created.workspace.localPath, "root-only.txt"),
-      "must not be scanned",
-    );
-    const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { workspaceId: created.workspace.id },
-    });
-    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
-    assert.deepEqual(
-      statusResponse
-        .json()
-        .materialLibrary.assets.map((asset: { ref: string }) => asset.ref),
-      ["notes.txt"],
-    );
-
-    const intakeResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        workspaceId: created.workspace.id,
-        prompt: "Make a quick UGC demo",
-      },
-    });
-    assert.equal(intakeResponse.statusCode, 200, intakeResponse.body);
-    assert.deepEqual(
-      intakeResponse
-        .json()
-        .artifact.data.assets.map((asset: { ref: string }) => asset.ref),
-      ["notes.txt"],
-    );
-  });
-
-  it("validates multipart workspace material uploads and dedupes same-name files", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Upload Validation" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
-
-    const imageResponse = await uploadWorkspaceMaterialMultipart({
-      workspaceId: created.workspace.id,
-      filename: "product.png",
-      content: transparentPngBytes,
-      contentType: "image/png",
-    });
-    assert.equal(imageResponse.statusCode, 200, imageResponse.body);
-    assert.equal(imageResponse.json().material.ref, "product.png");
-
-    const duplicateResponse = await uploadWorkspaceMaterialMultipart({
-      workspaceId: created.workspace.id,
-      filename: "product.png",
-      content: transparentPngBytes,
-      contentType: "image/png",
-    });
-    assert.equal(duplicateResponse.statusCode, 200, duplicateResponse.body);
-    assert.equal(duplicateResponse.json().material.ref, "product-1.png");
-
-    const videoResponse = await uploadWorkspaceMaterialMultipart({
-      workspaceId: created.workspace.id,
-      filename: "demo.mp4",
-      content: "video bytes",
-      contentType: "video/mp4",
-    });
-    assert.equal(videoResponse.statusCode, 200, videoResponse.body);
-    assert.equal(videoResponse.json().material.ref, "demo.mp4");
-
-    await assert.rejects(
-      () =>
-        workspaceService.uploadMaterial({
-          workspaceId: created.workspace.id,
-          filename: "large.txt",
-          bytes: {
-            byteLength: maxWorkspaceMaterialBytes + 1,
-          } as Uint8Array,
-        }),
-      /Material file exceeds 50MB limit/,
-    );
-
-    const unsupportedResponse = await uploadWorkspaceMaterialMultipart({
-      workspaceId: created.workspace.id,
-      filename: "catalog.pdf",
-      content: "not supported",
-      contentType: "application/pdf",
-    });
-    assert.equal(unsupportedResponse.statusCode, 400, unsupportedResponse.body);
-    assert.match(unsupportedResponse.json().message, /Unsupported material type/);
-
-    const hiddenResponse = await uploadWorkspaceMaterialMultipart({
-      workspaceId: created.workspace.id,
-      filename: ".secret.txt",
-      content: "hidden",
-      contentType: "text/plain",
-    });
-    assert.equal(hiddenResponse.statusCode, 400, hiddenResponse.body);
-    assert.match(hiddenResponse.json().message, /must not be hidden/);
-
-    await assert.rejects(
-      () =>
-        workspaceService.uploadMaterial({
-          workspaceId: created.workspace.id,
-          filename: "../escape.txt",
-          bytes: Buffer.from("escape"),
-        }),
-      /must not include a path/,
-    );
-  });
-
-  it("runs workspace operations from workspaceId without a client directory path", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Project Workspace" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
-
-    const uploadResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/materials",
-      payload: {
-        workspaceId: created.workspace.id,
-        filename: "notes.txt",
-        dataBase64: Buffer.from("office UGC demo notes").toString("base64"),
-      },
-    });
-    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
-
-    const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { workspaceId: created.workspace.id },
-    });
-    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
-    assert.equal(statusResponse.json().workspace.id, created.workspace.id);
-    assert.deepEqual(
-      statusResponse
-        .json()
-        .materialLibrary.assets.map((asset: { ref: string }) => asset.ref),
-      ["notes.txt"],
-    );
-
-    const intakeResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        workspaceId: created.workspace.id,
-        prompt: "Make a quick UGC demo",
-      },
-    });
-    assert.equal(intakeResponse.statusCode, 200, intakeResponse.body);
-    assert.equal(intakeResponse.json().workspace.id, created.workspace.id);
-    assert.deepEqual(
-      intakeResponse
-        .json()
-        .artifact.data.assets.map((asset: { ref: string }) => asset.ref),
-      ["notes.txt"],
-    );
-  });
-
-  it("rejects workspaceId resume when the local scriptId does not match Postgres", async () => {
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Forged Manifest" },
-    });
-
-    assert.equal(createResponse.statusCode, 200, createResponse.body);
-    const created = createResponse.json();
-    cleanupDirs.push(created.workspace.localPath);
-
-    await writeFile(
-      path.join(created.workspace.localPath, ".daireel", "workspace.json"),
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          workspaceId: created.workspace.id,
-          currentScriptId: "forged-script",
-          traceFile: ".daireel/trace/events.jsonl",
-        },
-        null,
-        2,
-      )}\n`,
-    );
-
-    const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { workspaceId: created.workspace.id },
-    });
-
-    assert.equal(statusResponse.statusCode, 400, statusResponse.body);
-    assert.match(
-      statusResponse.json().message,
-      /Workspace manifest does not match requested scriptId/,
-    );
-  });
-
-  it("indexes workspace material into a persisted editable asset manifest", async () => {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await writeWorkspaceMaterial(directory, "notes.txt", "show the compact size");
-    await writeWorkspaceMaterial(directory, "broken.png", "not really an image");
-
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        directory,
-        prompt: "Make a compact product demo",
-      },
-    });
-
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json();
-    assert.equal(body.workspace.status, "materials_ready");
-    assert.equal(body.artifact.type, "assets");
-    assert.equal(body.artifact.status, "approved");
-    assert.equal(body.artifact.data.primaryProductRef, "product.png");
-    assert.deepEqual(
-      body.artifact.data.assets.map((asset: { ref: string }) => asset.ref),
-      ["notes.txt", "product.png"],
-    );
-    assert.deepEqual(body.artifact.data.assets[1], {
-      ref: "product.png",
-      kind: "image",
-      mime: "image/png",
-      bytes: transparentPngBytes.byteLength,
-      sha256: body.artifact.data.assets[1].sha256,
-      role: "product_main",
-      description: "Accepted image asset product.png",
-      relevance: "high",
-      usable: true,
-      included: true,
-    });
-    assert.match(body.artifact.data.assets[1].sha256, /^[a-f0-9]{64}$/);
-    assert.deepEqual(body.artifact.data.rejected, [
-      {
-        ref: "broken.png",
-        reason: "Uploaded product image must be a valid image file: image/png",
-      },
-    ]);
-
-    const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { directory },
-    });
-    assert.equal(statusResponse.json().workspace.status, "materials_ready");
-  });
-
-  it("returns a sanitized runtime prompt preview after material intake", async () => {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await writeWorkspaceMaterial(directory, "notes.txt", "show the compact size");
-
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        directory,
-        prompt: "Make a compact product demo",
-      },
-    });
-
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json();
-    assert.equal(body.promptView.contractId, "material_intake");
-    assert.equal(body.promptView.promptVersion, "material-intake.v1");
-    assert.equal(body.promptView.provider, "deterministic");
-    assert.equal(body.promptView.nl.title, "素材清点提示词");
-    assert.deepEqual(
-      body.promptView.nl.sections.map((section: { id: string }) => section.id),
-      [
-        "role",
-        "user_intent",
-        "selected_material_manifest",
-        "task",
-        "output_contract",
-      ],
-    );
-    assert.match(
-      body.promptView.nl.sections.find(
-        (section: { id: string }) =>
-          section.id === "selected_material_manifest",
-      ).body,
-        /product\.png/,
-    );
-    const promptViewText = JSON.stringify(body.promptView.nl);
-    assert.match(promptViewText, /素材清点/);
-    assert.match(promptViewText, /输出契约/);
-    assertNoEnglishPromptScaffold(promptViewText);
-    assert.equal(
-      JSON.stringify(body.promptView).includes(
-        transparentPngBytes.toString("base64"),
-      ),
+        .workspaces.some((workspace: { id: string }) => workspace.id === workspaceId),
       false,
     );
   });
 
-  it("rejects unsupported and oversized workspace materials before tagging", async () => {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await writeWorkspaceMaterial(directory, "catalog.pdf", "not a supported asset");
-    const largeText = await openWorkspaceMaterial(directory, "large.txt");
-    await largeText.truncate(50 * 1024 * 1024 + 1);
-    await largeText.close();
+  it("keeps user files in the workspace directory when deleting workspace state", async () => {
+    const { workspaceId, directory } = await createInitializedWorkspace(app);
+    const keepPath = path.join(directory, "keep.txt");
+    await writeFile(keepPath, "merchant-owned file");
 
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
     });
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        directory,
-        prompt: "Use only valid product assets",
-      },
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    await stat(keepPath);
+    await assert.rejects(() => stat(path.join(directory, ".daireel")), {
+      code: "ENOENT",
     });
-
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json();
-    assert.deepEqual(
-      body.artifact.data.assets.map((asset: { ref: string }) => asset.ref),
-      ["product.png"],
-    );
-    assert.deepEqual(body.artifact.data.rejected, [
-      {
-        ref: "catalog.pdf",
-        reason: "Unsupported material type",
-      },
-      {
-        ref: "large.txt",
-        reason: "Material file exceeds 50MB limit",
-      },
-    ]);
   });
 
-  it("runs material intake only for selected workspace material refs", async () => {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await writeWorkspaceMaterial(directory, "notes.txt", "show the compact size");
-    await writeWorkspaceMaterial(directory, "story.md", "creator should speak casually");
-
-    await app.inject({
+  it("deletes workspace business rows and uploaded material asset records", async () => {
+    const { workspaceId } = await createInitializedWorkspace(app);
+    const uploadResponse = await app.inject({
       method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
+      url: `/api/workspaces/${workspaceId}/materials`,
       payload: {
-        directory,
-        prompt: "Use selected campaign inputs",
-        selectedMaterialRefs: ["product.png", "story.md"],
+        filename: "product.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
       },
     });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
 
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json();
-    assert.equal(body.artifact.data.primaryProductRef, "product.png");
-    assert.deepEqual(
-      body.artifact.data.assets.map(
-        (asset: { ref: string; included: boolean }) => ({
-          ref: asset.ref,
-          included: asset.included,
-        }),
-      ),
-      [
-        { ref: "product.png", included: true },
-        { ref: "story.md", included: true },
-      ],
-    );
-  });
-
-  it("copies selected legacy root material refs into the managed material directory before intake", async () => {
-    const directory = await createWorkspaceDir();
-    await writeFile(path.join(directory, "display_1.png"), transparentPngBytes);
-
-    await app.inject({
+    const requirementsPropose = await app.inject({
       method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
       payload: {
-        directory,
-        prompt: "Make a monitor product demo",
-        selectedMaterialRefs: ["display_1.png"],
+        data: {
+          image: { style: "真实商品或服务素材" },
+          script: { tone: "direct" },
+        },
       },
     });
+    assert.equal(requirementsPropose.statusCode, 200, requirementsPropose.body);
+    const requirementsApprove = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+      payload: { artifactId: requirementsPropose.json().data.id },
+    });
+    assert.equal(requirementsApprove.statusCode, 200, requirementsApprove.body);
 
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json();
-    assert.deepEqual(
-      body.artifact.data.assets.map((asset: { ref: string }) => asset.ref),
-      ["display_1.png"],
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(statusResponse.statusCode, 404, statusResponse.body);
+    const materialResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/materials/product.png`,
+    });
+    assert.equal(materialResponse.statusCode, 404, materialResponse.body);
+    const assetRows = await db.db2.pool().query(
+      `select count(*)::integer as count
+       from asset
+       where metadata->>'workspaceId' = $1`,
+      [workspaceId],
     );
-    assert.deepEqual(
-      await readFile(
-        path.join(directory, ".daireel", "materials", "display_1.png"),
-      ),
-      Buffer.from(transparentPngBytes),
-    );
+    assert.equal(assetRows.rows[0]?.count, 0);
   });
 
-  it("surfaces legacy root material candidates after opening an existing workspace directory", async () => {
-    const directory = await createWorkspaceDir();
-    await writeFile(path.join(directory, "display_1.png"), transparentPngBytes);
+  it("deletes workspace rows when the .daireel directory is already missing", async () => {
+    const { workspaceId, directory } = await createInitializedWorkspace(app);
+    await rm(path.join(directory, ".daireel"), { recursive: true, force: true });
 
-    const initResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
     });
-    assert.equal(initResponse.statusCode, 200, initResponse.body);
-    const initialized = initResponse.json();
+
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(statusResponse.statusCode, 404, statusResponse.body);
+  });
+
+  it("rejects deleting a workspace with active generation work", async () => {
+    const { workspaceId, directory } = await createInitializedWorkspace(app);
+    const jobId = `delete-busy-${Date.now()}`;
+    await db.db2.pool().query(
+      `insert into generation_jobs
+         (id, workspace_id, job_type, status, queue_name, payload)
+       values ($1, $2, 'generate_images', 'PENDING', 'generation_v2', '{}'::jsonb)`,
+      [jobId, workspaceId],
+    );
+
+    try {
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/workspaces/${workspaceId}`,
+      });
+
+      assert.equal(deleteResponse.statusCode, 409, deleteResponse.body);
+      assert.equal(deleteResponse.json().code, "WORKSPACE_DELETE_BUSY");
+      await stat(path.join(directory, ".daireel", "workspace.json"));
+      const statusResponse = await app.inject({
+        method: "GET",
+        url: `/api/workspaces/${workspaceId}/status`,
+      });
+      assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    } finally {
+      await db.db2.pool().query(`delete from generation_jobs where id = $1`, [jobId]);
+    }
+  });
+
+  it("rejects S3 workspace deletion as explicitly unsupported in the MVP", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: `s3-delete-${Date.now()}` },
+    });
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const workspaceId = createResponse.json().workspace.id as string;
+    const bindResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/storage/bind`,
+      payload: {
+        kind: "s3",
+        bucket: "test-bucket",
+        prefix: `workspaces/${workspaceId}`,
+        endpoint: "http://localhost:9000",
+      },
+    });
+    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 501, deleteResponse.body);
+    assert.equal(
+      deleteResponse.json().code,
+      "S3_WORKSPACE_DELETE_NOT_IMPLEMENTED",
+    );
+    const storageResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/storage`,
+    });
+    assert.equal(storageResponse.statusCode, 200, storageResponse.body);
+  });
+
+  it("rejects path traversal material deletes", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}/materials/..%2Fsecret.png`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 400, deleteResponse.body);
+    assert.equal(deleteResponse.json().code, "INVALID_MATERIAL_REF");
+  });
+
+  it("passes the primary material image to real product-brief provider calls", async () => {
+    const arkText = await startArkProductBriefServer();
+    try {
+      await withEnv(
+        {
+          MODEL_MODE: "real",
+          TEXT_API_KEY: "test-key",
+          TEXT_BASE_URL: arkText.url,
+          TEXT_ENDPOINT_ID: "ark-product-brief",
+          ARK_API_KEY: "test-key",
+          ARK_BASE_URL: arkText.url,
+          ARK_TEXT_ENDPOINT_ID: "ark-product-brief",
+        },
+        async () => {
+          const { workspaceId } = await createBoundWorkspace(app);
+          const uploadResponse = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/materials`,
+            payload: {
+              filename: "product.png",
+              dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+            },
+          });
+          assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+
+          const requirementsPropose = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+            payload: {
+              data: {
+                image: { style: "真实商品或服务素材" },
+                script: { tone: "direct" },
+                storyboard: { structure: "hook-benefit-proof-cta" },
+                shotImage: { continuity: "preserve visual identity" },
+                shotVideo: { motion: "stable product-first movement" },
+              },
+            },
+          });
+          assert.equal(
+            requirementsPropose.statusCode,
+            200,
+            requirementsPropose.body,
+          );
+          const requirementsApprove = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+            payload: { artifactId: requirementsPropose.json().data.id },
+          });
+          assert.equal(
+            requirementsApprove.statusCode,
+            200,
+            requirementsApprove.body,
+          );
+
+          const materialApprove = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/material-intake/approve`,
+            payload: {
+              data: {
+                scannedAt: "2026-06-02T00:00:00.000Z",
+                primaryProductRef: "product.png",
+                assets: [
+                  {
+                    ref: "product.png",
+                    kind: "image",
+                    mime: "image/png",
+                    bytes: transparentPngBytes.length,
+                    sha256: sha256(transparentPngBytes),
+                    role: "product_main",
+                    description: "商品主图素材 product.png",
+                    relevance: "high",
+                    usable: true,
+                    included: true,
+                  },
+                ],
+                rejected: [],
+              },
+            },
+          });
+          assert.equal(materialApprove.statusCode, 200, materialApprove.body);
+
+          const briefPropose = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/product-brief/propose`,
+            payload: {},
+          });
+          assert.equal(briefPropose.statusCode, 200, briefPropose.body);
+        },
+      );
+
+      const request = arkText.requests[0] as {
+        messages?: Array<{ content?: unknown }>;
+      };
+      const content = request.messages?.[0]?.content;
+      assert.ok(Array.isArray(content), "expected multimodal chat content");
+      assert.equal(content[0]?.type, "text");
+      assert.equal(content[1]?.type, "image_url");
+      assert.match(content[1]?.image_url?.url ?? "", /^data:image\/png;base64,/);
+    } finally {
+      await arkText.close();
+    }
+  });
+
+  it("stores current V2 module artifacts outside workspace_artifact", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/materials`,
+      payload: {
+        filename: "product.png",
+        dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+      },
+    });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+
+    const requirementsPropose = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+      payload: {
+        data: {
+          image: { style: "clean ecommerce product photo" },
+          script: { tone: "direct" },
+          storyboard: { structure: "hook-benefit-proof-cta" },
+          shotImage: { continuity: "preserve product identity" },
+          shotVideo: { motion: "stable product-first movement" },
+        },
+      },
+    });
+    assert.equal(requirementsPropose.statusCode, 200, requirementsPropose.body);
+    const requirementsApprove = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+      payload: { artifactId: requirementsPropose.json().data.id },
+    });
+    assert.equal(requirementsApprove.statusCode, 200, requirementsApprove.body);
+    assertPromptAssembly(
+      requirementsApprove.json().data.promptAssembly,
+      "prompt-requirements",
+    );
+
+    const materialPropose = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/material-intake/propose`,
+      payload: {},
+    });
+    assert.equal(materialPropose.statusCode, 200, materialPropose.body);
+    const materialApprove = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/material-intake/approve`,
+      payload: { artifactId: materialPropose.json().data.id },
+    });
+    assert.equal(materialApprove.statusCode, 200, materialApprove.body);
+    assertPromptAssembly(
+      materialApprove.json().data.promptAssembly,
+      "material-intake",
+    );
+
+    const legacy = await db.db2.pool().query(
+      `select count(*)::integer as count
+       from workspace_artifact
+       where workspace_id = $1
+         and artifact_type in ('assets', 'brief', 'storyboard', 'shotprompt')`,
+      [workspaceId],
+    );
+    assert.equal(legacy.rows[0]?.count, 0);
 
     const statusResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { workspaceId: initialized.workspace.id },
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
     });
-
     assert.equal(statusResponse.statusCode, 200, statusResponse.body);
     const status = statusResponse.json();
-    assert.deepEqual(
-      status.materialLibrary.assets.map((asset: { ref: string }) => asset.ref),
-      ["display_1.png"],
-    );
-    assert.equal(status.materialLibrary.primaryProductRef, "display_1.png");
-  });
-
-  it("rejects selected material refs that are not valid candidates", async () => {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await writeWorkspaceMaterial(directory, "catalog.pdf", "not a supported asset");
-
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: {
-        directory,
-        selectedMaterialRefs: ["product.png", "catalog.pdf"],
-      },
-    });
-
-    assert.equal(response.statusCode, 400, response.body);
-    assert.match(response.json().message, /Invalid selected material refs/);
-    assert.match(response.json().message, /catalog\.pdf/);
-  });
-
-  it("uses the runtime material intake tagging builder in real provider mode", async () => {
-    const arkText = await startArkJsonServer([
-      {
-        primaryProductRef: "product.png",
-        tags: [
-          {
-            ref: "notes.txt",
-            role: "spec_text",
-            description: "User notes mention compact size and office usage.",
-            relevance: "medium",
-            included: true,
-          },
-          {
-            ref: "product.png",
-            role: "product_main",
-            description: "Main product image showing the portable blender.",
-            relevance: "high",
-            included: true,
-          },
-        ],
-      },
-    ]);
-    const restoreEnv = setRealArkTextEnv(arkText.url);
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await writeWorkspaceMaterial(directory, "notes.txt", "show the compact size");
-
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/init",
-        payload: { directory },
-      });
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/material-intake",
-        payload: {
-          directory,
-          prompt: "Make an office worker UGC demo",
-        },
-      });
-
-      assert.equal(response.statusCode, 200, response.body);
-      const body = response.json();
-      assert.equal(body.artifact.status, "approved");
-      assert.equal(body.artifact.data.primaryProductRef, "product.png");
-      assert.deepEqual(
-        body.artifact.data.assets.map(
-          (asset: { ref: string; role: string; description: string }) => ({
-            ref: asset.ref,
-            role: asset.role,
-            description: asset.description,
-          }),
-        ),
-        [
-          {
-            ref: "notes.txt",
-            role: "spec_text",
-            description: "User notes mention compact size and office usage.",
-          },
-          {
-            ref: "product.png",
-            role: "product_main",
-            description: "Main product image showing the portable blender.",
-          },
-        ],
-      );
-
-      const requestBody = arkText.bodies[0] as {
-        response_format?: unknown;
-        messages: Array<{
-          content: Array<{
-            type: string;
-            text?: string;
-            image_url?: { url: string };
-          }>;
-        }>;
-      };
-      assertStrictJsonSchemaResponseFormat(requestBody, "material_intake_v1");
-      const content = requestBody.messages[0]!.content;
-      assert.match(content[0]!.text ?? "", /素材清点/);
-      assert.match(content[0]!.text ?? "", /返回严格 JSON/);
-      assertNoEnglishPromptScaffold(content[0]!.text ?? "");
-      assert.match(
-        content.find((part) => part.type === "image_url")?.image_url?.url ?? "",
-        /^data:image\/png;base64,/,
-      );
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /material_intake.request_prepared/);
-      assert.match(traceText, /material_intake.parsed/);
-      assert.match(traceText, /doubao-seed-2-0-pro-test/);
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
-  });
-
-  it("fails loudly and writes a local trace when real material intake config is missing", async () => {
-    const restoreEnv = setRealMissingArkTextEnv();
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/init",
-        payload: { directory },
-      });
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/material-intake",
-        payload: {
-          directory,
-          prompt: "Make an office worker UGC demo",
-        },
-      });
-
-      assert.equal(response.statusCode, 400, response.body);
-      assert.match(
-        response.json().message,
-        /real-provider mode requires Ark text config/,
-      );
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /material_intake.failed/);
-      assert.match(traceText, /material-intake.v1/);
-      assert.match(traceText, /"provider":"ark"/);
-      assert.match(traceText, /"model":"missing"/);
-      assert.match(traceText, /"parsedOutputStatus":"not_attempted"/);
-    } finally {
-      restoreEnv();
-    }
-  });
-
-  it("proposes and approves an editable product brief artifact", async () => {
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/init",
-      payload: { directory },
-    });
-    await app.inject({
-      method: "POST",
-      url: "/api/workspaces/material-intake",
-      payload: { directory, prompt: "Make a compact product demo" },
-    });
-
-    const proposedResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/brief/propose",
-      payload: {
-        directory,
-        title: "Portable Mini Blender",
-        sellingPoints: "USB-C charging, easy cleaning",
-        audience: "busy office workers",
-        stylePreference: "clean premium ecommerce",
-      },
-    });
-
-    assert.equal(proposedResponse.statusCode, 200, proposedResponse.body);
-    const proposed = proposedResponse.json();
-    assert.equal(proposed.workspace.status, "brief_proposed");
-    assert.equal(proposed.artifact.type, "brief");
-    assert.equal(proposed.artifact.status, "proposed");
-    assert.equal(proposed.artifact.data.product.name, "Portable Mini Blender");
-    assert.deepEqual(proposed.artifact.data.product.assets, [
-      { ref: "product.png", useAs: "primary" },
-    ]);
-    assert.equal(proposed.artifact.data.coreSellingPoint, "USB-C charging");
-    assert.equal(proposed.form.artifactType, "brief");
-    assert.equal(proposed.promptView.nl.title, "商品简报提示词");
-    assert.deepEqual(
-      proposed.form.fields.map((field: { path: string }) => field.path),
-      [
-        "product.name",
-        "product.category",
-        "product.keyFacts",
-        "product.assets",
-        "audience.who",
-        "audience.painOrDesire",
-        "coreSellingPoint",
-        "proof",
-        "offer",
-        "platform",
-        "brandTone",
-        "bannedExpressions",
-        "landingInfo",
-        "assumptions",
-      ],
-    );
-
-    const approvedData = {
-      ...proposed.artifact.data,
-      coreSellingPoint: "easy cleaning",
-    };
-    const approvalResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/brief/approve",
-      payload: { directory, data: approvedData },
-    });
-
-    assert.equal(approvalResponse.statusCode, 200, approvalResponse.body);
-    const approved = approvalResponse.json();
-    assert.equal(approved.workspace.status, "brief_approved");
-    assert.equal(approved.artifact.status, "approved");
-    assert.equal(approved.artifact.data.coreSellingPoint, "easy cleaning");
-  });
-
-  it("uses the runtime product brief builder in real provider mode", async () => {
-    const arkText = await startArkBriefServer();
-    const restoreEnv = setRealArkTextEnv(arkText.url);
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/init",
-        payload: { directory },
-      });
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/material-intake",
-        payload: { directory, prompt: "Make a compact product demo" },
-      });
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/brief/propose",
-        payload: {
-          directory,
-          title: "Portable Mini Blender",
-          sellingPoints: "USB-C charging, easy cleaning",
-          audience: "busy office workers",
-          stylePreference: "clean premium ecommerce",
-        },
-      });
-
-      assert.equal(response.statusCode, 200, response.body);
-      const body = response.json();
-      assert.equal(body.artifact.status, "proposed");
-      assert.equal(body.artifact.data.product.name, "Provider Mini Blender");
-      assert.equal(body.artifact.data.coreSellingPoint, "easy cleaning");
-      assert.equal(body.trace.provider, "ark");
-      assert.equal(body.trace.model, "doubao-seed-2-0-pro-test");
-      assert.equal(body.trace.parsedOutputStatus, "valid");
-
-      assertStrictJsonSchemaResponseFormat(
-        arkText.bodies[0],
-        "material_intake_v1",
-      );
-      const requestBody = arkText.bodies[1] as {
-        response_format?: unknown;
-        messages: Array<{
-          content: Array<{
-            type: string;
-            text?: string;
-            image_url?: { url: string };
-          }>;
-        }>;
-      };
-      assertStrictJsonSchemaResponseFormat(requestBody, "product_brief_v1");
-      const content = requestBody.messages[0]!.content;
-      assert.match(content[0]!.text ?? "", /商品简报/);
-      assert.match(
-        content.find((part) => part.type === "image_url")?.image_url?.url ?? "",
-        /^data:image\/png;base64,/,
-      );
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /brief.request_prepared/);
-      assert.match(traceText, /provider.response_received/);
-      assert.match(traceText, /doubao-seed-2-0-pro-test/);
-      assert.match(traceText, /data:image\/<redacted>;base64,<redacted>/);
-      assert.equal(
-        traceText.includes(transparentPngBytes.toString("base64")),
-        false,
-      );
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
-  });
-
-  it("fails loudly and traces when a real product brief response cannot be repaired", async () => {
-    const arkText = await startArkJsonServer([
-      {
-        primaryProductRef: "product.png",
-        tags: [
-          {
-            ref: "product.png",
-            role: "product_main",
-            description: "Main product image showing the portable blender.",
-            relevance: "high",
-            included: true,
-          },
-        ],
-      },
-      "not json",
-      "still not json",
-    ]);
-    const restoreEnv = setRealArkTextEnv(arkText.url);
-    const directory = await createWorkspaceDir();
-    await writeWorkspaceMaterial(directory, "product.png", transparentPngBytes);
-
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/init",
-        payload: { directory },
-      });
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/material-intake",
-        payload: { directory, prompt: "Make a compact product demo" },
-      });
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/brief/propose",
-        payload: {
-          directory,
-          title: "Portable Mini Blender",
-          sellingPoints: "USB-C charging, easy cleaning",
-          audience: "busy office workers",
-          stylePreference: "clean premium ecommerce",
-        },
-      });
-
-      assert.equal(response.statusCode, 400, response.body);
-      assert.match(
-        response.json().message,
-        /Product brief provider output could not be repaired/,
-      );
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /brief.parse_failed/);
-      assert.match(traceText, /brief.repair_failed/);
-      assert.match(traceText, /"parsedOutputStatus":"repair_failed"/);
-      assert.equal(
-        traceText.includes(transparentPngBytes.toString("base64")),
-        false,
-      );
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
-  });
-
-  it("proposes and approves an editable UGC storyboard artifact", async () => {
-    const directory = await createWorkspaceWithApprovedBrief();
-
-    const proposedResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/storyboard/propose",
-      payload: { directory },
-    });
-
-    assert.equal(proposedResponse.statusCode, 200, proposedResponse.body);
-    const proposed = proposedResponse.json();
-    assert.equal(proposed.workspace.status, "storyboard_proposed");
-    assert.equal(proposed.artifact.type, "storyboard");
-    assert.equal(proposed.artifact.status, "proposed");
-    assert.equal(proposed.artifact.data.totalDurationSec, 12);
-    assert.equal(proposed.artifact.data.shots.length, 4);
-    assert.deepEqual(proposed.artifact.data.shots[0], {
-      index: 0,
-      purpose: "hook",
-      durationSec: 3,
-      scene: "Portable Mini Blender hero problem hook",
-      visualDirection:
-        "Show product.png as the primary product asset with clean premium ecommerce styling.",
-      productAssetRef: "product.png",
-      voiceover: "Meet Portable Mini Blender.",
-      transition: "cut",
-    });
-    assert.equal(proposed.form.artifactType, "storyboard");
-    assert.equal(proposed.promptView.nl.title, "口播分镜提示词");
-    assert.deepEqual(
-      proposed.form.fields.map((field: { path: string }) => field.path),
-      [
-        "narrative",
-        "totalDurationSec",
-        "shots[].purpose",
-        "shots[].durationSec",
-        "shots[].scene",
-        "shots[].visualDirection",
-        "shots[].productAssetRef",
-        "shots[].voiceover",
-        "shots[].transition",
-        "assumptions",
-      ],
-    );
-
-    const approvedData = {
-      ...proposed.artifact.data,
-      shots: proposed.artifact.data.shots.map(
-        (shot: { index: number; visualDirection: string }) =>
-          shot.index === 0
-            ? {
-                ...shot,
-                visualDirection: "Open with a fast desk setup reveal.",
-              }
-            : shot,
-      ),
-    };
-    const approvalResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/storyboard/approve",
-      payload: { directory, data: approvedData },
-    });
-
-    assert.equal(approvalResponse.statusCode, 200, approvalResponse.body);
-    const approved = approvalResponse.json();
-    assert.equal(approved.workspace.status, "storyboard_approved");
-    assert.equal(approved.artifact.status, "approved");
+    assert.equal(status.workspace.id, workspaceId);
     assert.equal(
-      approved.artifact.data.shots[0].visualDirection,
-      "Open with a fast desk setup reveal.",
+      status.modules["prompt-requirements"].current.id,
+      requirementsApprove.json().data.id,
     );
-  });
-
-  it("uses the runtime UGC storyboard builder in real provider mode", async () => {
-    const directory = await createWorkspaceWithApprovedBrief();
-    const arkText = await startArkJsonServer([providerStoryboard]);
-    const restoreEnv = setRealArkTextEnv(arkText.url);
-
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/storyboard/propose",
-        payload: { directory },
-      });
-
-      assert.equal(response.statusCode, 200, response.body);
-      const body = response.json();
-      assert.equal(body.workspace.status, "storyboard_proposed");
-      assert.equal(body.artifact.status, "proposed");
-      assert.equal(
-        body.artifact.data.narrative,
-        "A busy office worker uses Provider Mini Blender for a quick desk smoothie.",
-      );
-      assert.equal(
-        body.artifact.data.shots[0].voiceover,
-        "No time for breakfast before calls?",
-      );
-      assert.equal(body.artifact.data.shots[0].onScreenText, undefined);
-      assert.equal(body.trace.provider, "ark");
-      assert.equal(body.trace.model, "doubao-seed-2-0-pro-test");
-      assert.equal(body.trace.parsedOutputStatus, "valid");
-
-      const requestBody = arkText.bodies[0] as {
-        response_format?: unknown;
-        messages: Array<{
-          content: string;
-        }>;
-      };
-      const storyboardSchema = assertStrictJsonSchemaResponseFormat(
-        requestBody,
-        "ugc_storyboard_v1",
-      );
-      const shotSchema = (
-        storyboardSchema.properties as {
-          shots: { items: { properties: Record<string, unknown> } };
-        }
-      ).shots.items.properties;
-      assert.deepEqual((shotSchema.purpose as { enum: string[] }).enum, [
-        "hook",
-        "benefit",
-        "proof",
-        "cta",
-      ]);
-      assert.deepEqual(
-        (shotSchema.productAssetRef as { enum: string[] }).enum,
-        ["product.png"],
-      );
-      assert.equal("onScreenText" in shotSchema, false);
-      assert.match(requestBody.messages[0]!.content, /口播分镜/);
-      assert.match(requestBody.messages[0]!.content, /Portable Mini Blender/);
-      assert.doesNotMatch(requestBody.messages[0]!.content, /on-screen text/i);
-      assert.doesNotMatch(requestBody.messages[0]!.content, /onScreenText/);
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /storyboard.request_prepared/);
-      assert.match(traceText, /storyboard.parsed/);
-      assert.match(traceText, /doubao-seed-2-0-pro-test/);
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
-  });
-
-  it("compiles and approves a deterministic Seedance shotprompt artifact", async () => {
-    const directory = await createWorkspaceWithApprovedStoryboard();
-
-    const proposedResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/shotprompt/compile",
-      payload: { directory, aspectRatio: "9:16" },
-    });
-
-    assert.equal(proposedResponse.statusCode, 200, proposedResponse.body);
-    const proposed = proposedResponse.json();
-    assert.equal(proposed.workspace.status, "shotprompt_proposed");
-    assert.equal(proposed.artifact.type, "shotprompt");
-    assert.equal(proposed.artifact.status, "proposed");
-    assert.equal(proposed.artifact.data.targetProvider, "seedance");
-    assert.equal(proposed.artifact.data.durationSec, 12);
-    assert.equal(proposed.artifact.data.aspectRatio, "9:16");
-    assert.equal(proposed.artifact.data.shots.length, 4);
     assert.equal(
-      proposed.artifact.data.shots[0].providerPrompt,
-      "0-3 秒 开场吸引：Portable Mini Blender hero problem hook。Show product.png as the primary product asset with clean premium ecommerce styling。参考素材：product.png。",
+      status.modules["material-intake"].current.id,
+      materialApprove.json().data.id,
     );
-    assert.equal(proposed.artifact.data.shots[0].onScreenText, undefined);
-    assert.match(
-      proposed.artifact.data.prompt,
-      /12 秒 9:16 电商 UGC 视频/,
-    );
-    assert.doesNotMatch(
-      proposed.artifact.data.prompt,
-      /0-3 秒 开场吸引：Portable Mini Blender hero problem hook/,
-    );
-    assert.match(
-      proposed.artifact.data.shots
-        .map((shot: { providerPrompt: string }) => shot.providerPrompt)
-        .join("\n"),
-      /0-3 秒 开场吸引：Portable Mini Blender hero problem hook/,
-    );
-    assert.deepEqual(proposed.artifact.data.tts, {
-      enabled: true,
-      source: "shots.voiceover",
-      voiceover:
-        "Meet Portable Mini Blender. USB-C charging. Accepted image asset product.png Try Portable Mini Blender today.",
-    });
-    assert.equal(proposed.promptView.nl.title, "视频生成提示词");
-    assert.deepEqual(
-      proposed.form.fields.map((field: { path: string }) => field.path),
-      [
-        "prompt",
-        "negativePrompt",
-        "shots[].providerPrompt",
-        "shots[].referenceAssetRefs",
-        "shots[].voiceover",
-        "tts.enabled",
-        "tts.voiceover",
-        "assumptions",
-      ],
-    );
-
-    const approvedData = {
-      ...proposed.artifact.data,
-      negativePrompt: "blur, distorted hands, unreadable text",
-    };
-    const approvalResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/artifacts/shotprompt/approve",
-      payload: { directory, data: approvedData },
-    });
-
-    assert.equal(approvalResponse.statusCode, 200, approvalResponse.body);
-    const approved = approvalResponse.json();
-    assert.equal(approved.workspace.status, "shotprompt_approved");
-    assert.equal(approved.artifact.status, "approved");
     assert.equal(
-      approved.artifact.data.negativePrompt,
-      "blur, distorted hands, unreadable text",
+      status.artifacts.material.id,
+      materialApprove.json().data.id,
     );
+    assert.equal(status.activeShotSet, null);
   });
 
-  it("hydrates persisted workspace artifacts in status for historical directories", async () => {
-    const directory = await createWorkspaceWithApprovedShotPrompt();
+  it("proposes a product brief rewrite from the current page draft without changing current", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    await approveMinimumWorkspaceInputs(app, workspaceId);
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/workspaces/status",
-      payload: { directory },
-    });
-
-    assert.equal(response.statusCode, 200, response.body);
-    const status = response.json();
-    assert.equal(status.workspace.status, "shotprompt_approved");
-    assert.equal(status.artifacts.material.type, "assets");
-    assert.equal(status.artifacts.material.status, "approved");
-    assert.equal(status.artifacts.brief.type, "brief");
-    assert.equal(status.artifacts.brief.status, "approved");
-    assert.equal(status.artifacts.storyboard.type, "storyboard");
-    assert.equal(status.artifacts.storyboard.status, "approved");
-    assert.equal(status.artifacts.shotPrompt.type, "shotprompt");
-    assert.equal(status.artifacts.shotPrompt.status, "approved");
-  });
-
-  it("uses the runtime video shotprompt builder in real provider mode", async () => {
-    const directory = await createWorkspaceWithApprovedStoryboard();
-    const arkText = await startArkJsonServer([providerShotPrompt]);
-    const restoreEnv = setRealArkTextEnv(arkText.url);
-
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/shotprompt/compile",
-        payload: { directory, aspectRatio: "9:16" },
-      });
-
-      assert.equal(response.statusCode, 200, response.body);
-      const body = response.json();
-      assert.equal(body.workspace.status, "shotprompt_proposed");
-      assert.equal(body.artifact.status, "proposed");
-      assert.equal(body.artifact.data.prompt, providerShotPrompt.prompt);
-      assert.equal(
-        body.artifact.data.negativePrompt,
-        "禁止额外商品、变形 Logo、不可读标签和任何字幕水印。",
-      );
-      assert.equal(body.artifact.data.tts.enabled, true);
-      assert.equal(body.trace.provider, "ark");
-      assert.equal(body.trace.model, "doubao-seed-2-0-pro-test");
-      assert.equal(body.trace.parsedOutputStatus, "valid");
-
-      const requestBody = arkText.bodies[0] as {
-        response_format?: unknown;
-        messages: Array<{
-          content: string;
-        }>;
-      };
-      assertStrictJsonSchemaResponseFormat(requestBody, "video_shotprompt_v1");
-      assert.match(requestBody.messages[0]!.content, /Seedance 图生视频提示词/);
-      assert.match(requestBody.messages[0]!.content, /Seedance/i);
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /shotprompt.request_prepared/);
-      assert.match(traceText, /shotprompt.parsed/);
-      assert.match(traceText, /doubao-seed-2-0-pro-test/);
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
-  });
-
-  it("reports real provider continuation metadata for runtime builder stages", async () => {
-    const arkText = await startArkJsonServer([
-      {
-        primaryProductRef: "product.png",
-        tags: [
-          {
-            ref: "product.png",
-            role: "product_main",
-            description: "Main product image showing the portable blender.",
-            relevance: "high",
-            included: true,
-          },
-        ],
-      },
-    ]);
-    const restoreEnv = setRealArkTextEnv(arkText.url);
-    const directory = await createWorkspaceDir();
-
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/api/workspaces/init",
-        payload: { directory },
-      });
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/status",
-        payload: { directory },
-      });
-
-      assert.equal(response.statusCode, 200, response.body);
-      const action = response.json().nextAction;
-      assert.equal(action.actionType, "runtime_builder");
-      assert.equal(action.runtimeBuilder, "material_intake");
-      assert.equal(action.runtimeMode, "real");
-      assert.equal(action.willCallProvider, true);
-      assert.equal(action.provider, "ark");
-      assert.equal(action.requiresProviderConfig, true);
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
-  });
-
-  it("exposes the V1 pipeline contract registry through a read-only endpoint", async () => {
-    const response = await app.inject({
+    const beforeStatusResponse = await app.inject({
       method: "GET",
-      url: "/api/pipeline/contracts",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(beforeStatusResponse.statusCode, 200, beforeStatusResponse.body);
+    const beforeStatus = beforeStatusResponse.json();
+    const currentBrief = beforeStatus.modules["product-brief"].current;
+    const draft = {
+      ...currentBrief.data,
+      product: {
+        ...currentBrief.data.product,
+        name: "页面草稿商品名",
+        keyFacts: ["页面草稿事实"],
+      },
+      coreSellingPoint: "页面草稿核心卖点",
+      proof: ["页面草稿证明素材"],
+      assumptions: ["页面草稿假设"],
+    };
+
+    const rewrite = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/product-brief/propose`,
+      payload: {
+        baseArtifactId: currentBrief.id,
+        userDirection: "更突出送礼场景，语气更年轻",
+        draft,
+      },
     });
 
-    assert.equal(response.statusCode, 200, response.body);
-    const body = response.json();
-    assert.deepEqual(
-      body.steps.map((step: { id: string; activeVersion: string }) => ({
-        id: step.id,
-        activeVersion: step.activeVersion,
-      })),
-      [
-        { id: "material_intake", activeVersion: "material-intake.v1" },
-        { id: "product_brief", activeVersion: "product-brief.v1" },
-        { id: "storyboard", activeVersion: "ugc-storyboard.v1" },
-        { id: "shotprompt", activeVersion: "video-shotprompt.v1" },
-        { id: "feedback_route", activeVersion: "feedback-route.v1" },
-        { id: "video_export", activeVersion: "seedance-video-export.v1" },
-      ],
+    assert.equal(rewrite.statusCode, 200, rewrite.body);
+    const artifact = rewrite.json().data;
+    assert.equal(artifact.status, "proposed");
+    assert.equal(artifact.isCurrent, false);
+    assert.equal(artifact.data.product.name, "页面草稿商品名");
+    assert.equal(artifact.data.coreSellingPoint, "更突出送礼场景，语气更年轻");
+    assert.equal(
+      artifact.sourceFingerprint.baseProductBriefArtifactId,
+      currentBrief.id,
     );
-    for (const step of body.steps) {
-      assert.equal(typeof step.promptBuilder, "string");
-      assert.equal(typeof step.provider, "string");
-      assert.equal(typeof step.inputJsonSchema, "object");
-      assert.equal(typeof step.outputJsonSchema, "object");
-    }
-    assert.equal(body.steps.at(-1).promptSource, "compiled_shotprompt");
+    assert.equal(artifact.sourceFingerprint.rewriteKind, "merchant_direction");
+    assert.equal(artifact.promptAssembly.baseProductBriefArtifactId, currentBrief.id);
+    assert.equal(artifact.promptAssembly.rewriteKind, "merchant_direction");
+
+    const afterStatusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/status`,
+    });
+    assert.equal(afterStatusResponse.statusCode, 200, afterStatusResponse.body);
+    const afterStatus = afterStatusResponse.json();
+    assert.equal(afterStatus.modules["product-brief"].current.id, currentBrief.id);
+    assert.equal(afterStatus.modules["product-brief"].proposed.id, artifact.id);
   });
 
-  it("routes video feedback through the real structured feedback router", async () => {
-    const directory = await createWorkspaceWithApprovedShotPrompt();
-    const arkText = await startArkJsonServer([
-      {
-        targetArtifact: "storyboard",
-        reason: "用户希望旁白更口语化，属于分镜口播表达问题。",
-        revisionInstruction: "重写 storyboard 的口播，使开头更自然、更像真人表达。",
-        confidence: "high",
+  it("rejects product brief rewrites with invalid drafts", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    await approveMinimumWorkspaceInputs(app, workspaceId);
+
+    const rewrite = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/product-brief/propose`,
+      payload: {
+        userDirection: "更突出送礼场景",
+        draft: { product: { name: "缺少字段" } },
       },
-    ]);
-    const restoreEnv = setRealArkTextEnv(arkText.url);
+    });
 
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/workspaces/feedback/route",
-        payload: {
-          directory,
-          feedback: "旁白更口语化",
-        },
-      });
-
-      assert.equal(response.statusCode, 200, response.body);
-      const body = response.json();
-      assert.equal(body.route.targetArtifact, "storyboard");
-      assert.equal(body.routeArtifact.data.confidence, "high");
-      assert.match(body.routeArtifact.data.revisionInstruction, /口播/);
-      assert.equal(arkText.bodies.length, 1);
-      assertStrictJsonSchemaResponseFormat(arkText.bodies[0], "feedback_route_v1");
-
-      const traceText = await readFile(
-        path.join(directory, ".daireel", "trace", "events.jsonl"),
-        "utf8",
-      );
-      assert.match(traceText, /feedback_route.request_prepared/);
-      assert.match(traceText, /feedback_route.parsed/);
-      assert.match(traceText, /feedback_route_v1/);
-    } finally {
-      restoreEnv();
-      await arkText.close();
-    }
+    assert.equal(rewrite.statusCode, 400, rewrite.body);
   });
 
+  it("requires approved requirements and material intake before product brief propose", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+
+    const rewrite = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/product-brief/propose`,
+      payload: {
+        userDirection: "更突出送礼场景",
+      },
+    });
+
+    assert.equal(rewrite.statusCode, 400, rewrite.body);
+    assert.equal(rewrite.json().code, "NO_CURRENT_APPROVED_ARTIFACT");
+  });
+
+  it("rejects storyboard approval when voiceover exceeds its timing budget", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    await approveMinimumWorkspaceInputs(app, workspaceId);
+
+    const storyboardApprove = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/storyboard/approve`,
+      payload: {
+        data: {
+          narrative: "开场钩子到卖点证明再到行动号召。",
+          totalDurationSec: 15,
+          shots: [
+            {
+              index: 0,
+              purpose: "hook",
+              durationSec: 4,
+              scene: "换季干燥痛点开场",
+              visualDirection: "真实脸部状态",
+              productAssetRef: "product.png",
+              voiceover: "换季脸干到起皮紧绷卡粉还不舒服想马上修护了吗",
+              transition: "cut",
+            },
+            {
+              index: 1,
+              purpose: "proof",
+              durationSec: 7,
+              scene: "展示山茶花籽油卖点和使用证明",
+              visualDirection: "产品和使用场景结合",
+              productAssetRef: "product.png",
+              voiceover: "山茶花籽油亲肤好吸收",
+              transition: "cut",
+            },
+            {
+              index: 2,
+              purpose: "cta",
+              durationSec: 4,
+              scene: "收束到购买利益点",
+              visualDirection: "产品和利益点同屏",
+              productAssetRef: "product.png",
+              voiceover: "现在下单立减",
+              transition: "fade",
+            },
+          ],
+          assumptions: [],
+        },
+      },
+    });
+
+    assert.equal(storyboardApprove.statusCode, 400, storyboardApprove.body);
+    assert.equal(storyboardApprove.json().code, "INVALID_STORYBOARD_SCRIPT");
+    assert.match(storyboardApprove.json().message, /口播过长/);
+  });
+
+  it("proposes a new storyboard artifact when rewriting voiceover copy", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    await approveMinimumWorkspaceInputs(app, workspaceId);
+
+    const baseStoryboard = {
+      narrative: "开场钩子到卖点证明再到行动号召。",
+      totalDurationSec: 15,
+      shots: [
+        {
+          index: 0,
+          purpose: "hook",
+          durationSec: 4,
+          scene: "换季干燥痛点开场",
+          visualDirection: "真实脸部状态",
+          productAssetRef: "product.png",
+          voiceover: "旧开场口播",
+          transition: "cut",
+        },
+        {
+          index: 1,
+          purpose: "proof",
+          durationSec: 7,
+          scene: "展示山茶花籽油卖点和使用证明",
+          visualDirection: "产品和使用场景结合",
+          productAssetRef: "product.png",
+          voiceover: "旧卖点口播",
+          transition: "cut",
+        },
+        {
+          index: 2,
+          purpose: "cta",
+          durationSec: 4,
+          scene: "收束到购买利益点",
+          visualDirection: "产品和利益点同屏",
+          productAssetRef: "product.png",
+          voiceover: "旧行动口播",
+          transition: "fade",
+        },
+      ],
+      assumptions: [],
+    };
+    const baseApprove = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/storyboard/approve`,
+      payload: { data: baseStoryboard },
+    });
+    assert.equal(baseApprove.statusCode, 200, baseApprove.body);
+
+    const rewrite = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/storyboard/voiceover/propose`,
+      payload: {
+        baseArtifactId: baseApprove.json().data.id,
+        draft: baseStoryboard,
+        userDirection: "更像真实商家口播",
+      },
+    });
+
+    assert.equal(rewrite.statusCode, 200, rewrite.body);
+    const artifact = rewrite.json().data;
+    assert.equal(artifact.status, "proposed");
+    assert.equal(artifact.isCurrent, false);
+    assert.equal(
+      artifact.sourceFingerprint.baseStoryboardArtifactId,
+      baseApprove.json().data.id,
+    );
+    assert.equal(artifact.sourceFingerprint.rewriteKind, "voiceover");
+    assert.equal(artifact.data.totalDurationSec, 15);
+    assert.deepEqual(
+      artifact.data.shots.map((shot: { index: number }) => shot.index),
+      [0, 1, 2],
+    );
+    assert.notDeepEqual(
+      artifact.data.shots.map((shot: { voiceover: string }) => shot.voiceover),
+      baseStoryboard.shots.map((shot) => shot.voiceover),
+    );
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/storyboard`,
+    });
+    assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+    assert.equal(statusResponse.json().data.current.id, baseApprove.json().data.id);
+    assert.equal(statusResponse.json().data.proposed.id, artifact.id);
+  });
+
+  it("rejects shotprompt proposal when the current storyboard is a legacy non-P0 script", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    await approveMinimumWorkspaceInputs(app, workspaceId);
+    const legacyStoryboard = {
+      narrative: "旧版四镜结构：钩子、卖点、证明、行动号召。",
+      totalDurationSec: 14,
+      shots: [
+        {
+          index: 0,
+          purpose: "hook",
+          durationSec: 3,
+          scene: "换季干燥痛点开场",
+          visualDirection: "真实脸部状态",
+          productAssetRef: "product.png",
+          voiceover: "换季脸干",
+          transition: "cut",
+        },
+        {
+          index: 1,
+          purpose: "benefit",
+          durationSec: 4,
+          scene: "介绍山茶花籽油卖点",
+          visualDirection: "产品和油体质感",
+          productAssetRef: "product.png",
+          voiceover: "山茶花籽油亲肤",
+          transition: "cut",
+        },
+        {
+          index: 2,
+          purpose: "proof",
+          durationSec: 4,
+          scene: "展示使用证明",
+          visualDirection: "使用前后状态",
+          productAssetRef: "product.png",
+          voiceover: "干燥状态被缓解",
+          transition: "cut",
+        },
+        {
+          index: 3,
+          purpose: "cta",
+          durationSec: 3,
+          scene: "收束到购买利益点",
+          visualDirection: "产品和利益点同屏",
+          productAssetRef: "product.png",
+          voiceover: "现在下单立减",
+          transition: "fade",
+        },
+      ],
+      assumptions: [],
+    };
+    await db.db2.pool().query(
+      `insert into storyboard_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+       values ($1, $2, 'approved', true, $3::jsonb, '{}'::jsonb, '{}'::jsonb, now())`,
+      [`legacy-storyboard-${Date.now()}`, workspaceId, JSON.stringify(legacyStoryboard)],
+    );
+    await db.updateWorkspace(workspaceId, { status: "storyboard_approved" });
+
+    const shotPromptResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shotprompt/propose`,
+      payload: {},
+    });
+
+    assert.equal(shotPromptResponse.statusCode, 400, shotPromptResponse.body);
+    assert.equal(shotPromptResponse.json().code, "UPSTREAM_STORYBOARD_NOT_P0");
+    assert.match(shotPromptResponse.json().message, /先批准三镜分镜脚本/);
+  });
 });

@@ -47,49 +47,38 @@ const brief = {
 
 const repairableStoryboard = {
   narrative: "A creator upgrades a cluttered desk with a compact display.",
-  totalDurationSec: 12,
+  totalDurationSec: 15,
   shots: [
     {
       index: 0,
       purpose: "hook",
-      durationSec: 3,
+      durationSec: 4,
       scene: "Cluttered desk problem hook",
       visualDirection: "Show the desk before the upgrade.",
       productAssetRef: "",
-      voiceover: "Desk feeling cramped?",
+      voiceover: "桌面太挤了吗",
       onScreenText: "Cramped desk?",
       transition: "cut",
     },
     {
       index: 1,
-      purpose: "pain point reinforcement",
-      durationSec: 3,
-      scene: "Show the messy cable area",
-      visualDirection: "Creator points at the clutter.",
-      productAssetRef: "",
-      voiceover: "This is where space disappears.",
-      onScreenText: "Too much clutter",
-      transition: "cut",
-    },
-    {
-      index: 2,
       purpose: "core selling point display",
-      durationSec: 3,
+      durationSec: 7,
       scene: "Reveal the display stand",
       visualDirection: "Show the product holding the display.",
       productAssetRef: "",
-      voiceover: "The stand clears your workspace.",
+      voiceover: "支架让空间变清爽",
       onScreenText: "Space-saving setup",
       transition: "match cut",
     },
     {
-      index: 3,
+      index: 2,
       purpose: "conversion guide",
-      durationSec: 3,
+      durationSec: 4,
       scene: "Final organized desk",
       visualDirection: "Show a clean desk with the display centered.",
-      productAssetRef: "display_1.png",
-      voiceover: "Make your desk feel bigger today.",
+      productAssetRef: "",
+      voiceover: "今天升级桌面",
       onScreenText: "Upgrade your desk",
       transition: "fade",
     },
@@ -157,11 +146,11 @@ describe("generateStoryboardWithArk", () => {
 
       assert.deepEqual(
         result.storyboard.shots.map((shot) => shot.purpose),
-        ["hook", "benefit", "proof", "cta"],
+        ["hook", "proof", "cta"],
       );
       assert.deepEqual(
         result.storyboard.shots.map((shot) => shot.productAssetRef),
-        ["display_1.png", "display_1.png", "display_1.png", "display_1.png"],
+        ["display_1.png", "display_1.png", "display_1.png"],
       );
       assert.equal(result.trace.parsedOutputStatus, "repaired");
 
@@ -178,7 +167,6 @@ describe("generateStoryboardWithArk", () => {
           "shots[1].productAssetRef",
           "shots[2].purpose",
           "shots[2].productAssetRef",
-          "shots[3].purpose",
         ],
       );
     } finally {

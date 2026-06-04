@@ -1,11 +1,10 @@
-import {
-  resolveArkVideoProviderConfig,
-  type ProviderEnv
-} from "./provider-config.js";
+import { resolveArkVideoProviderConfig, type ProviderEnv } from "./provider-config.js";
+import { runWithVideoSlot } from "../concurrency/video-semaphore.js";
 import type { FileTraceLogger } from "../trace/trace-log.js";
 
 export interface SeedanceVideoRequest {
   imageUrl: string;
+  lastFrameUrl?: string | null;
   prompt: string;
   durationSec?: number;
   aspectRatio?: "9:16" | "16:9" | "1:1";
@@ -17,6 +16,8 @@ export interface SeedanceVideoResult {
   provider: "mock" | "seedance";
   model: string;
   prompt: string;
+  taskId?: string;
+  createdAt?: number;
 }
 
 interface SeedanceProviderOptions {
@@ -31,6 +32,119 @@ interface SeedanceProviderOptions {
   jobId?: string;
   contractId?: string;
   contractVersion?: string;
+  /** Max retries for rate-limit (429) / transient (408/5xx/network) responses. */
+  maxRetries?: number;
+  /** Base backoff in ms; doubles each attempt and adds jitter. */
+  retryBaseMs?: number;
+  /** Injectable sleep for deterministic tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Injectable jitter source for deterministic tests. */
+  random?: () => number;
+}
+
+interface ArkRetryConfig {
+  maxRetries: number;
+  baseMs: number;
+  sleep: (ms: number) => Promise<void>;
+  random: () => number;
+}
+
+function numFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function resolveRetryConfig(options: SeedanceProviderOptions): ArkRetryConfig {
+  const env = options.env ?? process.env;
+  return {
+    maxRetries: options.maxRetries ?? numFromEnv(env.ARK_MAX_RETRIES, 4),
+    baseMs: options.retryBaseMs ?? numFromEnv(env.ARK_RETRY_BASE_MS, 1000),
+    sleep: options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    random: options.random ?? Math.random
+  };
+}
+
+// Ark meters the shared text+video account by RPM and a concurrent-task budget.
+// 429 (rate limit), 408 (timeout) and 5xx are transient by default, but the
+// Seedance task-create endpoint overrides create-time 429 to fail immediately
+// so BullMQ can reschedule the job without holding a video provider slot.
+// Other 4xx (e.g. 400 invalid request) are not retried so genuine contract
+// errors still surface immediately.
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 408 || status >= 500;
+}
+
+function retryDelayMs(
+  response: Response | null,
+  attempt: number,
+  retry: ArkRetryConfig
+): number {
+  const retryAfter = response?.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return seconds * 1000;
+    }
+    const dateMs = Date.parse(retryAfter);
+    if (Number.isFinite(dateMs)) {
+      return Math.max(0, dateMs - Date.now());
+    }
+  }
+  const expo = retry.baseMs * 2 ** attempt;
+  return expo + Math.floor(expo * 0.25 * retry.random());
+}
+
+async function fetchWithArkRetry(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  retry: ArkRetryConfig,
+  traceLogger: Pick<FileTraceLogger, "append"> | undefined,
+  meta: {
+    jobId?: string;
+    model: string;
+    isRetryableStatus?: (status: number) => boolean;
+  }
+): Promise<Response> {
+  let lastError: unknown;
+  const shouldRetryStatus = meta.isRetryableStatus ?? isRetryableStatus;
+  for (let attempt = 0; attempt <= retry.maxRetries; attempt += 1) {
+    let response: Response | null = null;
+    try {
+      response = await fetchImpl(url, init);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= retry.maxRetries) {
+        throw err;
+      }
+    }
+    if (response && (response.ok || !shouldRetryStatus(response.status))) {
+      return response;
+    }
+    if (attempt >= retry.maxRetries) {
+      // Exhausted: hand the last retryable response back so the caller builds
+      // its sanitized failure message (or rethrow the last network error).
+      if (response) {
+        return response;
+      }
+      throw lastError ?? new Error("Seedance request failed after retries");
+    }
+    await traceLogger?.append({
+      kind: "video.retry",
+      pipeline: "one_click_video",
+      status: "ok",
+      jobId: meta.jobId,
+      provider: "seedance",
+      model: meta.model,
+      meta: {
+        attempt: attempt + 1,
+        maxRetries: retry.maxRetries,
+        httpStatus: response?.status ?? null
+      }
+    });
+    await retry.sleep(retryDelayMs(response, attempt, retry));
+  }
+  throw lastError ?? new Error("Seedance request failed after retries");
 }
 
 function extractVideoUrl(payload: unknown): string | null {
@@ -235,22 +349,27 @@ async function pollVideoTask(
       baseURL: string;
       provider: string;
       model: string;
+      retry: ArkRetryConfig;
     }
 ) {
   const pollIntervalMs = options.pollIntervalMs ?? 10000;
   const maxPollAttempts = options.maxPollAttempts ?? 20;
-  const taskUrl = joinArkPath(
-    options.baseURL,
-    `contents/generations/tasks/${taskId}`
-  );
+  const taskUrl = joinArkPath(options.baseURL, `contents/generations/tasks/${taskId}`);
 
   for (let attempt = 0; attempt < maxPollAttempts; attempt += 1) {
-    const response = await options.fetch(taskUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${options.apiKey}`
-      }
-    });
+    const response = await fetchWithArkRetry(
+      options.fetch,
+      taskUrl,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${options.apiKey}`
+        }
+      },
+      options.retry,
+      options.traceLogger,
+      { jobId: options.jobId, model: options.model }
+    );
 
     if (!response.ok) {
       throw new Error(await buildFailureMessage("Seedance task query failed", response));
@@ -278,10 +397,7 @@ async function pollVideoTask(
     }
 
     const status = extractTaskStatus(payload);
-    if (
-      status &&
-      ["failed", "fail", "error", "cancelled", "canceled"].includes(status)
-    ) {
+    if (status && ["failed", "fail", "error", "cancelled", "canceled"].includes(status)) {
       throw new Error(`Seedance task ${taskId} failed with status ${status}`);
     }
 
@@ -309,133 +425,165 @@ export async function generateVideoWithSeedance(
 
   if (!config) {
     throw new Error(
-      "Seedance video export requires Ark video config: ARK_API_KEY and ARK_VIDEO_ENDPOINT_ID"
+      "Seedance video export requires Ark video config: ARK_API_KEY, ARK_BASE_URL, and ARK_VIDEO_ENDPOINT_ID"
     );
   }
 
   const fetchImpl = options.fetch ?? fetch;
-  await options.traceLogger?.append({
-    kind: "video.task_create_started",
-    pipeline: "one_click_video",
-    status: "ok",
-    jobId: options.jobId,
-    provider: "seedance",
-    model: config.model,
-    ...(options.contractId ? { contractId: options.contractId } : {}),
-    ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
-    meta: {
-      endpointFamily: "ark_video_task",
-      baseURL: config.baseURL,
-      prompt: request.prompt,
-      imageUrl: request.imageUrl,
-      duration,
-      ratio,
-      generateAudio
-    }
-  });
-  const response = await fetchImpl(
-    joinArkPath(config.baseURL, "contents/generations/tasks"),
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.model,
-        content: [
-          {
-            type: "text",
-            text: request.prompt
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: request.imageUrl
-            },
-            role: "first_frame"
-          }
-        ],
-        duration,
-        ratio,
-        generate_audio: generateAudio
-      })
-    }
-  );
+  const retry = resolveRetryConfig(options);
 
-  if (!response.ok) {
-    const message = await buildFailureMessage("Seedance request failed", response);
+  // Hold one of the VIDEO_PROVIDER_CONCURRENCY slots across the whole
+  // create+poll lifecycle. Acquired AFTER fast-fail validation/config above, so
+  // misconfigured calls never consume a permit.
+  return runWithVideoSlot(async () => {
     await options.traceLogger?.append({
-      kind: "video.failed",
+      kind: "video.task_create_started",
       pipeline: "one_click_video",
-      status: "error",
+      status: "ok",
       jobId: options.jobId,
       provider: "seedance",
       model: config.model,
       ...(options.contractId ? { contractId: options.contractId } : {}),
       ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
-      meta: { error: message }
-    });
-    throw new Error(message);
-  }
-
-  const payload = await readJsonResponse(response);
-  const taskId = extractTaskId(payload);
-  await options.traceLogger?.append({
-    kind: "video.task_created",
-    pipeline: "one_click_video",
-    status: "ok",
-    jobId: options.jobId,
-    provider: "seedance",
-    model: config.model,
-    ...(options.contractId ? { contractId: options.contractId } : {}),
-    ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
-    meta: {
-      taskId,
-      hasImmediateVideoUrl: Boolean(extractVideoUrl(payload))
-    }
-  });
-  const videoUrl =
-    extractVideoUrl(payload) ??
-    (await (async () => {
-      if (!taskId) {
-        return null;
-      }
-      return pollVideoTask(taskId, {
-        fetch: fetchImpl,
-        apiKey: config.apiKey,
+      meta: {
+        endpointFamily: "ark_video_task",
         baseURL: config.baseURL,
-        pollIntervalMs: options.pollIntervalMs,
-        maxPollAttempts: options.maxPollAttempts,
-        traceLogger: options.traceLogger,
+        prompt: request.prompt,
+        imageUrl: request.imageUrl,
+        lastFrameUrl: request.lastFrameUrl ?? null,
+        duration,
+        ratio,
+        generateAudio
+      }
+    });
+    const content = [
+      {
+        type: "text",
+        text: request.prompt
+      },
+      {
+        type: "image_url",
+        image_url: {
+          url: request.imageUrl
+        },
+        role: "first_frame"
+      },
+      ...(request.lastFrameUrl
+        ? [
+            {
+              type: "image_url",
+              image_url: {
+                url: request.lastFrameUrl
+              },
+              role: "last_frame"
+            }
+          ]
+        : [])
+    ];
+    const response = await fetchWithArkRetry(
+      fetchImpl,
+      joinArkPath(config.baseURL, "contents/generations/tasks"),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: config.model,
+          content,
+          duration,
+          ratio,
+          generate_audio: generateAudio
+        })
+      },
+      retry,
+      options.traceLogger,
+      {
+        jobId: options.jobId,
+        model: config.model,
+        isRetryableStatus: (status) =>
+          status !== 429 && isRetryableStatus(status)
+      }
+    );
+
+    if (!response.ok) {
+      const message = await buildFailureMessage("Seedance request failed", response);
+      await options.traceLogger?.append({
+        kind: "video.failed",
+        pipeline: "one_click_video",
+        status: "error",
         jobId: options.jobId,
         provider: "seedance",
         model: config.model,
-        contractId: options.contractId,
-        contractVersion: options.contractVersion
+        ...(options.contractId ? { contractId: options.contractId } : {}),
+        ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
+        meta: { error: message }
       });
-    })());
-  if (!videoUrl) {
-    throw new Error("Seedance response did not include a video URL");
-  }
-  await options.traceLogger?.append({
-    kind: "video.completed",
-    pipeline: "one_click_video",
-    status: "ok",
-    jobId: options.jobId,
-    provider: "seedance",
-    model: config.model,
-    ...(options.contractId ? { contractId: options.contractId } : {}),
-    ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
-    meta: {
-      videoUrl
+      throw new Error(message);
     }
-  });
 
-  return {
-    videoUrl,
-    provider: "seedance",
-    model: config.model,
-    prompt: request.prompt
-  };
+    const payload = await readJsonResponse(response);
+    const taskId = extractTaskId(payload);
+    await options.traceLogger?.append({
+      kind: "video.task_created",
+      pipeline: "one_click_video",
+      status: "ok",
+      jobId: options.jobId,
+      provider: "seedance",
+      model: config.model,
+      ...(options.contractId ? { contractId: options.contractId } : {}),
+      ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
+      meta: {
+        taskId,
+        hasImmediateVideoUrl: Boolean(extractVideoUrl(payload))
+      }
+    });
+    const videoUrl =
+      extractVideoUrl(payload) ??
+      (await (async () => {
+        if (!taskId) {
+          return null;
+        }
+        return pollVideoTask(taskId, {
+          fetch: fetchImpl,
+          apiKey: config.apiKey,
+          baseURL: config.baseURL,
+          pollIntervalMs: options.pollIntervalMs,
+          maxPollAttempts: options.maxPollAttempts,
+          traceLogger: options.traceLogger,
+          jobId: options.jobId,
+          provider: "seedance",
+          model: config.model,
+          contractId: options.contractId,
+          contractVersion: options.contractVersion,
+          retry
+        });
+      })());
+    if (!videoUrl) {
+      throw new Error("Seedance response did not include a video URL");
+    }
+    await options.traceLogger?.append({
+      kind: "video.completed",
+      pipeline: "one_click_video",
+      status: "ok",
+      jobId: options.jobId,
+      provider: "seedance",
+      model: config.model,
+      ...(options.contractId ? { contractId: options.contractId } : {}),
+      ...(options.contractVersion ? { contractVersion: options.contractVersion } : {}),
+      meta: {
+        videoUrl
+      }
+    });
+
+    return {
+      videoUrl,
+      provider: "seedance" as const,
+      model: config.model,
+      prompt: request.prompt,
+      ...(taskId ? { taskId } : {}),
+      createdAt: Math.floor(Date.now() / 1000)
+    };
+  });
 }

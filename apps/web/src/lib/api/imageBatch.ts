@@ -1,8 +1,5 @@
-import {
-  fetchJson,
-  type WorkflowEnvelope,
-  type AspectRatio,
-} from "./client.js";
+import { fetchJson, type UpstreamDrift, type WorkflowEnvelope } from "./client.js";
+import type { ImagePromptArtifact } from "./imagePrompt.js";
 
 export interface ImageCandidate {
   id: string;
@@ -12,6 +9,7 @@ export interface ImageCandidate {
 }
 
 export interface ImageBatchDetail {
+  id: string;
   batchId: string;
   status:
     | "PENDING"
@@ -26,27 +24,55 @@ export interface ImageBatchDetail {
   candidates: ImageCandidate[];
 }
 
-export function createImageBatch(
-  shotId: string,
-  body: {
-    imagePromptArtifactId: string;
-    count?: number;
-    aspectRatio: AspectRatio;
-  },
-  idempotencyKey: string,
-) {
-  return fetchJson<WorkflowEnvelope<{ batchId: string; jobId: string }>>(
-    `/api/shots/${shotId}/image-batches`,
-    {
-      method: "POST",
-      headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify(body),
-    },
+interface ImageBatchRow extends Omit<ImageBatchDetail, "batchId" | "candidates"> {
+  workspaceId: string;
+  shotId: string;
+  imagePromptArtifactId: string;
+  provider: string;
+  aspectRatio: string;
+  providerRequest: unknown;
+  errorMessage: string | null;
+  idempotencyKey: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ImageRound {
+  artifact: ImagePromptArtifact;
+  batch: ImageBatchRow | null;
+  candidates: ImageCandidate[];
+  selection: {
+    shotId: string;
+    selectedCandidateId: string;
+    selectedImageUrl: string;
+    nextShotId: string | null;
+    allShotsImageSelected: boolean;
+  } | null;
+  upstream?: UpstreamDrift;
+  context: unknown;
+}
+
+export function listImageRounds(workspaceId: string, shotId: string) {
+  return fetchJson<{ data: ImageRound[] }>(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/image-rounds`,
   );
 }
 
-export function getImageBatch(shotId: string, batchId: string) {
-  return fetchJson<WorkflowEnvelope<ImageBatchDetail>>(
-    `/api/shots/${shotId}/image-batches/${batchId}`,
-  );
+export async function getImageBatch(
+  workspaceId: string,
+  shotId: string,
+  batchId: string,
+): Promise<WorkflowEnvelope<ImageBatchDetail>> {
+  const rounds = await listImageRounds(workspaceId, shotId);
+  const round = rounds.data.find((item) => item.batch?.id === batchId);
+  if (!round?.batch) {
+    throw new Error(`Image round ${batchId} was not found`);
+  }
+  return {
+    data: {
+      ...round.batch,
+      batchId: round.batch.id,
+      candidates: round.candidates,
+    },
+  };
 }

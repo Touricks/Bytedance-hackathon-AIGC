@@ -1,4 +1,8 @@
-import type { MaterialIntakeArtifact } from "@aigc-video/shared";
+import {
+  STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+  STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
+  type MaterialIntakeArtifact,
+} from "@aigc-video/shared";
 import type { ArkJsonSchemaResponseFormat } from "../providers/ark-text.provider.js";
 
 type JsonSchema = Record<string, unknown>;
@@ -169,13 +173,19 @@ export function buildStoryboardResponseFormat(input: {
     schema: strictObject(
       {
         narrative: nonEmptyString,
-        totalDurationSec: positiveInteger,
+        totalDurationSec: {
+          type: "integer",
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC],
+        },
         shots: arrayOf(
           strictObject(
             {
               index: integer,
-              purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
-              durationSec: positiveInteger,
+              purpose: { type: "string", enum: ["hook", "proof", "cta"] },
+              durationSec: {
+                type: "integer",
+                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+              },
               scene: nonEmptyString,
               visualDirection: nonEmptyString,
               productAssetRef: refSchema(refs),
@@ -193,7 +203,7 @@ export function buildStoryboardResponseFormat(input: {
               "transition",
             ],
           ),
-          { minItems: 1 },
+          { minItems: 3, maxItems: 3 },
         ),
         assumptions: arrayOf(plainString),
       },
@@ -202,11 +212,79 @@ export function buildStoryboardResponseFormat(input: {
   });
 }
 
+export function buildStoryboardVoiceoverRewriteResponseFormat(input: {
+  schemaVersion: string;
+  expectedShotCount: number;
+}): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "ugc_storyboard_voiceover_rewrite_v1",
+    description: "按已确认分镜结构重写每段中文口播，只返回 index 与 voiceover。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        shots: arrayOf(
+          strictObject(
+            {
+              index: integer,
+              voiceover: nonEmptyString,
+            },
+            ["index", "voiceover"],
+          ),
+          {
+            minItems: input.expectedShotCount,
+            maxItems: input.expectedShotCount,
+          },
+        ),
+      },
+      ["shots"],
+    ),
+  });
+}
+
 export function buildShotPromptResponseFormat(input: {
   schemaVersion: string;
   material: MaterialIntakeArtifact;
+  expectedShotCount: number;
 }): ArkJsonSchemaResponseFormat {
   const refs = materialRefs(input.material);
+  const shotImageSchema = strictObject(
+    {
+      scene: nonEmptyString,
+      composition: nonEmptyString,
+      lighting: nonEmptyString,
+      productVisibility: nonEmptyString,
+      referenceUsage: nonEmptyString,
+      negative: arrayOf(plainString),
+    },
+    [
+      "scene",
+      "composition",
+      "lighting",
+      "productVisibility",
+      "referenceUsage",
+      "negative",
+    ],
+  );
+  const shotVideoSchema = strictObject(
+    {
+      cameraMotion: nonEmptyString,
+      subjectMotion: nonEmptyString,
+      firstFrameIntent: nonEmptyString,
+      lastFrameIntent: nullableString(),
+      durationIntent: nonEmptyString,
+      continuity: nonEmptyString,
+      negative: arrayOf(plainString),
+    },
+    [
+      "cameraMotion",
+      "subjectMotion",
+      "firstFrameIntent",
+      "lastFrameIntent",
+      "durationIntent",
+      "continuity",
+      "negative",
+    ],
+  );
   return responseFormat({
     name: "video_shotprompt_v1",
     description: "生成可编辑的 V1 Seedance 视频生成提示词 artifact。",
@@ -227,27 +305,8 @@ export function buildShotPromptResponseFormat(input: {
               providerPrompt: nonEmptyString,
               referenceAssetRefs: arrayOf(refSchema(refs)),
               voiceover: nonEmptyString,
-              shotImage: strictObject(
-                {
-                  scene: nonEmptyString,
-                  composition: nonEmptyString,
-                  productVisibility: nonEmptyString,
-                  style: nonEmptyString,
-                  negative: arrayOf(plainString),
-                },
-                ["scene", "composition", "productVisibility", "style", "negative"],
-              ),
-              shotVideo: strictObject(
-                {
-                  cameraMotion: nonEmptyString,
-                  subjectMotion: nonEmptyString,
-                  firstFrameIntent: nonEmptyString,
-                  lastFrameIntent: nonEmptyString,
-                  continuity: nonEmptyString,
-                  negative: arrayOf(plainString),
-                },
-                ["cameraMotion", "subjectMotion", "firstFrameIntent", "lastFrameIntent", "continuity", "negative"],
-              ),
+              shotImage: shotImageSchema,
+              shotVideo: shotVideoSchema,
             },
             [
               "index",
@@ -260,15 +319,24 @@ export function buildShotPromptResponseFormat(input: {
               "shotVideo",
             ],
           ),
-          { minItems: 1 },
+          { minItems: input.expectedShotCount, maxItems: input.expectedShotCount },
         ),
         tts: strictObject(
           {
             enabled: booleanSchema,
             source: { type: "string", enum: ["shots.voiceover"] },
             voiceover: plainString,
+            voiceProfile: strictObject(
+              {
+                gender: { type: "string", enum: ["female", "male"] },
+                tone: nonEmptyString,
+                pitch: { type: "string", enum: ["low", "medium", "high"] },
+                pace: { type: "string", enum: ["slow", "medium", "fast"] },
+              },
+              ["gender", "tone", "pitch", "pace"],
+            ),
           },
-          ["enabled", "source", "voiceover"],
+          ["enabled", "source", "voiceover", "voiceProfile"],
         ),
         assumptions: arrayOf(plainString),
       },
@@ -286,131 +354,42 @@ export function buildShotPromptResponseFormat(input: {
   });
 }
 
-export function buildRegenerateShotResponseFormat(input: {
+export function buildRegenerateShotPromptResponseFormat(input: {
   schemaVersion: string;
   material: MaterialIntakeArtifact;
 }): ArkJsonSchemaResponseFormat {
-  const refs = materialRefs(input.material);
-  return responseFormat({
-    name: "regenerate_shot_v1",
-    description: "重新生成单个分镜 shot，结构与 storyboard shot 一致。",
-    schemaVersion: input.schemaVersion,
-    schema: strictObject(
-      {
-        index: integer,
-        purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
-        durationSec: positiveInteger,
-        scene: nonEmptyString,
-        visualDirection: nonEmptyString,
-        productAssetRef: refSchema(refs),
-        voiceover: nonEmptyString,
-        transition: nonEmptyString,
-      },
-      ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"],
-    ),
-  });
+  return buildShotPromptResponseFormat({ ...input, expectedShotCount: 3 });
 }
 
 export function buildViralImitationResponseFormat(input: {
   schemaVersion: string;
   material: MaterialIntakeArtifact;
 }): ArkJsonSchemaResponseFormat {
-  const refs = materialRefs(input.material);
-  const shotSchema = strictObject(
-    {
-      index: integer,
-      purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
-      durationSec: positiveInteger,
-      scene: nonEmptyString,
-      visualDirection: nonEmptyString,
-      productAssetRef: refSchema(refs),
-      voiceover: nonEmptyString,
-      transition: nonEmptyString,
-    },
-    ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"],
-  );
-  return responseFormat({
-    name: "viral_imitation_v1",
-    description: "基于爆款模板库自动选模板并生成 UGC 分镜脚本。",
-    schemaVersion: input.schemaVersion,
-    schema: strictObject(
-      {
-        viralTemplateUsed: nonEmptyString,
-        matchReason: nonEmptyString,
-        narrative: nonEmptyString,
-        totalDurationSec: positiveInteger,
-        shots: arrayOf(shotSchema, { minItems: 6, maxItems: 6 }),
-        assumptions: arrayOf(plainString),
-      },
-      ["viralTemplateUsed", "matchReason", "narrative", "totalDurationSec", "shots", "assumptions"],
-    ),
-  });
-}
-
-export function buildRegenerateShotPromptResponseFormat(input: {
-  schemaVersion: string;
-  material: MaterialIntakeArtifact;
-}): ArkJsonSchemaResponseFormat {
-  const refs = materialRefs(input.material);
-  return responseFormat({
-    name: "regenerate_shotprompt_v1",
-    description: "重新生成单个 shotprompt shot（含 shotImage / shotVideo 完整结构）。",
-    schemaVersion: input.schemaVersion,
-    schema: strictObject(
-      {
-        index: integer,
-        startSec: integer,
-        endSec: positiveInteger,
-        providerPrompt: nonEmptyString,
-        referenceAssetRefs: arrayOf(refSchema(refs)),
-        voiceover: nonEmptyString,
-        shotImage: strictObject(
-          {
-            scene: nonEmptyString,
-            composition: nonEmptyString,
-            productVisibility: nonEmptyString,
-            style: nonEmptyString,
-            negative: arrayOf(plainString),
-          },
-          ["scene", "composition", "productVisibility", "style", "negative"],
-        ),
-        shotVideo: strictObject(
-          {
-            cameraMotion: nonEmptyString,
-            subjectMotion: nonEmptyString,
-            firstFrameIntent: nonEmptyString,
-            lastFrameIntent: nonEmptyString,
-            continuity: nonEmptyString,
-            negative: arrayOf(plainString),
-          },
-          ["cameraMotion", "subjectMotion", "firstFrameIntent", "lastFrameIntent", "continuity", "negative"],
-        ),
-      },
-      ["index", "startSec", "endSec", "providerPrompt", "referenceAssetRefs", "voiceover", "shotImage", "shotVideo"],
-    ),
-  });
+  return buildStoryboardResponseFormat(input);
 }
 
 export function buildVideoBreakdownResponseFormat(
   schemaVersion: string,
 ): ArkJsonSchemaResponseFormat {
-  const shotSchema = strictObject(
-    {
-      purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
-      description: nonEmptyString,
-      durationSec: positiveInteger,
-    },
-    ["purpose", "description", "durationSec"],
-  );
   return responseFormat({
     name: "video_breakdown_v1",
-    description: "对一段爆款视频进行结构化拆解，输出可复用的模板字段。",
+    description: "分析爆款视频结构，输出分镜拆解 artifact。",
     schemaVersion,
     schema: strictObject(
       {
         hookTechnique: nonEmptyString,
         sellingPoints: arrayOf(nonEmptyString, { minItems: 1 }),
-        structure: arrayOf(shotSchema, { minItems: 3 }),
+        structure: arrayOf(
+          strictObject(
+            {
+              purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+              description: nonEmptyString,
+              durationSec: positiveInteger,
+            },
+            ["purpose", "description", "durationSec"],
+          ),
+          { minItems: 3 },
+        ),
         emotionalArc: nonEmptyString,
         copyStyle: nonEmptyString,
         suggestedCategories: arrayOf(nonEmptyString, { minItems: 1 }),
@@ -427,28 +406,6 @@ export function buildVideoBreakdownResponseFormat(
         "suggestedName",
         "whyViral",
       ],
-    ),
-  });
-}
-
-export function buildFeedbackRouteResponseFormat(
-  schemaVersion: string,
-): ArkJsonSchemaResponseFormat {
-  return responseFormat({
-    name: "feedback_route_v1",
-    description: "把成片反馈结构化路由到 brief、storyboard 或 shotprompt。",
-    schemaVersion,
-    schema: strictObject(
-      {
-        targetArtifact: {
-          type: "string",
-          enum: ["brief", "storyboard", "shotprompt"],
-        },
-        reason: nonEmptyString,
-        revisionInstruction: nonEmptyString,
-        confidence: { type: "string", enum: ["high", "medium", "low"] },
-      },
-      ["targetArtifact", "reason", "revisionInstruction", "confidence"],
     ),
   });
 }

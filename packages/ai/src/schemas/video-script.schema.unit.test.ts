@@ -8,11 +8,16 @@ describe("VideoShotScriptOutputSchema", () => {
     shotGoal: "Show product",
     startFrameDescription: "Close-up product on marble",
     endFrameDescription: "Wider shot, hand picks it up",
+    continuityWithPrevious: null,
+    continuityWithNext: null,
     cameraMotion: "push_in",
     subjectMotion: "hand enters frame",
     productVisibility: "hero",
     sceneConsistency: "same lighting throughout",
+    voiceover: null,
+    onscreenText: null,
     providerPrompt: "A 4-second cinematic shot pushing in on the product on marble; hand enters and lifts it",
+    negativePrompt: null,
     riskNotes: [],
   };
 
@@ -30,15 +35,17 @@ describe("VideoShotScriptOutputSchema", () => {
     assert.deepEqual(out.riskNotes, valid.riskNotes);
   });
 
-  it("rejects durationSec > 8", () => {
+  it("requires nullable soft fields to be present for strict structured output", () => {
+    const missingSoftField: Partial<typeof valid> = { ...valid };
+    delete missingSoftField.continuityWithNext;
     assert.throws(() =>
-      VideoShotScriptOutputSchema.parse({ ...valid, durationSec: 12 }),
+      VideoShotScriptOutputSchema.parse(missingSoftField),
     );
   });
 
-  it("rejects providerPrompt shorter than 30 chars", () => {
+  it("rejects extra fields", () => {
     assert.throws(() =>
-      VideoShotScriptOutputSchema.parse({ ...valid, providerPrompt: "too short" }),
+      VideoShotScriptOutputSchema.parse({ ...valid, extra: "not allowed" }),
     );
   });
 });

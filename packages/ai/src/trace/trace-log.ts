@@ -10,13 +10,14 @@ export type TracePipeline =
   | "feedback"
   | "shotprompt"
   | "storyboard"
-  | "storyboard_variants"
   | "one_click_video"
   | "probe_to_text"
   | "probe_image_to_video"
   | "shot_image"
+  | "shot_video"
   | "tts"
-  | "video_breakdown";
+  | "video_breakdown"
+  | "final_compose";
 
 export type TraceStatus = "ok" | "error";
 export type TraceScope = "users" | "tests";
@@ -26,6 +27,7 @@ export interface TraceEventInput {
   pipeline: TracePipeline;
   status: TraceStatus;
   workspaceId?: string;
+  shotId?: string;
   jobId?: string;
   provider?: string;
   model?: string;

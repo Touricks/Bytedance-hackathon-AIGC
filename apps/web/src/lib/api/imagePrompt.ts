@@ -1,4 +1,5 @@
 import { fetchJson, type WorkflowEnvelope } from "./client.js";
+import type { ImageBatchDetail, ImageCandidate } from "./imageBatch.js";
 
 export interface ImagePromptArtifact {
   id: string;
@@ -8,37 +9,77 @@ export interface ImagePromptArtifact {
   promptText: string;
   negativePrompt: string | null;
   referenceAssetIds: string[];
+  promptJson?: ImagePromptJson | null;
+  sourceFingerprint?: unknown;
+  promptAssembly?: unknown;
+  baseArtifactId?: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+export interface ImagePromptReferenceUsage {
+  assetId: string;
+  usage:
+    | "product_identity"
+    | "style_reference"
+    | "scene_reference"
+    | "composition_reference";
+  instruction: string;
+}
+
+export interface ImagePromptJson {
+  promptText: string;
+  negativePrompt: string | null;
+  visualStyle: string | null;
+  composition: string | null;
+  lighting: string | null;
+  productVisibilityRule: string;
+  referenceImageUsage: ImagePromptReferenceUsage[];
+  qualityChecklist: string[];
+  context?: unknown;
 }
 
 export function proposeImagePrompt(
   workspaceId: string,
   shotId: string,
   body: {
-    referenceAssetIds: string[];
-    userHint?: string;
-    stylePresetId?: string;
+    userDirection?: string;
   },
 ) {
-  return fetchJson<WorkflowEnvelope<ImagePromptArtifact>>(
+  return fetchJson<
+    WorkflowEnvelope<ImagePromptArtifact> & {
+      artifact: ImagePromptArtifact;
+      batch: ImageBatchDetail;
+      candidates: ImageCandidate[];
+      created?: number;
+      usage?: unknown;
+      context?: unknown;
+    }
+  >(
     `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/propose`,
     { method: "POST", body: JSON.stringify(body) },
   );
 }
 
-export function patchImagePrompt(
+export function regenerateImagePrompt(
+  workspaceId: string,
   shotId: string,
-  artifactId: string,
   body: {
-    promptText: string;
-    negativePrompt?: string;
-    referenceAssetIds: string[];
+    baseArtifactId: string;
+    feedbackImageCandidateId: string;
+    userDirection: string;
   },
 ) {
-  return fetchJson<WorkflowEnvelope<ImagePromptArtifact>>(
-    `/api/shots/${shotId}/image-prompts/${artifactId}`,
-    { method: "PATCH", body: JSON.stringify(body) },
+  return fetchJson<
+    WorkflowEnvelope<ImagePromptArtifact> & {
+      artifact: ImagePromptArtifact;
+      batch: ImageBatchDetail;
+      candidates: ImageCandidate[];
+      context?: unknown;
+    }
+  >(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/image-prompts/regenerate`,
+    { method: "POST", body: JSON.stringify(body) },
   );
 }
 

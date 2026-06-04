@@ -12,18 +12,14 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/prompts','dist/prompts',{recursive:true,filter:(s)=>!/\\.(ts|tsx)$/.test(s)})\"",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/prompts','dist/prompts',{recursive:true,filter:(s)=>!/\\.(ts|tsx)$/.test(s)})\"",
     "pretest": "pnpm --filter @aigc-video/shared build",
     "test": "TRACE_LOG_SCOPE=tests AIGC_VIDEO_SKIP_ENV_FILE=true MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= node --import tsx --test \"src/**/*.test.ts\"",
-    "probe:to-text": "tsx src/probes/to-text.ts",
-    "probe:image-to-video": "tsx src/probes/image-to-video.ts",
-    "smoke:real-providers": "MODEL_MODE=real tsx src/smoke/real-providers.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
     "@aigc-video/shared": "workspace:*",
-    "@openai/agents": "^0.0.5",
     "openai": "^4.86.1",
     "zod": "^3.24.1"
   },

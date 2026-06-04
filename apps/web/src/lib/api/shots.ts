@@ -3,6 +3,8 @@ import {
   type WorkflowEnvelope,
   type ShotStatus,
   type NextAction,
+  type UpstreamDrift,
+  type WorkspaceShotSet,
 } from "./client.js";
 
 export interface ShotRow {
@@ -20,6 +22,17 @@ export interface ShotRow {
   selectedVideoId: string | null;
 }
 
+export interface ShotSetShot extends ShotRow {
+  shotSetId: string;
+  requirements: {
+    shotImage: unknown;
+    shotVideo: unknown;
+    sourceShotPromptArtifactId: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface WorkflowStatus {
   workspaceId: string;
   shots: Array<{
@@ -29,17 +42,34 @@ export interface WorkflowStatus {
     nextAction: NextAction;
     activeImagePromptArtifactId: string | null;
     selectedImageId: string | null;
+    selectedImageUrl?: string | null;
     activeVideoScriptArtifactId: string | null;
     selectedVideoId: string | null;
     activeImageBatchId?: string | null;
     activeVideoBatchId?: string | null;
+    activeVideoBatchStatus?:
+      | "PENDING"
+      | "RUNNING"
+      | "SUCCEEDED"
+      | "PARTIAL"
+      | "FAILED"
+      | "CANCELLED"
+      | null;
+    upstream?: UpstreamDrift;
+    videoUpstream?: UpstreamDrift;
   }>;
   canComposeFinalVideo: boolean;
 }
 
 export function listShots(workspaceId: string) {
-  return fetchJson<{ data: ShotRow[] }>(
+  return fetchJson<{ data: ShotSetShot[] }>(
     `/api/workspaces/${workspaceId}/shots`,
+  );
+}
+
+export function listWorkspaceShotSets(workspaceId: string) {
+  return fetchJson<{ data: WorkspaceShotSet[] }>(
+    `/api/workspaces/${workspaceId}/shot-sets`,
   );
 }
 

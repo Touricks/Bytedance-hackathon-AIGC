@@ -23,7 +23,7 @@ export const materialAssetSchema = z.object({
     "reference",
     "other",
   ]),
-  description: z.string().min(1),
+  description: z.string().trim().min(1),
   relevance: z.enum(["high", "medium", "low"]),
   usable: z.boolean(),
   included: z.boolean(),
@@ -96,6 +96,20 @@ export const shotPromptShotArtifactSchema = z.object({
   shotVideo: z.record(z.unknown()).optional(),
 });
 
+export const shotPromptVoiceProfileSchema = z.object({
+  gender: z.enum(["female", "male"]),
+  tone: z.string().min(1),
+  pitch: z.enum(["low", "medium", "high"]),
+  pace: z.enum(["slow", "medium", "fast"]),
+});
+
+export const DEFAULT_SHOT_PROMPT_VOICE_PROFILE = {
+  gender: "female",
+  tone: "自信、友好、可信",
+  pitch: "medium",
+  pace: "medium",
+} as const satisfies z.infer<typeof shotPromptVoiceProfileSchema>;
+
 export const shotPromptArtifactSchema = z.object({
   targetProvider: z.literal("seedance"),
   durationSec: z.number().int().positive(),
@@ -108,6 +122,9 @@ export const shotPromptArtifactSchema = z.object({
     source: z.literal("shots.voiceover").default("shots.voiceover"),
     voiceover: z.string(),
     audioAssetRef: z.string().min(1).optional(),
+    voiceProfile: shotPromptVoiceProfileSchema.default(
+      DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
+    ),
   }),
   assumptions: z.array(z.string()),
 });
@@ -148,6 +165,7 @@ export type MaterialIntakeArtifact = z.infer<
 >;
 export type ProductBriefArtifact = z.infer<typeof productBriefArtifactSchema>;
 export type StoryboardArtifact = z.infer<typeof storyboardArtifactSchema>;
+export type ShotPromptVoiceProfile = z.infer<typeof shotPromptVoiceProfileSchema>;
 export type ShotPromptArtifact = z.infer<typeof shotPromptArtifactSchema>;
 export type FeedbackRouteArtifact = z.infer<typeof feedbackRouteArtifactSchema>;
 

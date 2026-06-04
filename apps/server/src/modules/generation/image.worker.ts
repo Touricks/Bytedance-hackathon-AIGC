@@ -1,47 +1,207 @@
-import {
-  generateImagesWithArk,
-  resolveImageProviderConfig,
-  type ArkImageResult,
-} from "@aigc-video/ai";
-import type { GenerateImagesJobData } from "@aigc-video/shared";
+import type {
+  GenerateImageCandidateJobData,
+  GenerateImagesJobData,
+} from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { traceService } from "../trace/trace.service.js";
 import { jobRepository } from "../job/job.repository.js";
-import { resolveAssetUrls } from "../material/asset-url-resolver.js";
+import type { GenerationV2JobMeta } from "../job/job.queue.js";
+import {
+  runImageGenerationCandidate,
+  runImageGenerationBatch,
+  __setAssetUrlResolverForTests,
+  __setGeneratedAssetPersisterForTests,
+  __setImageProviderForTests,
+} from "./direct-generation.js";
 
 type Adapter = typeof db.db2;
+export {
+  __setAssetUrlResolverForTests,
+  __setGeneratedAssetPersisterForTests,
+  __setImageProviderForTests,
+};
 
-type Provider = (args: {
-  prompt: string;
-  negativePrompt?: string | null;
-  referenceImageUrls?: string[];
-  count: number;
-  aspectRatio: "9:16" | "16:9" | "1:1";
-}) => Promise<ArkImageResult>;
-
-let providerOverride: Provider | undefined;
-export function __setImageProviderForTests(p: Provider | undefined) {
-  providerOverride = p;
+async function refreshImageBatchCompletion(
+  batchId: string,
+  shotId: string,
+  adapter: Adapter,
+) {
+  const client = await adapter.pool().connect();
+  try {
+    await client.query("begin");
+    const batch = await client.query(
+      `select requested_count from image_generation_batches where id = $1 for update`,
+      [batchId],
+    );
+    const counts = await client.query(
+      `select status, count(*)::int as count
+       from image_candidates
+       where batch_id = $1
+       group by status`,
+      [batchId],
+    );
+    const byStatus = new Map(
+      counts.rows.map((row) => [String(row.status), Number(row.count)]),
+    );
+    const succeeded = byStatus.get("SUCCEEDED") ?? 0;
+    const failed =
+      (byStatus.get("FAILED") ?? 0) + (byStatus.get("REJECTED") ?? 0);
+    const pending =
+      (byStatus.get("PENDING") ?? 0) +
+      (byStatus.get("RUNNING") ?? 0) +
+      (byStatus.get("PERSISTING") ?? 0);
+    const requested = Number(batch.rows[0]?.requested_count ?? 0);
+    const status =
+      pending > 0
+        ? "RUNNING"
+        : failed === 0 && succeeded === requested
+          ? "SUCCEEDED"
+          : succeeded > 0
+            ? "PARTIAL"
+            : "FAILED";
+    const updated = await client.query(
+      `update image_generation_batches
+       set status = $2,
+           succeeded_count = $3,
+           failed_count = $4,
+           updated_at = now()
+       where id = $1
+       returning *`,
+      [batchId, status, succeeded, failed],
+    );
+    if (pending === 0) {
+      await client.query(
+        `update storyboard_shots
+         set status = $2,
+             last_error = $3,
+             updated_at = now()
+         where id = $1`,
+        [
+          shotId,
+          status === "SUCCEEDED" ? "IMAGE_CANDIDATES_READY" : "FAILED",
+          status === "SUCCEEDED"
+            ? null
+            : `Image batch ${batchId} completed with ${succeeded}/${requested} candidates`,
+        ],
+      );
+    }
+    await client.query("commit");
+    return { batch: updated.rows[0], status, succeeded, failed, requested };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-let resolveAssetUrlsOverride: ((ids: string[]) => Promise<string[]>) | undefined;
-export function __setAssetUrlResolverForTests(fn: ((ids: string[]) => Promise<string[]>) | undefined) {
-  resolveAssetUrlsOverride = fn;
-}
+export async function processGenerateImageCandidate(
+  data: GenerateImageCandidateJobData,
+  adapter: Adapter = db.db2,
+  meta?: GenerationV2JobMeta,
+) {
+  const batch = await adapter.getImageBatch(data.batchId);
+  if (batch.status !== "PENDING" && batch.status !== "RUNNING") return;
+  const attempts = Math.max(1, meta?.attempts ?? 1);
+  const currentAttempt = Math.min(attempts, (meta?.attemptsMade ?? 0) + 1);
+  const isFinalAttempt = currentAttempt >= attempts;
 
-async function defaultProvider(args: Parameters<Provider>[0]): Promise<ArkImageResult> {
-  const cfg = resolveImageProviderConfig();
-  if (!cfg) throw new Error("IMAGE provider not configured");
-  return generateImagesWithArk(
-    {
-      prompt: args.prompt,
-      negativePrompt: args.negativePrompt ?? undefined,
-      referenceImageUrls: args.referenceImageUrls,
-      count: args.count,
-      aspectRatio: args.aspectRatio,
-    },
-    cfg,
+  await adapter.updateImageBatch(batch.id, { status: "RUNNING" });
+  await jobRepository.update(data.jobId, {
+    status: "RUNNING",
+    attemptCount: currentAttempt,
+    maxAttempts: attempts,
+    startedAt: new Date().toISOString(),
+  });
+
+  try {
+    const generated = await runImageGenerationCandidate({
+      batchId: data.batchId,
+      candidateId: data.candidateId,
+      aspectRatio: data.aspectRatio,
+      referenceImageUrls: data.referenceImageUrls,
+      referenceImageUrlsAfterAssets: data.referenceImageUrlsAfterAssets,
+      failCandidateOnError: isFinalAttempt,
+      providerTrace: {
+        workspaceId: data.workspaceId,
+        shotId: data.shotId,
+        jobId: data.jobId,
+        attempt: currentAttempt,
+        maxAttempts: attempts,
+        candidateIndex: data.candidateIndex,
+      },
+      adapter,
+    });
+    await jobRepository.update(data.jobId, {
+      status: generated.candidate.status === "SUCCEEDED" ? "SUCCEEDED" : "FAILED",
+      completedAt: new Date().toISOString(),
+      errorMessage: generated.candidate.errorMessage,
+    });
+  } catch (err) {
+    const msg = String((err as Error).message ?? err);
+    if (!isFinalAttempt) {
+      await jobRepository.update(data.jobId, {
+        status: "RUNNING",
+        errorMessage: msg,
+      });
+      await traceService.record({
+        workspaceId: data.workspaceId,
+        shotId: data.shotId,
+        traceType: "job_event",
+        name: "image_candidate_retry",
+        metadata: {
+          jobId: data.jobId,
+          batchId: data.batchId,
+          candidateId: data.candidateId,
+          candidateIndex: data.candidateIndex,
+          attempt: currentAttempt,
+          maxAttempts: attempts,
+          error: msg,
+        },
+      });
+      throw err;
+    }
+    await jobRepository.update(data.jobId, {
+      status: "FAILED",
+      completedAt: new Date().toISOString(),
+      errorMessage: msg,
+    });
+    await traceService.record({
+      workspaceId: data.workspaceId,
+      shotId: data.shotId,
+      traceType: "job_event",
+      name: "image_candidate_failed",
+      metadata: {
+        jobId: data.jobId,
+        batchId: data.batchId,
+        candidateId: data.candidateId,
+        candidateIndex: data.candidateIndex,
+        error: msg,
+      },
+    });
+  }
+
+  const completion = await refreshImageBatchCompletion(
+    data.batchId,
+    data.shotId,
+    adapter,
   );
+  await traceService.record({
+    workspaceId: data.workspaceId,
+    shotId: data.shotId,
+    traceType: "job_event",
+    name: "image_candidate_completed",
+    metadata: {
+      jobId: data.jobId,
+      batchId: data.batchId,
+      candidateId: data.candidateId,
+      candidateIndex: data.candidateIndex,
+      batchStatus: completion.status,
+      succeededCount: completion.succeeded,
+      failedCount: completion.failed,
+      requestedCount: completion.requested,
+    },
+  });
 }
 
 export async function processGenerateImages(
@@ -57,25 +217,23 @@ export async function processGenerateImages(
     startedAt: new Date().toISOString(),
   });
 
-  const artifact = await adapter.getImagePromptArtifact(data.imagePromptArtifactId);
-
-  let result: ArkImageResult;
+  let generated: Awaited<ReturnType<typeof runImageGenerationBatch>>;
   try {
-    const resolver = resolveAssetUrlsOverride ?? resolveAssetUrls;
-    const referenceImageUrls = await resolver(artifact.referenceAssetIds);
-    result = await (providerOverride ?? defaultProvider)({
-      prompt: artifact.promptText,
-      negativePrompt: artifact.negativePrompt ?? undefined,
-      referenceImageUrls,
+    generated = await runImageGenerationBatch({
+      batchId: data.batchId,
       count: data.count,
       aspectRatio: data.aspectRatio,
+      providerTrace: {
+        workspaceId: data.workspaceId,
+        shotId: data.shotId,
+        jobId: data.jobId,
+        attempt: 1,
+        maxAttempts: 1,
+      },
+      adapter,
     });
   } catch (err) {
     const msg = String((err as Error).message ?? err);
-    await adapter.updateImageBatch(batch.id, {
-      status: "FAILED",
-      errorMessage: msg,
-    });
     await adapter.updateShot(data.shotId, { status: "FAILED", lastError: msg });
     await jobRepository.update(data.jobId, {
       status: "FAILED",
@@ -91,54 +249,7 @@ export async function processGenerateImages(
     });
     throw err;
   }
-
-  for (const c of result.candidates) {
-    await adapter.insertImageCandidate({
-      id: "imc_" + Math.random().toString(36).slice(2, 12),
-      batchId: batch.id,
-      shotId: batch.shotId,
-      workspaceId: batch.workspaceId,
-      imageUrl: c.imageUrl,
-      objectKey: c.objectKey ?? null,
-      width: null,
-      height: null,
-      seed: c.seed ?? null,
-      provider: result.provider,
-      providerResponse: c,
-      status: "SUCCEEDED",
-      errorMessage: null,
-    });
-  }
-  for (let i = result.candidates.length; i < data.count; i++) {
-    await adapter.insertImageCandidate({
-      id: "imc_" + Math.random().toString(36).slice(2, 12),
-      batchId: batch.id,
-      shotId: batch.shotId,
-      workspaceId: batch.workspaceId,
-      imageUrl: null,
-      objectKey: null,
-      width: null,
-      height: null,
-      seed: null,
-      provider: result.provider,
-      providerResponse: {},
-      status: "FAILED",
-      errorMessage: "provider_returned_short",
-    });
-  }
-
-  const finalStatus =
-    result.candidates.length === data.count
-      ? "SUCCEEDED"
-      : result.candidates.length > 0
-        ? "PARTIAL"
-        : "FAILED";
-
-  await adapter.updateImageBatch(batch.id, {
-    status: finalStatus,
-    succeededCount: result.candidates.length,
-    failedCount: data.count - result.candidates.length,
-  });
+  const finalStatus = generated.finalBatch.status;
   await jobRepository.update(data.jobId, {
     status: finalStatus === "FAILED" ? "FAILED" : "SUCCEEDED",
     completedAt: new Date().toISOString(),
@@ -152,9 +263,9 @@ export async function processGenerateImages(
     traceType: "provider_call",
     name: "image_generation_completed",
     metadata: {
-      provider: result.provider,
-      model: result.model,
-      count: result.candidates.length,
+      provider: generated.result?.provider,
+      model: generated.result?.model,
+      count: generated.candidates.filter((candidate) => candidate.status === "SUCCEEDED").length,
       jobId: data.jobId,
     },
   });

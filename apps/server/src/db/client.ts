@@ -21,8 +21,8 @@ type CreateScriptInput = Omit<Script, "id" | "createdAt"> & Partial<Pick<Script,
 type CreateShotInput = Omit<StoryboardShot, "id" | "scriptId">;
 type CreateWorkspaceInput = Omit<
   CreativeWorkspace,
-  "createdAt" | "updatedAt" | "lastSeenAt"
->;
+  "createdAt" | "updatedAt" | "lastSeenAt" | "localPath"
+> & { localPath?: string | null };
 type UpdateWorkspaceInput = Partial<
   Pick<CreativeWorkspace, "currentScriptId" | "currentJobId" | "status" | "traceFile">
 >;
@@ -90,6 +90,8 @@ export interface ImagePromptArtifactRow {
   negativePrompt: string | null;
   referenceAssetIds: string[];
   promptJson: unknown;
+  sourceFingerprint: unknown;
+  promptAssembly: unknown;
   createdBy: string;
   agentName: string | null;
   promptTemplateVersion: string | null;
@@ -127,7 +129,7 @@ export interface ImageCandidateRow {
   seed: string | null;
   provider: string;
   providerResponse: unknown;
-  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "REJECTED";
+  status: "PENDING" | "RUNNING" | "PERSISTING" | "SUCCEEDED" | "FAILED" | "REJECTED";
   errorMessage: string | null;
   createdAt: string;
 }
@@ -143,6 +145,8 @@ export interface VideoScriptArtifactRow {
   basedOnImageCandidateId: string;
   basedOnPrevImageCandidateId: string | null;
   basedOnNextImageCandidateId: string | null;
+  sourceFingerprint: unknown;
+  promptAssembly: unknown;
   createdBy: string;
   agentName: string | null;
   promptTemplateVersion: string | null;
@@ -210,6 +214,7 @@ export interface GenerationJobRow {
 export interface FinalVideoJobRow {
   id: string;
   workspaceId: string;
+  shotSetId: string | null;
   status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   sourceShotVideoIds: string[];
   sourceVideoScriptArtifactIds: string[];
@@ -243,6 +248,22 @@ export interface TraceEventRow {
   outputPreview: string | null;
   metadata: unknown;
   createdAt: string;
+}
+
+export interface WorkspaceStorageBindingRow {
+  id: string;
+  workspaceId: string;
+  kind: "LOCAL" | "S3";
+  status: "ACTIVE" | "ARCHIVED";
+  localPath: string | null;
+  localPathNormalized: string | null;
+  s3Bucket: string | null;
+  s3Prefix: string | null;
+  s3Region: string | null;
+  s3Endpoint: string | null;
+  metadata: unknown;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── v2 adapter interface ─────────────────────────────────────────────────────
@@ -280,6 +301,10 @@ export interface Db2Adapter {
   insertImageCandidate(
     input: Omit<ImageCandidateRow, "createdAt">
   ): Promise<ImageCandidateRow>;
+  updateImageCandidate(
+    id: string,
+    patch: Partial<ImageCandidateRow>
+  ): Promise<ImageCandidateRow>;
   listImageCandidatesByBatch(batchId: string): Promise<ImageCandidateRow[]>;
   getImageCandidate(id: string): Promise<ImageCandidateRow>;
   // Selected images
@@ -287,6 +312,7 @@ export interface Db2Adapter {
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void>;
   getSelectedImage(
     shotId: string
@@ -312,6 +338,10 @@ export interface Db2Adapter {
   insertVideoCandidate(
     input: Omit<VideoCandidateRow, "createdAt">
   ): Promise<VideoCandidateRow>;
+  updateVideoCandidate(
+    id: string,
+    patch: Partial<VideoCandidateRow>
+  ): Promise<VideoCandidateRow>;
   listVideoCandidatesByBatch(batchId: string): Promise<VideoCandidateRow[]>;
   getVideoCandidate(id: string): Promise<VideoCandidateRow>;
   // Selected videos
@@ -319,7 +349,11 @@ export interface Db2Adapter {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void>;
+  getSelectedVideo(
+    shotId: string
+  ): Promise<{ videoCandidateId: string; videoGenerationBatchId: string } | null>;
   deleteSelectedVideo(shotId: string): Promise<void>;
   // Generation jobs
   insertGenerationJob(
@@ -361,6 +395,21 @@ interface DbAdapter {
   listWorkspaces(limit?: number): Promise<CreativeWorkspace[]>;
   getWorkspace(workspaceId: string): Promise<CreativeWorkspace>;
   findWorkspaceByLocalPath(localPath: string): Promise<CreativeWorkspace | null>;
+  getActiveWorkspaceStorage(
+    workspaceId: string
+  ): Promise<WorkspaceStorageBindingRow | null>;
+  bindWorkspaceLocalStorage(input: {
+    workspaceId: string;
+    localPath: string;
+    localPathNormalized: string;
+  }): Promise<WorkspaceStorageBindingRow>;
+  bindWorkspaceS3Storage(input: {
+    workspaceId: string;
+    bucket: string;
+    prefix: string;
+    region?: string | null;
+    endpoint?: string | null;
+  }): Promise<WorkspaceStorageBindingRow>;
   touchWorkspace(workspaceId: string): Promise<CreativeWorkspace>;
   updateWorkspace(
     workspaceId: string,
@@ -450,7 +499,7 @@ function toGenerationJob(row: Record<string, unknown>): GenerationJob {
 function toWorkspace(row: Record<string, unknown>): CreativeWorkspace {
   return {
     id: String(row.id),
-    localPath: String(row.local_path),
+    localPath: typeof row.local_path === "string" ? row.local_path : "",
     currentScriptId: String(row.current_script_id),
     currentJobId: typeof row.current_job_id === "string" ? row.current_job_id : undefined,
     status: row.status as CreativeWorkspace["status"],
@@ -458,6 +507,30 @@ function toWorkspace(row: Record<string, unknown>): CreativeWorkspace {
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
     lastSeenAt: toIsoString(row.last_seen_at)
+  };
+}
+
+function toWorkspaceStorageBinding(
+  row: Record<string, unknown>
+): WorkspaceStorageBindingRow {
+  return {
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    kind: row.kind as WorkspaceStorageBindingRow["kind"],
+    status: row.status as WorkspaceStorageBindingRow["status"],
+    localPath: typeof row.local_path === "string" ? row.local_path : null,
+    localPathNormalized:
+      typeof row.local_path_normalized === "string"
+        ? row.local_path_normalized
+        : null,
+    s3Bucket: typeof row.s3_bucket === "string" ? row.s3_bucket : null,
+    s3Prefix: typeof row.s3_prefix === "string" ? row.s3_prefix : null,
+    s3Region: typeof row.s3_region === "string" ? row.s3_region : null,
+    s3Endpoint: typeof row.s3_endpoint === "string" ? row.s3_endpoint : null,
+    metadata:
+      row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
   };
 }
 
@@ -571,24 +644,25 @@ class PostgresDbAdapter implements DbAdapter {
       `insert into creative_workspace
          (id, local_path, current_script_id, current_job_id, status, trace_file)
        values ($1, $2, $3, $4, $5, $6)
-       on conflict (local_path) do update
-       set current_script_id = creative_workspace.current_script_id,
-           current_job_id = creative_workspace.current_job_id,
-           status = creative_workspace.status,
-           trace_file = excluded.trace_file,
-           updated_at = now(),
-           last_seen_at = now()
        returning *`,
       [
         input.id,
-        input.localPath,
+        input.localPath ?? null,
         input.currentScriptId,
         input.currentJobId ?? null,
         input.status,
         input.traceFile
       ]
     );
-    return firstRow(result.rows, "CreativeWorkspace", toWorkspace);
+    const workspace = firstRow(result.rows, "CreativeWorkspace", toWorkspace);
+    if (input.localPath) {
+      await this.bindWorkspaceLocalStorage({
+        workspaceId: workspace.id,
+        localPath: input.localPath,
+        localPathNormalized: input.localPath,
+      });
+    }
+    return workspace;
   }
 
   async listWorkspaces(limit = 50): Promise<CreativeWorkspace[]> {
@@ -612,11 +686,134 @@ class PostgresDbAdapter implements DbAdapter {
 
   async findWorkspaceByLocalPath(localPath: string): Promise<CreativeWorkspace | null> {
     const result = await this.getPool().query(
-      "select * from creative_workspace where local_path = $1",
+      `select cw.*
+       from creative_workspace cw
+       join workspace_storage_bindings wsb
+         on wsb.workspace_id = cw.id
+        and wsb.status = 'ACTIVE'
+        and wsb.kind = 'LOCAL'
+       where wsb.local_path_normalized = $1
+       limit 1`,
       [localPath]
     );
     const row = result.rows[0];
     return row ? toWorkspace(row) : null;
+  }
+
+  async getActiveWorkspaceStorage(
+    workspaceId: string
+  ): Promise<WorkspaceStorageBindingRow | null> {
+    const result = await this.getPool().query(
+      `select *
+       from workspace_storage_bindings
+       where workspace_id = $1 and status = 'ACTIVE'
+       limit 1`,
+      [workspaceId]
+    );
+    const row = result.rows[0];
+    return row ? toWorkspaceStorageBinding(row) : null;
+  }
+
+  async bindWorkspaceLocalStorage(input: {
+    workspaceId: string;
+    localPath: string;
+    localPathNormalized: string;
+  }): Promise<WorkspaceStorageBindingRow> {
+    await this.getWorkspace(input.workspaceId);
+    const existing = await this.getActiveWorkspaceStorage(input.workspaceId);
+    if (existing) {
+      if (
+        existing.kind === "LOCAL" &&
+        existing.localPathNormalized === input.localPathNormalized
+      ) {
+        return existing;
+      }
+      throw new Error("WORKSPACE_STORAGE_ALREADY_BOUND");
+    }
+
+    try {
+      const result = await this.getPool().query(
+        `insert into workspace_storage_bindings
+           (id, workspace_id, kind, status, local_path, local_path_normalized)
+         values ($1, $2, 'LOCAL', 'ACTIVE', $3, $4)
+         returning *`,
+        [nanoid(), input.workspaceId, input.localPath, input.localPathNormalized]
+      );
+      await this.getPool().query(
+        `update creative_workspace
+         set local_path = $2, updated_at = now(), last_seen_at = now()
+         where id = $1`,
+        [input.workspaceId, input.localPath]
+      );
+      return firstRow(
+        result.rows,
+        "WorkspaceStorageBinding",
+        toWorkspaceStorageBinding
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "23505"
+      ) {
+        throw new Error("STORAGE_ALREADY_BOUND");
+      }
+      throw error;
+    }
+  }
+
+  async bindWorkspaceS3Storage(input: {
+    workspaceId: string;
+    bucket: string;
+    prefix: string;
+    region?: string | null;
+    endpoint?: string | null;
+  }): Promise<WorkspaceStorageBindingRow> {
+    await this.getWorkspace(input.workspaceId);
+    const existing = await this.getActiveWorkspaceStorage(input.workspaceId);
+    if (existing) {
+      if (
+        existing.kind === "S3" &&
+        existing.s3Bucket === input.bucket &&
+        existing.s3Prefix === input.prefix
+      ) {
+        return existing;
+      }
+      throw new Error("WORKSPACE_STORAGE_ALREADY_BOUND");
+    }
+
+    try {
+      const result = await this.getPool().query(
+        `insert into workspace_storage_bindings
+           (id, workspace_id, kind, status, s3_bucket, s3_prefix, s3_region, s3_endpoint)
+         values ($1, $2, 'S3', 'ACTIVE', $3, $4, $5, $6)
+         returning *`,
+        [
+          nanoid(),
+          input.workspaceId,
+          input.bucket,
+          input.prefix,
+          input.region ?? null,
+          input.endpoint ?? null,
+        ]
+      );
+      return firstRow(
+        result.rows,
+        "WorkspaceStorageBinding",
+        toWorkspaceStorageBinding
+      );
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "23505"
+      ) {
+        throw new Error("STORAGE_ALREADY_BOUND");
+      }
+      throw error;
+    }
   }
 
   async touchWorkspace(workspaceId: string): Promise<CreativeWorkspace> {
@@ -1077,6 +1274,8 @@ function toImagePromptArtifactRow(row: Record<string, unknown>): ImagePromptArti
       ? (row.reference_asset_ids as string[])
       : [],
     promptJson: row.prompt_json,
+    sourceFingerprint: row.source_fingerprint ?? {},
+    promptAssembly: row.prompt_assembly ?? {},
     createdBy: String(row.created_by),
     agentName: typeof row.agent_name === "string" ? row.agent_name : null,
     promptTemplateVersion:
@@ -1148,6 +1347,8 @@ function toVideoScriptArtifactRow(row: Record<string, unknown>): VideoScriptArti
       typeof row.based_on_next_image_candidate_id === "string"
         ? row.based_on_next_image_candidate_id
         : null,
+    sourceFingerprint: row.source_fingerprint ?? {},
+    promptAssembly: row.prompt_assembly ?? {},
     createdBy: String(row.created_by),
     agentName: typeof row.agent_name === "string" ? row.agent_name : null,
     promptTemplateVersion:
@@ -1231,6 +1432,7 @@ function toFinalVideoJobRow(row: Record<string, unknown>): FinalVideoJobRow {
   return {
     id: String(row.id),
     workspaceId: String(row.workspace_id),
+    shotSetId: typeof row.shot_set_id === "string" ? row.shot_set_id : null,
     status: row.status as FinalVideoJobRow["status"],
     sourceShotVideoIds: Array.isArray(row.source_shot_video_ids)
       ? (row.source_shot_video_ids as string[])
@@ -1369,8 +1571,9 @@ class PostgresDb2Adapter implements Db2Adapter {
     const result = await this._pool.query(
       `insert into image_prompt_artifacts
          (id, shot_id, version, status, prompt_text, negative_prompt, reference_asset_ids,
-          prompt_json, created_by, agent_name, prompt_template_version, base_artifact_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          prompt_json, source_fingerprint, prompt_assembly, created_by, agent_name,
+          prompt_template_version, base_artifact_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        returning *`,
       [
         input.id,
@@ -1381,6 +1584,8 @@ class PostgresDb2Adapter implements Db2Adapter {
         input.negativePrompt ?? null,
         input.referenceAssetIds,
         jsonbParam(input.promptJson),
+        jsonbParam(input.sourceFingerprint),
+        jsonbParam(input.promptAssembly),
         input.createdBy,
         input.agentName ?? null,
         input.promptTemplateVersion ?? null,
@@ -1542,6 +1747,40 @@ class PostgresDb2Adapter implements Db2Adapter {
     return firstRow(result.rows, "ImageCandidate", toImageCandidateRow);
   }
 
+  async updateImageCandidate(
+    id: string,
+    patch: Partial<ImageCandidateRow>
+  ): Promise<ImageCandidateRow> {
+    const colMap: Record<string, string> = {
+      imageUrl: "image_url",
+      objectKey: "object_key",
+      width: "width",
+      height: "height",
+      seed: "seed",
+      provider: "provider",
+      providerResponse: "provider_response",
+      status: "status",
+      errorMessage: "error_message"
+    };
+    const keys = Object.keys(patch).filter((k) => k in colMap);
+    if (keys.length === 0) {
+      return this.getImageCandidate(id);
+    }
+    const setClauses = keys.map((k, i) => `${colMap[k]} = $${i + 2}`);
+    const values = keys.map((k) => {
+      const v = (patch as Record<string, unknown>)[k];
+      return k === "providerResponse" ? jsonbParam(v) : v;
+    });
+    const result = await this._pool.query(
+      `update image_candidates
+       set ${setClauses.join(", ")}
+       where id = $1
+       returning *`,
+      [id, ...values]
+    );
+    return firstRow(result.rows, "ImageCandidate", toImageCandidateRow);
+  }
+
   async listImageCandidatesByBatch(batchId: string): Promise<ImageCandidateRow[]> {
     const result = await this._pool.query(
       "select * from image_candidates where batch_id = $1 order by created_at",
@@ -1564,28 +1803,43 @@ class PostgresDb2Adapter implements Db2Adapter {
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void> {
-    await this._pool.query(
-      `insert into selected_shot_images (id, shot_id, image_candidate_id, image_generation_batch_id)
-       values ($1, $2, $3, $4)
+    const result = await this._pool.query(
+      `insert into image_select_artifacts
+         (id, workspace_id, shot_set_id, shot_id, image_candidate_id,
+          image_generation_batch_id, selected_by)
+       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4, $5
+       from storyboard_shots s
+       where s.id = $2
+         and s.shot_set_id is not null
        on conflict (shot_id) do update
        set image_candidate_id = excluded.image_candidate_id,
            image_generation_batch_id = excluded.image_generation_batch_id,
-           selected_at = now()`,
+           workspace_id = excluded.workspace_id,
+           shot_set_id = excluded.shot_set_id,
+           selected_by = excluded.selected_by,
+           selected_at = now(),
+           updated_at = now()
+       returning id`,
       [
         "sel_img_" + nanoid(10),
         input.shotId,
         input.imageCandidateId,
-        input.imageGenerationBatchId
+        input.imageGenerationBatchId,
+        input.selectedBy ?? null
       ]
     );
+    if (result.rowCount !== 1) {
+      throw new NotFoundError("ActiveShotSet");
+    }
   }
 
   async getSelectedImage(
     shotId: string
   ): Promise<{ imageCandidateId: string; imageGenerationBatchId: string } | null> {
     const result = await this._pool.query(
-      "select * from selected_shot_images where shot_id = $1",
+      "select * from image_select_artifacts where shot_id = $1",
       [shotId]
     );
     const row = result.rows[0];
@@ -1605,9 +1859,10 @@ class PostgresDb2Adapter implements Db2Adapter {
       `insert into video_script_artifacts
          (id, shot_id, version, status, duration_sec, script_json, provider_prompt,
           based_on_image_candidate_id, based_on_prev_image_candidate_id,
-          based_on_next_image_candidate_id, created_by, agent_name,
+          based_on_next_image_candidate_id, source_fingerprint, prompt_assembly,
+          created_by, agent_name,
           prompt_template_version, base_artifact_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        returning *`,
       [
         input.id,
@@ -1620,6 +1875,8 @@ class PostgresDb2Adapter implements Db2Adapter {
         input.basedOnImageCandidateId,
         input.basedOnPrevImageCandidateId ?? null,
         input.basedOnNextImageCandidateId ?? null,
+        jsonbParam(input.sourceFingerprint),
+        jsonbParam(input.promptAssembly),
         input.createdBy,
         input.agentName ?? null,
         input.promptTemplateVersion ?? null,
@@ -1782,6 +2039,41 @@ class PostgresDb2Adapter implements Db2Adapter {
     return firstRow(result.rows, "VideoCandidate", toVideoCandidateRow);
   }
 
+  async updateVideoCandidate(
+    id: string,
+    patch: Partial<VideoCandidateRow>
+  ): Promise<VideoCandidateRow> {
+    const colMap: Record<string, string> = {
+      videoUrl: "video_url",
+      objectKey: "object_key",
+      thumbnailUrl: "thumbnail_url",
+      durationSec: "duration_sec",
+      width: "width",
+      height: "height",
+      provider: "provider",
+      providerResponse: "provider_response",
+      status: "status",
+      errorMessage: "error_message"
+    };
+    const keys = Object.keys(patch).filter((k) => k in colMap);
+    if (keys.length === 0) {
+      return this.getVideoCandidate(id);
+    }
+    const setClauses = keys.map((k, i) => `${colMap[k]} = $${i + 2}`);
+    const values = keys.map((k) => {
+      const v = (patch as Record<string, unknown>)[k];
+      return k === "providerResponse" ? jsonbParam(v) : v;
+    });
+    const result = await this._pool.query(
+      `update video_candidates
+       set ${setClauses.join(", ")}
+       where id = $1
+       returning *`,
+      [id, ...values]
+    );
+    return firstRow(result.rows, "VideoCandidate", toVideoCandidateRow);
+  }
+
   async listVideoCandidatesByBatch(batchId: string): Promise<VideoCandidateRow[]> {
     const result = await this._pool.query(
       "select * from video_candidates where batch_id = $1 order by created_at",
@@ -1804,25 +2096,55 @@ class PostgresDb2Adapter implements Db2Adapter {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId: string;
+    selectedBy?: string | null;
   }): Promise<void> {
-    await this._pool.query(
-      `insert into selected_shot_videos (id, shot_id, video_candidate_id, video_generation_batch_id)
-       values ($1, $2, $3, $4)
+    const result = await this._pool.query(
+      `insert into video_select_artifacts
+         (id, workspace_id, shot_set_id, shot_id, video_candidate_id,
+          video_generation_batch_id, selected_by)
+       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4, $5
+       from storyboard_shots s
+       where s.id = $2
+         and s.shot_set_id is not null
        on conflict (shot_id) do update
        set video_candidate_id = excluded.video_candidate_id,
            video_generation_batch_id = excluded.video_generation_batch_id,
-           selected_at = now()`,
+           workspace_id = excluded.workspace_id,
+           shot_set_id = excluded.shot_set_id,
+           selected_by = excluded.selected_by,
+           selected_at = now(),
+           updated_at = now()
+       returning id`,
       [
         "sel_vid_" + nanoid(10),
         input.shotId,
         input.videoCandidateId,
-        input.videoGenerationBatchId
+        input.videoGenerationBatchId,
+        input.selectedBy ?? null
       ]
     );
+    if (result.rowCount !== 1) {
+      throw new NotFoundError("ActiveShotSet");
+    }
+  }
+
+  async getSelectedVideo(
+    shotId: string
+  ): Promise<{ videoCandidateId: string; videoGenerationBatchId: string } | null> {
+    const result = await this._pool.query(
+      "select * from video_select_artifacts where shot_id = $1",
+      [shotId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      videoCandidateId: String(row.video_candidate_id),
+      videoGenerationBatchId: String(row.video_generation_batch_id)
+    };
   }
 
   async deleteSelectedVideo(shotId: string): Promise<void> {
-    await this._pool.query("delete from selected_shot_videos where shot_id = $1", [
+    await this._pool.query("delete from video_select_artifacts where shot_id = $1", [
       shotId
     ]);
   }
@@ -1911,14 +2233,15 @@ class PostgresDb2Adapter implements Db2Adapter {
   ): Promise<FinalVideoJobRow> {
     const result = await this._pool.query(
       `insert into final_video_jobs
-         (id, workspace_id, status, source_shot_video_ids, source_video_script_artifact_ids,
+         (id, workspace_id, shot_set_id, status, source_shot_video_ids, source_video_script_artifact_ids,
           local_path, local_url, duration_sec, width, height, compiled_manifest,
           compiled_manifest_hash, ffmpeg_log, error_message, idempotency_key, completed_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        returning *`,
       [
         input.id,
         input.workspaceId,
+        input.shotSetId ?? null,
         input.status,
         input.sourceShotVideoIds,
         input.sourceVideoScriptArtifactIds,
@@ -1961,6 +2284,7 @@ class PostgresDb2Adapter implements Db2Adapter {
   ): Promise<FinalVideoJobRow> {
     const colMap: Record<string, string> = {
       status: "status",
+      shotSetId: "shot_set_id",
       sourceShotVideoIds: "source_shot_video_ids",
       sourceVideoScriptArtifactIds: "source_video_script_artifact_ids",
       localPath: "local_path",
@@ -2094,6 +2418,9 @@ export const db: DbAdapter & { db2: Db2Adapter } = {
   listWorkspaces: (limit) => getV1().listWorkspaces(limit),
   getWorkspace: (workspaceId) => getV1().getWorkspace(workspaceId),
   findWorkspaceByLocalPath: (localPath) => getV1().findWorkspaceByLocalPath(localPath),
+  getActiveWorkspaceStorage: (workspaceId) => getV1().getActiveWorkspaceStorage(workspaceId),
+  bindWorkspaceLocalStorage: (input) => getV1().bindWorkspaceLocalStorage(input),
+  bindWorkspaceS3Storage: (input) => getV1().bindWorkspaceS3Storage(input),
   touchWorkspace: (workspaceId) => getV1().touchWorkspace(workspaceId),
   updateWorkspace: (workspaceId, patch) => getV1().updateWorkspace(workspaceId, patch),
   upsertWorkspaceArtifact: (input) => getV1().upsertWorkspaceArtifact(input),

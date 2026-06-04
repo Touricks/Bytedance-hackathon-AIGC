@@ -1,26 +1,25 @@
 import { z } from "zod";
 
 export const StoryboardImagePromptOutputSchema = z.object({
-  promptText: z.string().min(20),
-  negativePrompt: z.string().nullable().optional(),
-  visualStyle: z.string().nullable().optional(),
-  composition: z.string().nullable().optional(),
-  lighting: z.string().nullable().optional(),
-  productVisibilityRule: z.string().min(1),
+  promptText: z.string(),
+  negativePrompt: z.string().nullable(),
+  visualStyle: z.string().nullable(),
+  composition: z.string().nullable(),
+  lighting: z.string().nullable(),
+  productVisibilityRule: z.string(),
   referenceImageUsage: z
     .array(
       z.object({
-        assetId: z.string().min(1),
+        assetId: z.string(),
         usage: z.enum([
           "product_identity",
           "style_reference",
           "scene_reference",
           "composition_reference",
         ]),
-        instruction: z.string().min(1),
-      }),
-    )
-    .default([]),
-  qualityChecklist: z.array(z.string()).default([]),
-});
+        instruction: z.string(),
+      }).strict(),
+    ),
+  qualityChecklist: z.array(z.string()),
+}).strict();
 export type StoryboardImagePromptOutput = z.infer<typeof StoryboardImagePromptOutputSchema>;

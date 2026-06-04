@@ -55,8 +55,7 @@ describe("server config", () => {
           .then(({ config }) => {
             console.log(JSON.stringify({
               uploadDir: config.uploadDir ?? null,
-              uploadUrlPrefix: config.uploadUrlPrefix ?? null,
-              workspaceDir: config.workspaceDir
+              uploadUrlPrefix: config.uploadUrlPrefix ?? null
             }));
           })
           .catch((error) => {
@@ -78,8 +77,7 @@ describe("server config", () => {
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
       uploadDir: null,
-      uploadUrlPrefix: null,
-      workspaceDir: path.resolve(process.cwd(), "storage", "workspaces")
+      uploadUrlPrefix: null
     });
   });
 
@@ -286,7 +284,7 @@ describe("server config", () => {
     }
   });
 
-  it("batch sizing config exposes default and max image/video batch sizes", () => {
+  it("candidate and concurrency config exposes distinct limits", () => {
     const result = spawnSync(
       tsxBin,
       [
@@ -294,10 +292,14 @@ describe("server config", () => {
         `import(${JSON.stringify(configModuleUrl)})
           .then(({ config }) => {
             console.log(JSON.stringify({
-              defaultImageBatchSize: config.defaultImageBatchSize,
-              maxImageBatchSize: config.maxImageBatchSize,
-              defaultVideoBatchSize: config.defaultVideoBatchSize,
-              maxVideoBatchSize: config.maxVideoBatchSize
+              defaultImageCandidates: config.defaultImageCandidates,
+              maxImageCandidatesPerShot: config.maxImageCandidatesPerShot,
+              defaultVideoCandidates: config.defaultVideoCandidates,
+              maxVideoCandidatesPerShot: config.maxVideoCandidatesPerShot,
+              generationWorkerConcurrency: config.generationWorkerConcurrency,
+              textProviderConcurrency: config.textProviderConcurrency,
+              imageProviderConcurrency: config.imageProviderConcurrency,
+              videoProviderConcurrency: config.videoProviderConcurrency
             }));
           })
           .catch((error) => {
@@ -310,7 +312,15 @@ describe("server config", () => {
         env: {
           ...withoutDatabaseEnv(),
           AIGC_VIDEO_SKIP_ENV_FILE: "true",
-          DATABASE_URL: "postgres://env-user:env-pass@localhost:5432/env_db"
+          DATABASE_URL: "postgres://env-user:env-pass@localhost:5432/env_db",
+          DEFAULT_IMAGE_CANDIDATES: "4",
+          MAX_IMAGE_CANDIDATES_PER_SHOT: "7",
+          DEFAULT_VIDEO_CANDIDATES: "3",
+          MAX_VIDEO_CANDIDATES_PER_SHOT: "6",
+          TEXT_PROVIDER_CONCURRENCY: "21",
+          IMAGE_PROVIDER_CONCURRENCY: "13",
+          VIDEO_PROVIDER_CONCURRENCY: "8",
+          GENERATION_WORKER_CONCURRENCY: "22"
         },
         encoding: "utf8"
       }
@@ -318,12 +328,61 @@ describe("server config", () => {
 
     assert.equal(result.status, 0, result.stderr);
     const out = JSON.parse(result.stdout);
-    assert.equal(typeof out.defaultImageBatchSize, "number");
-    assert.equal(typeof out.maxImageBatchSize, "number");
-    assert.equal(typeof out.defaultVideoBatchSize, "number");
-    assert.equal(typeof out.maxVideoBatchSize, "number");
-    assert.ok(out.maxImageBatchSize >= out.defaultImageBatchSize);
-    assert.ok(out.maxVideoBatchSize >= out.defaultVideoBatchSize);
+    assert.deepEqual(out, {
+      defaultImageCandidates: 4,
+      maxImageCandidatesPerShot: 7,
+      defaultVideoCandidates: 3,
+      maxVideoCandidatesPerShot: 6,
+      generationWorkerConcurrency: 22,
+      textProviderConcurrency: 21,
+      imageProviderConcurrency: 13,
+      videoProviderConcurrency: 8
+    });
+  });
+
+  it("defaults image provider concurrency to twice max image candidates and ignores legacy batch env", () => {
+    const legacyDefaultImageBatchEnv = ["DEFAULT", "IMAGE", "BATCH", "SIZE"].join("_");
+    const legacyMaxImageBatchEnv = ["MAX", "IMAGE", "BATCH", "SIZE"].join("_");
+    const legacyDefaultImageBatchField = ["default", "Image", "Batch", "Size"].join("");
+    const result = spawnSync(
+      tsxBin,
+      [
+        "--eval",
+        `import(${JSON.stringify(configModuleUrl)})
+          .then(({ config }) => {
+            console.log(JSON.stringify({
+              maxImageCandidatesPerShot: config.maxImageCandidatesPerShot,
+              imageProviderConcurrency: config.imageProviderConcurrency,
+              generationWorkerConcurrency: config.generationWorkerConcurrency,
+              legacyDefaultImageBatchField: config[${JSON.stringify(legacyDefaultImageBatchField)}] ?? null
+            }));
+          })
+          .catch((error) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
+          });`
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...withoutDatabaseEnv(),
+          AIGC_VIDEO_SKIP_ENV_FILE: "true",
+          DATABASE_URL: "postgres://env-user:env-pass@localhost:5432/env_db",
+          [legacyDefaultImageBatchEnv]: "99",
+          [legacyMaxImageBatchEnv]: "99",
+          MAX_IMAGE_CANDIDATES_PER_SHOT: "7"
+        },
+        encoding: "utf8"
+      }
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      maxImageCandidatesPerShot: 7,
+      imageProviderConcurrency: 14,
+      generationWorkerConcurrency: 19,
+      legacyDefaultImageBatchField: null
+    });
   });
 
   it("loads and normalizes the upload URL prefix separately from UPLOAD_DIR", () => {

@@ -17,9 +17,11 @@ apps/web/playwright-report/
 .claude/
 .claire/
 .codex/
+.agent/
+.agents/
+.husky/
 
-# Keep the PRD locally only; it includes private challenge resource credentials.
-docs/prd.pdf
-
-# assets only for local test (e.g. image)
-assets/
+# Keep most design docs locally only; some test/core specs are shared.
+docs/*
+!docs/test/
+!docs/test/**

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComposeFinalVideoJobData } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
 import { traceService } from "../trace/trace.service.js";
+import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
 import { ffprobe, runFfmpeg } from "./ffmpeg.js";
 
 function sha256(s: string) {
@@ -16,6 +17,31 @@ async function downloadTo(url: string, outPath: string) {
   if (!res.ok) throw new Error(`download failed ${res.status}: ${url}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await writeFile(outPath, buf);
+}
+
+async function copyOrDownloadTo(input: {
+  workspaceId: string;
+  workspaceLocalPath: string;
+  url: string;
+  outPath: string;
+}) {
+  const workspaceVideoPrefix = `/api/workspaces/${input.workspaceId}/videos/`;
+  if (input.url.startsWith(workspaceVideoPrefix)) {
+    const relativeName = decodeURIComponent(input.url.slice(workspaceVideoPrefix.length));
+    const sourcePath = path.resolve(
+      input.workspaceLocalPath,
+      ".daireel",
+      "videos",
+      relativeName,
+    );
+    const videoRoot = path.resolve(input.workspaceLocalPath, ".daireel", "videos");
+    if (!sourcePath.startsWith(videoRoot + path.sep)) {
+      throw new Error(`Invalid workspace video URL: ${input.url}`);
+    }
+    await copyFile(sourcePath, input.outPath);
+    return;
+  }
+  await downloadTo(input.url, input.outPath);
 }
 
 export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
@@ -31,15 +57,13 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
     const candidates = [];
     for (const id of job.sourceShotVideoIds) {
       const cand = await db.db2.getVideoCandidate(id);
-      if (!cand.videoUrl) throw new Error(`Missing videoUrl on candidate ${id}`);
+      if (cand.status !== "SUCCEEDED" || !cand.videoUrl || !cand.objectKey) {
+        throw new Error(`Video candidate ${id} is not ready for final compose`);
+      }
       candidates.push(cand);
     }
     // Order is already the persisted source_shot_video_ids order (set at creation time).
-    const wsRow = await db.db2
-      .pool()
-      .query("select local_path from creative_workspace where id=$1", [job.workspaceId]);
-    const wsLocalPath = wsRow.rows[0]?.local_path;
-    if (!wsLocalPath) throw new Error("workspace local path missing");
+    const wsLocalPath = await resolveWorkspaceStorageLocalPath(job.workspaceId);
 
     const workDir = path.join(wsLocalPath, ".daireel", "final", job.id);
     const inputDir = path.join(workDir, "in");
@@ -48,9 +72,16 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
     const inputs: string[] = [];
     for (let i = 0; i < candidates.length; i++) {
       const cand = candidates[i];
-      if (!cand?.videoUrl) throw new Error(`Missing videoUrl on candidate index ${i}`);
+      if (!cand || cand.status !== "SUCCEEDED" || !cand.videoUrl || !cand.objectKey) {
+        throw new Error(`Video candidate at index ${i} is not ready for final compose`);
+      }
       const local = path.join(inputDir, `shot-${i + 1}.mp4`);
-      await downloadTo(cand.videoUrl, local);
+      await copyOrDownloadTo({
+        workspaceId: job.workspaceId,
+        workspaceLocalPath: wsLocalPath,
+        url: cand.videoUrl,
+        outPath: local,
+      });
       inputs.push(local);
     }
     const listFile = path.join(workDir, "concat.txt");

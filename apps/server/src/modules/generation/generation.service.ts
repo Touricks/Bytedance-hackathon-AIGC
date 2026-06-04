@@ -14,10 +14,14 @@ export const generationService = {
     count?: number;
     aspectRatio: "9:16" | "16:9" | "1:1";
     idempotencyKey: string;
+    providerRequest?: Record<string, unknown>;
+    referenceImageUrls?: string[];
+    referenceImageUrlsAfterAssets?: string[];
   }) {
     const existing = await db.db2.getImageBatchByIdempotencyKey(input.idempotencyKey);
     if (existing) {
-      return { data: existing, deduped: true };
+      const candidates = await db.db2.listImageCandidatesByBatch(existing.id);
+      return { data: existing, candidates, deduped: true };
     }
     const count = shotWorkflowService.resolveBatchCount("image", input.count);
     const batch = await db.db2.insertImageBatch({
@@ -31,47 +35,90 @@ export const generationService = {
       failedCount: 0,
       provider: "ark-seedream",
       aspectRatio: input.aspectRatio,
-      providerRequest: {},
+      providerRequest: input.providerRequest ?? {},
       errorMessage: null,
       idempotencyKey: input.idempotencyKey,
     });
-    const job = await jobRepository.insert({
-      id: "job_" + nanoid(10),
-      workspaceId: input.workspaceId,
-      shotId: input.shotId,
-      jobType: "generate_images",
-      status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
-      queueJobId: null,
-      relatedBatchType: "image_generation_batch",
-      relatedBatchId: batch.id,
-      payload: {},
-      progress: 0,
-      attemptCount: 0,
-      maxAttempts: 3,
-      errorMessage: null,
-      startedAt: null,
-      completedAt: null,
-    });
+    const candidates = [];
+    const jobIds = [];
+    const queueJobIds = [];
+    for (let candidateIndex = 0; candidateIndex < count; candidateIndex += 1) {
+      const candidate = await db.db2.insertImageCandidate({
+        id: "imc_" + nanoid(10),
+        batchId: batch.id,
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        imageUrl: null,
+        objectKey: null,
+        width: null,
+        height: null,
+        seed: null,
+        provider: "ark-seedream",
+        providerResponse: { candidateIndex },
+        status: "PENDING",
+        errorMessage: null,
+      });
+      candidates.push(candidate);
+      const payload = {
+        batchId: batch.id,
+        candidateId: candidate.id,
+        candidateIndex,
+        shotId: input.shotId,
+        workspaceId: input.workspaceId,
+        imagePromptArtifactId: input.imagePromptArtifactId,
+        aspectRatio: input.aspectRatio,
+        referenceImageUrls: input.referenceImageUrls ?? [],
+        referenceImageUrlsAfterAssets: input.referenceImageUrlsAfterAssets ?? [],
+      };
+      const job = await jobRepository.insert({
+        id: "job_" + nanoid(10),
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        jobType: "generate_image_candidate",
+        status: "PENDING",
+        queueName: GENERATION_V2_QUEUE_NAME,
+        queueJobId: null,
+        relatedBatchType: "image_candidate",
+        relatedBatchId: candidate.id,
+        payload,
+        progress: 0,
+        attemptCount: 0,
+        maxAttempts: 3,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+      });
+      const queueJobId = await enqueueGenerationV2({
+        kind: "generate_image_candidate",
+        jobId: job.id,
+        batchId: batch.id,
+        candidateId: candidate.id,
+        candidateIndex,
+        shotId: input.shotId,
+        workspaceId: input.workspaceId,
+        imagePromptArtifactId: input.imagePromptArtifactId,
+        aspectRatio: input.aspectRatio,
+        referenceImageUrls: input.referenceImageUrls,
+        referenceImageUrlsAfterAssets: input.referenceImageUrlsAfterAssets,
+        traceId: nanoid(),
+      });
+      jobIds.push(job.id);
+      if (queueJobId) {
+        queueJobIds.push(queueJobId);
+        await jobRepository.update(job.id, { queueJobId });
+      }
+    }
     await db.db2.updateShot(input.shotId, { status: "IMAGE_GENERATING" });
-    await enqueueGenerationV2({
-      kind: "generate_images",
-      jobId: job.id,
-      batchId: batch.id,
-      shotId: input.shotId,
-      workspaceId: input.workspaceId,
-      imagePromptArtifactId: input.imagePromptArtifactId,
-      count,
-      aspectRatio: input.aspectRatio,
-      traceId: nanoid(),
-    });
     return {
       data: {
         batchId: batch.id,
-        jobId: job.id,
+        jobIds,
+        queueJobIds,
         status: batch.status,
         requestedCount: count,
       },
+      batch,
+      candidates,
     };
   },
 
@@ -82,9 +129,13 @@ export const generationService = {
     count?: number;
     aspectRatio: "9:16" | "16:9" | "1:1";
     idempotencyKey: string;
+    providerRequest?: Record<string, unknown>;
   }) {
     const existing = await db.db2.getVideoBatchByIdempotencyKey(input.idempotencyKey);
-    if (existing) return { data: existing, deduped: true };
+    if (existing) {
+      const candidates = await db.db2.listVideoCandidatesByBatch(existing.id);
+      return { data: existing, batch: existing, candidates, deduped: true };
+    }
     const script = await db.db2.getVideoScriptArtifact(input.videoScriptArtifactId);
     if (script.status !== "ACTIVE") {
       throw new HttpError(409, "STALE_SCRIPT", "Cannot generate video on stale script");
@@ -101,47 +152,89 @@ export const generationService = {
       failedCount: 0,
       provider: "seedance",
       aspectRatio: input.aspectRatio,
-      providerRequest: {},
+      providerRequest: input.providerRequest ?? {},
       errorMessage: null,
       idempotencyKey: input.idempotencyKey,
     });
-    const job = await jobRepository.insert({
-      id: "job_" + nanoid(10),
-      workspaceId: input.workspaceId,
-      shotId: input.shotId,
-      jobType: "generate_videos",
-      status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
-      queueJobId: null,
-      relatedBatchType: "video_generation_batch",
-      relatedBatchId: batch.id,
-      payload: {},
-      progress: 0,
-      attemptCount: 0,
-      maxAttempts: 3,
-      errorMessage: null,
-      startedAt: null,
-      completedAt: null,
-    });
+    // One job per candidate, exactly like images: the single shared worker's
+    // concurrency plus the VIDEO_PROVIDER_CONCURRENCY semaphore bound
+    // how many Seedance calls run at once, and each candidate retries on its own.
+    const candidates = [];
+    const jobIds = [];
+    const queueJobIds = [];
+    for (let candidateIndex = 0; candidateIndex < count; candidateIndex += 1) {
+      const candidate = await db.db2.insertVideoCandidate({
+        id: "vcd_" + nanoid(10),
+        batchId: batch.id,
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        videoUrl: null,
+        objectKey: null,
+        thumbnailUrl: null,
+        durationSec: null,
+        width: null,
+        height: null,
+        provider: "seedance",
+        providerResponse: { candidateIndex },
+        status: "PENDING",
+        errorMessage: null,
+      });
+      candidates.push(candidate);
+      const job = await jobRepository.insert({
+        id: "job_" + nanoid(10),
+        workspaceId: input.workspaceId,
+        shotId: input.shotId,
+        jobType: "generate_video_candidate",
+        status: "PENDING",
+        queueName: GENERATION_V2_QUEUE_NAME,
+        queueJobId: null,
+        relatedBatchType: "video_candidate",
+        relatedBatchId: candidate.id,
+        payload: {
+          batchId: batch.id,
+          candidateId: candidate.id,
+          candidateIndex,
+          shotId: input.shotId,
+          workspaceId: input.workspaceId,
+          videoScriptArtifactId: input.videoScriptArtifactId,
+          aspectRatio: input.aspectRatio,
+        },
+        progress: 0,
+        attemptCount: 0,
+        maxAttempts: 3,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+      });
+      const queueJobId = await enqueueGenerationV2({
+        kind: "generate_video_candidate",
+        jobId: job.id,
+        batchId: batch.id,
+        candidateId: candidate.id,
+        candidateIndex,
+        shotId: input.shotId,
+        workspaceId: input.workspaceId,
+        videoScriptArtifactId: input.videoScriptArtifactId,
+        aspectRatio: input.aspectRatio,
+        traceId: nanoid(),
+      });
+      jobIds.push(job.id);
+      if (queueJobId) {
+        queueJobIds.push(queueJobId);
+        await jobRepository.update(job.id, { queueJobId });
+      }
+    }
     await db.db2.updateShot(input.shotId, { status: "VIDEO_GENERATING" });
-    await enqueueGenerationV2({
-      kind: "generate_videos",
-      jobId: job.id,
-      batchId: batch.id,
-      shotId: input.shotId,
-      workspaceId: input.workspaceId,
-      videoScriptArtifactId: input.videoScriptArtifactId,
-      count,
-      aspectRatio: input.aspectRatio,
-      traceId: nanoid(),
-    });
     return {
       data: {
         batchId: batch.id,
-        jobId: job.id,
+        jobIds,
+        queueJobIds,
         status: batch.status,
         requestedCount: count,
       },
+      batch,
+      candidates,
     };
   },
 
@@ -152,17 +245,54 @@ export const generationService = {
   }) {
     const existing = await db.db2.getFinalVideoJobByIdempotencyKey(input.idempotencyKey);
     if (existing) return { data: existing, deduped: true };
-    const shots = await db.db2.listShotsByWorkspace(input.workspaceId);
+    const activeShotSet = await db.db2.pool().query(
+      `select id from shot_sets
+       where workspace_id = $1 and status = 'active'
+       order by created_at desc
+       limit 1`,
+      [input.workspaceId],
+    );
+    const shotSetId =
+      typeof activeShotSet.rows[0]?.id === "string" ? activeShotSet.rows[0].id : null;
+    if (!shotSetId) {
+      throw new HttpError(409, "NO_ACTIVE_SHOT_SET", "No active shot set exists");
+    }
+    const selected = await db.db2.pool().query(
+      `select s.id as shot_id,
+              s.order_index,
+              s.active_video_script_artifact_id,
+              v.video_candidate_id,
+              b.video_script_artifact_id as selected_video_script_artifact_id
+       from storyboard_shots s
+       left join video_select_artifacts v on v.shot_id = s.id
+       left join video_generation_batches b on b.id = v.video_generation_batch_id
+       where s.workspace_id = $1
+         and s.shot_set_id = $2
+       order by s.order_index asc`,
+      [input.workspaceId, shotSetId],
+    );
+    const shots = selected.rows.map((row) => ({
+      id: String(row.shot_id),
+      activeVideoScriptArtifactId:
+        typeof row.active_video_script_artifact_id === "string"
+          ? row.active_video_script_artifact_id
+          : null,
+      selectedVideoScriptArtifactId:
+        typeof row.selected_video_script_artifact_id === "string"
+          ? row.selected_video_script_artifact_id
+          : null,
+      selectedVideoId:
+        typeof row.video_candidate_id === "string" ? row.video_candidate_id : null,
+    }));
     const missing = shots.filter((s) => !s.selectedVideoId).map((s) => s.id);
     if (missing.length > 0) {
       throw new HttpError(409, "MISSING_SELECTIONS", JSON.stringify(missing));
     }
-    const orderedShots = [...shots].sort((a, b) => a.orderIndex - b.orderIndex);
     const sourceShotVideoIds: string[] = [];
     const sourceScriptIds: string[] = [];
-    for (const s of orderedShots) {
+    for (const s of shots) {
       sourceShotVideoIds.push(s.selectedVideoId!);
-      const script = s.activeVideoScriptArtifactId;
+      const script = s.selectedVideoScriptArtifactId ?? s.activeVideoScriptArtifactId;
       if (!script) {
         throw new HttpError(409, "STALE_SELECTIONS", `Shot ${s.id} has no active script`);
       }
@@ -171,6 +301,7 @@ export const generationService = {
     const fv = await db.db2.insertFinalVideoJob({
       id: "fnl_" + nanoid(10),
       workspaceId: input.workspaceId,
+      shotSetId,
       status: "PENDING",
       sourceShotVideoIds,
       sourceVideoScriptArtifactIds: sourceScriptIds,

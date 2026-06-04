@@ -8,9 +8,12 @@ do $$ begin create type shot_status as enum (
 ); exception when duplicate_object then null; end $$;
 do $$ begin create type artifact_status_v2 as enum ('DRAFT','ACTIVE','APPROVED','STALE','ARCHIVED'); exception when duplicate_object then null; end $$;
 do $$ begin create type batch_status as enum ('PENDING','RUNNING','SUCCEEDED','PARTIAL','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
-do $$ begin create type candidate_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','REJECTED'); exception when duplicate_object then null; end $$;
+do $$ begin create type candidate_status as enum ('PENDING','RUNNING','PERSISTING','SUCCEEDED','FAILED','REJECTED'); exception when duplicate_object then null; end $$;
+alter type candidate_status add value if not exists 'PERSISTING';
 do $$ begin create type job_status_v2 as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','RETRYING','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type final_video_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
+do $$ begin create type workspace_storage_kind as enum ('LOCAL','S3'); exception when duplicate_object then null; end $$;
+do $$ begin create type workspace_storage_status as enum ('ACTIVE','ARCHIVED'); exception when duplicate_object then null; end $$;
 
 -- Preserved upstream tables (unchanged)
 create table if not exists product (
@@ -31,7 +34,7 @@ create table if not exists asset (
 );
 create table if not exists creative_workspace (
   id text primary key,
-  local_path text not null unique,
+  local_path text,
   current_script_id text not null,
   current_job_id text,
   status text not null,
@@ -40,6 +43,56 @@ create table if not exists creative_workspace (
   updated_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
+alter table if exists creative_workspace alter column local_path drop not null;
+alter table if exists creative_workspace drop constraint if exists creative_workspace_local_path_key;
+create table if not exists workspace_storage_bindings (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  kind workspace_storage_kind not null,
+  status workspace_storage_status not null default 'ACTIVE',
+  local_path text,
+  local_path_normalized text,
+  s3_bucket text,
+  s3_prefix text,
+  s3_region text,
+  s3_endpoint text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint workspace_storage_local_target check (
+    kind <> 'LOCAL' or local_path_normalized is not null
+  ),
+  constraint workspace_storage_s3_target check (
+    kind <> 'S3' or (s3_bucket is not null and s3_prefix is not null)
+  )
+);
+create unique index if not exists idx_workspace_storage_active_workspace
+  on workspace_storage_bindings(workspace_id)
+  where status = 'ACTIVE';
+create unique index if not exists idx_workspace_storage_active_local
+  on workspace_storage_bindings(local_path_normalized)
+  where status = 'ACTIVE' and kind = 'LOCAL';
+create unique index if not exists idx_workspace_storage_active_s3
+  on workspace_storage_bindings(s3_bucket, s3_prefix)
+  where status = 'ACTIVE' and kind = 'S3';
+insert into workspace_storage_bindings (
+  id,
+  workspace_id,
+  kind,
+  status,
+  local_path,
+  local_path_normalized
+)
+select
+  'wsb_' || replace(id, 'ws_', ''),
+  id,
+  'LOCAL'::workspace_storage_kind,
+  'ACTIVE'::workspace_storage_status,
+  local_path,
+  local_path
+from creative_workspace
+where local_path is not null
+on conflict do nothing;
 create table if not exists workspace_artifact (
   id text primary key,
   workspace_id text not null references creative_workspace(id),
@@ -52,6 +105,112 @@ create table if not exists workspace_artifact (
   approved_at timestamptz,
   unique (workspace_id, artifact_type)
 );
+
+create table if not exists prompt_requirements_artifacts (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null,
+  is_current boolean not null default false,
+  data jsonb not null,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz
+);
+create unique index if not exists idx_prompt_requirements_current_approved
+  on prompt_requirements_artifacts(workspace_id)
+  where status = 'approved' and is_current = true;
+create index if not exists idx_prompt_requirements_workspace_status
+  on prompt_requirements_artifacts(workspace_id, status, created_at desc);
+
+create table if not exists material_intake_artifacts (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null,
+  is_current boolean not null default false,
+  data jsonb not null,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz
+);
+create unique index if not exists idx_material_intake_current_approved
+  on material_intake_artifacts(workspace_id)
+  where status = 'approved' and is_current = true;
+create index if not exists idx_material_intake_workspace_status
+  on material_intake_artifacts(workspace_id, status, created_at desc);
+
+create table if not exists product_brief_artifacts (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null,
+  is_current boolean not null default false,
+  data jsonb not null,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz
+);
+create unique index if not exists idx_product_brief_current_approved
+  on product_brief_artifacts(workspace_id)
+  where status = 'approved' and is_current = true;
+create index if not exists idx_product_brief_workspace_status
+  on product_brief_artifacts(workspace_id, status, created_at desc);
+
+create table if not exists storyboard_artifacts (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null,
+  is_current boolean not null default false,
+  data jsonb not null,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz
+);
+create unique index if not exists idx_storyboard_current_approved
+  on storyboard_artifacts(workspace_id)
+  where status = 'approved' and is_current = true;
+create index if not exists idx_storyboard_workspace_status
+  on storyboard_artifacts(workspace_id, status, created_at desc);
+
+create table if not exists shot_prompt_artifacts (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null,
+  is_current boolean not null default false,
+  data jsonb not null,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  approved_at timestamptz
+);
+create unique index if not exists idx_shot_prompt_current_approved
+  on shot_prompt_artifacts(workspace_id)
+  where status = 'approved' and is_current = true;
+create index if not exists idx_shot_prompt_workspace_status
+  on shot_prompt_artifacts(workspace_id, status, created_at desc);
+
+create table if not exists shot_sets (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  shot_prompt_artifact_id text not null references shot_prompt_artifacts(id),
+  status text not null,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+create unique index if not exists idx_shot_sets_active_workspace
+  on shot_sets(workspace_id)
+  where status = 'active';
+create index if not exists idx_shot_sets_workspace_created
+  on shot_sets(workspace_id, created_at desc);
+
 create table if not exists script (
   id text primary key,
   product_id text not null references product(id),
@@ -75,6 +234,7 @@ drop table if exists generation_job cascade;
 create table if not exists storyboard_shots (
   id text primary key,
   workspace_id text not null references creative_workspace(id),
+  shot_set_id text references shot_sets(id) on delete cascade,
   script_id text not null,
   order_index int not null,
   title text not null,
@@ -88,11 +248,31 @@ create table if not exists storyboard_shots (
   selected_video_id text,
   last_error text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (workspace_id, order_index)
+  updated_at timestamptz not null default now()
 );
+alter table if exists storyboard_shots
+  add column if not exists shot_set_id text references shot_sets(id) on delete cascade;
+alter table if exists storyboard_shots
+  drop constraint if exists storyboard_shots_workspace_id_order_index_key;
+create unique index if not exists idx_storyboard_shots_shot_set_order
+  on storyboard_shots(shot_set_id, order_index)
+  where shot_set_id is not null;
 create index if not exists idx_storyboard_shots_workspace on storyboard_shots(workspace_id);
 create index if not exists idx_storyboard_shots_status on storyboard_shots(status);
+
+create table if not exists shot_prompt_requirements (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  shot_set_id text not null references shot_sets(id) on delete cascade,
+  shot_id text not null unique references storyboard_shots(id) on delete cascade,
+  shot_prompt_artifact_id text not null references shot_prompt_artifacts(id),
+  shot_image jsonb not null,
+  shot_video jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_shot_prompt_requirements_shot_set
+  on shot_prompt_requirements(shot_set_id);
 
 create table if not exists shot_asset_refs (
   id text primary key,
@@ -100,9 +280,12 @@ create table if not exists shot_asset_refs (
   asset_id text not null references asset(id),
   role text not null,
   weight numeric(4,2) not null default 1.0,
+  position int not null default 0,
   created_at timestamptz not null default now(),
   unique (shot_id, asset_id, role)
 );
+alter table if exists shot_asset_refs
+  add column if not exists position int not null default 0;
 
 create table if not exists image_prompt_artifacts (
   id text primary key,
@@ -113,6 +296,8 @@ create table if not exists image_prompt_artifacts (
   negative_prompt text,
   reference_asset_ids text[] not null default '{}',
   prompt_json jsonb not null default '{}'::jsonb,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
   created_by text not null,
   agent_name text,
   prompt_template_version text,
@@ -120,6 +305,10 @@ create table if not exists image_prompt_artifacts (
   created_at timestamptz not null default now(),
   unique (shot_id, version)
 );
+alter table if exists image_prompt_artifacts
+  add column if not exists source_fingerprint jsonb not null default '{}'::jsonb;
+alter table if exists image_prompt_artifacts
+  add column if not exists prompt_assembly jsonb not null default '{}'::jsonb;
 create index if not exists idx_image_prompt_artifacts_shot on image_prompt_artifacts(shot_id);
 create index if not exists idx_image_prompt_artifacts_status on image_prompt_artifacts(status);
 
@@ -160,14 +349,21 @@ create table if not exists image_candidates (
 );
 create index if not exists idx_image_candidates_batch on image_candidates(batch_id);
 
-create table if not exists selected_shot_images (
+drop table if exists selected_shot_images cascade;
+create table if not exists image_select_artifacts (
   id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  shot_set_id text not null references shot_sets(id) on delete cascade,
   shot_id text not null unique references storyboard_shots(id) on delete cascade,
   image_candidate_id text not null references image_candidates(id),
   image_generation_batch_id text not null references image_generation_batches(id),
   selected_by text,
-  selected_at timestamptz not null default now()
+  selected_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+create index if not exists idx_image_select_artifacts_workspace
+  on image_select_artifacts(workspace_id, shot_set_id);
 
 create table if not exists video_script_artifacts (
   id text primary key,
@@ -180,6 +376,8 @@ create table if not exists video_script_artifacts (
   based_on_image_candidate_id text not null references image_candidates(id),
   based_on_prev_image_candidate_id text references image_candidates(id),
   based_on_next_image_candidate_id text references image_candidates(id),
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  prompt_assembly jsonb not null default '{}'::jsonb,
   created_by text not null,
   agent_name text,
   prompt_template_version text,
@@ -187,6 +385,10 @@ create table if not exists video_script_artifacts (
   created_at timestamptz not null default now(),
   unique (shot_id, version)
 );
+alter table if exists video_script_artifacts
+  add column if not exists source_fingerprint jsonb not null default '{}'::jsonb;
+alter table if exists video_script_artifacts
+  add column if not exists prompt_assembly jsonb not null default '{}'::jsonb;
 create index if not exists idx_video_script_artifacts_shot on video_script_artifacts(shot_id);
 
 create table if not exists video_generation_batches (
@@ -227,14 +429,21 @@ create table if not exists video_candidates (
 );
 create index if not exists idx_video_candidates_batch on video_candidates(batch_id);
 
-create table if not exists selected_shot_videos (
+drop table if exists selected_shot_videos cascade;
+create table if not exists video_select_artifacts (
   id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  shot_set_id text not null references shot_sets(id) on delete cascade,
   shot_id text not null unique references storyboard_shots(id) on delete cascade,
   video_candidate_id text not null references video_candidates(id),
   video_generation_batch_id text not null references video_generation_batches(id),
   selected_by text,
-  selected_at timestamptz not null default now()
+  selected_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+create index if not exists idx_video_select_artifacts_workspace
+  on video_select_artifacts(workspace_id, shot_set_id);
 
 create table if not exists generation_jobs (
   id text primary key,
@@ -276,6 +485,7 @@ create index if not exists idx_trace_events_shot on trace_events(shot_id, create
 create table if not exists final_video_jobs (
   id text primary key,
   workspace_id text not null references creative_workspace(id),
+  shot_set_id text references shot_sets(id) on delete set null,
   status final_video_status not null default 'PENDING',
   source_shot_video_ids text[] not null,
   source_video_script_artifact_ids text[] not null,
@@ -293,4 +503,37 @@ create table if not exists final_video_jobs (
   updated_at timestamptz not null default now(),
   completed_at timestamptz
 );
+alter table if exists final_video_jobs
+  add column if not exists shot_set_id text references shot_sets(id) on delete set null;
+
+create table if not exists campaign_publications (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  final_video_job_id text references final_video_jobs(id) on delete set null,
+  platform text not null,
+  channel_name text not null,
+  kol_name text,
+  publish_url text,
+  status text not null default 'planned',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_campaign_publications_workspace
+  on campaign_publications(workspace_id, created_at desc);
+
+create table if not exists campaign_publication_metrics (
+  id text primary key,
+  publication_id text not null references campaign_publications(id) on delete cascade,
+  impressions int not null default 0,
+  clicks int not null default 0,
+  conversions int not null default 0,
+  spend_cents int not null default 0,
+  captured_at timestamptz not null default now(),
+  source text not null default 'manual',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_campaign_metrics_publication
+  on campaign_publication_metrics(publication_id, captured_at desc);
 `;

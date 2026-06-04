@@ -1,17 +1,25 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { toHttpError } from "../../common/errors.js";
 import {
-  feedbackRouteRequestSchema,
-  materialIntakeRequestSchema,
+  materialIntakeModuleProposeRequestSchema,
+  moduleArtifactApprovalRequestSchema,
+  productBriefModuleProposeRequestSchema,
+  promptRequirementsProposeRequestSchema,
+  shotPromptModuleProposeRequestSchema,
+  shotSetCreateRequestSchema,
+  storyboardModuleProposeRequestSchema,
+  storyboardVoiceoverProposeRequestSchema,
   managedWorkspaceCreateRequestSchema,
-  productBriefApprovalRequestSchema,
-  productBriefProposalRequestSchema,
-  shotPromptApprovalRequestSchema,
-  shotPromptCompileRequestSchema,
-  storyboardApprovalRequestSchema,
+  workspaceStorageBindRequestSchema,
   workspaceMaterialUploadRequestSchema,
   workspaceDirectoryRequestSchema
 } from "./workspace.schema.js";
+import { materialIntakeV2Service } from "./material-intake-v2.service.js";
+import { productBriefV2Service } from "./product-brief-v2.service.js";
+import { promptRequirementsService } from "./prompt-requirements.service.js";
+import { shotSetService } from "./shot-set.service.js";
+import { shotPromptV2Service } from "./shotprompt-v2.service.js";
+import { storyboardV2Service } from "./storyboard-v2.service.js";
 import { workspaceService } from "./workspace.service.js";
 import {
   selectWorkspaceDirectory,
@@ -22,21 +30,11 @@ interface RegisterWorkspaceControllerOptions {
   selectWorkspaceDirectory?: () => Promise<WorkspaceDirectorySelectResponse>;
 }
 
-function multipartFieldValue(
-  fields: Record<string, unknown>,
-  fieldName: string,
-) {
-  const field = fields[fieldName];
-  if (
-    field &&
-    !Array.isArray(field) &&
-    typeof field === "object" &&
-    "value" in field &&
-    typeof field.value === "string"
-  ) {
-    return field.value;
-  }
-  return undefined;
+const WORKSPACE_ID_SEGMENT =
+  ":workspaceId((?!artifacts$)[A-Za-z0-9_-]+)";
+
+function workspaceRoute(path: string) {
+  return `/api/workspaces/${WORKSPACE_ID_SEGMENT}${path}`;
 }
 
 export async function registerWorkspaceController(
@@ -61,6 +59,53 @@ export async function registerWorkspaceController(
     }
   });
 
+  app.get(workspaceRoute("/directory"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.getWorkspaceDirectory(params.workspaceId);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.get(workspaceRoute("/storage"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.getWorkspaceStorage(params.workspaceId);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.get(workspaceRoute("/status"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.status({ workspaceId: params.workspaceId });
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(
+    workspaceRoute("/storage/bind"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = workspaceStorageBindRequestSchema.parse(request.body);
+        return await workspaceService.bindWorkspaceStorage(
+          params.workspaceId,
+          body,
+        );
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
   app.post("/api/workspaces", async (request, reply) => {
     try {
       const body = managedWorkspaceCreateRequestSchema.parse(request.body);
@@ -71,30 +116,377 @@ export async function registerWorkspaceController(
     }
   });
 
-  app.post("/api/workspaces/materials", async (request, reply) => {
+  app.delete(workspaceRoute(""), async (request, reply) => {
     try {
+      const params = request.params as { workspaceId: string };
+      return await workspaceService.deleteWorkspace(params.workspaceId);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.get(
+    workspaceRoute("/prompt-requirements"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        return {
+          data: await promptRequirementsService.getState(params.workspaceId),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/prompt-requirements/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = promptRequirementsProposeRequestSchema.parse(request.body);
+        return {
+          data: await promptRequirementsService.propose(
+            params.workspaceId,
+            body.data,
+          ),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/prompt-requirements/approve"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = moduleArtifactApprovalRequestSchema.parse(request.body);
+        return {
+          data: await promptRequirementsService.approve({
+            workspaceId: params.workspaceId,
+            artifactId: body.artifactId,
+            data: body.data,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.get(
+    workspaceRoute("/material-intake"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        return {
+          data: await materialIntakeV2Service.getState(params.workspaceId),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/material-intake/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = materialIntakeModuleProposeRequestSchema.parse(
+          request.body,
+        );
+        return {
+          data: await materialIntakeV2Service.propose({
+            workspaceId: params.workspaceId,
+            selectedMaterialRefs: body.selectedMaterialRefs,
+            userDirection: body.userDirection,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/material-intake/approve"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = moduleArtifactApprovalRequestSchema.parse(request.body);
+        return {
+          data: await materialIntakeV2Service.approve({
+            workspaceId: params.workspaceId,
+            artifactId: body.artifactId,
+            data: body.data,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(workspaceRoute("/materials"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
       if (request.isMultipart()) {
         const file = await request.file();
         if (!file) {
           throw new Error("Material file is required");
         }
-        const workspaceId = multipartFieldValue(file.fields, "workspaceId");
-        if (!workspaceId) {
-          throw new Error("workspaceId is required");
-        }
         return await workspaceService.uploadMaterial({
-          workspaceId,
+          workspaceId: params.workspaceId,
           filename: file.filename,
           bytes: await file.toBuffer(),
         });
       }
 
-      const body = workspaceMaterialUploadRequestSchema.parse(request.body);
+      const body = workspaceMaterialUploadRequestSchema
+        .omit({ workspaceId: true })
+        .parse(request.body);
       return await workspaceService.uploadMaterial({
-        workspaceId: body.workspaceId,
+        workspaceId: params.workspaceId,
         filename: body.filename,
         bytes: Buffer.from(body.dataBase64, "base64"),
       });
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  const deleteWorkspaceMaterial = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    try {
+      const params = request.params as {
+        workspaceId: string;
+        ref?: string;
+        "*": string;
+      };
+      return await workspaceService.deleteMaterial({
+        workspaceId: params.workspaceId,
+        ref: params.ref ?? params["*"],
+      });
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  };
+
+  app.delete(workspaceRoute("/materials/:ref"), deleteWorkspaceMaterial);
+  app.delete(workspaceRoute("/materials/*"), deleteWorkspaceMaterial);
+
+  app.get(
+    workspaceRoute("/product-brief"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        return {
+          data: await productBriefV2Service.getState(params.workspaceId),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/product-brief/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = productBriefModuleProposeRequestSchema.parse(request.body);
+        return {
+          data: await productBriefV2Service.propose({
+            workspaceId: params.workspaceId,
+            ...body,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/product-brief/approve"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = moduleArtifactApprovalRequestSchema.parse(request.body);
+        return {
+          data: await productBriefV2Service.approve({
+            workspaceId: params.workspaceId,
+            artifactId: body.artifactId,
+            data: body.data,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.get(workspaceRoute("/storyboard"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return {
+        data: await storyboardV2Service.getState(params.workspaceId),
+      };
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(
+    workspaceRoute("/storyboard/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        storyboardModuleProposeRequestSchema.parse(request.body);
+        return {
+          data: await storyboardV2Service.propose({
+            workspaceId: params.workspaceId,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/storyboard/voiceover/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = storyboardVoiceoverProposeRequestSchema.parse(request.body);
+        return {
+          data: await storyboardV2Service.proposeVoiceover({
+            workspaceId: params.workspaceId,
+            baseArtifactId: body.baseArtifactId,
+            draft: body.draft,
+            userDirection: body.userDirection,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/storyboard/approve"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = moduleArtifactApprovalRequestSchema.parse(request.body);
+        return {
+          data: await storyboardV2Service.approve({
+            workspaceId: params.workspaceId,
+            artifactId: body.artifactId,
+            data: body.data,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.get(workspaceRoute("/shotprompt"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return {
+        data: await shotPromptV2Service.getState(params.workspaceId),
+      };
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(
+    workspaceRoute("/shotprompt/propose"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = shotPromptModuleProposeRequestSchema.parse(request.body);
+        return {
+          data: await shotPromptV2Service.propose({
+            workspaceId: params.workspaceId,
+            aspectRatio: body.aspectRatio,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.post(
+    workspaceRoute("/shotprompt/approve"),
+    async (request, reply) => {
+      try {
+        const params = request.params as { workspaceId: string };
+        const body = moduleArtifactApprovalRequestSchema.parse(request.body);
+        return {
+          data: await shotPromptV2Service.approve({
+            workspaceId: params.workspaceId,
+            artifactId: body.artifactId,
+            data: body.data,
+          }),
+        };
+      } catch (error) {
+        const httpError = toHttpError(error);
+        return reply.status(httpError.statusCode).send(httpError);
+      }
+    },
+  );
+
+  app.get(workspaceRoute("/shot-sets"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return {
+        data: await shotSetService.listShotSets(params.workspaceId),
+      };
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(workspaceRoute("/shot-sets"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      const body = shotSetCreateRequestSchema.parse(request.body ?? {});
+      return {
+        data: await shotSetService.apply({
+          workspaceId: params.workspaceId,
+          shotPromptArtifactId: body.shotPromptArtifactId,
+        }),
+      };
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);
@@ -114,99 +506,4 @@ export async function registerWorkspaceController(
     }
   });
 
-  app.post("/api/workspaces/status", async (request, reply) => {
-    try {
-      const body = workspaceDirectoryRequestSchema.parse(request.body);
-      return await workspaceService.status(body);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
-  app.post("/api/workspaces/material-intake", async (request, reply) => {
-    try {
-      const body = materialIntakeRequestSchema.parse(request.body);
-      return await workspaceService.materialIntake(body, body.prompt);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
-  app.post("/api/workspaces/brief/propose", async (request, reply) => {
-    try {
-      const body = productBriefProposalRequestSchema.parse(request.body);
-      return await workspaceService.proposeBrief(body);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
-  app.post("/api/workspaces/artifacts/brief/approve", async (request, reply) => {
-    try {
-      const body = productBriefApprovalRequestSchema.parse(request.body);
-      return await workspaceService.approveBrief(body, body.data);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
-  app.post("/api/workspaces/storyboard/propose", async (request, reply) => {
-    try {
-      const body = workspaceDirectoryRequestSchema.parse(request.body);
-      return await workspaceService.proposeStoryboard(body);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
-  app.post(
-    "/api/workspaces/artifacts/storyboard/approve",
-    async (request, reply) => {
-      try {
-        const body = storyboardApprovalRequestSchema.parse(request.body);
-        return await workspaceService.approveStoryboard(body, body.data);
-      } catch (error) {
-        const httpError = toHttpError(error);
-        return reply.status(httpError.statusCode).send(httpError);
-      }
-    }
-  );
-
-  app.post("/api/workspaces/shotprompt/compile", async (request, reply) => {
-    try {
-      const body = shotPromptCompileRequestSchema.parse(request.body);
-      return await workspaceService.compileShotPrompt(body);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
-
-  app.post(
-    "/api/workspaces/artifacts/shotprompt/approve",
-    async (request, reply) => {
-      try {
-        const body = shotPromptApprovalRequestSchema.parse(request.body);
-        return await workspaceService.approveShotPrompt(body, body.data);
-      } catch (error) {
-        const httpError = toHttpError(error);
-        return reply.status(httpError.statusCode).send(httpError);
-      }
-    }
-  );
-
-  app.post("/api/workspaces/feedback/route", async (request, reply) => {
-    try {
-      const body = feedbackRouteRequestSchema.parse(request.body);
-      return await workspaceService.routeFeedback(body, body.feedback);
-    } catch (error) {
-      const httpError = toHttpError(error);
-      return reply.status(httpError.statusCode).send(httpError);
-    }
-  });
 }
