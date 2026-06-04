@@ -12,7 +12,6 @@
     "pretest": "pnpm --filter @aigc-video/shared build && pnpm --filter @aigc-video/ai build",
     "test": "TRACE_LOG_SCOPE=tests USE_REDIS_QUEUE=false UPLOAD_DIR=${TMPDIR:-/tmp}/aigc-video-test-uploads UPLOAD_URL_PREFIX=/uploads MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= TEXT_API_KEY= TEXT_BASE_URL= TEXT_ENDPOINT_ID= IMAGE_API_KEY= IMAGE_BASE_URL= IMAGE_ENDPOINT_ID= VIDEO_API_KEY= VIDEO_BASE_URL= VIDEO_ENDPOINT_ID= node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "test:unit": "TRACE_LOG_SCOPE=tests USE_REDIS_QUEUE=false UPLOAD_DIR=${TMPDIR:-/tmp}/aigc-video-test-uploads UPLOAD_URL_PREFIX=/uploads MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= TEXT_API_KEY= TEXT_BASE_URL= TEXT_ENDPOINT_ID= IMAGE_API_KEY= IMAGE_BASE_URL= IMAGE_ENDPOINT_ID= VIDEO_API_KEY= VIDEO_BASE_URL= VIDEO_ENDPOINT_ID= node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
-    "test:integration:smoke": "RUN_REAL_PROVIDER_TESTS=true DEFAULT_IMAGE_CANDIDATES=1 MAX_IMAGE_CANDIDATES_PER_SHOT=1 DEFAULT_VIDEO_CANDIDATES=1 MAX_VIDEO_CANDIDATES_PER_SHOT=1 TEST_API_BASE_URL=${TEST_API_BASE_URL:-http://localhost:3000} tsx scripts/load-env-then.ts node --import tsx --test --test-concurrency=1 \"test/integration/image-flow.integration.test.ts\" \"test/integration/video-flow.integration.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0"
   },

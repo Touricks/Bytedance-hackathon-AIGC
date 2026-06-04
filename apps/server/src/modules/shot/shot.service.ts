@@ -532,6 +532,49 @@ function providerTemporaryUrl(
     : (row?.imageUrl ?? null);
 }
 
+function imageReferenceUrl(
+  row: { providerResponse: unknown; imageUrl?: string | null } | null | undefined
+) {
+  return row?.imageUrl ?? providerTemporaryUrl(row);
+}
+
+function videoCandidateView(candidate: Awaited<ReturnType<typeof db.db2.getVideoCandidate>>) {
+  const response =
+    candidate.providerResponse && typeof candidate.providerResponse === "object"
+      ? (candidate.providerResponse as Record<string, unknown>)
+      : {};
+  const providerTemporaryUrl =
+    typeof response.providerTemporaryUrl === "string"
+      ? response.providerTemporaryUrl
+      : typeof response.videoUrl === "string"
+        ? response.videoUrl
+        : null;
+  const previewVideoUrl = candidate.videoUrl ?? providerTemporaryUrl;
+  const providerTaskId =
+    typeof response.taskId === "string"
+      ? response.taskId
+      : typeof response.providerTaskId === "string"
+        ? response.providerTaskId
+        : null;
+  const providerReadyAt =
+    typeof response.providerReadyAt === "string" ? response.providerReadyAt : null;
+  const persistStatus =
+    candidate.status === "PERSISTING"
+      ? "PERSISTING"
+      : candidate.status === "SUCCEEDED" && candidate.videoUrl
+        ? "SUCCEEDED"
+        : candidate.status === "FAILED"
+          ? "FAILED"
+          : "PENDING";
+  return {
+    ...candidate,
+    previewVideoUrl,
+    providerTaskId,
+    providerReadyAt,
+    persistStatus
+  };
+}
+
 function uniqueReferenceImageUrls(values: Array<string | null | undefined>) {
   return values.filter(
     (value, index, all): value is string =>
@@ -804,19 +847,21 @@ export const shotWorkflowService = {
     const shots = await listWorkflowStatusShotsForWorkspace(workspaceId);
     const enriched = await Promise.all(
       shots.map(async (s) => {
-        const [imageBatch, videoBatch, selectedImageCandidate, upstream] = await Promise.all([
+        const [imageBatch, videoBatch, selectedImageCandidate, upstreamDrift] = await Promise.all([
           db.db2.getLatestImageBatchForShot(s.id),
           db.db2.getLatestVideoBatchForShot(s.id),
           s.selectedImageId
             ? db.db2.getImageCandidate(s.selectedImageId).catch(() => null)
             : Promise.resolve(null),
-          shotArtifactUpstreamDrift({ workspaceId, shot: s }).then((drift) => drift.upstream)
+          shotArtifactUpstreamDrift({ workspaceId, shot: s })
         ]);
         return buildWorkflowShotRow(s, {
           activeImageBatchId: imageBatch?.id ?? null,
           activeVideoBatchId: videoBatch?.id ?? null,
+          activeVideoBatchStatus: videoBatch?.status ?? null,
           selectedImageCandidate,
-          upstream
+          upstream: upstreamDrift.upstream,
+          videoUpstream: upstreamDrift.videoScriptUpstream
         });
       })
     );
@@ -855,7 +900,7 @@ export const shotWorkflowService = {
       );
     }
     const imageRefProviderUrl =
-      shot.orderIndex > 0 ? providerTemporaryUrl(hydrated.previousImageCandidate) : null;
+      shot.orderIndex > 0 ? imageReferenceUrl(hydrated.previousImageCandidate) : null;
     const count = resolveBatchCount("image");
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const traceId = nanoid();
@@ -1024,9 +1069,9 @@ export const shotWorkflowService = {
     const count = resolveBatchCount("image");
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const imageRefProviderUrl =
-      shot.orderIndex > 0 ? providerTemporaryUrl(hydrated.previousImageCandidate) : null;
+      shot.orderIndex > 0 ? imageReferenceUrl(hydrated.previousImageCandidate) : null;
     const feedbackImageRef = feedbackImageCandidate?.imageUrl ?? null;
-    const feedbackImageProviderUrl = providerTemporaryUrl(feedbackImageCandidate);
+    const feedbackImageProviderUrl = imageReferenceUrl(feedbackImageCandidate);
     const editedAt = new Date().toISOString();
     const referenceAssetIds = hydrated.referenceAssets.map((asset) => asset.id);
     const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
@@ -1732,6 +1777,7 @@ export const shotWorkflowService = {
         );
         const batch = batchId ? await db.db2.getVideoBatch(batchId) : null;
         const candidates = batch ? await db.db2.listVideoCandidatesByBatch(batch.id) : [];
+        const candidateViews = candidates.map(videoCandidateView);
         const selectedCandidate = selected
           ? candidates.find((candidate) => candidate.id === selected.videoCandidateId)
           : undefined;
@@ -1756,7 +1802,7 @@ export const shotWorkflowService = {
         return {
           artifact,
           batch,
-          candidates,
+          candidates: candidateViews,
           selection,
           frames: {
             firstFrameUrl: firstFrame?.imageUrl ?? null,

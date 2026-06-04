@@ -5,6 +5,14 @@ export interface WorkflowShotUpstream {
   changedSources: string[];
 }
 
+export type WorkflowBatchStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "PARTIAL"
+  | "FAILED"
+  | "CANCELLED";
+
 export interface WorkflowShotSource {
   id: string;
   orderIndex: number;
@@ -18,8 +26,10 @@ export interface WorkflowShotSource {
 export interface WorkflowShotExtras {
   activeImageBatchId: string | null;
   activeVideoBatchId: string | null;
+  activeVideoBatchStatus: WorkflowBatchStatus | null;
   selectedImageCandidate: { imageUrl: string | null } | null;
   upstream: WorkflowShotUpstream;
+  videoUpstream: WorkflowShotUpstream;
 }
 
 export interface WorkflowShotRow {
@@ -34,7 +44,9 @@ export interface WorkflowShotRow {
   selectedVideoId: string | null;
   activeImageBatchId: string | null;
   activeVideoBatchId: string | null;
+  activeVideoBatchStatus: WorkflowBatchStatus | null;
   upstream: WorkflowShotUpstream;
+  videoUpstream: WorkflowShotUpstream;
 }
 
 /**
@@ -60,6 +72,8 @@ export function buildWorkflowShotRow(
     selectedVideoId: shot.selectedVideoId,
     activeImageBatchId: extras.activeImageBatchId,
     activeVideoBatchId: extras.activeVideoBatchId,
+    activeVideoBatchStatus: extras.activeVideoBatchStatus,
     upstream: extras.upstream,
+    videoUpstream: extras.videoUpstream,
   };
 }

@@ -10,7 +10,6 @@ This directory contains only active local development and contract-check scripts
 | `pnpm db:clear -- --yes` | `clear-postgres.mjs` | Clear Postgres business tables without touching workspace files. |
 | `pnpm redis:clear -- --yes` | `clear-redis.mjs` | Clear BullMQ `generation` and `generation_v2` queue state. |
 | `pnpm contract:frontend-backend` | `frontend-backend-contract-check.mjs` | Checks the frontend API surface against `docs/core/openapi.yaml`, validates mock response shapes, and records backend route gaps. |
-| `pnpm --filter @aigc-video/server test:integration:smoke` | server integration tests | Active real-provider smoke for the backend image-flow and video-flow chains with one image candidate and one video candidate. |
 
 ## Frontend / Backend Contract Check
 
@@ -30,15 +29,18 @@ FRONTEND_BACKEND_CONTRACT_LIVE=1 node scripts/frontend-backend-contract-check.mj
 
 Default mode requires OpenAPI coverage and validates all frontend-facing response shapes through an in-process mock backend. `--strict-source` additionally fails when the server source has no route for a frontend endpoint. `--write-issues` writes backend gap docs for known missing routes.
 
-## Real Provider Checks
+## Real Provider Probes
 
-The only active real-provider automation is the backend image/video chain:
+There is no active official real-provider smoke automation in package scripts. `scripts/` only keeps direct manual provider probes for diagnosis:
 
 ```bash
-pnpm --filter @aigc-video/server test:integration:smoke
+node scripts/verify-provider-image.mjs --json
+node scripts/verify-provider-video.mjs --image-url <url> --json
 ```
 
-Removed multi-real-model and direct-provider test runners are intentionally not kept as compatibility stubs. Old commands now fail as missing scripts/files so accidental provider-heavy runs are obvious.
+These probes call provider endpoints directly. They do not exercise workspace state, queues, DB writes, asset persistence, selection, or final compose.
+
+Removed real-provider smoke and multi-real-model runners are intentionally not kept as compatibility stubs. Old commands now fail as missing scripts/files so accidental provider-heavy runs are obvious.
 
 ## Trace Locations
 

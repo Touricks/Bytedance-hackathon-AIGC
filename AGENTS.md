@@ -37,8 +37,8 @@ This file is the project constitution for Codex. Keep it short, factual, and spe
 - Lint: `pnpm lint`.
 - Unit tests: `pnpm --filter @aigc-video/ai test`, `pnpm --filter @aigc-video/server test`, or `pnpm --filter @aigc-video/web test`.
 - Frontend/backend contract check: `pnpm contract:frontend-backend`.
-- Backend real-provider smoke: `pnpm --filter @aigc-video/server test:integration:smoke` runs only the backend image-flow and video-flow smoke files, with image/video candidates fixed to 1 each.
-- Removed multi-real-model package scripts and direct-provider runner files are not kept as guarded stubs.
+- Real-provider probes: `node scripts/verify-provider-image.mjs --json` and `node scripts/verify-provider-video.mjs --image-url <url> --json` call provider endpoints directly for manual diagnosis.
+- There is no active official real-provider smoke package script; removed multi-real-model and chain-smoke entries are not kept as guarded stubs.
 
 ### Repo layout
 
@@ -170,20 +170,16 @@ pnpm reset:dev -- --yes --no-dev
 
 The reset does not delete workspace `.daireel/trace/events.jsonl`, deprecated repo-local `storage/trace`, `storage/uploads`, or MinIO content.
 
-### Real-provider smoke policy
+### Real-provider probe policy
 
-Only the backend image/video chain smoke entry remains active. It fixes image/video candidates to 1 each:
+There is no active official real-provider smoke automation in package scripts. `scripts/` only keeps direct provider probes for manual diagnosis:
 
 ```sh
-pnpm --filter @aigc-video/server test:integration:smoke
+node scripts/verify-provider-image.mjs --json
+node scripts/verify-provider-video.mjs --image-url <url> --json
 ```
 
-It runs:
-
-- `apps/server/test/integration/image-flow.integration.test.ts`
-- `apps/server/test/integration/video-flow.integration.test.ts`
-
-Full agent-chain, multi-shot parallel, final-compose, direct-provider one-off runners, and frontend real-provider E2E are intentionally not present as active scripts to avoid multi-real-model联调.
+These probes do not exercise workspace state, queues, DB writes, asset persistence, selection, or final compose. Full agent-chain, chain smoke, multi-shot parallel, final-compose, and frontend real-provider E2E are intentionally not present as active scripts to avoid multi-real-model联调.
 
 ## Reference
 

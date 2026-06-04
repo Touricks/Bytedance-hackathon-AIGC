@@ -4,11 +4,12 @@
 
 ## 目标
 
-Postman collection 是后端公开契约的可读测试定义。当前真实 provider 自动测试策略已经收敛：只保留后端图像链路和视频链路 smoke，不再运行完整 real provider agent-chain、多 shot 并行验收、direct-provider one-off runner 或 final compose 联调。
+Postman collection 是后端公开契约的可读测试定义。当前没有官方真实 provider smoke package script；真实 provider 检查只保留 `scripts/` 下的手动 provider 探针，不再运行完整 real provider agent-chain、多 shot 并行验收、后端 image/video chain smoke 或 final compose 联调。
 
 | 测试 | 入口 | Provider | 目的 |
 |---|---|---|---|
-| 后端图像/视频链路 smoke | `pnpm --filter @aigc-video/server test:integration:smoke` | real | 仅验证后端 `image-flow` 与 `video-flow` 两条链路；图像/视频候选数固定为 1。 |
+| 图片 provider 探针 | `node scripts/verify-provider-image.mjs --json` | real | 直接验证图片 provider 账号、网络和接口可用性，不覆盖应用链路。 |
+| 视频 provider 探针 | `node scripts/verify-provider-video.mjs --image-url <url> --json` | real | 直接验证视频 provider 账号、网络和接口可用性，不覆盖应用链路。 |
 | V2 agent-chain | package script removed | removed | 关闭完整多真实模型联调，Postman 资产仅作为契约参考保留。 |
 | 多 shot 并行验收 | package script removed | removed | 关闭 4-shot image/video/final compose 联调，历史 runner 已删除。 |
 
@@ -26,18 +27,19 @@ provider secrets 继续来自 `.env` 与现有 `docs/test/provider.env.json`。`
 
 ## 运行方式
 
-推荐脚本形态：
+当前只保留手动 provider 探针：
 
 ```bash
-pnpm --filter @aigc-video/server test:integration:smoke
+node scripts/verify-provider-image.mjs --json
+node scripts/verify-provider-video.mjs --image-url <url> --json
 ```
 
-脚本职责：
+探针职责：
 
-1. 连接已运行的后端服务，默认 `TEST_API_BASE_URL=http://localhost:3000`。
-2. 以 `DEFAULT_IMAGE_CANDIDATES=1` / `MAX_IMAGE_CANDIDATES_PER_SHOT=1` 执行 `apps/server/test/integration/image-flow.integration.test.ts`。
-3. 以 `DEFAULT_VIDEO_CANDIDATES=1` / `MAX_VIDEO_CANDIDATES_PER_SHOT=1` 执行 `apps/server/test/integration/video-flow.integration.test.ts`。
-4. 不执行 Newman agent-chain、final compose、direct-provider one-off runner 或前端 real-provider E2E。
+1. 加载 `.env` 中的 provider 配置。
+2. 直接调用 provider endpoint。
+3. 输出 provider 创建/轮询结果，帮助区分 provider 账号、网络、限流与应用链路问题。
+4. 不连接后端服务，不写 DB，不入队，不下载保存 stable asset，不执行候选选择或 final compose。
 
 ---
 

@@ -22,10 +22,12 @@ describe("buildWorkflowShotRow", () => {
     const row = buildWorkflowShotRow(baseShot, {
       activeImageBatchId: "imb_1",
       activeVideoBatchId: null,
+      activeVideoBatchStatus: null,
       selectedImageCandidate: {
         imageUrl: "/api/workspaces/ws_1/videos/shot_1/imc_1.png",
       },
       upstream: noUpstream,
+      videoUpstream: noUpstream,
     });
 
     assert.equal(row.selectedImageUrl, "/api/workspaces/ws_1/videos/shot_1/imc_1.png");
@@ -41,8 +43,10 @@ describe("buildWorkflowShotRow", () => {
       {
         activeImageBatchId: null,
         activeVideoBatchId: null,
+        activeVideoBatchStatus: null,
         selectedImageCandidate: null,
         upstream: noUpstream,
+        videoUpstream: noUpstream,
       },
     );
 
@@ -54,10 +58,31 @@ describe("buildWorkflowShotRow", () => {
     const row = buildWorkflowShotRow(baseShot, {
       activeImageBatchId: "imb_1",
       activeVideoBatchId: null,
+      activeVideoBatchStatus: null,
       selectedImageCandidate: { imageUrl: null },
       upstream: noUpstream,
+      videoUpstream: noUpstream,
     });
 
     assert.equal(row.selectedImageUrl, null);
+  });
+
+  it("exposes video-specific upstream drift and active video batch status", () => {
+    const videoUpstream = {
+      upstreamChanged: true,
+      changedSources: ["firstFrameCandidateId"],
+    };
+    const row = buildWorkflowShotRow(baseShot, {
+      activeImageBatchId: "imb_1",
+      activeVideoBatchId: "vbb_1",
+      activeVideoBatchStatus: "SUCCEEDED",
+      selectedImageCandidate: { imageUrl: "/image.png" },
+      upstream: videoUpstream,
+      videoUpstream,
+    });
+
+    assert.equal(row.activeVideoBatchId, "vbb_1");
+    assert.equal(row.activeVideoBatchStatus, "SUCCEEDED");
+    assert.deepEqual(row.videoUpstream, videoUpstream);
   });
 });

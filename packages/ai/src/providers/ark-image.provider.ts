@@ -55,10 +55,193 @@ export interface ArkImageProviderOptions {
   jobId?: string;
   contractId?: string;
   contractVersion?: string;
+  requestTimeoutMs?: number;
+  maxRetries?: number;
+  retryBaseMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  random?: () => number;
 }
 
 function joinPath(base: string, p: string) {
   return `${base.replace(/\/+$/, "")}/${p.replace(/^\/+/, "")}`;
+}
+
+function positiveInt(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function resolveRequestTimeoutMs(opts: ArkImageProviderOptions) {
+  return positiveInt(
+    opts.requestTimeoutMs ?? process.env.IMAGE_PROVIDER_REQUEST_TIMEOUT_MS,
+    60_000,
+  );
+}
+
+function resolveMaxRetries(opts: ArkImageProviderOptions) {
+  return positiveInt(opts.maxRetries ?? process.env.IMAGE_PROVIDER_MAX_RETRIES, 2);
+}
+
+function resolveRetryBaseMs(opts: ArkImageProviderOptions) {
+  return positiveInt(
+    opts.retryBaseMs ?? process.env.IMAGE_PROVIDER_RETRY_BASE_MS,
+    500,
+  );
+}
+
+function endpointLabel(url: string) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url.replace(/\?.*$/, "");
+  }
+}
+
+function errorStringField(value: unknown, key: string) {
+  if (!value || typeof value !== "object") return null;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" && field.trim() ? field.trim() : null;
+}
+
+function transportDiagnostic(error: unknown, url: string) {
+  const name = errorStringField(error, "name");
+  const code = errorStringField(error, "code");
+  const message =
+    error instanceof Error ? error.message : String(error ?? "unknown transport error");
+  const cause = error instanceof Error ? error.cause : undefined;
+  const causeName = errorStringField(cause, "name");
+  const causeCode = errorStringField(cause, "code");
+  const causeMessage = errorStringField(cause, "message");
+  return {
+    endpoint: endpointLabel(url),
+    name,
+    code,
+    message,
+    causeName,
+    causeCode,
+    causeMessage,
+  };
+}
+
+function formatTransportError(error: unknown, url: string) {
+  const details = transportDiagnostic(error, url);
+  const parts = [
+    `endpoint=${details.endpoint}`,
+    details.name ? `name=${details.name}` : null,
+    details.code ? `code=${details.code}` : null,
+    details.causeName ? `cause.name=${details.causeName}` : null,
+    details.causeCode ? `cause.code=${details.causeCode}` : null,
+    details.causeMessage ? `cause.message=${details.causeMessage}` : null,
+  ].filter(Boolean);
+  return `ARK_IMAGE_TRANSPORT_ERROR: ${details.message} (${parts.join(", ")})`;
+}
+
+function retryAfterMs(response: Response | null, attempt: number, opts: ArkImageProviderOptions) {
+  const retryAfter = response?.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const dateMs = Date.parse(retryAfter);
+    if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  }
+  const base = resolveRetryBaseMs(opts);
+  const expo = base * 2 ** attempt;
+  const random = opts.random ?? Math.random;
+  return expo + Math.floor(expo * 0.25 * random());
+}
+
+function isRetryableImageStatus(status: number) {
+  return status === 429 || status >= 500;
+}
+
+async function defaultSleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchImageWithRetry(input: {
+  url: string;
+  init: RequestInit;
+  cfg: TaskProviderConfig;
+  opts: ArkImageProviderOptions;
+}) {
+  const fetchImpl = input.opts.fetch ?? fetch;
+  const maxRetries = resolveMaxRetries(input.opts);
+  const sleep = input.opts.sleep ?? defaultSleep;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutMs = resolveRequestTimeoutMs(input.opts);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(input.url, {
+        ...input.init,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (
+        isRetryableImageStatus(response.status) &&
+        attempt < maxRetries
+      ) {
+        await input.opts.traceLogger?.append({
+          kind: "image.retry",
+          pipeline: "shot_image",
+          status: "error",
+          jobId: input.opts.jobId,
+          provider: input.cfg.provider,
+          model: input.cfg.endpointId,
+          meta: {
+            attempt: attempt + 1,
+            maxRetries,
+            statusCode: response.status,
+            endpoint: endpointLabel(input.url),
+          },
+        });
+        if (response.body) {
+          void response.body.cancel().catch(() => undefined);
+        }
+        await sleep(retryAfterMs(response, attempt, input.opts));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      clearTimeout(timeout);
+      const transportError = controller.signal.aborted
+        ? new Error(`request timed out after ${timeoutMs}ms`, { cause: error })
+        : error;
+      if (attempt < maxRetries) {
+        await input.opts.traceLogger?.append({
+          kind: "image.retry",
+          pipeline: "shot_image",
+          status: "error",
+          jobId: input.opts.jobId,
+          provider: input.cfg.provider,
+          model: input.cfg.endpointId,
+          meta: {
+            attempt: attempt + 1,
+            maxRetries,
+            ...transportDiagnostic(transportError, input.url),
+          },
+        });
+        await sleep(retryAfterMs(null, attempt, input.opts));
+        continue;
+      }
+      const message = formatTransportError(transportError, input.url);
+      await input.opts.traceLogger?.append({
+        kind: "image.failed",
+        pipeline: "shot_image",
+        status: "error",
+        jobId: input.opts.jobId,
+        provider: input.cfg.provider,
+        model: input.cfg.endpointId,
+        meta: {
+          ...transportDiagnostic(transportError, input.url),
+          transportError: true,
+        },
+      });
+      throw new Error(message, { cause: transportError });
+    }
+  }
+  throw new Error(`ARK_IMAGE_TRANSPORT_ERROR: exhausted retries (${endpointLabel(input.url)})`);
 }
 
 async function readJson(res: Response): Promise<unknown> {
@@ -95,8 +278,6 @@ async function generateImagesWithArkInner(
   cfg: TaskProviderConfig,
   opts: ArkImageProviderOptions = {}
 ): Promise<ArkImageResult> {
-  const fetchImpl = opts.fetch ?? fetch;
-
   const referenceImages = req.referenceImageUrls ?? [];
   // The image field is `string/array` per the docs. Pass single string when
   // one ref is provided to keep the request shape minimal.
@@ -142,13 +323,19 @@ async function generateImagesWithArkInner(
   });
 
   const startedAt = Date.now();
-  const res = await fetchImpl(joinPath(cfg.baseURL, "images/generations"), {
+  const endpoint = joinPath(cfg.baseURL, "images/generations");
+  const res = await fetchImageWithRetry({
+    url: endpoint,
+    cfg,
+    opts,
+    init: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${cfg.apiKey}`
     },
     body: JSON.stringify(body)
+    },
   });
 
   if (!res.ok) {

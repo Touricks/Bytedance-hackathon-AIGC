@@ -1,11 +1,15 @@
 # Test Entry Points
 
-Current real-provider smoke coverage is intentionally limited to the backend image/video chain:
+There is no active official real-provider smoke package script.
 
-- `pnpm --filter @aigc-video/server test:integration:smoke`
-- Active files: `apps/server/test/integration/image-flow.integration.test.ts` and `apps/server/test/integration/video-flow.integration.test.ts`.
-- Candidate counts are fixed to 1 image and 1 video.
-- Multi-real-model package scripts such as `realitest`, `test:agent-chain`, `realitest:parallel`, `smoke:providers`, and `smoke:real-providers` have been removed and must not be restored as active automation without a new test policy decision.
+Manual provider probes live under `scripts/`:
+
+- `node scripts/verify-provider-image.mjs --json`
+- `node scripts/verify-provider-video.mjs --image-url <url> --json`
+
+These probes call provider endpoints directly. They do not exercise workspace state, queues, DB writes, asset persistence, selection, or final compose.
+
+Multi-real-model package scripts such as `realitest`, `test:agent-chain`, `realitest:parallel`, `smoke:providers`, `smoke:real-providers`, and chain-smoke entries have been removed and must not be restored as active automation without a new test policy decision.
 
 The V2 Postman/Newman agent-chain assets remain under `docs/test/agent-chain/` for contract reference, but they are not an active automated real-provider test entry.
 

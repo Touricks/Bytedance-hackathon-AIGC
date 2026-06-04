@@ -164,6 +164,7 @@ describe("trace service", () => {
         latencyMs: 123,
         aspectRatio: "9:16",
         referenceImageCount: 1,
+        referenceImageSources: ["data_url", "workspace_stable"],
         stableUrl: "data:image/png;base64,AAAA",
         providerTemporaryUrl: "https://provider.example/temp.png",
       });
@@ -182,6 +183,10 @@ describe("trace service", () => {
       assert.equal(events[0]?.jobId, "job-provider-trace");
       assert.equal(events[0]?.candidateId, "imc-provider-trace");
       assert.equal(events[0]?.generatedCount, 1);
+      assert.deepEqual(events[0]?.referenceImageSources, [
+        "data_url",
+        "workspace_stable",
+      ]);
       assert.match(String(events[0]?.promptHash), /^[a-f0-9]{64}$/);
       assert.equal(
         events[0]?.stableUrl,

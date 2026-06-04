@@ -57,7 +57,9 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
     const candidates = [];
     for (const id of job.sourceShotVideoIds) {
       const cand = await db.db2.getVideoCandidate(id);
-      if (!cand.videoUrl) throw new Error(`Missing videoUrl on candidate ${id}`);
+      if (cand.status !== "SUCCEEDED" || !cand.videoUrl || !cand.objectKey) {
+        throw new Error(`Video candidate ${id} is not ready for final compose`);
+      }
       candidates.push(cand);
     }
     // Order is already the persisted source_shot_video_ids order (set at creation time).
@@ -70,7 +72,9 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
     const inputs: string[] = [];
     for (let i = 0; i < candidates.length; i++) {
       const cand = candidates[i];
-      if (!cand?.videoUrl) throw new Error(`Missing videoUrl on candidate index ${i}`);
+      if (!cand || cand.status !== "SUCCEEDED" || !cand.videoUrl || !cand.objectKey) {
+        throw new Error(`Video candidate at index ${i} is not ready for final compose`);
+      }
       const local = path.join(inputDir, `shot-${i + 1}.mp4`);
       await copyOrDownloadTo({
         workspaceId: job.workspaceId,

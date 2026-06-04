@@ -129,7 +129,7 @@ export interface ImageCandidateRow {
   seed: string | null;
   provider: string;
   providerResponse: unknown;
-  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "REJECTED";
+  status: "PENDING" | "RUNNING" | "PERSISTING" | "SUCCEEDED" | "FAILED" | "REJECTED";
   errorMessage: string | null;
   createdAt: string;
 }

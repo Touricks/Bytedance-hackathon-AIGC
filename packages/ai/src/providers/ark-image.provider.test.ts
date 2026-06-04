@@ -29,7 +29,7 @@ function makeFetch(response: Response, captured: CapturedCall[]) {
       }
     }
     captured.push({ url, method: init?.method ?? "GET", body });
-    return response;
+    return response.clone();
   };
 }
 
@@ -187,6 +187,102 @@ describe("generateImagesWithArk", () => {
           fetch: fetchImpl as typeof fetch
         }),
       /Ark image generation failed \(500\)/
+    );
+  });
+
+  it("retries retryable HTTP failures before returning candidates", async () => {
+    const captured: CapturedCall[] = [];
+    let calls = 0;
+    const fetchImpl = async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      calls += 1;
+      const url = typeof input === "string" ? input : input.toString();
+      captured.push({
+        url,
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      if (calls === 1) {
+        return new Response("temporarily unavailable", { status: 500 });
+      }
+      return new Response(
+        JSON.stringify({ data: [{ url: "https://cdn.example/retry-ok.png" }] }),
+        { status: 200 },
+      );
+    };
+
+    const result = await generateImagesWithArk(
+      { prompt: "retry me", count: 1, aspectRatio: "16:9" },
+      cfg,
+      {
+        fetch: fetchImpl as typeof fetch,
+        maxRetries: 2,
+        retryBaseMs: 1,
+        random: () => 0,
+        sleep: async () => undefined,
+      },
+    );
+
+    assert.equal(calls, 2);
+    assert.equal(result.candidates[0]?.imageUrl, "https://cdn.example/retry-ok.png");
+    assert.equal(captured[0]?.url, "https://ark.example/v3/images/generations");
+  });
+
+  it("preserves transport error cause details after retry exhaustion", async () => {
+    const err = new Error("fetch failed", {
+      cause: { code: "ECONNRESET", message: "socket reset" },
+    });
+    let calls = 0;
+    const fetchImpl = async (): Promise<Response> => {
+      calls += 1;
+      throw err;
+    };
+
+    await assert.rejects(
+      () =>
+        generateImagesWithArk(
+          { prompt: "p", count: 1, aspectRatio: "9:16" },
+          cfg,
+          {
+            fetch: fetchImpl as typeof fetch,
+            maxRetries: 1,
+            retryBaseMs: 1,
+            random: () => 0,
+            sleep: async () => undefined,
+          },
+        ),
+      /ARK_IMAGE_TRANSPORT_ERROR: fetch failed .*cause.code=ECONNRESET/,
+    );
+    assert.equal(calls, 2);
+  });
+
+  it("aborts image provider requests that exceed the configured timeout", async () => {
+    const fetchImpl = async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+
+    await assert.rejects(
+      () =>
+        generateImagesWithArk(
+          { prompt: "p", count: 1, aspectRatio: "9:16" },
+          cfg,
+          {
+            fetch: fetchImpl as typeof fetch,
+            requestTimeoutMs: 1,
+            maxRetries: 0,
+          },
+        ),
+      /ARK_IMAGE_TRANSPORT_ERROR: request timed out after 1ms/,
     );
   });
 

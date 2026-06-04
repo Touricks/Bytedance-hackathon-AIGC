@@ -212,13 +212,13 @@ test("opens a local workspace via real backend and lands on focus mode", async (
 // 2) Real provider flow — disabled. It used to drive one shot through:
 //      image-prompt propose -> image batch -> select image
 //    via the UI against real Ark text + Ark Seedream image endpoints.
-//    Use the backend image/video smoke entry instead.
+//    Use scripts/ provider probes for direct provider diagnosis instead.
 // ---------------------------------------------------------------------------
 
 test.describe("real provider flow @provider", () => {
   test.skip(
     true,
-    "disabled: use pnpm --filter @aigc-video/server test:integration:smoke for backend image/video smoke"
+    "disabled: no official real-provider smoke package script; use scripts/ provider probes for direct provider diagnosis"
   );
   test.setTimeout(8 * 60_000);
 

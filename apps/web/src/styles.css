@@ -1095,7 +1095,18 @@ label {
   font-weight: 650;
 }
 
-.review-shot-nav__item {
+.review-shot-nav__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.review-shot-nav__list-item.MuiListItem-root {
+  display: block;
+}
+
+.review-shot-nav__item.MuiListItemButton-root {
   display: flex;
   width: 100%;
   align-items: center;
@@ -1108,7 +1119,13 @@ label {
   text-align: left;
 }
 
-.review-shot-nav__item--active {
+.review-shot-nav__item.MuiListItemButton-root:hover {
+  background: var(--surface-2);
+}
+
+.review-shot-nav__item.MuiListItemButton-root.Mui-selected,
+.review-shot-nav__item.MuiListItemButton-root.Mui-selected:hover,
+.review-shot-nav__item--active.MuiListItemButton-root {
   border-color: var(--line);
   color: var(--ink);
   background: var(--surface);
@@ -1142,22 +1159,42 @@ label {
   border: 1px dashed var(--line-3);
 }
 
-.review-shot-nav__item strong {
+.review-shot-nav__avatar.MuiListItemAvatar-root {
+  min-width: 0;
+  flex: none;
+}
+
+.review-shot-nav__text.MuiListItemText-root {
   min-width: 0;
   flex: 1;
+  margin: 0;
+}
+
+.review-shot-nav__text .MuiListItemText-primary {
   overflow: hidden;
+  color: var(--ink);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.review-shot-nav__upstream {
-  display: inline-flex;
+.review-shot-nav__text .MuiListItemText-secondary {
+  display: flex;
+  margin-top: 5px;
+  min-height: 18px;
+}
+
+.review-shot-nav__upstream.MuiChip-root {
   border-radius: 99px;
-  padding: 2px 6px;
+  height: 18px;
   color: var(--sky);
   background: var(--sky-soft);
+}
+
+.review-shot-nav__upstream .MuiChip-label {
+  padding: 0 7px;
   font-size: 10px;
   font-weight: 700;
 }

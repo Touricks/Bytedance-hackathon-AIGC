@@ -47,7 +47,9 @@ async function refreshImageBatchCompletion(
     const failed =
       (byStatus.get("FAILED") ?? 0) + (byStatus.get("REJECTED") ?? 0);
     const pending =
-      (byStatus.get("PENDING") ?? 0) + (byStatus.get("RUNNING") ?? 0);
+      (byStatus.get("PENDING") ?? 0) +
+      (byStatus.get("RUNNING") ?? 0) +
+      (byStatus.get("PERSISTING") ?? 0);
     const requested = Number(batch.rows[0]?.requested_count ?? 0);
     const status =
       pending > 0

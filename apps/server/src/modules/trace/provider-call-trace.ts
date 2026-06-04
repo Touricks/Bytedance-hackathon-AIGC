@@ -38,6 +38,7 @@ export interface ProviderCallTraceInput extends ProviderCallTraceContext {
   negativePrompt?: string | null;
   aspectRatio?: "9:16" | "16:9" | "1:1" | null;
   referenceImageCount?: number | null;
+  referenceImageSources?: string[] | null;
   durationSec?: number | null;
   generateAudio?: boolean | null;
   firstFrameUrl?: string | null;

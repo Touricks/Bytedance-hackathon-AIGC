@@ -8,7 +8,8 @@ do $$ begin create type shot_status as enum (
 ); exception when duplicate_object then null; end $$;
 do $$ begin create type artifact_status_v2 as enum ('DRAFT','ACTIVE','APPROVED','STALE','ARCHIVED'); exception when duplicate_object then null; end $$;
 do $$ begin create type batch_status as enum ('PENDING','RUNNING','SUCCEEDED','PARTIAL','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
-do $$ begin create type candidate_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','REJECTED'); exception when duplicate_object then null; end $$;
+do $$ begin create type candidate_status as enum ('PENDING','RUNNING','PERSISTING','SUCCEEDED','FAILED','REJECTED'); exception when duplicate_object then null; end $$;
+alter type candidate_status add value if not exists 'PERSISTING';
 do $$ begin create type job_status_v2 as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','RETRYING','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type final_video_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type workspace_storage_kind as enum ('LOCAL','S3'); exception when duplicate_object then null; end $$;

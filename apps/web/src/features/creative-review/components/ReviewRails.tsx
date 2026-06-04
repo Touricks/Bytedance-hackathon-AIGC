@@ -1,4 +1,10 @@
 import { useState } from "react";
+import Chip from "@mui/material/Chip";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemAvatar from "@mui/material/ListItemAvatar";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemText from "@mui/material/ListItemText";
 import { Clock3, Layers3, Trash2, Upload } from "lucide-react";
 import {
   toAbsoluteAssetUrl,
@@ -68,36 +74,56 @@ export function StepRail({
       {vm.shots.length > 0 ? (
         <section className="review-shot-nav">
           <h3>分镜列表</h3>
-          {vm.shots.map((shot) => (
-            <button
-              key={shot.shotId}
-              type="button"
-              className={
-                shot.shotId === vm.selectedShotId
-                  ? "review-shot-nav__item review-shot-nav__item--active"
-                  : "review-shot-nav__item"
-              }
-              onClick={() => onShotSelect(shot.shotId)}
-            >
-              <span className="review-shot-nav__index">{shot.orderIndex + 1}</span>
-              {shot.selectedImageUrl ? (
-                <img
-                  className="review-shot-nav__thumb"
-                  src={toAbsoluteAssetUrl(shot.selectedImageUrl)}
-                  alt={`分镜 ${shot.orderIndex + 1} 已选分镜图`}
-                />
-              ) : (
-                <span
-                  className="review-shot-nav__thumb review-shot-nav__thumb--empty"
-                  aria-hidden="true"
-                />
-              )}
-              <strong>{shotStatusLabel(shot.status)}</strong>
-              {shot.upstream?.upstreamChanged ? (
-                <span className="review-shot-nav__upstream">上游已变化</span>
-              ) : null}
-            </button>
-          ))}
+          <List className="review-shot-nav__list" aria-label="分镜列表">
+            {vm.shots.map((shot) => {
+              const isSelected = shot.shotId === vm.selectedShotId;
+              const upstreamChanged = Boolean(shot.upstream?.upstreamChanged);
+              return (
+                <ListItem
+                  key={shot.shotId}
+                  className="review-shot-nav__list-item"
+                  disablePadding
+                >
+                  <ListItemButton
+                    className={`review-shot-nav__item ${
+                      isSelected ? "review-shot-nav__item--active" : ""
+                    }`}
+                    selected={isSelected}
+                    onClick={() => onShotSelect(shot.shotId)}
+                  >
+                    <span className="review-shot-nav__index">{shot.orderIndex + 1}</span>
+                    <ListItemAvatar className="review-shot-nav__avatar">
+                      {shot.selectedImageUrl ? (
+                        <img
+                          className="review-shot-nav__thumb"
+                          src={toAbsoluteAssetUrl(shot.selectedImageUrl)}
+                          alt={`分镜 ${shot.orderIndex + 1} 已选分镜图`}
+                        />
+                      ) : (
+                        <span
+                          className="review-shot-nav__thumb review-shot-nav__thumb--empty"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </ListItemAvatar>
+                    <ListItemText
+                      className="review-shot-nav__text"
+                      primary={shotStatusLabel(shot.status)}
+                      secondary={
+                        upstreamChanged ? (
+                          <Chip
+                            className="review-shot-nav__upstream"
+                            label="上游已变化"
+                            size="small"
+                          />
+                        ) : null
+                      }
+                    />
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
         </section>
       ) : null}
     </aside>

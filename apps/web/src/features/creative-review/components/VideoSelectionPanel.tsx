@@ -3,17 +3,25 @@ import Card from "@mui/material/Card";
 import CardActions from "@mui/material/CardActions";
 import { Clock3, Film, RefreshCw } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
+import {
+  getVideoBatchGenerationTargets,
+  videoBatchActionNote,
+} from "../../workbench/videoBatchTargets.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import { isTerminalReady, statusTone } from "../reviewFlow.js";
 import { candidateMediaAspectRatio } from "../candidateMediaLayout.js";
+import { videoCandidatePresentation } from "../videoCandidatePresentation.js";
 import { CandidateMediaFrame } from "./Common.js";
 
 export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
   const allImagesSelected =
     vm.shots.length > 0 && vm.shots.every((shot) => Boolean(shot.selectedImageId));
-  const videoTargets = vm.shots.filter(
-    (shot) => shot.selectedImageId && !shot.selectedVideoId && !shot.activeVideoBatchId
-  );
+  const videoTargets = allImagesSelected
+    ? getVideoBatchGenerationTargets(vm.shots)
+    : [];
+  const actionNote = allImagesSelected
+    ? videoBatchActionNote(vm.shots)
+    : "等待全部分镜图选择完成";
   const rounds = vm.videoRounds;
 
   return (
@@ -34,9 +42,7 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
           {vm.pending?.video ? "正在生成分镜视频..." : "批量生成分镜视频候选"}
         </button>
         <span className="review-action-note">
-          {videoTargets.length > 0
-            ? `待生成 ${videoTargets.length} 个分镜`
-            : "已有视频候选或已完成选择"}
+          {actionNote}
         </span>
       </div>
       {vm.selectedWorkflowShot ? (
@@ -122,10 +128,7 @@ function CandidateVideos({
         {round.candidates.map((candidate) => {
           const isFeedbackOpen = feedbackCandidateId === candidate.id;
           const isCommitted = candidate.id === round.selection?.selectedCandidateId;
-          const canFeedback =
-            allowFeedback &&
-            candidate.status === "SUCCEEDED" &&
-            Boolean(candidate.videoUrl);
+          const presentation = videoCandidatePresentation(candidate, allowFeedback);
           return (
             <Card
               variant="outlined"
@@ -142,9 +145,13 @@ function CandidateVideos({
             >
               <CandidateMediaFrame
                 kind="video"
-                src={candidate.videoUrl ? toAbsoluteAssetUrl(candidate.videoUrl) : null}
+                src={
+                  presentation.mediaUrl
+                    ? toAbsoluteAssetUrl(presentation.mediaUrl)
+                    : null
+                }
                 alt={candidate.id}
-                statusText={candidate.errorMessage ?? candidate.status}
+                statusText={presentation.statusText}
                 aspectRatio={candidateAspectRatio}
                 badge={isCommitted ? "当前选择" : null}
               />
@@ -155,13 +162,13 @@ function CandidateVideos({
                 <button
                   type="button"
                   className="review-secondary"
-                  disabled={busy || !batchId || candidate.status !== "SUCCEEDED"}
+                  disabled={busy || !batchId || !presentation.canSelect}
                   onClick={() => batchId && onSelect(candidate.id, batchId)}
                 >
-                  选择为当前分镜视频
+                  {presentation.selectLabel}
                 </button>
               </CardActions>
-              {canFeedback ? (
+              {presentation.canFeedback ? (
                 <CardActions
                   className="review-candidate-actions"
                   sx={{ display: "grid", width: "100%", p: 0 }}

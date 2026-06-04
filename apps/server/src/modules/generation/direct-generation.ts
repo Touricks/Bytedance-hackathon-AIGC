@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   generateImagesWithArk,
   generateVideoWithSeedance,
@@ -13,6 +15,8 @@ import {
   recordProviderCallTrace,
   type ProviderCallTraceContext,
 } from "../trace/provider-call-trace.js";
+import { traceService } from "../trace/trace.service.js";
+import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
 import {
   persistGeneratedAsset,
   type GeneratedAssetPersister,
@@ -28,6 +32,14 @@ type ImageProvider = (args: {
   count: number;
   aspectRatio: "9:16" | "16:9" | "1:1";
 }) => Promise<ArkImageResult>;
+
+type ReferenceImageSource =
+  | "data_url"
+  | "workspace_stable"
+  | "https_provider_tos"
+  | "public_https"
+  | "asset_id"
+  | "other";
 
 type VideoProvider = (args: {
   imageUrl: string;
@@ -83,6 +95,7 @@ async function recordImageProviderTrace(input: {
   error?: string;
   aspectRatio: "9:16" | "16:9" | "1:1";
   referenceImageCount: number;
+  referenceImageSources?: string[] | null;
   stableUrl?: string | null;
   providerTemporaryUrl?: string | null;
 }) {
@@ -103,6 +116,7 @@ async function recordImageProviderTrace(input: {
     error: input.error,
     aspectRatio: input.aspectRatio,
     referenceImageCount: input.referenceImageCount,
+    referenceImageSources: input.referenceImageSources ?? null,
     stableUrl: input.stableUrl ?? null,
     providerTemporaryUrl: input.providerTemporaryUrl ?? null,
   });
@@ -154,6 +168,42 @@ async function recordVideoProviderTrace(input: {
   });
 }
 
+async function recordVideoAssetPersistTrace(input: {
+  trace?: ProviderCallTraceContext;
+  name: "asset_persist_started" | "asset_persist_completed" | "asset_persist_failed";
+  batchId: string;
+  candidateId: string;
+  providerTaskId?: string | null;
+  providerTemporaryUrl?: string | null;
+  stableUrl?: string | null;
+  objectKey?: string | null;
+  bytes?: number | null;
+  latencyMs?: number | null;
+  error?: string;
+}) {
+  if (!input.trace) return;
+  await traceService.record({
+    workspaceId: input.trace.workspaceId,
+    shotId: input.trace.shotId,
+    traceType: "job_event",
+    name: input.name,
+    metadata: {
+      jobId: input.trace.jobId,
+      batchId: input.batchId,
+      candidateId: input.candidateId,
+      attempt: input.trace.attempt,
+      maxAttempts: input.trace.maxAttempts,
+      providerTaskId: input.providerTaskId ?? null,
+      providerTemporaryUrl: input.providerTemporaryUrl ?? null,
+      stableUrl: input.stableUrl ?? null,
+      objectKey: input.objectKey ?? null,
+      bytes: input.bytes ?? null,
+      latencyMs: input.latencyMs ?? null,
+      error: input.error,
+    },
+  });
+}
+
 const mockImageDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAUklEQVR42u3PMQ0AAAgDMIRNCYqRhQQuviY10JrkVXpelYCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDAZQHIEvEtQ7Jm2gAAAABJRU5ErkJggg==";
 
@@ -173,6 +223,78 @@ function mockImageResult(count: number): ArkImageResult {
       totalTokens: 0,
     },
   };
+}
+
+function imageContentTypeForPath(filePath: string) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".bmp") return "image/bmp";
+  if (ext === ".tif" || ext === ".tiff") return "image/tiff";
+  return "image/png";
+}
+
+function classifyReferenceImageSource(url: string): ReferenceImageSource {
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(url)) return "data_url";
+  if (url.startsWith("asset://")) return "asset_id";
+  if (url.startsWith("/api/workspaces/")) return "workspace_stable";
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const host = new URL(url).host.toLowerCase();
+      return /tos|volc|byte|ark|seedream|provider/.test(host)
+        ? "https_provider_tos"
+        : "public_https";
+    } catch {
+      return "public_https";
+    }
+  }
+  return "other";
+}
+
+function workspaceMaterialRelativePath(workspaceId: string, url: string) {
+  const match = new RegExp(
+    `^/api/workspaces/${workspaceId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/materials/(.+)$`,
+  ).exec(url);
+  if (!match?.[1]) return null;
+  try {
+    const decoded = decodeURIComponent(match[1]);
+    if (decoded.startsWith("/") || decoded.includes("..")) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+export async function prepareImageReferenceUrlsForProvider(input: {
+  workspaceId: string;
+  urls: string[];
+  resolveWorkspaceLocalPath?: (workspaceId: string) => Promise<string>;
+  readFile?: (filePath: string) => Promise<Buffer>;
+}) {
+  const sources = input.urls.map(classifyReferenceImageSource);
+  const resolveLocalPath =
+    input.resolveWorkspaceLocalPath ?? resolveWorkspaceStorageLocalPath;
+  const readReferenceFile = input.readFile ?? readFile;
+  const urls: string[] = [];
+  for (const url of input.urls) {
+    const relativePath = workspaceMaterialRelativePath(input.workspaceId, url);
+    if (!relativePath) {
+      urls.push(url);
+      continue;
+    }
+    const workspaceLocalPath = await resolveLocalPath(input.workspaceId);
+    const materialRoot = path.resolve(workspaceLocalPath, ".daireel", "materials");
+    const filePath = path.resolve(materialRoot, relativePath);
+    if (!filePath.startsWith(materialRoot + path.sep)) {
+      throw new Error("WORKSPACE_IMAGE_REFERENCE_OUTSIDE_STORAGE");
+    }
+    const bytes = await readReferenceFile(filePath);
+    urls.push(
+      `data:${imageContentTypeForPath(filePath)};base64,${bytes.toString("base64")}`,
+    );
+  }
+  return { urls, sources };
 }
 
 async function defaultImageProvider(args: Parameters<ImageProvider>[0]): Promise<ArkImageResult> {
@@ -240,11 +362,17 @@ export async function runImageGenerationBatch(input: {
   const artifact = await adapter.getImagePromptArtifact(batch.imagePromptArtifactId);
   const resolver = resolveAssetUrlsOverride ?? resolveAssetUrls;
   const assetReferenceUrls = await resolver(artifact.referenceAssetIds);
-  const referenceImageUrls = [
+  const rawReferenceImageUrls = [
     ...(input.referenceImageUrls ?? []),
     ...assetReferenceUrls,
     ...(input.referenceImageUrlsAfterAssets ?? []),
   ].filter((url, index, all) => url && all.indexOf(url) === index);
+  const preparedReferences = await prepareImageReferenceUrlsForProvider({
+    workspaceId: batch.workspaceId,
+    urls: rawReferenceImageUrls,
+  });
+  const referenceImageUrls = preparedReferences.urls;
+  const referenceImageSources = preparedReferences.sources;
 
   let result: ArkImageResult;
   let providerStartedAt: number | null = null;
@@ -275,6 +403,7 @@ export async function runImageGenerationBatch(input: {
       error: msg,
       aspectRatio: input.aspectRatio,
       referenceImageCount: referenceImageUrls.length,
+      referenceImageSources,
     });
     const failedBatch = await adapter.updateImageBatch(batch.id, {
       status: "FAILED",
@@ -363,6 +492,7 @@ export async function runImageGenerationBatch(input: {
     error: result.candidates.length > 0 ? undefined : "provider_returned_short",
     aspectRatio: input.aspectRatio,
     referenceImageCount: referenceImageUrls.length,
+    referenceImageSources,
     stableUrl: firstSucceeded?.imageUrl ?? null,
     providerTemporaryUrl:
       (firstSucceeded?.providerResponse as { providerTemporaryUrl?: string } | null)
@@ -395,11 +525,17 @@ export async function runImageGenerationCandidate(input: {
   const artifact = await adapter.getImagePromptArtifact(batch.imagePromptArtifactId);
   const resolver = resolveAssetUrlsOverride ?? resolveAssetUrls;
   const assetReferenceUrls = await resolver(artifact.referenceAssetIds);
-  const referenceImageUrls = [
+  const rawReferenceImageUrls = [
     ...(input.referenceImageUrls ?? []),
     ...assetReferenceUrls,
     ...(input.referenceImageUrlsAfterAssets ?? []),
   ].filter((url, index, all) => url && all.indexOf(url) === index);
+  const preparedReferences = await prepareImageReferenceUrlsForProvider({
+    workspaceId: batch.workspaceId,
+    urls: rawReferenceImageUrls,
+  });
+  const referenceImageUrls = preparedReferences.urls;
+  const referenceImageSources = preparedReferences.sources;
 
   let result: ArkImageResult | undefined;
   let generated: ArkImageResult["candidates"][number] | undefined;
@@ -437,6 +573,7 @@ export async function runImageGenerationCandidate(input: {
         error: providerMessage,
         aspectRatio: input.aspectRatio,
         referenceImageCount: referenceImageUrls.length,
+        referenceImageSources,
       });
       providerTraceWritten = true;
       throw new Error(providerMessage);
@@ -475,6 +612,7 @@ export async function runImageGenerationCandidate(input: {
       latencyMs,
       aspectRatio: input.aspectRatio,
       referenceImageCount: referenceImageUrls.length,
+      referenceImageSources,
       stableUrl: persisted.stableUrl,
       providerTemporaryUrl: persisted.providerTemporaryUrl ?? generated.imageUrl,
     });
@@ -499,6 +637,7 @@ export async function runImageGenerationCandidate(input: {
         error: providerSucceeded ? undefined : msg,
         aspectRatio: input.aspectRatio,
         referenceImageCount: referenceImageUrls.length,
+        referenceImageSources,
         providerTemporaryUrl: generated?.imageUrl ?? null,
       });
       providerTraceWritten = true;
@@ -521,6 +660,63 @@ function providerTemporaryUrl(row: { providerResponse: unknown; imageUrl?: strin
   return typeof response?.providerTemporaryUrl === "string"
     ? response.providerTemporaryUrl
     : row.imageUrl ?? null;
+}
+
+function providerReadyAt(result: { createdAt?: number | null }) {
+  if (typeof result.createdAt !== "number" || !Number.isFinite(result.createdAt)) {
+    return new Date().toISOString();
+  }
+  const timestampMs =
+    result.createdAt < 10_000_000_000 ? result.createdAt * 1000 : result.createdAt;
+  return new Date(timestampMs).toISOString();
+}
+
+function videoProviderReadyResponse(row: {
+  provider?: string | null;
+  providerResponse: unknown;
+}) {
+  const response =
+    row.providerResponse && typeof row.providerResponse === "object"
+      ? (row.providerResponse as Record<string, unknown>)
+      : {};
+  const videoUrl =
+    typeof response.providerTemporaryUrl === "string"
+      ? response.providerTemporaryUrl
+      : typeof response.videoUrl === "string"
+        ? response.videoUrl
+        : null;
+  if (!videoUrl) {
+    throw new Error("MISSING_PROVIDER_TEMPORARY_URL");
+  }
+  const provider =
+    response.provider === "mock" || response.provider === "seedance"
+      ? response.provider
+      : row.provider === "mock" || row.provider === "seedance"
+        ? row.provider
+        : "seedance";
+  const result: SeedanceVideoResult = {
+    videoUrl,
+    provider,
+    model: typeof response.model === "string" ? response.model : "",
+    prompt: typeof response.prompt === "string" ? response.prompt : "",
+    taskId: typeof response.taskId === "string" ? response.taskId : undefined,
+    createdAt:
+      typeof response.createdAt === "number" && Number.isFinite(response.createdAt)
+        ? response.createdAt
+        : undefined,
+  };
+  return {
+    result,
+    response: {
+      ...response,
+      videoUrl,
+      providerTemporaryUrl: videoUrl,
+      providerReadyAt:
+        typeof response.providerReadyAt === "string"
+          ? response.providerReadyAt
+          : providerReadyAt(result),
+    },
+  };
 }
 
 function videoScriptVoiceover(scriptJson: unknown) {
@@ -568,11 +764,18 @@ export async function runVideoGenerationCandidate(input: {
   const adapter = input.adapter ?? db.db2;
   const batch = await adapter.getVideoBatch(input.batchId);
   const candidate = await adapter.getVideoCandidate(input.candidateId);
-  if (candidate.status !== "PENDING" && candidate.status !== "RUNNING") {
+  const isResumingPersist = candidate.status === "PERSISTING";
+  if (
+    candidate.status !== "PENDING" &&
+    candidate.status !== "RUNNING" &&
+    !isResumingPersist
+  ) {
     return { batch, candidate, result: null };
   }
 
-  await adapter.updateVideoCandidate(candidate.id, { status: "RUNNING" });
+  if (!isResumingPersist) {
+    await adapter.updateVideoCandidate(candidate.id, { status: "RUNNING" });
+  }
   const script = await adapter.getVideoScriptArtifact(batch.videoScriptArtifactId);
   if (script.status !== "ACTIVE") {
     const failed =
@@ -605,17 +808,69 @@ export async function runVideoGenerationCandidate(input: {
   let providerTraceWritten = false;
   let providerStartedAt: number | null = null;
   let latencyMs: number | null = null;
+  let assetPersistStartedAt: number | null = null;
   try {
-    providerStartedAt = Date.now();
-    result = await provider({
-      imageUrl: firstFrameUrl,
-      lastFrameUrl,
-      prompt,
-      durationSec: script.durationSec,
-      aspectRatio: input.aspectRatio,
-      generateAudio: true,
+    let providerReadyResponse: Record<string, unknown>;
+    if (isResumingPersist) {
+      const restored = videoProviderReadyResponse(candidate);
+      result = restored.result;
+      providerReadyResponse = restored.response;
+    } else {
+      providerStartedAt = Date.now();
+      result = await provider({
+        imageUrl: firstFrameUrl,
+        lastFrameUrl,
+        prompt,
+        durationSec: script.durationSec,
+        aspectRatio: input.aspectRatio,
+        generateAudio: true,
+      });
+      latencyMs = elapsedSince(providerStartedAt);
+      providerReadyResponse = {
+        ...result,
+        providerTemporaryUrl: result.videoUrl,
+        providerReadyAt: providerReadyAt(result),
+      };
+      await adapter.updateVideoCandidate(candidate.id, {
+        videoUrl: null,
+        objectKey: null,
+        durationSec: script.durationSec,
+        provider: result.provider,
+        providerResponse: providerReadyResponse,
+        status: "PERSISTING" as any,
+        errorMessage: null,
+      });
+      await recordVideoProviderTrace({
+        trace: input.providerTrace,
+        batchId: batch.id,
+        candidateId: candidate.id,
+        provider: result.provider,
+        model: result.model,
+        status: "succeeded",
+        prompt,
+        requestedCount: 1,
+        generatedCount: 1,
+        latencyMs,
+        aspectRatio: input.aspectRatio,
+        durationSec: script.durationSec,
+        generateAudio: true,
+        firstFrameUrl,
+        lastFrameUrl,
+        stableUrl: null,
+        providerTemporaryUrl: result.videoUrl,
+        providerTaskId: result.taskId ?? null,
+      });
+      providerTraceWritten = true;
+    }
+    await recordVideoAssetPersistTrace({
+      trace: input.providerTrace,
+      name: "asset_persist_started",
+      batchId: batch.id,
+      candidateId: candidate.id,
+      providerTaskId: result.taskId ?? null,
+      providerTemporaryUrl: result.videoUrl,
     });
-    latencyMs = elapsedSince(providerStartedAt);
+    assetPersistStartedAt = Date.now();
     const persisted = await (generatedAssetPersisterOverride ?? persistGeneratedAsset)({
       workspaceId: batch.workspaceId,
       sourceUrl: result.videoUrl,
@@ -623,43 +878,51 @@ export async function runVideoGenerationCandidate(input: {
       batchId: batch.id,
       candidateId: candidate.id,
     });
+    const persistedProviderTemporaryUrl =
+      persisted.providerTemporaryUrl ??
+      (typeof providerReadyResponse.providerTemporaryUrl === "string"
+        ? providerReadyResponse.providerTemporaryUrl
+        : null);
     const updated = await adapter.updateVideoCandidate(candidate.id, {
       videoUrl: persisted.stableUrl,
       objectKey: persisted.objectKey,
       durationSec: script.durationSec,
       provider: result.provider,
       providerResponse: {
-        ...result,
-        providerTemporaryUrl: persisted.providerTemporaryUrl,
+        ...providerReadyResponse,
+        providerTemporaryUrl: persistedProviderTemporaryUrl,
       },
       status: "SUCCEEDED",
       errorMessage: null,
     });
-    await recordVideoProviderTrace({
+    await recordVideoAssetPersistTrace({
       trace: input.providerTrace,
+      name: "asset_persist_completed",
       batchId: batch.id,
       candidateId: candidate.id,
-      provider: result.provider,
-      model: result.model,
-      status: "succeeded",
-      prompt,
-      requestedCount: 1,
-      generatedCount: 1,
-      latencyMs,
-      aspectRatio: input.aspectRatio,
-      durationSec: script.durationSec,
-      generateAudio: true,
-      firstFrameUrl,
-      lastFrameUrl,
-      stableUrl: persisted.stableUrl,
-      providerTemporaryUrl: persisted.providerTemporaryUrl ?? result.videoUrl,
       providerTaskId: result.taskId ?? null,
+      providerTemporaryUrl: persistedProviderTemporaryUrl,
+      stableUrl: persisted.stableUrl,
+      objectKey: persisted.objectKey,
+      bytes: persisted.bytes ?? null,
+      latencyMs: elapsedSince(assetPersistStartedAt),
     });
-    providerTraceWritten = true;
     return { batch, candidate: updated, result };
   } catch (err) {
     const msg = errorMessage(err);
-    if (!providerTraceWritten) {
+    if (result?.videoUrl) {
+      await recordVideoAssetPersistTrace({
+        trace: input.providerTrace,
+        name: "asset_persist_failed",
+        batchId: batch.id,
+        candidateId: candidate.id,
+        providerTaskId: result.taskId ?? null,
+        providerTemporaryUrl: result.videoUrl,
+        latencyMs: elapsedSince(assetPersistStartedAt),
+        error: msg,
+      });
+    }
+    if (!providerTraceWritten && !isResumingPersist) {
       const providerSucceeded = Boolean(result?.videoUrl);
       await recordVideoProviderTrace({
         trace: input.providerTrace,

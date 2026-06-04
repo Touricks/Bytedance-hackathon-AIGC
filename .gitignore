@@ -17,6 +17,9 @@ apps/web/playwright-report/
 .claude/
 .claire/
 .codex/
+.agent/
+.agents/
+.husky/
 
 # Keep most design docs locally only; some test/core specs are shared.
 docs/*

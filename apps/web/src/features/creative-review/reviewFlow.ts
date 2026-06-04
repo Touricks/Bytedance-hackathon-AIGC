@@ -67,6 +67,7 @@ export function statusTone(value: string | null | undefined): ReviewTone {
     value.includes("PROPOSING") ||
     value === "PENDING" ||
     value === "RUNNING" ||
+    value === "PERSISTING" ||
     value === "待提交" ||
     value === "生成中" ||
     value === "等待生成" ||

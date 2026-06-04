@@ -47,7 +47,16 @@ export interface WorkflowStatus {
     selectedVideoId: string | null;
     activeImageBatchId?: string | null;
     activeVideoBatchId?: string | null;
+    activeVideoBatchStatus?:
+      | "PENDING"
+      | "RUNNING"
+      | "SUCCEEDED"
+      | "PARTIAL"
+      | "FAILED"
+      | "CANCELLED"
+      | null;
     upstream?: UpstreamDrift;
+    videoUpstream?: UpstreamDrift;
   }>;
   canComposeFinalVideo: boolean;
 }

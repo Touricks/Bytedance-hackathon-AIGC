@@ -4,9 +4,19 @@ import type { VideoScriptArtifact } from "./videoScript.js";
 export interface VideoCandidate {
   id: string;
   videoUrl: string | null;
+  previewVideoUrl?: string | null;
   thumbnailUrl: string | null;
   durationSec: number | null;
-  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "REJECTED";
+  status:
+    | "PENDING"
+    | "RUNNING"
+    | "PERSISTING"
+    | "SUCCEEDED"
+    | "FAILED"
+    | "REJECTED";
+  providerTaskId?: string | null;
+  providerReadyAt?: string | null;
+  persistStatus?: "PENDING" | "PERSISTING" | "SUCCEEDED" | "FAILED";
   errorMessage?: string | null;
 }
 

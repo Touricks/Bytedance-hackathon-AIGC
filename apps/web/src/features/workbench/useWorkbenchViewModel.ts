@@ -49,6 +49,7 @@ import {
 import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "./useFinalVideo.js";
 import { roundPollingInterval } from "./roundPolling.js";
+import { getVideoBatchGenerationTargets } from "./videoBatchTargets.js";
 
 const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);
 
@@ -372,10 +373,9 @@ export function useWorkbenchViewModel(workspaceId: string) {
 
   const proposeAllVideos = useMutation({
     mutationFn: async () => {
-      const targets = workflowShots.filter(
-        (shot) =>
-          shot.selectedImageId && !shot.selectedVideoId && !shot.activeVideoBatchId,
-      );
+      const allImagesSelected =
+        workflowShots.length > 0 && workflowShots.every((shot) => Boolean(shot.selectedImageId));
+      const targets = allImagesSelected ? getVideoBatchGenerationTargets(workflowShots) : [];
       await Promise.all(
         targets.map((shot) =>
           proposeVideoScript(workspaceId, shot.shotId, {

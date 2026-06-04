@@ -304,9 +304,13 @@ function videoCandidate() {
   return {
     id: videoCandidateId,
     videoUrl: "/api/workspaces/workspace_contract_demo/videos/hero.mp4",
+    previewVideoUrl: "/api/workspaces/workspace_contract_demo/videos/hero.mp4",
     thumbnailUrl: null,
     durationSec: 4,
     status: "SUCCEEDED",
+    providerTaskId: "seedance-task-contract",
+    providerReadyAt: now,
+    persistStatus: "SUCCEEDED",
     errorMessage: null,
   };
 }
@@ -623,7 +627,9 @@ const contracts = [
             selectedVideoId: videoCandidateId,
             activeImageBatchId: imageBatchId,
             activeVideoBatchId: videoBatchId,
+            activeVideoBatchStatus: "SUCCEEDED",
             upstream: { upstreamChanged: false, changedSources: [] },
+            videoUpstream: { upstreamChanged: false, changedSources: [] },
           },
         ],
       },

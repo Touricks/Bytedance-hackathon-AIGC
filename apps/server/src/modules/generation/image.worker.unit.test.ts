@@ -1,12 +1,18 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   processGenerateImages,
   __setImageProviderForTests,
   __setAssetUrlResolverForTests,
   __setGeneratedAssetPersisterForTests,
 } from "./image.worker.js";
-import { runImageGenerationCandidate } from "./direct-generation.js";
+import {
+  prepareImageReferenceUrlsForProvider,
+  runImageGenerationCandidate,
+} from "./direct-generation.js";
 import {
   __setProviderCallTraceRecorderForTests,
   type ProviderCallTraceInput,
@@ -171,6 +177,13 @@ describe("processGenerateImages", () => {
     }
   });
 
+  afterEach(() => {
+    __setImageProviderForTests(undefined);
+    __setAssetUrlResolverForTests(undefined);
+    __setGeneratedAssetPersisterForTests(undefined);
+    __setProviderCallTraceRecorderForTests(undefined);
+  });
+
   it("creates candidates, updates batch to SUCCEEDED, transitions shot", async () => {
     const fakeProvider = makeFakeProvider({
       provider: "ark-seedream",
@@ -240,6 +253,38 @@ describe("processGenerateImages", () => {
     );
     assert.deepEqual((seenArgs[0] as any).referenceImageUrls, ["https://r/1.png", "https://r/2.png"]);
     assert.deepEqual(seenResolverIds[0], ["a1", "a2"]);
+  });
+
+  it("converts generated workspace image references to data URLs and records source classes", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "daireel-ref-"));
+    const generatedDir = path.join(
+      workspaceDir,
+      ".daireel",
+      "materials",
+      "generated-images",
+    );
+    await mkdir(generatedDir, { recursive: true });
+    await writeFile(path.join(generatedDir, "imc-old.png"), Buffer.from("old-png"));
+
+    const prepared = await prepareImageReferenceUrlsForProvider({
+      workspaceId: "ws-1",
+      urls: [
+        "/api/workspaces/ws-1/materials/generated-images/imc-old.png",
+        "https://cdn.example/public.png",
+        "data:image/png;base64,AAAA",
+      ],
+      resolveWorkspaceLocalPath: async () => workspaceDir,
+    });
+
+    assert.equal(
+      prepared.urls[0],
+      `data:image/png;base64,${Buffer.from("old-png").toString("base64")}`,
+    );
+    assert.deepEqual(prepared.sources, [
+      "workspace_stable",
+      "public_https",
+      "data_url",
+    ]);
   });
 
   it("generates one queued image candidate with a single-image provider request", async () => {
@@ -334,6 +379,10 @@ describe("processGenerateImages", () => {
         batchId: ctx.batchId,
         candidateId: "imc-trace",
         aspectRatio: "9:16",
+        referenceImageUrls: [
+          "data:image/png;base64,AAAA",
+          "https://provider.example/ref.png",
+        ],
         providerTrace: {
           workspaceId: "ws-1",
           shotId: "shot-1",
@@ -355,6 +404,10 @@ describe("processGenerateImages", () => {
       assert.equal(traces[0]?.candidateIndex, 0);
       assert.equal(traces[0]?.prompt, "p");
       assert.equal(traces[0]?.generatedCount, 1);
+      assert.deepEqual(traces[0]?.referenceImageSources, [
+        "data_url",
+        "https_provider_tos",
+      ]);
       assert.equal(
         traces[0]?.stableUrl,
         "/api/workspaces/ws-1/materials/generated-images/imc-trace.jpg",
