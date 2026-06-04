@@ -21,6 +21,10 @@ export type Generationv2Processor = (
 ) => Promise<void>;
 let registeredProcessor: Generationv2Processor | undefined;
 
+interface EnqueueGenerationV2Options {
+  delayMs?: number;
+}
+
 export function registerGenerationV2Processor(fn: Generationv2Processor) {
   registeredProcessor = fn;
 }
@@ -146,12 +150,25 @@ async function prepareGenerationJobForReplay(
       [job.relatedBatchId]
     );
   }
+
+  if (job.jobType === "advance_one_click_final_video" && job.relatedBatchId) {
+    await pool.query(
+      `update one_click_final_video_jobs
+       set status = 'PENDING', updated_at = now()
+       where id = $1 and status in ('PENDING','RUNNING','WAITING')`,
+      [job.relatedBatchId]
+    );
+  }
 }
 
-export async function enqueueGenerationV2(data: GenerationV2JobData) {
+export async function enqueueGenerationV2(
+  data: GenerationV2JobData,
+  options: EnqueueGenerationV2Options = {},
+) {
   if (config.useRedisQueue) {
     const job = await getGenerationV2Queue().add(data.kind, data, {
       attempts: 3,
+      delay: options.delayMs ?? 0,
       backoff: { type: "exponential", delay: 5_000 }
     });
     return String(job.id);
@@ -164,7 +181,7 @@ export async function enqueueGenerationV2(data: GenerationV2JobData) {
     registeredProcessor(data, { attemptsMade: 0, attempts: 1 }).catch((err) =>
       logger.error("generation_v2 job failed", { err })
     );
-  }, 0);
+  }, options.delayMs ?? 0);
   return null;
 }
 
@@ -323,6 +340,32 @@ export async function recoverInflightGenerationJobs() {
         workspaceId: job.workspaceId,
         traceId: "recover"
       });
+    }
+    if (r.jobType === "advance_one_click_final_video" && r.relatedBatchId) {
+      let workspaceId =
+        typeof r.payload.workspaceId === "string" ? r.payload.workspaceId : null;
+      if (!workspaceId) {
+        const result = await pool.query(
+          `select workspace_id from one_click_final_video_jobs where id = $1 limit 1`,
+          [r.relatedBatchId],
+        );
+        workspaceId =
+          typeof result.rows[0]?.workspace_id === "string"
+            ? result.rows[0].workspace_id
+            : null;
+      }
+      if (workspaceId) {
+        const queueJobId = await enqueueGenerationV2({
+          kind: "advance_one_click_final_video",
+          jobId: r.id,
+          oneClickJobId: r.relatedBatchId,
+          workspaceId,
+          traceId: "recover",
+        });
+        if (queueJobId) {
+          await db.db2.updateGenerationJob(r.id, { queueJobId });
+        }
+      }
     }
   }
 }

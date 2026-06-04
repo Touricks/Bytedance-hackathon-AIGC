@@ -14,6 +14,7 @@ import {
   processGenerateVideoCandidate,
 } from "./modules/generation/video.worker.js";
 import { processComposeFinalVideo } from "./modules/generation/final-compose.worker.js";
+import { processOneClickFinalVideo } from "./modules/generation/one-click-final-video.worker.js";
 import { assertFfmpegAvailable } from "./modules/generation/ffmpeg.js";
 
 await assertFfmpegAvailable();
@@ -28,6 +29,9 @@ registerGenerationV2Processor(async (data, meta) => {
     return processGenerateVideoCandidate(data, db.db2, meta);
   }
   if (data.kind === "compose_final_video") return processComposeFinalVideo(data);
+  if (data.kind === "advance_one_click_final_video") {
+    return processOneClickFinalVideo(data);
+  }
 });
 if (shouldStartWorker()) {
   startGenerationV2Worker();

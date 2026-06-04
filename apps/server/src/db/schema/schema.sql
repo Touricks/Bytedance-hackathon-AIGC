@@ -505,6 +505,34 @@ create table if not exists final_video_jobs (
 alter table if exists final_video_jobs
   add column if not exists shot_set_id text references shot_sets(id) on delete set null;
 
+create table if not exists one_click_final_video_jobs (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null default 'PENDING',
+  current_stage text not null default 'queued',
+  stage_state jsonb not null default '{}'::jsonb,
+  material_intake_artifact_id text references material_intake_artifacts(id),
+  product_brief_artifact_id text references product_brief_artifacts(id),
+  storyboard_artifact_id text references storyboard_artifacts(id),
+  shot_prompt_artifact_id text references shot_prompt_artifacts(id),
+  shot_set_id text references shot_sets(id) on delete set null,
+  final_video_job_id text references final_video_jobs(id) on delete set null,
+  auto_selection_strategy text not null default 'first_success',
+  output_aspect_ratio text not null default '9:16',
+  error_code text,
+  error_message text,
+  idempotency_key text unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  started_at timestamptz,
+  completed_at timestamptz
+);
+create unique index if not exists idx_one_click_final_video_active_workspace
+  on one_click_final_video_jobs(workspace_id)
+  where status in ('PENDING', 'RUNNING', 'WAITING');
+create index if not exists idx_one_click_final_video_workspace_created
+  on one_click_final_video_jobs(workspace_id, created_at desc);
+
 create table if not exists campaign_publications (
   id text primary key,
   workspace_id text not null references creative_workspace(id) on delete cascade,

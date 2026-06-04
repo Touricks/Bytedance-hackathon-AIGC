@@ -10,6 +10,7 @@ import type {
   StoryboardArtifact,
   StoryboardShot,
 } from "@aigc-video/shared";
+import type { OneClickFinalVideoJob } from "./oneClickFinalVideo.js";
 
 const env = (
   import.meta as ImportMeta & {
@@ -227,6 +228,7 @@ export interface WorkspaceStatusDetail {
     shotprompt?: WorkspaceModuleState<ShotPromptArtifact>;
   };
   activeShotSet?: WorkspaceShotSet | null;
+  activeOneClickFinalVideo?: OneClickFinalVideoJob | null;
   artifacts?: {
     promptRequirements?: WorkspaceArtifact<unknown> | null;
     material: WorkspaceArtifact<MaterialIntakeArtifact> | null;

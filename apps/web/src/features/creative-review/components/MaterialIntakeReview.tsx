@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ban, CheckCircle2, PackageCheck, Tags } from "lucide-react";
+import { Ban, CheckCircle2, PackageCheck, Sparkles, Tags } from "lucide-react";
 import type { MaterialIntakeArtifact } from "@aigc-video/shared";
 import { toWorkspaceMaterialUrl } from "../../../lib/api/client.js";
 import { materialAssetFilename } from "../../../lib/materials.js";
@@ -42,6 +42,17 @@ const materialRelevanceLabels: Record<
   high: "高",
   medium: "中",
   low: "低"
+};
+
+const oneClickStageLabels: Record<string, string> = {
+  product_brief: "生成商品卖点",
+  storyboard: "生成分镜脚本",
+  shotprompt: "生成分镜生成要求",
+  shot_set: "应用分镜链路",
+  image_selection: "生成并选择分镜图",
+  video_selection: "生成并选择分镜视频",
+  final_compose: "生成成片",
+  completed: "已生成成片"
 };
 
 function normalizeMaterialIntakeDraft(
@@ -120,6 +131,20 @@ export function MaterialIntakeReview({
     includedAssets.some(
       (asset) => asset.ref === draft.primaryProductRef && asset.usable
     ) && !hasBlankDescriptions;
+  const oneClickJob = vm.oneClickFinalVideo;
+  const oneClickActive =
+    oneClickJob?.status === "PENDING" ||
+    oneClickJob?.status === "RUNNING" ||
+    oneClickJob?.status === "WAITING";
+  const oneClickStage = oneClickJob
+    ? (oneClickStageLabels[oneClickJob.currentStage] ?? oneClickJob.currentStage)
+    : null;
+  const oneClickTone =
+    oneClickJob?.status === "FAILED"
+      ? "danger"
+      : oneClickJob?.status === "SUCCEEDED"
+        ? "good"
+        : "busy";
 
   return (
     <section className="review-panel">
@@ -285,12 +310,37 @@ export function MaterialIntakeReview({
             ? "正在生成商品卖点..."
             : "批准素材解读并生成商品卖点"}
         </button>
+        <button
+          type="button"
+          className="review-primary review-primary--one-click"
+          disabled={vm.busy || !canApprove}
+          onClick={() => {
+            vm.actions.startOneClickFinalVideo(normalizeMaterialIntakeDraft(draft));
+            onActionComplete();
+          }}
+        >
+          <Sparkles size={16} />
+          {oneClickActive ? "正在一键成片..." : "全自动一键成片"}
+        </button>
         <span className="review-action-note">
           {hasBlankDescriptions
             ? "每个素材都需要填写解读说明。"
             : "素材标签只描述素材角色，不会修改上传文件本身。"}
         </span>
       </div>
+      {oneClickJob ? (
+        <div className="review-one-click-progress">
+          <span className={`review-status review-status--${oneClickTone}`}>
+            {oneClickJob.status === "WAITING" ? "RUNNING" : oneClickJob.status}
+          </span>
+          <strong>{oneClickStage}</strong>
+          {oneClickJob.errorMessage ? (
+            <span className="review-error">{oneClickJob.errorMessage}</span>
+          ) : (
+            <span>一键链路会保留已生成的中间产物，可随时回到对应步骤手动继续。</span>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }
