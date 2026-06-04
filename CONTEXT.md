@@ -137,7 +137,7 @@ The final merchant-facing video output produced from product material and a scri
 _Avoid_: generated clip
 
 **一键成片**:
-A merchant command that turns a generated script and storyboard into a final video in one action.
+A merchant command that can start from reviewed **素材解读** and automatically advance approved creative artifacts, shot choices, and final compose into a **成片任务**.
 _Avoid_: black-box full pipeline
 
 **成片任务**:
@@ -191,7 +191,8 @@ _Avoid_: primary generation path
 - A **创作动态** navigation action takes the merchant to the relevant review module and does not directly approve, generate, apply, or select content.
 - A **创作动态** names the business module or task directly and does not use module numbers as explanatory copy.
 - A **模型探测** can produce trace logs using a reserved probe identifier, but it is not a **创作会话**.
-- **一键成片** happens after a **剧本** and **分镜** are visible to the merchant.
+- **一键成片** may be launched independently from the **素材解读** review page after **创作要求** and **上传素材** are ready; it first approves the submitted **素材解读** draft, then automatically advances downstream artifacts and selections.
+- The manual action **批准素材解读并生成商品卖点** remains separate from **一键成片** and only advances to 商品卖点 review.
 - A **生效创作产物** for shot prompts can create a new **分镜链路实例** only through an explicit apply action.
 - A **创作工作目录** has at most one active **分镜链路实例** for the current generation path.
 - A **分镜** may carry one **分镜图要求** and one **分镜视频要求** before generation.
@@ -201,7 +202,7 @@ _Avoid_: primary generation path
 - **分镜图选择** should progress in shot order when scene continuity matters.
 - A **成片任务** produces at most one current **成片**.
 - **分镜视频要求** can be generated in batch after every **分镜图选择** exists, while **分镜视频选择** remains a per-shot merchant review decision.
-- A **成片任务** starts only from an explicit merchant command after every required **分镜视频选择** exists.
+- A manually triggered **成片任务** starts only from an explicit merchant command after every required **分镜视频选择** exists; **一键成片** may create those selections automatically before starting the final compose.
 - A **成片任务** is the recovery anchor for asynchronous final-video progress and result retrieval.
 - **上传素材** can be used to create a **剧本** and guide **成片** generation.
 - A **兜底样例** can be shown for demo resilience but does not replace the primary **成片任务**.
@@ -215,7 +216,7 @@ _Avoid_: primary generation path
 
 - "分镜" was used as both script structure and render segment. Resolved: **分镜** means script structure only in P0/P1.
 - "素材上传" was previously represented by a URL mock. Resolved: **上传素材** means merchant-supplied media accepted by the system; storage medium is an implementation detail.
-- "一键成片" could mean either the whole workflow or only final video generation. Resolved: in V0, **一键成片** starts after script and storyboard preview.
+- "一键成片" could mean either the whole workflow or only final video generation. Resolved: in V2, **一键成片** is an independent command that can start from **素材解读** review, while manual final compose remains a separate command after **分镜视频选择**.
 - "Prompt 调整" could mean raw prompt editing. Resolved: V0 exposes **创作参数** as structured UI fields and does not let users directly edit the video prompt.
 - "完全独立组装 prompt" could mean user-owned raw prompt editing. Resolved: users edit **创作要求**, while input/output schema guidance and final prompt assembly remain system-owned.
 - "select" could imply deleting or invalidating unchosen candidates. Resolved: **分镜图选择** and **分镜视频选择** are current choices; unchosen candidates remain available.

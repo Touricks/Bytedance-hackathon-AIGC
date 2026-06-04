@@ -120,6 +120,50 @@ describe("deriveReviewStepIndicators", () => {
     assert.equal(steps.find((step) => step.id === "apply")?.tone, "good");
   });
 
+  it("keeps final generation active while one-click final video is running", () => {
+    const vm = baseViewModel({
+      pending: { oneClickFinalVideo: true },
+      oneClickFinalVideo: {
+        status: "WAITING",
+        currentStage: "image_selection",
+      },
+      artifacts: currentArtifacts(),
+      workspaceStatus: { activeShotSet: { id: "shot_set_1" } },
+    });
+
+    const activity = deriveCreativeActivity(vm);
+    const steps = deriveReviewStepIndicators(vm);
+
+    assert.equal(deriveActiveStep(vm), "final");
+    assert.equal(activity.title, "一键成片进行中");
+    assert.match(activity.message, /生成并选择分镜图/);
+    assert.deepEqual(steps.find((step) => step.id === "final"), {
+      id: "final",
+      label: "生成成片",
+      state: "生成中",
+      tone: "busy",
+    });
+  });
+
+  it("surfaces recoverable one-click failure without clearing intermediate artifacts", () => {
+    const vm = baseViewModel({
+      oneClickFinalVideo: {
+        status: "FAILED",
+        currentStage: "video_selection",
+        errorMessage: "No succeeded video candidate",
+      },
+      artifacts: currentArtifacts(),
+      workspaceStatus: { activeShotSet: { id: "shot_set_1" } },
+      shots: [{ selectedImageId: "image-1", selectedVideoId: null }],
+    });
+
+    const activity = deriveCreativeActivity(vm);
+
+    assert.equal(activity.title, "一键成片失败");
+    assert.equal(activity.message, "No succeeded video candidate");
+    assert.deepEqual(activity.action, { label: "查看进度", stepId: "material" });
+  });
+
   it("keeps material intake active and marks downstream modules stale while regenerating it", () => {
     const vm = baseViewModel({
       pending: { materialIntake: true },

@@ -1,14 +1,73 @@
 import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { materialIntakeArtifactSchema } from "@aigc-video/shared";
 import { toHttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { generationService } from "./generation.service.js";
+import { oneClickFinalVideoService } from "./one-click-final-video.service.js";
+
+const aspectRatioSchema = z.enum(["9:16", "16:9", "1:1"]);
+const createOneClickFinalVideoRequestSchema = z.object({
+  materialIntake: z.object({
+    data: materialIntakeArtifactSchema,
+  }),
+  outputAspectRatio: aspectRatioSchema.optional(),
+  autoSelectionStrategy: z.literal("first_success").optional(),
+});
 
 function finalVideoDownloadFilename(finalVideoJobId: string) {
   return `final-video-${finalVideoJobId.replace(/[^a-zA-Z0-9_.-]/g, "-")}.mp4`;
 }
 
 export async function registerGenerationController(app: FastifyInstance) {
+  app.post(
+    "/api/workspaces/:workspaceId/one-click-final-videos",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string };
+        const header = req.headers["idempotency-key"];
+        const key = Array.isArray(header) ? header[0] : header;
+        if (!key) {
+          return reply.status(400).send({ code: "IDEMPOTENCY_KEY_REQUIRED" });
+        }
+        const body = createOneClickFinalVideoRequestSchema.parse(req.body ?? {});
+        return await oneClickFinalVideoService.create({
+          workspaceId: params.workspaceId,
+          materialIntake: body.materialIntake,
+          outputAspectRatio: body.outputAspectRatio ?? "9:16",
+          idempotencyKey: key,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.get("/api/one-click-final-videos/:jobId", async (req, reply) => {
+    try {
+      const params = req.params as { jobId: string };
+      return await oneClickFinalVideoService.get(params.jobId);
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.get(
+    "/api/workspaces/:workspaceId/one-click-final-videos",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string };
+        return await oneClickFinalVideoService.list(params.workspaceId);
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
   app.post("/api/workspaces/:workspaceId/final-videos", async (req, reply) => {
     try {
       const params = req.params as { workspaceId: string };

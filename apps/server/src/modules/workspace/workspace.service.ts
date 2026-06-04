@@ -32,6 +32,7 @@ import { config } from "../../common/config.js";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import type { WorkspaceStorageBindingRow } from "../../db/client.js";
+import { oneClickFinalVideoService } from "../generation/one-click-final-video.service.js";
 import {
   workspaceManifestSchema,
   type WorkspaceDirectoryRequest,
@@ -1748,9 +1749,10 @@ export const workspaceService = {
       );
       const binding = await db.getActiveWorkspaceStorage(workspace.id);
       if (!binding) {
-        const [modules, activeShotSet] = await Promise.all([
+        const [modules, activeShotSet, activeOneClickFinalVideo] = await Promise.all([
           hydrateWorkspaceModules(workspace.id),
           getActiveWorkspaceShotSet(workspace.id),
+          oneClickFinalVideoService.activeSummary(workspace.id),
         ]);
         return {
           workspace,
@@ -1768,6 +1770,7 @@ export const workspaceService = {
           },
           modules,
           activeShotSet,
+          activeOneClickFinalVideo,
           artifacts: hydrateWorkspaceArtifacts(modules),
         };
       }
@@ -1787,9 +1790,10 @@ export const workspaceService = {
       await writeManifest(localPath, current);
     }
 
-    const [modules, activeShotSet] = await Promise.all([
+    const [modules, activeShotSet, activeOneClickFinalVideo] = await Promise.all([
       hydrateWorkspaceModules(workspace.id),
       getActiveWorkspaceShotSet(workspace.id),
+      oneClickFinalVideoService.activeSummary(workspace.id),
     ]);
 
     return {
@@ -1800,6 +1804,7 @@ export const workspaceService = {
       materialLibrary: await collectWorkspaceMaterialLibrary(localPath),
       modules,
       activeShotSet,
+      activeOneClickFinalVideo,
       artifacts: hydrateWorkspaceArtifacts(modules),
     };
   },

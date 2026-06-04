@@ -1224,11 +1224,11 @@ export const shotWorkflowService = {
       );
     }
     const batch = await db.db2.getImageBatch(candidate.batchId);
-    if (batch.status !== "SUCCEEDED") {
+    if (batch.status !== "SUCCEEDED" && batch.status !== "PARTIAL") {
       throw new HttpError(
         409,
         "IMAGE_BATCH_INCOMPLETE",
-        "Image batch must fully succeed before selecting a candidate"
+        "Image batch must have at least one succeeded candidate before selecting"
       );
     }
     if (
@@ -1243,7 +1243,8 @@ export const shotWorkflowService = {
     await db.db2.upsertSelectedImage({
       shotId: args.shotId,
       imageCandidateId: args.imageCandidateId,
-      imageGenerationBatchId: candidate.batchId
+      imageGenerationBatchId: candidate.batchId,
+      selectedBy: args.selectedBy ?? "user"
     });
     await db.db2.updateShot(args.shotId, {
       status: "IMAGE_SELECTED",
@@ -1643,6 +1644,7 @@ export const shotWorkflowService = {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId?: string;
+    selectedBy?: string;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -1675,7 +1677,8 @@ export const shotWorkflowService = {
     await db.db2.upsertSelectedVideo({
       shotId: args.shotId,
       videoCandidateId: args.videoCandidateId,
-      videoGenerationBatchId: candidate.batchId
+      videoGenerationBatchId: candidate.batchId,
+      selectedBy: args.selectedBy ?? "user"
     });
     await db.db2.updateShot(args.shotId, {
       status: "VIDEO_SELECTED",
@@ -1689,7 +1692,8 @@ export const shotWorkflowService = {
       outputPreview: candidate.videoUrl,
       metadata: {
         videoCandidateId: args.videoCandidateId,
-        videoGenerationBatchId: candidate.batchId
+        videoGenerationBatchId: candidate.batchId,
+        selectedBy: args.selectedBy ?? "user"
       }
     });
     const selection = {

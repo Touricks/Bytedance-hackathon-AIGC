@@ -35,6 +35,10 @@ import {
 } from "../../lib/api/imagePrompt.js";
 import { selectImage } from "../../lib/api/imageSelect.js";
 import {
+  createOneClickFinalVideo,
+  listOneClickFinalVideos,
+} from "../../lib/api/oneClickFinalVideo.js";
+import {
   getWorkflowStatus,
   listShots,
   listWorkspaceShotSets,
@@ -48,6 +52,10 @@ import {
 } from "../../lib/api/videoScript.js";
 import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "./useFinalVideo.js";
+import {
+  isActiveOneClickStatus,
+  resolveOneClickFinalVideoState,
+} from "./oneClickState.js";
 import { roundPollingInterval } from "./roundPolling.js";
 import { getVideoBatchGenerationTargets } from "./videoBatchTargets.js";
 
@@ -161,6 +169,22 @@ export function useWorkbenchViewModel(workspaceId: string) {
     refetchInterval: 15_000,
   });
 
+  const oneClickFinalVideoJobs = useQuery({
+    queryKey: ["one-click-final-videos", workspaceId],
+    queryFn: () => listOneClickFinalVideos(workspaceId),
+    refetchInterval: (query) =>
+      query.state.data?.data.some((job) => isActiveOneClickStatus(job.status))
+        ? 3_000
+        : 15_000,
+  });
+
+  const oneClickState = resolveOneClickFinalVideoState({
+    statusActiveJob: workspaceStatus.data?.activeOneClickFinalVideo,
+    jobs: oneClickFinalVideoJobs.data?.data ?? [],
+    mutationPending: false,
+  });
+  const oneClickFinalVideo = oneClickState.displayJob;
+
   const latestFinalJobId =
     finalVideoJobs.data?.data.find((job) => job.status === "PENDING" || job.status === "RUNNING")
       ?.id ??
@@ -168,7 +192,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
       ?.id ??
     finalVideoJobs.data?.data[0]?.id ??
     null;
-  const displayedFinalJobId = activeFinalJobId ?? latestFinalJobId;
+  const displayedFinalJobId =
+    oneClickFinalVideo?.finalVideoJobId ?? activeFinalJobId ?? latestFinalJobId;
   const finalVideo = useFinalVideo(displayedFinalJobId);
 
   const invalidateWorkspace = async () => {
@@ -179,6 +204,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["traces", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["final-videos", workspaceId] }),
+      qc.invalidateQueries({ queryKey: ["one-click-final-videos", workspaceId] }),
     ]);
   };
 
@@ -237,6 +263,25 @@ export function useWorkbenchViewModel(workspaceId: string) {
       });
     },
     onSettled: invalidateWorkspace,
+  });
+
+  const startOneClickFinalVideo = useMutation({
+    mutationFn: (data: MaterialIntakeArtifact) =>
+      createOneClickFinalVideo(
+        workspaceId,
+        {
+          materialIntake: { data },
+          outputAspectRatio: aspectRatio,
+          autoSelectionStrategy: "first_success",
+        },
+        `${workspaceId}:one-click-final:${Date.now()}`,
+      ),
+    onSuccess: async (result) => {
+      if (result.data.finalVideoJobId) {
+        setActiveFinalJobId(result.data.finalVideoJobId);
+      }
+      await invalidateWorkspace();
+    },
   });
 
   const proposeBrief = useMutation({
@@ -441,6 +486,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const finalVideoStatus = finalVideo.data?.data?.status ?? null;
   const hasActiveFinalVideo =
     finalVideoStatus === "PENDING" || finalVideoStatus === "RUNNING";
+  const hasActiveOneClickFinalVideo =
+    startOneClickFinalVideo.isPending || oneClickState.hasActiveJob;
 
   const mutations = [
     uploadMaterial,
@@ -448,6 +495,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     materialIntake,
     approveMaterialIntake,
     approveMaterialIntakeAndProposeBrief,
+    startOneClickFinalVideo,
     proposeBrief,
     approveBrief,
     approveBriefAndProposeStoryboard,
@@ -496,6 +544,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     latestVideoRound,
     traces: traces.data?.data ?? [],
     finalVideo: finalVideo.data?.data ?? null,
+    oneClickFinalVideo,
     activeFinalJobId: displayedFinalJobId,
     inputs: {
       materialPrompt,
@@ -511,6 +560,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       materialIntake: startCreativeReview.isPending || materialIntake.isPending,
       productBrief:
         approveMaterialIntakeAndProposeBrief.isPending || proposeBrief.isPending,
+      oneClickFinalVideo: hasActiveOneClickFinalVideo,
       storyboard: approveBriefAndProposeStoryboard.isPending || proposeStoryboard.isPending,
       storyboardVoiceover: proposeStoryboardVoiceover.isPending,
       shotPrompt:
@@ -544,6 +594,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
       },
       approveMaterialIntakeAndProposeBrief: (data: MaterialIntakeArtifact) =>
         approveMaterialIntakeAndProposeBrief.mutate(data),
+      startOneClickFinalVideo: (data: MaterialIntakeArtifact) =>
+        startOneClickFinalVideo.mutate(data),
       proposeBrief: (input?: Omit<ProposeWorkspaceBriefInput, "workspaceId">) =>
         proposeBrief.mutateAsync(input),
       approveBrief: () => {
@@ -600,19 +652,23 @@ export function useWorkbenchViewModel(workspaceId: string) {
       workspaceStatus.isLoading ||
       workflow.isLoading ||
       shots.isLoading ||
-      shotSets.isLoading,
+      shotSets.isLoading ||
+      oneClickFinalVideoJobs.isLoading,
     refreshing:
       workspaceStatus.isFetching ||
       workflow.isFetching ||
       shots.isFetching ||
-      shotSets.isFetching,
-    busy: mutations.some((mutation) => mutation.isPending),
-    hasActiveGeneration: Boolean(hasActiveGeneration),
+      shotSets.isFetching ||
+      oneClickFinalVideoJobs.isFetching,
+    busy:
+      mutations.some((mutation) => mutation.isPending) || hasActiveOneClickFinalVideo,
+    hasActiveGeneration: Boolean(hasActiveGeneration) || hasActiveOneClickFinalVideo,
     error:
       errorText(workspaceStatus.error) ??
       errorText(workflow.error) ??
       errorText(shots.error) ??
       errorText(shotSets.error) ??
+      errorText(oneClickFinalVideoJobs.error) ??
       mutationErrorText(mutations),
   };
 }
