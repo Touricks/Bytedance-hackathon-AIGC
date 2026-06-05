@@ -1,11 +1,32 @@
+import pino from "pino";
+
+export const pinoLogger = pino({
+  base: null,
+  level: process.env.LOG_LEVEL ?? "info",
+  timestamp: pino.stdTimeFunctions.isoTime,
+  redact: {
+    paths: [
+      "*.apiKey",
+      "*.accessKey",
+      "*.secret",
+      "*.secretKey",
+      "*.token",
+      "*.authorization",
+      "*.providerTemporaryUrl",
+      "err.config.headers.authorization",
+    ],
+    censor: "<redacted>",
+  },
+});
+
 export const logger = {
   info(message: string, meta?: Record<string, unknown>) {
-    console.info(message, meta ?? "");
+    pinoLogger.info(meta ?? {}, message);
   },
   warn(message: string, meta?: Record<string, unknown>) {
-    console.warn(message, meta ?? "");
+    pinoLogger.warn(meta ?? {}, message);
   },
   error(message: string, meta?: Record<string, unknown>) {
-    console.error(message, meta ?? "");
+    pinoLogger.error(meta ?? {}, message);
   }
 };

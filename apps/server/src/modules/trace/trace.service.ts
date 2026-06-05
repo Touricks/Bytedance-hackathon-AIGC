@@ -1,10 +1,9 @@
 import { traceRepository } from "./trace.repository.js";
-import {
-  createWorkspaceTraceLogger,
-  resolveWorkspaceStorageLocalPath,
-} from "../workspace/workspace.service.js";
+import { mirrorWorkspaceTraceJsonl } from "./trace-jsonl-sink.js";
 import { db } from "../../db/client.js";
 import type { TracePipeline, TraceStatus } from "@aigc-video/ai";
+
+const workspaceTraceJsonlRelativePath = ".daireel/trace/events.jsonl";
 
 export interface RecordTraceInput {
   workspaceId: string;
@@ -36,16 +35,13 @@ function traceStatusFor(input: RecordTraceInput): TraceStatus {
 async function mirrorWorkspaceFileTrace(input: RecordTraceInput) {
   const workspace = await db.getWorkspace(input.workspaceId);
   const binding = await db.getActiveWorkspaceStorage(input.workspaceId);
-  if (binding?.kind !== "LOCAL" || !binding.localPath) {
-    return;
-  }
-  const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
-  const logger = createWorkspaceTraceLogger(localPath, workspace);
-  await logger.append({
+  const event = {
+    at: new Date().toISOString(),
     kind: input.name,
     pipeline: tracePipelineFor(input),
     status: traceStatusFor(input),
     workspaceId: input.workspaceId,
+    scriptId: workspace.currentScriptId,
     shotId: input.shotId,
     meta: {
       traceType: input.traceType,
@@ -53,6 +49,13 @@ async function mirrorWorkspaceFileTrace(input: RecordTraceInput) {
       ...(input.outputPreview ? { outputPreview: input.outputPreview } : {}),
       ...(input.metadata ?? {}),
     },
+  };
+  await mirrorWorkspaceTraceJsonl({
+    workspaceId: input.workspaceId,
+    binding,
+    localRelativePath: workspaceTraceJsonlRelativePath,
+    s3Category: "events",
+    event,
   });
 }
 

@@ -409,7 +409,7 @@ provider 调用审计：`trace_events(trace_type='provider_call')`
 - 仅 `MODEL_MODE=real` 时由 image/video worker 写入，mock 模式不创建。
 - 每行 metadata 是 `provider_call.v1` 摘要，包含 workspace/shot/job/batch/candidate、attempt、provider/model、media type、status、generated count、latency、error、首尾帧或参考图数量。图片行额外记录 `referenceImageSources` 分类，用于判断参考图来自 data URL、workspace stable 文件、provider temporary URL 或公开 HTTPS。
 - metadata 保存 `promptHash`，URL 只保存 host/hash 摘要，不保存 signed URL 或 data URL 原文；写入失败只记录 warn，不会让候选生成失败。
-- LOCAL workspace 可额外镜像 `.daireel/trace/provider_call.jsonl` 作为本地调试；S3 workspace 不写 `events.jsonl/provider_call.jsonl`。
+- LOCAL workspace 可额外 append 镜像 `.daireel/trace/provider_call.jsonl` 作为本地调试；S3 workspace 不 append 单个 `events.jsonl/provider_call.jsonl` object，而是写 `trace/events/{timestamp}-{uuid}.jsonl` 与 `trace/provider-calls/{timestamp}-{uuid}.jsonl` 这类 immutable per-event objects。
 - 视频 stable 保存阶段另写 `asset_persist_started/completed/failed` trace event，记录 `candidateId/providerTaskId/bytes/latencyMs/stableUrl/error`，用于区分 provider create+poll 耗时与下载保存耗时。
 
 表：`generation_jobs`

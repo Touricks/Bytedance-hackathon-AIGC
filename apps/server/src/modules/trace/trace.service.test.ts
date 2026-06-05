@@ -11,6 +11,8 @@ import {
   providerCallTraceRelativePath,
   recordProviderCallTrace,
 } from "./provider-call-trace.js";
+import { __setWorkspaceStorageAdapterFactoryForTests } from "../workspace/storage/workspace-storage-resolver.js";
+import type { WorkspaceStorageAdapter } from "../workspace/storage/workspace-storage.adapter.js";
 
 const cleanupDirs: string[] = [];
 const origModelMode = process.env.MODEL_MODE;
@@ -62,6 +64,73 @@ async function createBoundWorkspace(app: FastifyInstance) {
     currentScriptId: workspace.currentScriptId,
     directory,
   };
+}
+
+async function createS3BoundWorkspace(app: FastifyInstance) {
+  const createResponse = await app.inject({
+    method: "POST",
+    url: "/api/workspaces",
+    payload: { name: `trace-s3-${Date.now()}` },
+  });
+  assert.equal(createResponse.statusCode, 200, createResponse.body);
+  const workspace = createResponse.json().workspace as {
+    id: string;
+    currentScriptId: string;
+  };
+
+  const bindResponse = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${workspace.id}/storage/bind`,
+    payload: {
+      kind: "s3",
+      bucket: "trace-test-bucket",
+      prefix: `workspaces/${workspace.id}`,
+      region: "us-east-1",
+      endpoint: "http://localhost:9000",
+    },
+  });
+  assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+
+  return {
+    workspaceId: workspace.id,
+    currentScriptId: workspace.currentScriptId,
+  };
+}
+
+type PutObjectInput = Parameters<WorkspaceStorageAdapter["putObject"]>[0];
+
+function installFakeS3TraceAdapter(
+  putObjects: Array<{
+    relativePath: string;
+    body: Uint8Array | string;
+    contentType?: string;
+  }>,
+) {
+  __setWorkspaceStorageAdapterFactoryForTests((binding) => ({
+    kind: binding.kind,
+    binding,
+    putObject: async (input: PutObjectInput) => {
+      putObjects.push(input);
+      return {
+        relativePath: input.relativePath,
+        size: Buffer.byteLength(input.body),
+        contentType: input.contentType ?? null,
+        lastModified: new Date(),
+      };
+    },
+    readObject: async () => Buffer.alloc(0),
+    streamObject: async () => {
+      throw new Error("not used");
+    },
+    deleteObject: async () => undefined,
+    listObjects: async () => [],
+    statObject: async () => {
+      throw new Error("not used");
+    },
+    exists: async () => false,
+    downloadToTemp: async () => undefined,
+    deletePrefix: async () => undefined,
+  } as WorkspaceStorageAdapter));
 }
 
 describe("trace service", () => {
@@ -231,6 +300,96 @@ describe("trace service", () => {
         missing = (error as NodeJS.ErrnoException).code === "ENOENT";
       }
       assert.equal(missing, true);
+    });
+  });
+
+  it("mirrors S3 workspace trace records as per-event JSONL objects", async () => {
+    const putObjects: Array<{
+      relativePath: string;
+      body: Uint8Array | string;
+      contentType?: string;
+    }> = [];
+    installFakeS3TraceAdapter(putObjects);
+    try {
+      const { workspaceId } = await createS3BoundWorkspace(app);
+      await traceService.record({
+        workspaceId,
+        traceType: "job_event",
+        name: "final_compose_completed",
+        metadata: { manifestHash: "sha256:" + "a".repeat(64) },
+      });
+
+      assert.equal(putObjects.length, 1);
+      assert.match(putObjects[0]!.relativePath, /^trace\/events\/.+\.jsonl$/);
+      assert.equal(putObjects[0]!.contentType, "application/x-ndjson");
+      const event = JSON.parse(String(putObjects[0]!.body).trim()) as Record<
+        string,
+        unknown
+      >;
+      assert.equal(event.workspaceId, workspaceId);
+      assert.equal(event.kind, "final_compose_completed");
+      assert.equal(event.pipeline, "final_compose");
+      assert.equal(event.status, "ok");
+    } finally {
+      __setWorkspaceStorageAdapterFactoryForTests(undefined);
+    }
+  });
+
+  it("mirrors S3 provider call traces without raw prompts or temporary URLs", async () => {
+    await withModelMode("real", async () => {
+      const putObjects: Array<{
+        relativePath: string;
+        body: Uint8Array | string;
+        contentType?: string;
+      }> = [];
+      installFakeS3TraceAdapter(putObjects);
+      try {
+        const { workspaceId } = await createS3BoundWorkspace(app);
+        await recordProviderCallTrace({
+          workspaceId,
+          shotId: "shot-provider-s3-trace",
+          jobId: "job-provider-s3-trace",
+          attempt: 1,
+          maxAttempts: 1,
+          batchId: "imb-provider-s3-trace",
+          candidateId: "imc-provider-s3-trace",
+          candidateIndex: 0,
+          mediaType: "image",
+          provider: "ark-seedream",
+          model: "ep-image",
+          status: "succeeded",
+          prompt: "render a sensitive ecommerce prompt",
+          negativePrompt: "blur",
+          requestedCount: 1,
+          generatedCount: 1,
+          latencyMs: 123,
+          aspectRatio: "9:16",
+          referenceImageCount: 1,
+          referenceImageSources: ["data_url"],
+          stableUrl: "data:image/png;base64,AAAA",
+          providerTemporaryUrl: "https://provider.example/temp.png?token=secret",
+        });
+
+        assert.equal(putObjects.length, 1);
+        assert.match(
+          putObjects[0]!.relativePath,
+          /^trace\/provider-calls\/.+\.jsonl$/,
+        );
+        const raw = String(putObjects[0]!.body);
+        assert.doesNotMatch(raw, /render a sensitive ecommerce prompt/);
+        assert.doesNotMatch(raw, /data:image\/png;base64/);
+        assert.doesNotMatch(raw, /temp\.png/);
+        assert.doesNotMatch(raw, /token=secret/);
+        const event = JSON.parse(raw.trim()) as Record<string, unknown>;
+        assert.equal(event.schemaVersion, "provider_call.v1");
+        assert.equal(event.workspaceId, workspaceId);
+        assert.equal(event.traceType, "provider_call");
+        const metadata = event.metadata as Record<string, unknown>;
+        assert.match(String(metadata.promptHash), /^[a-f0-9]{64}$/);
+        assert.equal(metadata.provider, "ark-seedream");
+      } finally {
+        __setWorkspaceStorageAdapterFactoryForTests(undefined);
+      }
     });
   });
 });
