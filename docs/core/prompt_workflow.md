@@ -40,7 +40,7 @@ packages/ai/src/prompts/modules/<module>/
 | `subjectHash` | subject 模板 SHA-256。 |
 | `contractHash` | contract 模板 SHA-256。 |
 
-完整 assembled prompt 不持久化到 workspace module artifact 表；真实 provider 调用前后的 prompt/request/response 摘要通过 trace 写入 `trace_events`。LOCAL workspace 可 append 镜像 `.daireel/trace/events.jsonl` 与 `.daireel/trace/provider_call.jsonl` 作为本地调试；S3 workspace 不 append 同一个 JSONL object，而是写 immutable per-event objects：`trace/events/{timestamp}-{uuid}.jsonl` 与 `trace/provider-calls/{timestamp}-{uuid}.jsonl`。真实 image/video provider 调用的 `trace_events` metadata 保存 `promptHash`、provider/model、attempt、candidate、latency、错误、图片参考图来源分类和 URL 摘要（host/hash，不保存 signed URL 或 data URL 原文）；S3 provider-call object 也只保存脱敏摘要，不保存 raw prompt、data URL 或 provider 临时 URL 原文；写入失败不影响候选生成。artifact 表只保存 `prompt_assembly`、`source_fingerprint` 和结构化结果；逐 shot image/video artifact 持久化最终 provider-facing prompt 主体。
+完整 assembled prompt 不持久化到 workspace module artifact 表；真实 provider 调用前后的 prompt/request/response 摘要通过 trace 写入 `trace_events`。LOCAL workspace 可镜像 `.daireel/trace/events.jsonl` 与 `.daireel/trace/provider_call.jsonl` 作为本地调试；S3 workspace 不写 JSONL mirror。真实 image/video provider 调用的 `trace_events` metadata 保存 `promptHash`、provider/model、attempt、candidate、latency、错误、图片参考图来源分类和 URL 摘要（host/hash，不保存 signed URL 或 data URL 原文）；写入失败不影响候选生成。artifact 表只保存 `prompt_assembly`、`source_fingerprint` 和结构化结果；逐 shot image/video artifact 持久化最终 provider-facing prompt 主体。
 
 逐 shot `image-prompt` / `video-script` 主路径不走 subject/contract 二次 agent。后端 deterministic assembler 写入的 `prompt_assembly` 只要求：
 
@@ -198,7 +198,7 @@ prompt-requirements approve
 
 ## 7. 调试入口
 
-- assembled prompt / provider request：查 `trace_events`；LOCAL workspace 可辅以 `.daireel/trace/events.jsonl`。真实 provider 调用审计查 `trace_events(trace_type='provider_call')`；LOCAL workspace 可辅以 `.daireel/trace/provider_call.jsonl`，S3 workspace 可辅以 `trace/events/` 与 `trace/provider-calls/` 下的 per-event JSONL objects。
+- assembled prompt / provider request：查 `trace_events`；LOCAL workspace 可辅以 `.daireel/trace/events.jsonl`。真实 provider 调用审计查 `trace_events(trace_type='provider_call')`；LOCAL workspace 可辅以 `.daireel/trace/provider_call.jsonl`。
 - artifact 元数据：查各 artifact 表的 `prompt_assembly`、`source_fingerprint`、`data`。
 - 上游漂移：看 `shot-workflow-status`、`image-rounds`、`video-rounds` 返回的 `upstream` / `upstreamChanged`。
 - shotprompt 数量塌缩：优先核对 `storyboard_artifacts.data.shots[]`、`shot_prompt_artifacts.data.shots[]`、provider response format 的 expected shot count，以及 propose/approve/apply 边界校验。

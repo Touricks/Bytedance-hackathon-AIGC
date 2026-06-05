@@ -470,7 +470,7 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 反馈重生成时 `mode="user-feedback-regenerate"`，`moduleId` 可为 `image-prompt` 或 `video-script`。`subjectTemplateId` 指向 workspace module 的业务主体 prompt。剧本同学如果要改主剧本 / shotprompt 的生成策略，应修改 `packages/ai/src/prompts/modules/shotprompt/subject.md`；如果要改单个 shot 的图像或视频执行 prompt，应修改 server deterministic assembler。`contractTemplateId` 指向工程契约 prompt，不作为日常业务自定义入口。
 
-完整 assembled prompt / provider prompt 摘要进入 `trace_events.metadata`；LOCAL workspace 额外 append 镜像到 `.daireel/trace/events.jsonl`，便于本地调试。S3 workspace 不 append 同一个 JSONL object，而是写 immutable per-event objects：`trace/events/{timestamp}-{uuid}.jsonl` 与 `trace/provider-calls/{timestamp}-{uuid}.jsonl`。
+完整 assembled prompt / provider prompt 摘要进入 `trace_events.metadata`；LOCAL workspace 额外镜像到 `.daireel/trace/events.jsonl`，便于本地调试。S3 workspace 不写 JSONL mirror。
 
 ---
 
@@ -574,7 +574,7 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 - Redis 继续只承载 BullMQ 队列：`generation`、`generation_v2`。
 - `generation_jobs` 是队列业务镜像，便于 API 查询和恢复。
-- `trace_events` 是云端事实源。LOCAL workspace 可同时写 `.daireel/trace/events.jsonl` 作为调试镜像；S3 workspace 可写 immutable per-event JSONL objects，避免 S3/MinIO 单 object append 的并发覆盖。agent/provider 调用必须记录：
+- `trace_events` 是云端事实源。LOCAL workspace 可同时写 `.daireel/trace/events.jsonl` 作为调试镜像；S3 workspace 不写 JSONL mirror。agent/provider 调用必须记录：
   - module id / shot id
   - input artifact ids
   - prompt template ids 或 deterministic assembler version
@@ -582,7 +582,7 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
   - 完整 assembled prompt / provider prompt 摘要
   - provider request/response 摘要
   - error code / retry 信息
-- 真实 provider 模式下，image/video worker 写 `trace_events(trace_type='provider_call')`。事件 metadata 包含 job/batch/candidate/attempt、provider/model、media type、生成数量、延迟、错误、首尾帧/参考图数量、图片参考图来源分类、`promptHash` 和 URL 摘要（host/hash，不保存 signed URL 或 data URL 原文）。LOCAL workspace 额外 append 镜像 `.daireel/trace/provider_call.jsonl`；S3 workspace 写 `trace/provider-calls/{timestamp}-{uuid}.jsonl` 脱敏摘要对象，不保存 raw prompt、data URL 或 provider 临时 URL 原文。写入失败不影响候选生成。
+- 真实 provider 模式下，image/video worker 写 `trace_events(trace_type='provider_call')`。事件 metadata 包含 job/batch/candidate/attempt、provider/model、media type、生成数量、延迟、错误、首尾帧/参考图数量、图片参考图来源分类、`promptHash` 和 URL 摘要（host/hash，不保存 signed URL 或 data URL 原文）。LOCAL workspace 额外镜像 `.daireel/trace/provider_call.jsonl`；S3 workspace 不写该文件。写入失败不影响候选生成。
 
 ---
 

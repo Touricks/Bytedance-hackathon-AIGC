@@ -1,12 +1,10 @@
 import { createHash } from "node:crypto";
+import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { isRealProviderMode, redactTraceValue } from "@aigc-video/ai";
 import { logger } from "../../common/logger.js";
 import { db } from "../../db/client.js";
-import {
-  appendTraceJsonlFile,
-  mirrorWorkspaceTraceJsonl,
-} from "./trace-jsonl-sink.js";
+import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
 
 export const providerCallTraceRelativePath = path.join(
   ".daireel",
@@ -120,13 +118,17 @@ export async function appendProviderCallTraceFile(input: {
   event: ProviderCallTraceInput;
   clock?: () => Date;
 }) {
-  await appendTraceJsonlFile({
-    filePath: path.join(input.workspaceLocalPath, providerCallTraceRelativePath),
-    event: buildProviderCallTraceEvent(input.event, input.clock) as unknown as Record<
-      string,
-      unknown
-    >,
-  });
+  const tracePath = path.join(
+    input.workspaceLocalPath,
+    providerCallTraceRelativePath,
+  );
+  await mkdir(path.dirname(tracePath), { recursive: true });
+  const event = buildProviderCallTraceEvent(input.event, input.clock);
+  await appendFile(
+    tracePath,
+    `${JSON.stringify(redactTraceValue(event))}\n`,
+    "utf8",
+  );
 }
 
 function providerCallTraceMetadata(event: ProviderCallTraceEvent) {
@@ -209,21 +211,15 @@ export async function recordProviderCallTrace(input: ProviderCallTraceInput) {
     await insertProviderCallTraceEvent(event);
 
     const binding = await db.getActiveWorkspaceStorage(input.workspaceId);
-    await mirrorWorkspaceTraceJsonl({
-      workspaceId: input.workspaceId,
-      binding,
-      localRelativePath: providerCallTraceRelativePath,
-      s3Category: "provider-calls",
-      event: event as unknown as Record<string, unknown>,
-      s3Event: {
-        schemaVersion: event.schemaVersion,
-        at: event.at,
-        workspaceId: event.workspaceId,
-        traceType: "provider_call",
-        name: `${event.mediaType}_provider_call_${event.status}`,
-        metadata: providerCallTraceMetadata(event),
-      },
-    });
+    if (binding?.kind === "LOCAL" && binding.localPath) {
+      const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(
+        input.workspaceId,
+      );
+      await appendProviderCallTraceFile({
+        workspaceLocalPath,
+        event: input,
+      });
+    }
   } catch (error) {
     logger.warn("Failed to write provider call trace", {
       workspaceId: input.workspaceId,

@@ -344,7 +344,7 @@ trace 必须能回答 agent 链路调试问题：
 - provider 请求/响应摘要是什么。
 - batch/job 状态如何变化。
 
-真实 provider 模式下，image/video worker 会把 provider call 审计写入 `trace_events(trace_type='provider_call')`，这是云端事实源。metadata 保存 job、batch、candidate、attempt、provider/model、`mediaType`、`status`、生成数量、延迟、错误、首尾帧/参考图数量、图片参考图来源分类 `referenceImageSources`、`promptHash` 和 URL 摘要（host/hash，不保存 signed URL 或 data URL 原文）。LOCAL workspace 额外 append 镜像 `.daireel/trace/provider_call.jsonl` 用于本地调试；S3 workspace 不 append 同一个 JSONL object，而是写 immutable per-event objects：`trace/events/{timestamp}-{uuid}.jsonl` 与 `trace/provider-calls/{timestamp}-{uuid}.jsonl`。S3 provider-call object 只保存脱敏摘要和 hash，不保存 raw prompt、data URL 或 provider 临时 URL 原文。持久化阶段另写 `asset_persist_started/completed/failed` trace event，记录 `candidateId/providerTaskId/bytes/latencyMs/stableUrl/error`。写入失败只记录 warn，不会让候选生成失败。mock 模式不创建 provider_call 审计。
+真实 provider 模式下，image/video worker 会把 provider call 审计写入 `trace_events(trace_type='provider_call')`，这是云端事实源。metadata 保存 job、batch、candidate、attempt、provider/model、`mediaType`、`status`、生成数量、延迟、错误、首尾帧/参考图数量、图片参考图来源分类 `referenceImageSources`、`promptHash` 和 URL 摘要（host/hash，不保存 signed URL 或 data URL 原文）。LOCAL workspace 额外镜像 `.daireel/trace/provider_call.jsonl` 用于本地调试；S3 workspace 不写 `events.jsonl/provider_call.jsonl`。持久化阶段另写 `asset_persist_started/completed/failed` trace event，记录 `candidateId/providerTaskId/bytes/latencyMs/stableUrl/error`。写入失败只记录 warn，不会让候选生成失败。mock 模式不创建 provider_call 审计。
 
 ---
 
