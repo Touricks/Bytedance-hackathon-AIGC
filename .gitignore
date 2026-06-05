@@ -5,13 +5,14 @@ coverage/
 .turbo/
 .env
 .env.local
+.env.cloud
 .env.*.local
 *.log
 apps/web/.vite/
 apps/server/tmp/
 tmp/
 logs/
-storage/
+/storage/
 apps/web/test-results/
 apps/web/playwright-report/
 .claude/
@@ -23,5 +24,8 @@ apps/web/playwright-report/
 
 # Keep most design docs locally only; some test/core specs are shared.
 docs/*
+!docs/core/
+!docs/core/**
+docs/core/*.pdf
 !docs/test/
 !docs/test/**

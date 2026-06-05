@@ -16,11 +16,10 @@ import {
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import {
-  createWorkspaceTraceLogger,
-  resolveWorkspaceStorageLocalPath,
+  createWorkspaceTraceLoggerForWorkspace,
   runtimeMode,
   toStoryboard,
-  writeReviewSnapshot,
+  writeReviewSnapshotForWorkspace,
 } from "./workspace.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
@@ -245,7 +244,6 @@ function upstreamChange(input: {
 export const storyboardV2Service = {
   async propose(input: { workspaceId: string }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
     const brief = productBriefArtifactSchema.parse(sources.productBrief.data);
     const material = materialIntakeArtifactSchema.parse(
@@ -257,7 +255,9 @@ export const storyboardV2Service = {
             await generateStoryboardWithArk(
               { brief, material },
               {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).storyboard
@@ -287,8 +287,7 @@ export const storyboardV2Service = {
         ),
       ],
     );
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "storyboard",
       status: "proposed",
@@ -308,7 +307,6 @@ export const storyboardV2Service = {
     userDirection?: string;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
     if (input.baseArtifactId) {
       await getArtifactForWorkspace(input.workspaceId, input.baseArtifactId);
@@ -331,7 +329,9 @@ export const storyboardV2Service = {
                 userDirection: input.userDirection,
               },
               {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).storyboard
@@ -364,8 +364,7 @@ export const storyboardV2Service = {
         ),
       ],
     );
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "storyboard",
       status: "proposed",
@@ -384,7 +383,6 @@ export const storyboardV2Service = {
     data?: unknown;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     if (!input.artifactId && input.data === undefined) {
       throw new HttpError(400, "ARTIFACT_DATA_REQUIRED", "artifactId or data is required");
     }
@@ -408,8 +406,7 @@ export const storyboardV2Service = {
             data,
           });
 
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "storyboard",
       status: "approved",

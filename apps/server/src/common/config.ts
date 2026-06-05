@@ -116,6 +116,16 @@ function positiveIntEnv(name: string, fallback: number): number {
   return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
 }
 
+function workspaceStorageKindEnv(): "local" | "s3" {
+  const value = (process.env.WORKSPACE_STORAGE_KIND ?? "local")
+    .trim()
+    .toLowerCase();
+  if (value === "local" || value === "s3") {
+    return value;
+  }
+  throw new Error("WORKSPACE_STORAGE_KIND must be local or s3.");
+}
+
 const envFileRoot = loadWorkspaceEnv() ?? process.cwd();
 const databaseUrl = requireEnv(
   "DATABASE_URL",
@@ -174,7 +184,8 @@ export const config = {
   textProviderConcurrency,
   imageProviderConcurrency,
   videoProviderConcurrency,
-  workspaceDiscoveryRoots: parseDiscoveryRoots(process.env.WORKSPACE_DISCOVERY_ROOTS)
+  workspaceDiscoveryRoots: parseDiscoveryRoots(process.env.WORKSPACE_DISCOVERY_ROOTS),
+  workspaceStorageKind: workspaceStorageKindEnv(),
 };
 
 export function shouldStartApi(): boolean {

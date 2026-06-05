@@ -16,7 +16,7 @@ import {
   type ProviderCallTraceContext,
 } from "../trace/provider-call-trace.js";
 import { traceService } from "../trace/trace.service.js";
-import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
+import { getWorkspaceStorageAdapter } from "../workspace/storage/workspace-storage-resolver.js";
 import {
   persistGeneratedAsset,
   type GeneratedAssetPersister,
@@ -273,9 +273,7 @@ export async function prepareImageReferenceUrlsForProvider(input: {
   readFile?: (filePath: string) => Promise<Buffer>;
 }) {
   const sources = input.urls.map(classifyReferenceImageSource);
-  const resolveLocalPath =
-    input.resolveWorkspaceLocalPath ?? resolveWorkspaceStorageLocalPath;
-  const readReferenceFile = input.readFile ?? readFile;
+  let adapter: Awaited<ReturnType<typeof getWorkspaceStorageAdapter>> | null = null;
   const urls: string[] = [];
   for (const url of input.urls) {
     const relativePath = workspaceMaterialRelativePath(input.workspaceId, url);
@@ -283,15 +281,26 @@ export async function prepareImageReferenceUrlsForProvider(input: {
       urls.push(url);
       continue;
     }
-    const workspaceLocalPath = await resolveLocalPath(input.workspaceId);
-    const materialRoot = path.resolve(workspaceLocalPath, ".daireel", "materials");
-    const filePath = path.resolve(materialRoot, relativePath);
-    if (!filePath.startsWith(materialRoot + path.sep)) {
-      throw new Error("WORKSPACE_IMAGE_REFERENCE_OUTSIDE_STORAGE");
+    let bytes: Buffer;
+    if (input.resolveWorkspaceLocalPath || input.readFile) {
+      if (!input.resolveWorkspaceLocalPath) {
+        throw new Error("WORKSPACE_IMAGE_REFERENCE_TEST_OVERRIDES_INCOMPLETE");
+      }
+      const workspaceLocalPath = await input.resolveWorkspaceLocalPath(
+        input.workspaceId,
+      );
+      const materialRoot = path.resolve(workspaceLocalPath, ".daireel", "materials");
+      const filePath = path.resolve(materialRoot, relativePath);
+      if (!filePath.startsWith(materialRoot + path.sep)) {
+        throw new Error("WORKSPACE_IMAGE_REFERENCE_OUTSIDE_STORAGE");
+      }
+      bytes = await (input.readFile ?? readFile)(filePath);
+    } else {
+      adapter ??= await getWorkspaceStorageAdapter(input.workspaceId);
+      bytes = await adapter!.readObject(`materials/${relativePath}`);
     }
-    const bytes = await readReferenceFile(filePath);
     urls.push(
-      `data:${imageContentTypeForPath(filePath)};base64,${bytes.toString("base64")}`,
+      `data:${imageContentTypeForPath(relativePath)};base64,${bytes.toString("base64")}`,
     );
   }
   return { urls, sources };

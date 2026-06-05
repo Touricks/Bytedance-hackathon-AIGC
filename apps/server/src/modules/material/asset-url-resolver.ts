@@ -27,6 +27,9 @@ const DEFAULT_LOOKUP: AssetUrlResolverDeps["lookup"] = async (id) => {
     if (row.url.startsWith("http://") || row.url.startsWith("https://")) {
       return { id, url: row.url, mime };
     }
+    if (row.url.startsWith("/api/workspaces/")) {
+      return { id, url: row.url, mime };
+    }
     return { id, url: row.url, localPath: storagePath ?? row.url, mime };
   } catch (err) {
     if (err instanceof NotFoundError) return null;
@@ -44,7 +47,11 @@ export function createAssetUrlResolver(deps: AssetUrlResolverDeps = { lookup: DE
         logger.warn("asset-url-resolver: unknown asset id", { id });
         continue;
       }
-      if (asset.url.startsWith("https://") || asset.url.startsWith("http://")) {
+      if (
+        asset.url.startsWith("https://") ||
+        asset.url.startsWith("http://") ||
+        asset.url.startsWith("/api/workspaces/")
+      ) {
         out.push(asset.url);
         continue;
       }

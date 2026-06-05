@@ -10,9 +10,9 @@ export function videoCandidatePresentation(
   return {
     mediaUrl,
     statusText: isPersisting
-      ? "正在保存到工作目录"
+      ? "正在保存素材"
       : candidate.errorMessage ?? candidate.status,
-    selectLabel: isPersisting ? "正在保存到工作目录" : "选择为当前分镜视频",
+    selectLabel: isPersisting ? "正在保存素材" : "选择为当前分镜视频",
     canSelect,
     canFeedback: allowFeedback && canSelect,
   };

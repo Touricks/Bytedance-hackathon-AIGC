@@ -63,8 +63,8 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
           </IconButton>
         </Tooltip>
         <div className="review-topbar__title">
-          <span>创作工作目录</span>
-          <strong>{vm.workspace?.localPath ?? vm.workspaceId}</strong>
+          <span>创作工作区</span>
+          <strong>{vm.workspace?.localPath || vm.workspaceId}</strong>
         </div>
         <Tooltip title="刷新">
           <IconButton

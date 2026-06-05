@@ -6,13 +6,17 @@ import {
   readdir,
   rm,
   stat,
-  unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import type { PoolClient } from "pg";
 import { createFileTraceLogger } from "@aigc-video/ai";
+import {
+  createS3Client,
+  ensureBucket,
+  loadS3CompatibleConfig,
+} from "@aigc-video/storage";
 import {
   productBriefArtifactSchema,
   storyboardArtifactSchema,
@@ -43,6 +47,9 @@ import {
   filterUnregisteredDiscovered,
   type DiscoveredWorkspace,
 } from "./workspace.discovery.js";
+import type { WorkspaceStorageAdapter } from "./storage/workspace-storage.adapter.js";
+import { getWorkspaceStorageAdapter } from "./storage/workspace-storage-resolver.js";
+import { joinObjectKey } from "./storage/workspace-storage.keys.js";
 import { compareSourceFingerprint } from "./upstream-drift-v2.service.js";
 
 const workspaceManifestRelativePath = path.join(".daireel", "workspace.json");
@@ -90,6 +97,23 @@ function storageBindingView(binding: WorkspaceStorageBindingRow | null) {
     createdAt: binding.createdAt,
     updatedAt: binding.updatedAt,
   };
+}
+
+async function bindDefaultS3Storage(workspaceId: string) {
+  const s3Config = loadS3CompatibleConfig();
+  const client = createS3Client(s3Config);
+  await ensureBucket({
+    client,
+    bucket: s3Config.bucket,
+    region: s3Config.region,
+  });
+  return db.bindWorkspaceS3Storage({
+    workspaceId,
+    bucket: s3Config.bucket,
+    prefix: `workspaces/${workspaceId}`,
+    region: s3Config.region,
+    endpoint: s3Config.endpoint,
+  });
 }
 
 function workspaceMaterialsPath(directory: string) {
@@ -232,6 +256,45 @@ export async function writeReviewSnapshot(input: {
       2,
     )}\n`,
   );
+}
+
+export async function writeReviewSnapshotForWorkspace(input: {
+  workspace: CreativeWorkspace;
+  artifact: "product-brief" | "storyboard";
+  status: "proposed" | "approved";
+  schemaVersion: string;
+  data: ProductBriefArtifact | StoryboardArtifact;
+}) {
+  const adapter = await getWorkspaceStorageAdapter(input.workspace.id);
+  if (adapter.kind === "LOCAL" && adapter.binding.localPath) {
+    await writeReviewSnapshot({
+      localPath: adapter.binding.localPath,
+      workspace: input.workspace,
+      artifact: input.artifact,
+      status: input.status,
+      schemaVersion: input.schemaVersion,
+      data: input.data,
+    });
+    return;
+  }
+
+  await adapter.putObject({
+    relativePath: `review/${input.artifact}.${input.status}.json`,
+    contentType: "application/json",
+    body: `${JSON.stringify(
+      {
+        artifact: input.artifact,
+        status: input.status,
+        schemaVersion: input.schemaVersion,
+        workspaceId: input.workspace.id,
+        scriptId: input.workspace.currentScriptId,
+        writtenAt: new Date().toISOString(),
+        data: input.data,
+      },
+      null,
+      2,
+    )}\n`,
+  });
 }
 
 async function readManifest(directory: string) {
@@ -556,6 +619,16 @@ export function createWorkspaceTraceLogger(
   });
 }
 
+export async function createWorkspaceTraceLoggerForWorkspace(
+  workspace: CreativeWorkspace,
+) {
+  const binding = await db.getActiveWorkspaceStorage(workspace.id);
+  if (binding?.kind !== "LOCAL" || !binding.localPath) {
+    return undefined;
+  }
+  return createWorkspaceTraceLogger(binding.localPath, workspace);
+}
+
 export async function productBriefImageInput(
   localPath: string,
   material: MaterialIntakeArtifact,
@@ -573,6 +646,35 @@ export async function productBriefImageInput(
   const bytes = await readFile(
     path.join(workspaceMaterialsPath(localPath), primaryImage.ref),
   );
+  assertImageDimensionsWithinPolicy(
+    bytes,
+    primaryImage.mime,
+    undefined,
+    primaryImage.ref,
+  );
+  return {
+    url: `data:${primaryImage.mime};base64,${bytes.toString("base64")}`,
+    mode: "data_url" as const,
+    detail: "high" as const,
+  };
+}
+
+export async function productBriefImageInputForWorkspace(
+  workspaceId: string,
+  material: MaterialIntakeArtifact,
+) {
+  const primaryImage =
+    material.assets.find(
+      (asset) =>
+        asset.ref === material.primaryProductRef && asset.kind === "image",
+    ) ??
+    material.assets.find((asset) => asset.kind === "image" && asset.included);
+  if (!primaryImage) {
+    return undefined;
+  }
+
+  const adapter = await getWorkspaceStorageAdapter(workspaceId);
+  const bytes = await adapter.readObject(`materials/${primaryImage.ref}`);
   assertImageDimensionsWithinPolicy(
     bytes,
     primaryImage.mime,
@@ -610,6 +712,29 @@ export async function materialIntakeImageInputs(
   );
 }
 
+export async function materialIntakeImageInputsForWorkspace(
+  workspaceId: string,
+  material: MaterialIntakeArtifact,
+) {
+  const imageAssets = material.assets.filter(
+    (asset) => asset.kind === "image" && asset.included,
+  );
+  const adapter = await getWorkspaceStorageAdapter(workspaceId);
+
+  return Promise.all(
+    imageAssets.map(async (asset) => {
+      const bytes = await adapter.readObject(`materials/${asset.ref}`);
+      assertImageDimensionsWithinPolicy(bytes, asset.mime, undefined, asset.ref);
+      return {
+        ref: asset.ref,
+        url: `data:${asset.mime};base64,${bytes.toString("base64")}`,
+        mode: "data_url" as const,
+        detail: "high" as const,
+      };
+    }),
+  );
+}
+
 export async function materialIntakeTextPreviews(
   localPath: string,
   material: MaterialIntakeArtifact,
@@ -631,6 +756,25 @@ export async function materialIntakeTextPreviews(
   );
 }
 
+export async function materialIntakeTextPreviewsForWorkspace(
+  workspaceId: string,
+  material: MaterialIntakeArtifact,
+) {
+  const textAssets = material.assets.filter(
+    (asset) => asset.kind === "text" && asset.included,
+  );
+  const adapter = await getWorkspaceStorageAdapter(workspaceId);
+
+  return Promise.all(
+    textAssets.map(async (asset) => ({
+      ref: asset.ref,
+      text: (await adapter.readObject(`materials/${asset.ref}`))
+        .toString("utf8")
+        .slice(0, 4000),
+    })),
+  );
+}
+
 function workspaceAssetUrl(workspaceId: string, ref: string) {
   return `/api/workspaces/${workspaceId}/materials/${encodeURIComponent(ref)}`;
 }
@@ -638,7 +782,8 @@ function workspaceAssetUrl(workspaceId: string, ref: string) {
 function workspaceMaterialMetadata(input: {
   workspaceId: string;
   ref: string;
-  storagePath: string;
+  storagePath?: string;
+  objectKey?: string;
   mime: string;
   bytes: number;
   digest: string;
@@ -646,7 +791,8 @@ function workspaceMaterialMetadata(input: {
   return {
     workspaceId: input.workspaceId,
     ref: input.ref,
-    storagePath: input.storagePath,
+    ...(input.storagePath ? { storagePath: input.storagePath } : {}),
+    ...(input.objectKey ? { objectKey: input.objectKey } : {}),
     contentType: input.mime,
     mimeType: input.mime,
     sizeBytes: input.bytes,
@@ -1063,6 +1209,85 @@ async function collectMaterialLibraryFromDirectory(materialDirectory: string) {
   };
 }
 
+async function collectMaterialLibraryFromStorage(
+  adapter: WorkspaceStorageAdapter,
+) {
+  const objects = await adapter.listObjects("materials");
+  const directMaterialObjects = objects
+    .filter((object) => object.relativePath.startsWith("materials/"))
+    .map((object) => ({
+      object,
+      ref: object.relativePath.slice("materials/".length),
+    }))
+    .filter(({ ref }) => ref && !ref.includes("/") && !ref.startsWith("."))
+    .sort((a, b) => a.ref.localeCompare(b.ref));
+
+  const accepted: MaterialAsset[] = [];
+  const rejected: Array<{ ref: string; reason: string }> = [];
+  let hasPrimaryImage = false;
+
+  for (const { object, ref } of directMaterialObjects) {
+    const ext = path.extname(ref).toLowerCase();
+    const mime = mimeByExtension[ext];
+    if (!mime) {
+      rejected.push({ ref, reason: "Unsupported material type" });
+      continue;
+    }
+
+    const size = object.size ?? 0;
+    if (size > maxWorkspaceMaterialBytes) {
+      rejected.push({ ref, reason: "Material file exceeds 50MB limit" });
+      continue;
+    }
+
+    const bytes = await adapter.readObject(`materials/${ref}`);
+    const kind = classifyKind(mime);
+    if (kind === "image") {
+      try {
+        assertValidRasterImageBytes(bytes, mime);
+      } catch (error) {
+        rejected.push({
+          ref,
+          reason:
+            error instanceof Error ? error.message : "Invalid image material",
+        });
+        continue;
+      }
+    }
+
+    const role = defaultRole(kind, hasPrimaryImage);
+    if (role === "product_main") {
+      hasPrimaryImage = true;
+    }
+
+    accepted.push({
+      ref,
+      kind,
+      mime,
+      bytes: size,
+      sha256: sha256(bytes),
+      role,
+      description: `Accepted ${kind} asset ${ref}`,
+      relevance: role === "product_main" ? "high" : "medium",
+      usable: true,
+      included: true,
+    });
+  }
+
+  const primaryProductRef =
+    accepted.find((asset) => asset.role === "product_main")?.ref ??
+    accepted.find((asset) => asset.kind === "image")?.ref ??
+    accepted[0]?.ref ??
+    "";
+
+  return {
+    scannedAt: new Date().toISOString(),
+    ...(primaryProductRef ? { primaryProductRef } : {}),
+    assets: accepted,
+    rejected,
+  };
+}
+
 export async function collectWorkspaceMaterialLibrary(directory: string) {
   const managed = await collectMaterialLibraryFromDirectory(
     workspaceMaterialsPath(directory),
@@ -1072,6 +1297,16 @@ export async function collectWorkspaceMaterialLibrary(directory: string) {
   }
 
   return collectMaterialLibraryFromDirectory(directory);
+}
+
+export async function collectWorkspaceMaterialLibraryForWorkspace(
+  workspaceId: string,
+) {
+  const adapter = await getWorkspaceStorageAdapter(workspaceId);
+  if (adapter.kind === "LOCAL" && adapter.binding.localPath) {
+    return collectWorkspaceMaterialLibrary(adapter.binding.localPath);
+  }
+  return collectMaterialLibraryFromStorage(adapter);
 }
 
 const workspaceModuleTables = [
@@ -1296,6 +1531,10 @@ export const workspaceService = {
       status: "draft",
       traceFile: workspaceTraceFile,
     });
+    const binding =
+      config.workspaceStorageKind === "s3"
+        ? await bindDefaultS3Storage(workspace.id)
+        : null;
     return {
       workspace,
       manifest: toManifest({
@@ -1303,45 +1542,45 @@ export const workspaceService = {
         currentScriptId: workspace.currentScriptId,
         currentJobId: workspace.currentJobId,
       }),
-      storage: storageBindingView(null),
+      storage: storageBindingView(binding),
       ...(name ? { name: name.trim() } : {}),
     };
   },
 
   async listManagedWorkspaces() {
-    const workspaces = (await db.listWorkspaces()).filter((workspace) =>
-      isWorkspaceVisibleInConfiguredRoots(workspace.localPath),
-    );
     const withStorage = await Promise.all(
-      workspaces.map(async (workspace) => ({
-        ...workspace,
-        storage: storageBindingView(
-          await db.getActiveWorkspaceStorage(workspace.id),
-        ),
-      })),
+      (await db.listWorkspaces()).map(async (workspace) => {
+        const binding = await db.getActiveWorkspaceStorage(workspace.id);
+        return {
+          ...workspace,
+          storage: storageBindingView(binding),
+          _binding: binding,
+        };
+      }),
     );
-    const dbPaths = workspaces.map((workspace) =>
-      normalizeWorkspacePath(workspace.localPath),
-    );
+    const visibleWorkspaces = withStorage.filter((workspace) => {
+      if (workspace._binding?.kind === "S3") return true;
+      return isWorkspaceVisibleInConfiguredRoots(workspace.localPath);
+    });
+    const dbPaths = visibleWorkspaces
+      .filter((workspace) => workspace._binding?.kind !== "S3")
+      .map((workspace) =>
+        normalizeWorkspacePath(workspace.localPath),
+      );
     const scanned = await scanForWorkspaceManifests(
       config.workspaceDiscoveryRoots,
       3,
     );
     const discovered = filterUnregisteredDiscovered(dbPaths, scanned);
-    return { workspaces: withStorage, discovered };
+    return {
+      workspaces: visibleWorkspaces.map(({ _binding, ...workspace }) => workspace),
+      discovered,
+    };
   },
 
   async deleteWorkspace(workspaceId: string) {
     await db.getWorkspace(workspaceId);
     const binding = await db.getActiveWorkspaceStorage(workspaceId);
-    if (binding?.kind === "S3") {
-      throw new HttpError(
-        501,
-        "S3_WORKSPACE_DELETE_NOT_IMPLEMENTED",
-        "S3 workspace deletion is not implemented yet",
-      );
-    }
-
     const busy = await db.db2.pool().query<{ busy: boolean }>(
       `select exists (
          select 1 from generation_jobs
@@ -1360,11 +1599,9 @@ export const workspaceService = {
       );
     }
 
-    if (binding?.localPath) {
-      await rm(path.join(normalizeWorkspacePath(binding.localPath), ".daireel"), {
-        recursive: true,
-        force: true,
-      });
+    if (binding) {
+      const adapter = await getWorkspaceStorageAdapter(workspaceId);
+      await adapter.deletePrefix("");
     }
 
     const client = await db.db2.pool().connect();
@@ -1624,7 +1861,7 @@ export const workspaceService = {
     bytes: Uint8Array;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(workspace.id);
+    const adapter = await getWorkspaceStorageAdapter(workspace.id);
     const requestedFilename = safeWorkspaceFilename(input.filename);
     const requestedMime = workspaceMaterialMime(requestedFilename);
     if (input.bytes.byteLength > maxWorkspaceMaterialBytes) {
@@ -1642,14 +1879,20 @@ export const workspaceService = {
     }
     const bytes = Buffer.from(input.bytes);
 
-    const materialDirectory = workspaceMaterialsPath(localPath);
-    await mkdir(materialDirectory, { recursive: true });
     const filename = requestedFilename;
-    const storagePath = path.join(materialDirectory, filename);
-    await writeFile(storagePath, bytes);
+    const relativePath = `materials/${filename}`;
+    await adapter.putObject({
+      relativePath,
+      body: bytes,
+      contentType: requestedMime,
+    });
     const mime = requestedMime;
     const digest = sha256(bytes);
     const kind = classifyKind(mime);
+    const objectKey =
+      adapter.kind === "S3" && adapter.binding.s3Prefix
+        ? joinObjectKey(adapter.binding.s3Prefix, relativePath)
+        : relativePath;
     const asset = await db.createAsset({
       type: assetTypeForMaterialKind(kind),
       url: workspaceAssetUrl(workspace.id, filename),
@@ -1657,7 +1900,15 @@ export const workspaceService = {
       metadata: workspaceMaterialMetadata({
         workspaceId: workspace.id,
         ref: filename,
-        storagePath,
+        ...(adapter.kind === "LOCAL" && adapter.binding.localPath
+          ? {
+              storagePath: path.join(
+                workspaceMaterialsPath(adapter.binding.localPath),
+                filename,
+              ),
+            }
+          : {}),
+        objectKey,
         mime,
         bytes: bytes.byteLength,
         digest,
@@ -1680,24 +1931,14 @@ export const workspaceService = {
 
   async deleteMaterial(input: { workspaceId: string; ref: string }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(workspace.id);
+    const adapter = await getWorkspaceStorageAdapter(workspace.id);
     const ref = safeWorkspaceMaterialRef(input.ref);
-    const materialDirectory = workspaceMaterialsPath(localPath);
-    const storagePath = path.resolve(materialDirectory, ref);
-    const materialRoot = path.resolve(materialDirectory);
-
-    if (!isInsideDirectory(storagePath, materialRoot)) {
-      throw new HttpError(
-        400,
-        "INVALID_MATERIAL_REF",
-        "Workspace material ref must stay inside the materials directory",
-      );
-    }
-    if (!(await fileExists(storagePath))) {
+    const relativePath = `materials/${ref}`;
+    if (!(await adapter.exists(relativePath))) {
       throw new HttpError(404, "MATERIAL_NOT_FOUND", "Material not found");
     }
 
-    await unlink(storagePath);
+    await adapter.deleteObject(relativePath);
 
     const url = workspaceAssetUrl(workspace.id, ref);
     const client = await db.db2.pool().connect();
@@ -1768,6 +2009,30 @@ export const workspaceService = {
             assets: [],
             rejected: [],
           },
+          modules,
+          activeShotSet,
+          activeOneClickFinalVideo,
+          artifacts: hydrateWorkspaceArtifacts(modules),
+        };
+      }
+      if (binding.kind === "S3") {
+        const [modules, activeShotSet, activeOneClickFinalVideo, materialLibrary] =
+          await Promise.all([
+            hydrateWorkspaceModules(workspace.id),
+            getActiveWorkspaceShotSet(workspace.id),
+            oneClickFinalVideoService.activeSummary(workspace.id),
+            collectWorkspaceMaterialLibraryForWorkspace(workspace.id),
+          ]);
+        return {
+          workspace,
+          manifest: toManifest({
+            workspaceId: workspace.id,
+            currentScriptId: workspace.currentScriptId,
+            currentJobId: workspace.currentJobId,
+          }),
+          storage: storageBindingView(binding),
+          nextAction: nextActionFor(workspace),
+          materialLibrary,
           modules,
           activeShotSet,
           activeOneClickFinalVideo,

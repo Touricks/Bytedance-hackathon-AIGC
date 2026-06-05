@@ -17,8 +17,7 @@ import {
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import {
-  createWorkspaceTraceLogger,
-  resolveWorkspaceStorageLocalPath,
+  createWorkspaceTraceLoggerForWorkspace,
   runtimeMode,
 } from "./workspace.service.js";
 
@@ -283,7 +282,6 @@ export const shotPromptV2Service = {
     aspectRatio?: "9:16" | "16:9" | "1:1";
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
     const brief = productBriefArtifactSchema.parse(sources.productBrief.data);
     const material = materialIntakeArtifactSchema.parse(
@@ -304,7 +302,9 @@ export const shotPromptV2Service = {
                 creativeRequirements: sources.requirements.data,
               },
               {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).shotPrompt

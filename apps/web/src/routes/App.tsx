@@ -12,11 +12,13 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  createWorkspace,
   deleteWorkspace,
   initializeWorkspace,
   listWorkspaces,
   selectWorkspaceDirectory,
 } from "../lib/api/client.js";
+import { getConfigLimits } from "../lib/api/configLimits.js";
 import type { DiscoveredWorkspace } from "../lib/api/client.js";
 import type { CreativeWorkspace } from "@aigc-video/shared";
 
@@ -68,8 +70,15 @@ function openWorkspace(id: string) {
 }
 
 function workspaceName(workspace: CreativeWorkspace) {
+  if (!workspace.localPath) {
+    return workspace.id;
+  }
   const parts = workspace.localPath.split(/[\\/]/).filter(Boolean);
   return parts.at(-1) ?? workspace.localPath;
+}
+
+function workspaceLocationLabel(workspace: CreativeWorkspace) {
+  return workspace.localPath || "云端创作工作区";
 }
 
 function formatUpdatedAt(value: string) {
@@ -150,7 +159,7 @@ function WorkspaceCard({
         </div>
         <div className="ws-card__body">
           <div className="ws-card__title u-clip">{workspaceName(workspace)}</div>
-          <div className="ws-card__path u-clip">{workspace.localPath}</div>
+          <div className="ws-card__path u-clip">{workspaceLocationLabel(workspace)}</div>
           <div className="ws-card__progress" aria-hidden="true">
             {pipelineStages.map((stage, index) => (
               <span
@@ -193,6 +202,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [directory, setDirectory] = useState("");
   const [query, setQuery] = useState("");
+  const [workspaceStorageKind, setWorkspaceStorageKind] = useState<"local" | "s3">(
+    "local",
+  );
+  const isCloudWorkspaceMode = workspaceStorageKind === "s3";
   const latestWorkspace = [...workspaces].sort(
     (a, b) =>
       new Date(b.lastSeenAt ?? b.updatedAt).getTime() -
@@ -203,7 +216,7 @@ export function App() {
     const q = query.trim().toLowerCase();
     if (!q) return workspaces;
     return workspaces.filter((workspace) =>
-      `${workspaceName(workspace)} ${workspace.localPath} ${workspace.status}`
+      `${workspaceName(workspace)} ${workspaceLocationLabel(workspace)} ${workspace.status}`
         .toLowerCase()
         .includes(q),
     );
@@ -221,7 +234,11 @@ export function App() {
     setLoading(true);
     setError(null);
     try {
-      const result = await listWorkspaces();
+      const [result, limits] = await Promise.all([
+        listWorkspaces(),
+        getConfigLimits(),
+      ]);
+      setWorkspaceStorageKind(limits.data.workspaceStorageKind ?? "local");
       setWorkspaces(result.workspaces);
       setDiscovered(result.discovered ?? []);
     } catch (err) {
@@ -271,12 +288,24 @@ export function App() {
   };
 
   const onCreateManaged = async () => {
+    if (isCloudWorkspaceMode) {
+      setError(null);
+      try {
+        const detail = await createWorkspace();
+        openWorkspace(detail.workspace.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
     await onChooseDirectory();
   };
 
   const onDeleteWorkspace = async (workspace: CreativeWorkspace) => {
     const confirmed = window.confirm(
-      `删除工作区「${workspaceName(workspace)}」会移除本地 .daireel 创作数据，并从列表中移除；不会删除工作目录中的其他文件。`,
+      isCloudWorkspaceMode || !workspace.localPath
+        ? `删除工作区「${workspaceName(workspace)}」会清理云端创作素材、生成结果和数据库记录。`
+        : `删除工作区「${workspaceName(workspace)}」会移除本地 .daireel 创作数据，并从列表中移除；不会删除工作目录中的其他文件。`,
     );
     if (!confirmed) return;
 
@@ -355,32 +384,34 @@ export function App() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        <form
-          className="workspaces-landing__directory-form card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onOpenDirectory();
-          }}
-        >
-          <label>
-            工作目录路径
-            <input
-              className="field"
-              value={directory}
-              onChange={(event) => setDirectory(event.target.value)}
-              placeholder="输入工作目录的绝对路径，例如 .../Project-AIGC/my-draft"
-            />
-          </label>
-          <div className="workspaces-landing__form-actions">
-            <button type="button" className="btn" onClick={onChooseDirectory}>
-              <FolderOpen size={16} />
-              选择
-            </button>
-            <button type="submit" className="btn btn--primary">
-              打开
-            </button>
-          </div>
-        </form>
+        {!isCloudWorkspaceMode ? (
+          <form
+            className="workspaces-landing__directory-form card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onOpenDirectory();
+            }}
+          >
+            <label>
+              工作目录路径
+              <input
+                className="field"
+                value={directory}
+                onChange={(event) => setDirectory(event.target.value)}
+                placeholder="输入工作目录的绝对路径，例如 .../Project-AIGC/my-draft"
+              />
+            </label>
+            <div className="workspaces-landing__form-actions">
+              <button type="button" className="btn" onClick={onChooseDirectory}>
+                <FolderOpen size={16} />
+                选择
+              </button>
+              <button type="submit" className="btn btn--primary">
+                打开
+              </button>
+            </div>
+          </form>
+        ) : null}
 
         <div className="home-section-title">
           <FolderOpen size={16} />
@@ -407,7 +438,7 @@ export function App() {
           </ul>
         )}
 
-        {filteredDiscovered.length > 0 ? (
+        {!isCloudWorkspaceMode && filteredDiscovered.length > 0 ? (
           <section className="workspaces-discovered card" aria-label="本地草稿">
             <div className="home-section-title">
               <FolderOpen size={16} />

@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
+import { __setWorkspaceStorageAdapterFactoryForTests } from "./storage/workspace-storage-resolver.js";
 
 const cleanupDirs: string[] = [];
 
@@ -511,7 +512,7 @@ describe("workspace API", () => {
     }
   });
 
-  it("rejects S3 workspace deletion as explicitly unsupported in the MVP", async () => {
+  it("cleans S3 workspace prefixes before deleting workspace rows", async () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/workspaces",
@@ -530,22 +531,51 @@ describe("workspace API", () => {
       },
     });
     assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    const deletedPrefixes: string[] = [];
+    __setWorkspaceStorageAdapterFactoryForTests((binding) => ({
+      kind: "S3",
+      binding,
+      putObject: async () => ({
+        relativePath: "unused",
+        size: null,
+        contentType: null,
+        lastModified: null,
+      }),
+      readObject: async () => Buffer.alloc(0),
+      streamObject: async () => {
+        throw new Error("unused");
+      },
+      deleteObject: async () => undefined,
+      listObjects: async () => [],
+      statObject: async () => ({
+        relativePath: "unused",
+        size: null,
+        contentType: null,
+        lastModified: null,
+      }),
+      exists: async () => false,
+      downloadToTemp: async () => undefined,
+      deletePrefix: async (prefix) => {
+        deletedPrefixes.push(prefix);
+      },
+    }));
 
-    const deleteResponse = await app.inject({
-      method: "DELETE",
-      url: `/api/workspaces/${workspaceId}`,
-    });
+    try {
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/workspaces/${workspaceId}`,
+      });
 
-    assert.equal(deleteResponse.statusCode, 501, deleteResponse.body);
-    assert.equal(
-      deleteResponse.json().code,
-      "S3_WORKSPACE_DELETE_NOT_IMPLEMENTED",
-    );
-    const storageResponse = await app.inject({
-      method: "GET",
-      url: `/api/workspaces/${workspaceId}/storage`,
-    });
-    assert.equal(storageResponse.statusCode, 200, storageResponse.body);
+      assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+      assert.deepEqual(deletedPrefixes, [""]);
+      const statusResponse = await app.inject({
+        method: "GET",
+        url: `/api/workspaces/${workspaceId}/status`,
+      });
+      assert.equal(statusResponse.statusCode, 404, statusResponse.body);
+    } finally {
+      __setWorkspaceStorageAdapterFactoryForTests(undefined);
+    }
   });
 
   it("rejects path traversal material deletes", async () => {

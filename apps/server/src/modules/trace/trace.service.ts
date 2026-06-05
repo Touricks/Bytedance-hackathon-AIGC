@@ -35,6 +35,10 @@ function traceStatusFor(input: RecordTraceInput): TraceStatus {
 
 async function mirrorWorkspaceFileTrace(input: RecordTraceInput) {
   const workspace = await db.getWorkspace(input.workspaceId);
+  const binding = await db.getActiveWorkspaceStorage(input.workspaceId);
+  if (binding?.kind !== "LOCAL" || !binding.localPath) {
+    return;
+  }
   const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
   const logger = createWorkspaceTraceLogger(localPath, workspace);
   await logger.append({

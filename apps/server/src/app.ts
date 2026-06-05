@@ -14,8 +14,8 @@ import { registerScriptController } from "./modules/script/script.controller.js"
 import { registerWorkspaceController } from "./modules/workspace/workspace.controller.js";
 import {
   maxWorkspaceMaterialBytes,
-  resolveWorkspaceStorageLocalPath
 } from "./modules/workspace/workspace.service.js";
+import { getWorkspaceStorageAdapter } from "./modules/workspace/storage/workspace-storage-resolver.js";
 import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
 import { registerCampaignController } from "./modules/campaign/campaign.controller.js";
@@ -44,16 +44,15 @@ async function sendWorkspaceFile(
   invalidPathMessage: string,
   reply: FastifyReply
 ) {
-  const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(workspaceId);
-  const root = path.resolve(workspaceLocalPath, ".daireel", directoryName);
-  const filePath = path.resolve(root, relativePath);
+  await db.getWorkspace(workspaceId);
+  const adapter = await getWorkspaceStorageAdapter(workspaceId);
+  const objectPath = `${directoryName}/${relativePath}`;
 
-  if (!isInsideDirectory(filePath, root)) {
+  if (relativePath.startsWith("/") || relativePath.split(/[\\/]/).includes("..")) {
     return reply.status(400).send({ message: invalidPathMessage });
   }
 
-  await stat(filePath);
-  return reply.send(createReadStream(filePath));
+  return reply.send(await adapter.streamObject(objectPath));
 }
 
 export async function buildServer(options: BuildServerOptions = {}) {
@@ -88,6 +87,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
         image: config.imageProviderConcurrency,
         video: config.videoProviderConcurrency
       },
+      workspaceStorageKind: config.workspaceStorageKind,
       aspectRatios: ["9:16", "16:9", "1:1"]
     }
   }));

@@ -21,8 +21,8 @@ describe("videoCandidatePresentation", () => {
     );
 
     assert.equal(view.mediaUrl, "https://provider.example/video.mp4");
-    assert.equal(view.statusText, "正在保存到工作目录");
-    assert.equal(view.selectLabel, "正在保存到工作目录");
+    assert.equal(view.statusText, "正在保存素材");
+    assert.equal(view.selectLabel, "正在保存素材");
     assert.equal(view.canSelect, false);
     assert.equal(view.canFeedback, false);
   });

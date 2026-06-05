@@ -1,9 +1,9 @@
-import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { materialIntakeArtifactSchema } from "@aigc-video/shared";
 import { toHttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
+import { getWorkspaceStorageAdapter } from "../workspace/storage/workspace-storage-resolver.js";
 import { generationService } from "./generation.service.js";
 import { oneClickFinalVideoService } from "./one-click-final-video.service.js";
 
@@ -141,6 +141,7 @@ export async function registerGenerationController(app: FastifyInstance) {
           return reply.status(404).send({ code: "NOT_FOUND" });
         }
         if (!row.localPath) return reply.status(404).send({ code: "NOT_READY" });
+        const storage = await getWorkspaceStorageAdapter(params.workspaceId);
         reply.header("Content-Type", "video/mp4");
         if (query.download === "1" || query.download === "true") {
           reply.header(
@@ -148,7 +149,7 @@ export async function registerGenerationController(app: FastifyInstance) {
             `attachment; filename="${finalVideoDownloadFilename(row.id)}"`,
           );
         }
-        return reply.send(createReadStream(row.localPath));
+        return reply.send(await storage.streamObject(row.localPath));
       } catch (e) {
         const err = toHttpError(e);
         return reply.status(err.statusCode).send(err);
