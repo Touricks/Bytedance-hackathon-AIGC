@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, BarChart3, RefreshCw } from "lucide-react";
 import { useWorkbenchViewModel } from "../workbench/useWorkbenchViewModel.js";
+import { navigateToDataDashboard } from "../../routes/routeState.js";
 import { canOpenReviewStep, deriveActiveStep, type ReviewStepId } from "./reviewFlow.js";
 import { backToWorkspaces } from "./creativeReviewFormat.js";
 import { MainPanel } from "./components/MainPanel.js";
@@ -10,8 +11,7 @@ import { RightRail, StepRail } from "./components/ReviewRails.js";
 
 export {
   applyCreativeRequirementTemplate,
-  requirementFormFromArtifact,
-  requirementFormFromImportedDraft
+  requirementFormFromArtifact
 } from "./requirementsForm.js";
 export type { RequirementsFormState } from "./requirementsForm.js";
 export {
@@ -66,6 +66,14 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
           <span>创作工作区</span>
           <strong>{vm.workspace?.localPath || vm.workspaceId}</strong>
         </div>
+        <button
+          type="button"
+          className="review-secondary"
+          onClick={() => navigateToDataDashboard(workspaceId)}
+        >
+          <BarChart3 size={15} />
+          分析诊断
+        </button>
         <Tooltip title="刷新">
           <IconButton
             type="button"

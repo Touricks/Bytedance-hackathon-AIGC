@@ -528,6 +528,11 @@ label {
   font-weight: 700;
 }
 
+.home-topbar__dashboard {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .home-topbar__search {
   position: relative;
   width: min(280px, 36vw);
@@ -3653,6 +3658,39 @@ label {
 
 .review-panel:has(.review-final) .download-link {
   width: fit-content;
+}
+
+.review-final-import {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.review-final-import label {
+  display: grid;
+  gap: 6px;
+  min-width: 240px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.review-final-import input {
+  min-height: 38px;
+  border: 1px solid var(--line-2);
+  border-radius: calc(var(--r-sm) * var(--radius-scale));
+  padding: 0 10px;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.review-final-import p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
 }
 
 /* ---------- Runtime feedback ---------- */

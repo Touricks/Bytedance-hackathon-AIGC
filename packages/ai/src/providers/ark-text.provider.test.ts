@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { __setProviderConcurrencyForTests } from "../concurrency/provider-concurrency.js";
-import { generateTextWithArk } from "./ark-text.provider.js";
+import {
+  generateResponsesTextWithArk,
+  generateTextWithArk,
+} from "./ark-text.provider.js";
 
 afterEach(() => {
   __setProviderConcurrencyForTests("text", undefined);
@@ -384,5 +387,131 @@ describe("generateTextWithArk", () => {
     );
 
     assert.equal(maxInFlight, 2);
+  });
+});
+
+describe("generateResponsesTextWithArk", () => {
+  it("sends strict JSON Schema through Responses API text.format", async () => {
+    const calls: unknown[] = [];
+
+    const result = await generateResponsesTextWithArk(
+      {
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "Analyze a reference video.",
+              },
+            ],
+          },
+        ],
+        temperature: 0.2,
+      },
+      {
+        provider: "ark",
+        apiKey: "test-key",
+        model: "doubao-seed-endpoint",
+        baseURL: "https://ark.example/api/v3",
+      },
+      {
+        responseFormat: {
+          type: "json_schema",
+          name: "reference_video_requirements_v1",
+          description: "Reference video requirements schema",
+          schemaVersion: "reference-video-requirements.v1",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sentinelField"],
+            properties: {
+              sentinelField: { type: "string" },
+            },
+          },
+        },
+        createClient: () => ({
+          responses: {
+            create: async (request) => {
+              calls.push(request);
+              return {
+                status: "completed",
+                output_text: '{"sentinelField":"ok"}',
+                output: [],
+              };
+            },
+          },
+        }),
+      },
+    );
+
+    assert.deepEqual(result.output, '{"sentinelField":"ok"}');
+    assert.deepEqual(calls, [
+      {
+        model: "doubao-seed-endpoint",
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "Analyze a reference video.",
+              },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "reference_video_requirements_v1",
+            description: "Reference video requirements schema",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["sentinelField"],
+              properties: {
+                sentinelField: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("rejects incomplete Responses API results before parsing output text", async () => {
+    await assert.rejects(
+      () =>
+        generateResponsesTextWithArk(
+          {
+            input: "Analyze a reference video.",
+          },
+          {
+            provider: "ark",
+            apiKey: "test-key",
+            model: "doubao-seed-endpoint",
+            baseURL: "https://ark.example/api/v3",
+          },
+          {
+            createClient: () => ({
+              responses: {
+                create: async () => ({
+                  status: "failed",
+                  output_text: null,
+                  output: [],
+                  error: {
+                    code: "invalid_request",
+                    message: "schema rejected",
+                  },
+                }),
+              },
+            }),
+          },
+        ),
+      /Responses API returned status failed: schema rejected/,
+    );
   });
 });

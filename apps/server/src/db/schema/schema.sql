@@ -505,6 +505,25 @@ create table if not exists final_video_jobs (
 alter table if exists final_video_jobs
   add column if not exists shot_set_id text references shot_sets(id) on delete set null;
 
+create table if not exists dashboard_video_artifacts (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  final_video_job_id text references final_video_jobs(id) on delete set null,
+  name text not null,
+  local_url text not null,
+  duration_sec int,
+  width int,
+  height int,
+  creative_tags jsonb not null default '{}'::jsonb,
+  creative_factors jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  imported_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_dashboard_video_artifacts_workspace
+  on dashboard_video_artifacts(workspace_id, imported_at desc, created_at desc);
+
 create table if not exists one_click_final_video_jobs (
   id text primary key,
   workspace_id text not null references creative_workspace(id) on delete cascade,

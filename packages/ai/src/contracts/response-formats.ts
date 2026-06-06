@@ -1,7 +1,7 @@
 import {
   STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
   STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
-  type MaterialIntakeArtifact,
+  type MaterialIntakeArtifact
 } from "@aigc-video/shared";
 import type { ArkJsonSchemaResponseFormat } from "../providers/ark-text.provider.js";
 
@@ -15,13 +15,13 @@ const booleanSchema = { type: "boolean" };
 
 function strictObject(
   properties: Record<string, JsonSchema>,
-  required: string[],
+  required: string[]
 ): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
     required,
-    properties,
+    properties
   };
 }
 
@@ -29,7 +29,7 @@ function arrayOf(items: JsonSchema, extra: JsonSchema = {}): JsonSchema {
   return {
     type: "array",
     items,
-    ...extra,
+    ...extra
   };
 }
 
@@ -59,12 +59,12 @@ function responseFormat(input: {
     description: input.description,
     schemaVersion: input.schemaVersion,
     strict: true,
-    schema: input.schema,
+    schema: input.schema
   };
 }
 
 export function buildMaterialIntakeResponseFormat(
-  schemaVersion: string,
+  schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
     name: "material_intake_v1",
@@ -87,32 +87,32 @@ export function buildMaterialIntakeResponseFormat(
                   "demo_video",
                   "spec_text",
                   "reference",
-                  "other",
-                ],
+                  "other"
+                ]
               },
               description: nonEmptyString,
               relevance: { type: "string", enum: ["high", "medium", "low"] },
-              included: booleanSchema,
+              included: booleanSchema
             },
-            ["ref", "role", "description", "relevance", "included"],
-          ),
-        ),
+            ["ref", "role", "description", "relevance", "included"]
+          )
+        )
       },
-      ["primaryProductRef", "tags"],
-    ),
+      ["primaryProductRef", "tags"]
+    )
   });
 }
 
 const productAssetSchema = strictObject(
   {
     ref: nonEmptyString,
-    useAs: { type: "string", enum: ["primary", "support"] },
+    useAs: { type: "string", enum: ["primary", "support"] }
   },
-  ["ref", "useAs"],
+  ["ref", "useAs"]
 );
 
 export function buildProductBriefResponseFormat(
-  schemaVersion: string,
+  schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
     name: "product_brief_v1",
@@ -125,16 +125,16 @@ export function buildProductBriefResponseFormat(
             name: nonEmptyString,
             category: nonEmptyString,
             keyFacts: arrayOf(nonEmptyString),
-            assets: arrayOf(productAssetSchema),
+            assets: arrayOf(productAssetSchema)
           },
-          ["name", "category", "keyFacts", "assets"],
+          ["name", "category", "keyFacts", "assets"]
         ),
         audience: strictObject(
           {
             who: nonEmptyString,
-            painOrDesire: nonEmptyString,
+            painOrDesire: nonEmptyString
           },
-          ["who", "painOrDesire"],
+          ["who", "painOrDesire"]
         ),
         coreSellingPoint: nonEmptyString,
         proof: arrayOf(nonEmptyString),
@@ -143,7 +143,7 @@ export function buildProductBriefResponseFormat(
         brandTone: nonEmptyString,
         bannedExpressions: arrayOf(plainString),
         landingInfo: nullableString(),
-        assumptions: arrayOf(plainString),
+        assumptions: arrayOf(plainString)
       },
       [
         "product",
@@ -155,9 +155,72 @@ export function buildProductBriefResponseFormat(
         "brandTone",
         "bannedExpressions",
         "landingInfo",
-        "assumptions",
-      ],
-    ),
+        "assumptions"
+      ]
+    )
+  });
+}
+
+const confidenceSchema = { type: "string", enum: ["low", "medium", "high"] };
+
+export function buildReferenceVideoRequirementsResponseFormat(
+  schemaVersion: string
+): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "reference_video_requirements_v1",
+    description: "从参考视频分析结构并推荐全局创作因子。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        analysis: strictObject(
+          {
+            summary: nonEmptyString,
+            confidence: confidenceSchema,
+            detectedBeats: arrayOf(nonEmptyString),
+            risks: arrayOf(nonEmptyString)
+          },
+          ["summary", "confidence", "detectedBeats", "risks"]
+        ),
+        creativeFactorsRecommendation: strictObject(
+          {
+            recommendedFactors: strictObject(
+              {
+                productType: {
+                  type: "string",
+                  enum: [
+                    "consumable-good",
+                    "durable-good",
+                    "digital-service",
+                    "offline-experience-service"
+                  ]
+                },
+                audience: {
+                  type: "string",
+                  enum: ["toddler", "child", "youth", "senior"]
+                },
+                strategy: {
+                  type: "string",
+                  enum: [
+                    "pain-solution",
+                    "scenario-demo",
+                    "review-comparison",
+                    "tutorial-value",
+                    "authority-proof",
+                    "emotional-story",
+                    "curiosity-hook"
+                  ]
+                }
+              },
+              ["productType", "audience", "strategy"]
+            ),
+            confidence: confidenceSchema,
+            reasons: arrayOf(nonEmptyString)
+          },
+          ["recommendedFactors", "confidence", "reasons"]
+        )
+      },
+      ["analysis", "creativeFactorsRecommendation"]
+    )
   });
 }
 
@@ -175,7 +238,7 @@ export function buildStoryboardResponseFormat(input: {
         narrative: nonEmptyString,
         totalDurationSec: {
           type: "integer",
-          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC],
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC]
         },
         shots: arrayOf(
           strictObject(
@@ -184,13 +247,13 @@ export function buildStoryboardResponseFormat(input: {
               purpose: { type: "string", enum: ["hook", "proof", "cta"] },
               durationSec: {
                 type: "integer",
-                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC
               },
               scene: nonEmptyString,
               visualDirection: nonEmptyString,
               productAssetRef: refSchema(refs),
               voiceover: nonEmptyString,
-              transition: nonEmptyString,
+              transition: nonEmptyString
             },
             [
               "index",
@@ -200,15 +263,15 @@ export function buildStoryboardResponseFormat(input: {
               "visualDirection",
               "productAssetRef",
               "voiceover",
-              "transition",
-            ],
+              "transition"
+            ]
           ),
-          { minItems: 3, maxItems: 3 },
+          { minItems: 3, maxItems: 3 }
         ),
-        assumptions: arrayOf(plainString),
+        assumptions: arrayOf(plainString)
       },
-      ["narrative", "totalDurationSec", "shots", "assumptions"],
-    ),
+      ["narrative", "totalDurationSec", "shots", "assumptions"]
+    )
   });
 }
 
@@ -226,18 +289,18 @@ export function buildStoryboardVoiceoverRewriteResponseFormat(input: {
           strictObject(
             {
               index: integer,
-              voiceover: nonEmptyString,
+              voiceover: nonEmptyString
             },
-            ["index", "voiceover"],
+            ["index", "voiceover"]
           ),
           {
             minItems: input.expectedShotCount,
-            maxItems: input.expectedShotCount,
-          },
-        ),
+            maxItems: input.expectedShotCount
+          }
+        )
       },
-      ["shots"],
-    ),
+      ["shots"]
+    )
   });
 }
 
@@ -254,7 +317,7 @@ export function buildShotPromptResponseFormat(input: {
       lighting: nonEmptyString,
       productVisibility: nonEmptyString,
       referenceUsage: nonEmptyString,
-      negative: arrayOf(plainString),
+      negative: arrayOf(plainString)
     },
     [
       "scene",
@@ -262,8 +325,8 @@ export function buildShotPromptResponseFormat(input: {
       "lighting",
       "productVisibility",
       "referenceUsage",
-      "negative",
-    ],
+      "negative"
+    ]
   );
   const shotVideoSchema = strictObject(
     {
@@ -273,7 +336,7 @@ export function buildShotPromptResponseFormat(input: {
       lastFrameIntent: nullableString(),
       durationIntent: nonEmptyString,
       continuity: nonEmptyString,
-      negative: arrayOf(plainString),
+      negative: arrayOf(plainString)
     },
     [
       "cameraMotion",
@@ -282,8 +345,8 @@ export function buildShotPromptResponseFormat(input: {
       "lastFrameIntent",
       "durationIntent",
       "continuity",
-      "negative",
-    ],
+      "negative"
+    ]
   );
   return responseFormat({
     name: "video_shotprompt_v1",
@@ -306,7 +369,7 @@ export function buildShotPromptResponseFormat(input: {
               referenceAssetRefs: arrayOf(refSchema(refs)),
               voiceover: nonEmptyString,
               shotImage: shotImageSchema,
-              shotVideo: shotVideoSchema,
+              shotVideo: shotVideoSchema
             },
             [
               "index",
@@ -316,10 +379,10 @@ export function buildShotPromptResponseFormat(input: {
               "referenceAssetRefs",
               "voiceover",
               "shotImage",
-              "shotVideo",
-            ],
+              "shotVideo"
+            ]
           ),
-          { minItems: input.expectedShotCount, maxItems: input.expectedShotCount },
+          { minItems: input.expectedShotCount, maxItems: input.expectedShotCount }
         ),
         tts: strictObject(
           {
@@ -331,14 +394,14 @@ export function buildShotPromptResponseFormat(input: {
                 gender: { type: "string", enum: ["female", "male"] },
                 tone: nonEmptyString,
                 pitch: { type: "string", enum: ["low", "medium", "high"] },
-                pace: { type: "string", enum: ["slow", "medium", "fast"] },
+                pace: { type: "string", enum: ["slow", "medium", "fast"] }
               },
-              ["gender", "tone", "pitch", "pace"],
-            ),
+              ["gender", "tone", "pitch", "pace"]
+            )
           },
-          ["enabled", "source", "voiceover", "voiceProfile"],
+          ["enabled", "source", "voiceover", "voiceProfile"]
         ),
-        assumptions: arrayOf(plainString),
+        assumptions: arrayOf(plainString)
       },
       [
         "targetProvider",
@@ -348,8 +411,8 @@ export function buildShotPromptResponseFormat(input: {
         "negativePrompt",
         "shots",
         "tts",
-        "assumptions",
-      ],
-    ),
+        "assumptions"
+      ]
+    )
   });
 }

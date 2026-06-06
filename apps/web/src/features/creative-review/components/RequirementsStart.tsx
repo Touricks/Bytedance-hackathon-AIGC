@@ -34,35 +34,35 @@ import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.j
 import {
   applyCreativeRequirementTemplate,
   requirementFormFromArtifact,
-  requirementFormFromImportedDraft,
   requirementFormWithCreativeFactors,
   promptRequirementsDataFromForm,
   syncCompiledRequirementFields,
   type RequirementsFormState
 } from "../requirementsForm.js";
 
-const PRODUCT_TYPE_OPTIONS: Array<{ value: ProductType; label: string; impact: string }> = [
-  {
-    value: "consumable-good",
-    label: "可消耗商品",
-    impact: "强调包装、质地、用量、使用瞬间和复购理由"
-  },
-  {
-    value: "durable-good",
-    label: "耐用商品",
-    impact: "强调主体结构、功能部位、材质细节和长期使用价值"
-  },
-  {
-    value: "digital-service",
-    label: "数字服务",
-    impact: "强调界面、服务流程、案例结果和咨询路径"
-  },
-  {
-    value: "offline-experience-service",
-    label: "线下体验服务",
-    impact: "强调目的地、场地、服务人员、体验过程和保障证明"
-  }
-];
+const PRODUCT_TYPE_OPTIONS: Array<{ value: ProductType; label: string; impact: string }> =
+  [
+    {
+      value: "consumable-good",
+      label: "可消耗商品",
+      impact: "强调包装、质地、用量、使用瞬间和复购理由"
+    },
+    {
+      value: "durable-good",
+      label: "耐用商品",
+      impact: "强调主体结构、功能部位、材质细节和长期使用价值"
+    },
+    {
+      value: "digital-service",
+      label: "数字服务",
+      impact: "强调界面、服务流程、案例结果和咨询路径"
+    },
+    {
+      value: "offline-experience-service",
+      label: "线下体验服务",
+      impact: "强调目的地、场地、服务人员、体验过程和保障证明"
+    }
+  ];
 
 const AUDIENCE_OPTIONS: Array<{ value: Audience; label: string; impact: string }> = [
   { value: "toddler", label: "幼儿", impact: "向新手家长建立安全和安心感" },
@@ -72,13 +72,41 @@ const AUDIENCE_OPTIONS: Array<{ value: Audience; label: string; impact: string }
 ];
 
 const STRATEGY_OPTIONS: Array<{ value: Strategy; label: string; impact: string }> = [
-  { value: "pain-solution", label: "痛点解决", impact: "按痛点、原因、解决方式、证据、行动引导推进" },
-  { value: "scenario-demo", label: "场景演示", impact: "按场景进入、过程演示、关键卖点、结果证明推进" },
-  { value: "review-comparison", label: "测评对比", impact: "按测评标准、使用过程、对比结果和适用建议推进" },
-  { value: "tutorial-value", label: "教程价值", impact: "按误区、步骤、注意点、效果展示和行动引导推进" },
-  { value: "authority-proof", label: "权威证明", impact: "按可信来源、核心能力、证据细节和适用场景推进" },
-  { value: "emotional-story", label: "情绪故事", impact: "按人物处境、情绪需求、使用过程和改善结果推进" },
-  { value: "curiosity-hook", label: "好奇钩子", impact: "按悬念、揭示、卖点解释、证据和行动引导推进" }
+  {
+    value: "pain-solution",
+    label: "痛点解决",
+    impact: "按痛点、原因、解决方式、证据、行动引导推进"
+  },
+  {
+    value: "scenario-demo",
+    label: "场景演示",
+    impact: "按场景进入、过程演示、关键卖点、结果证明推进"
+  },
+  {
+    value: "review-comparison",
+    label: "测评对比",
+    impact: "按测评标准、使用过程、对比结果和适用建议推进"
+  },
+  {
+    value: "tutorial-value",
+    label: "教程价值",
+    impact: "按误区、步骤、注意点、效果展示和行动引导推进"
+  },
+  {
+    value: "authority-proof",
+    label: "权威证明",
+    impact: "按可信来源、核心能力、证据细节和适用场景推进"
+  },
+  {
+    value: "emotional-story",
+    label: "情绪故事",
+    impact: "按人物处境、情绪需求、使用过程和改善结果推进"
+  },
+  {
+    value: "curiosity-hook",
+    label: "好奇钩子",
+    impact: "按悬念、揭示、卖点解释、证据和行动引导推进"
+  }
 ];
 
 const FACTOR_GROUPS = [
@@ -123,11 +151,23 @@ const COMPILED_FIELD_LABELS: Record<CompiledRequirementField, string> = {
 
 const COMPILED_REQUIREMENT_FIELDS = [
   { key: "imageStyle", sourceMapKey: "imageStyle", label: "图像风格（编译预览）" },
-  { key: "imageComposition", sourceMapKey: "imageComposition", label: "图像构图（编译预览）" },
+  {
+    key: "imageComposition",
+    sourceMapKey: "imageComposition",
+    label: "图像构图（编译预览）"
+  },
   { key: "imageAvoid", sourceMapKey: "imageAvoid", label: "图像避免项（编译预览）" },
   { key: "scriptTone", sourceMapKey: "scriptTone", label: "剧本语气（编译预览）" },
-  { key: "storyboardRhythm", sourceMapKey: "storyboardRhythm", label: "分镜节奏（编译预览）" },
-  { key: "shotImageGlobal", sourceMapKey: "shotImageGlobal", label: "分镜图全局要求（编译预览）" },
+  {
+    key: "storyboardRhythm",
+    sourceMapKey: "storyboardRhythm",
+    label: "分镜节奏（编译预览）"
+  },
+  {
+    key: "shotImageGlobal",
+    sourceMapKey: "shotImageGlobal",
+    label: "分镜图全局要求（编译预览）"
+  },
   {
     key: "shotVideoGlobal",
     sourceMapKey: "shotVideoGlobal",
@@ -152,7 +192,7 @@ const COMPILED_REQUIREMENT_FIELDS = [
 
 function selectedOption<TValue extends string>(
   options: Array<{ value: TValue; label: string; impact: string }>,
-  value: TValue,
+  value: TValue
 ) {
   return options.find((option) => option.value === value) ?? options[0]!;
 }
@@ -163,7 +203,7 @@ function storyArcPreview(steps: string[]) {
 
 function guidancePath(
   group: keyof FactorGuidance,
-  field: string,
+  field: string
 ): FactorGuidanceFieldPath {
   return `factorGuidance.${group}.${field}` as FactorGuidanceFieldPath;
 }
@@ -256,11 +296,7 @@ export function RequirementsStart({
     setDraftMessage(null);
   };
 
-  const updateGuidance = (
-    group: keyof FactorGuidance,
-    key: string,
-    value: string
-  ) => {
+  const updateGuidance = (group: keyof FactorGuidance, key: string, value: string) => {
     setForm((current) => {
       const creativeRequirementTemplate = current.creativeRequirementTemplate
         ? { ...current.creativeRequirementTemplate, status: "customized" as const }
@@ -326,11 +362,7 @@ export function RequirementsStart({
           ? { type: "file", file: referenceFile }
           : { type: "url", url: trimmedUrl }
       });
-      setForm((current) =>
-        imported.artifact?.data
-          ? requirementFormFromArtifact(imported.artifact.data)
-          : requirementFormFromImportedDraft(imported.draft, current)
-      );
+      setForm(requirementFormFromArtifact(imported.artifact.data));
       setReferenceAnalysis(imported.analysis);
       setReferenceRecommendation(imported.creativeFactorsRecommendation);
       setReferenceMessage("模型推荐已保存为草稿，请确认细分字段后提交创作要求。");
@@ -348,15 +380,15 @@ export function RequirementsStart({
   );
   const selectedProductTypeOption = selectedOption(
     PRODUCT_TYPE_OPTIONS,
-    form.creativeFactors.productType,
+    form.creativeFactors.productType
   );
   const selectedAudienceOption = selectedOption(
     AUDIENCE_OPTIONS,
-    form.creativeFactors.audience,
+    form.creativeFactors.audience
   );
   const selectedStrategyOption = selectedOption(
     STRATEGY_OPTIONS,
-    form.creativeFactors.strategy,
+    form.creativeFactors.strategy
   );
   const showCurrentTemplate =
     form.creativeRequirementTemplate?.status !== undefined &&
@@ -522,9 +554,7 @@ export function RequirementsStart({
             size="small"
             variant="outlined"
           >
-            <InputLabel id="creative-factor-product-type-label">
-              商品/服务类型
-            </InputLabel>
+            <InputLabel id="creative-factor-product-type-label">商品/服务类型</InputLabel>
             <Select<ProductType>
               labelId="creative-factor-product-type-label"
               id="creative-factor-product-type"
@@ -540,12 +570,7 @@ export function RequirementsStart({
                 </MenuItem>
               ))}
             </Select>
-            <Collapse
-              appear
-              in
-              key={selectedProductTypeOption.value}
-              timeout={180}
-            >
+            <Collapse appear in key={selectedProductTypeOption.value} timeout={180}>
               <FormHelperText className="creative-factor-select-card__impact">
                 {selectedProductTypeOption.impact}
               </FormHelperText>
@@ -682,12 +707,16 @@ export function RequirementsStart({
         <div className="review-form-grid">
           {COMPILED_REQUIREMENT_FIELDS.map((field) => (
             <label
-              className={"wide" in field && field.wide ? "review-form-grid__wide" : undefined}
+              className={
+                "wide" in field && field.wide ? "review-form-grid__wide" : undefined
+              }
               key={field.key}
             >
               <div className="compiled-field-title">
                 <span>{field.label}</span>
-                <SourceChips sources={form.compiledRequirementSourceMap[field.sourceMapKey]} />
+                <SourceChips
+                  sources={form.compiledRequirementSourceMap[field.sourceMapKey]}
+                />
               </div>
               <textarea rows={3} value={form[field.key]} readOnly />
             </label>

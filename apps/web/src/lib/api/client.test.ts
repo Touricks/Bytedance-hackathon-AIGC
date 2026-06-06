@@ -184,11 +184,7 @@ describe("api client", () => {
                   lastSeenAt: "2026-05-25T00:00:00.000Z"
                 },
                 artifacts: {
-                  material: moduleArtifact(
-                    "material-intake",
-                    materialData,
-                    "approved"
-                  ),
+                  material: moduleArtifact("material-intake", materialData, "approved"),
                   brief: null,
                   storyboard: null,
                   shotPrompt: null
@@ -450,10 +446,7 @@ describe("api client", () => {
     });
 
     assert.equal(proposed.artifact.moduleId, "product-brief");
-    assert.equal(
-      proposed.artifact.data.coreSellingPoint,
-      "更适合送礼的年轻化修护卖点"
-    );
+    assert.equal(proposed.artifact.data.coreSellingPoint, "更适合送礼的年轻化修护卖点");
     assert.deepEqual(calls, [
       {
         method: "POST",
@@ -567,13 +560,6 @@ describe("api client", () => {
               contentType: "video/mp4",
               sizeBytes: 16
             },
-            draft: {
-              image: { style: "真实电商产品摄影" },
-              script: { tone: "直接可信" },
-              storyboard: { rhythm: "快节奏卖点证明" },
-              shotImage: { global: "场景连续" },
-              shotVideo: { global: "运动平滑" }
-            },
             analysis: {
               summary: "参考视频采用快节奏卖点证明结构。",
               confidence: "medium"
@@ -620,9 +606,9 @@ describe("api client", () => {
       }
     });
 
-    assert.equal(imported.draft.image?.style, "真实电商产品摄影");
     assert.equal(imported.analysis.summary, "参考视频采用快节奏卖点证明结构。");
     assert.equal(imported.artifact.status, "proposed");
+    assert.equal("draft" in imported, false);
     assert.deepEqual(imported.creativeFactorsRecommendation.recommendedFactors, {
       productType: "durable-good",
       audience: "youth",
@@ -660,13 +646,6 @@ describe("api client", () => {
               filename: "reference.mp4",
               contentType: "video/mp4",
               sizeBytes: 16
-            },
-            draft: {
-              image: { style: "真实电商产品摄影" },
-              script: { tone: "直接可信" },
-              storyboard: { rhythm: "快节奏卖点证明" },
-              shotImage: { global: "场景连续" },
-              shotVideo: { global: "运动平滑" }
             },
             analysis: {
               summary: "参考视频采用快节奏卖点证明结构。",
@@ -716,8 +695,8 @@ describe("api client", () => {
       }
     });
 
-    assert.equal(imported.draft.shotVideo?.global, "运动平滑");
     assert.equal(imported.artifact.status, "proposed");
+    assert.equal("draft" in imported, false);
     assert.deepEqual(calls, [
       {
         method: "POST",
@@ -772,7 +751,10 @@ describe("api client", () => {
             }
           ],
           discovered: [
-            { localPath: "/Users/demo/Drafts/IntegrationTest_v1", workspaceId: "VBuy2YQUO9cwRY42fdcy8" }
+            {
+              localPath: "/Users/demo/Drafts/IntegrationTest_v1",
+              workspaceId: "VBuy2YQUO9cwRY42fdcy8"
+            }
           ]
         }),
         { status: 200 }
@@ -784,7 +766,10 @@ describe("api client", () => {
 
     assert.equal(created.workspace.id, "workspace_123");
     assert.equal(listed.workspaces[0]?.id, "workspace_123");
-    assert.equal(listed.discovered[0]?.localPath, "/Users/demo/Drafts/IntegrationTest_v1");
+    assert.equal(
+      listed.discovered[0]?.localPath,
+      "/Users/demo/Drafts/IntegrationTest_v1"
+    );
     assert.equal(listed.discovered[0]?.workspaceId, "VBuy2YQUO9cwRY42fdcy8");
     assert.deepEqual(calls, [
       "POST http://localhost:3000/api/workspaces",
@@ -794,10 +779,7 @@ describe("api client", () => {
 
   it("opens the Fastify workspace directory picker", async () => {
     globalThis.fetch = async (url, init) => {
-      assert.equal(
-        String(url),
-        "http://localhost:3000/api/workspaces/directory/select"
-      );
+      assert.equal(String(url), "http://localhost:3000/api/workspaces/directory/select");
       assert.equal(init?.method, "POST");
 
       return new Response(
@@ -892,10 +874,7 @@ describe("api client", () => {
       type: "text/plain"
     });
 
-    assert.match(
-      workspaceMaterialFileRejectionReason(tooLarge) ?? "",
-      /图片超过 10MB/
-    );
+    assert.match(workspaceMaterialFileRejectionReason(tooLarge) ?? "", /图片超过 10MB/);
     assert.equal(workspaceMaterialFileRejectionReason(largeText), null);
   });
 
@@ -928,10 +907,7 @@ describe("api client", () => {
 
   it("deletes registered workspaces by id", async () => {
     globalThis.fetch = async (url, init) => {
-      assert.equal(
-        String(url),
-        "http://localhost:3000/api/workspaces/workspace_123"
-      );
+      assert.equal(String(url), "http://localhost:3000/api/workspaces/workspace_123");
       assert.equal(init?.method, "DELETE");
       return new Response(
         JSON.stringify({

@@ -23,39 +23,39 @@
 
 ## 0. 平台 / 系统
 
-| 方法   | 路径                      | 业务逻辑                                                      | 响应                    |
-| ------ | ------------------------- | ------------------------------------------------------------- | ----------------------- |
-| GET    | `/api/health`             | 健康检查，返回当前 runtime。                                  | `{ ok, runtime }`       |
-| GET    | `/api/config/limits`      | 返回图像/视频候选数量上限、worker/provider 并发、workspace storage kind 和宽高比枚举。 | `{ data }`              |
-| GET    | `/api/pipeline/contracts` | 返回 agent 链路、prompt 模板、输入输出 schema 的契约元数据。  | `{ data }`              |
-| GET    | `/api/setup-templates/creative-requirements` | 返回启动时从 `@aigc-video/shared` 校验通过的内置创作要求模板。 | `{ data: { templates } }` |
-| DELETE | `/api/test-runs/:runId`   | 测试清理专用；只在测试环境开启。                              | `{ data: { deleted } }` |
+| 方法   | 路径                                         | 业务逻辑                                                                               | 响应                      |
+| ------ | -------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------- |
+| GET    | `/api/health`                                | 健康检查，返回当前 runtime。                                                           | `{ ok, runtime }`         |
+| GET    | `/api/config/limits`                         | 返回图像/视频候选数量上限、worker/provider 并发、workspace storage kind 和宽高比枚举。 | `{ data }`                |
+| GET    | `/api/pipeline/contracts`                    | 返回 agent 链路、prompt 模板、输入输出 schema 的契约元数据。                           | `{ data }`                |
+| GET    | `/api/setup-templates/creative-requirements` | 返回启动时从 `@aigc-video/shared` 校验通过的内置创作要求模板。                         | `{ data: { templates } }` |
+| DELETE | `/api/test-runs/:runId`                      | 测试清理专用；只在测试环境开启。                                                       | `{ data: { deleted } }`   |
 
 ---
 
 ## 1. 素材 Material
 
-| 方法 | 路径                                     | 业务逻辑                                              | 请求                                    |
-| ---- | ---------------------------------------- | ----------------------------------------------------- | --------------------------------------- |
-| POST | `/api/materials`                         | 登记外部商品图为 `asset`。                            | `{ imageUrl }`                          |
-| POST | `/api/materials/product-image`           | 上传 base64 商品图，写入本地上传目录并登记 `asset`。  | `{ filename, contentType, dataBase64 }` |
-| POST | `/api/workspaces/:workspaceId/materials` | 上传工作区素材，写入 workspace storage 并登记 asset；`image/*` 超过 10MB 直接返回 `IMAGE_TOO_LARGE_FOR_MODEL`，非图片仍受通用 50MB 上限保护。 | multipart file 或 JSON base64           |
-| DELETE | `/api/workspaces/:workspaceId/materials/:ref` | 删除工作区素材文件、对应 asset 记录和 shot asset refs；`ref` 只允许安全文件名，不允许路径穿越。删除不会自动重跑 material-intake 或下游链路。 | 无 |
+| 方法   | 路径                                          | 业务逻辑                                                                                                                                      | 请求                                    |
+| ------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| POST   | `/api/materials`                              | 登记外部商品图为 `asset`。                                                                                                                    | `{ imageUrl }`                          |
+| POST   | `/api/materials/product-image`                | 上传 base64 商品图，写入本地上传目录并登记 `asset`。                                                                                          | `{ filename, contentType, dataBase64 }` |
+| POST   | `/api/workspaces/:workspaceId/materials`      | 上传工作区素材，写入 workspace storage 并登记 asset；`image/*` 超过 10MB 直接返回 `IMAGE_TOO_LARGE_FOR_MODEL`，非图片仍受通用 50MB 上限保护。 | multipart file 或 JSON base64           |
+| DELETE | `/api/workspaces/:workspaceId/materials/:ref` | 删除工作区素材文件、对应 asset 记录和 shot asset refs；`ref` 只允许安全文件名，不允许路径穿越。删除不会自动重跑 material-intake 或下游链路。  | 无                                      |
 
 ---
 
 ## 2. Workspace 与 Storage
 
-| 方法 | 路径                                        | 业务逻辑                                                                                                                                                                                                                             | 请求                                                                                 |
-| ---- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| POST | `/api/workspaces`                           | 新建逻辑工作区；`WORKSPACE_STORAGE_KIND=s3` 时自动绑定私有 S3-compatible bucket，prefix 固定为 `workspaces/{workspaceId}`；local 模式仍由本地目录入口创建可见草稿。 | `{ name? }`                                                                          |
-| GET  | `/api/workspaces`                           | 列出 DB 已登记的 S3 工作区，以及 DB 已登记且有有效本地路径的 LOCAL 工作区（配置 `WORKSPACE_DISCOVERY_ROOTS` 时仅展示这些 roots 下的 LOCAL workspace）；并扫描 `WORKSPACE_DISCOVERY_ROOTS` 下的磁盘草稿，返回未登记到 DB 的工作区（`discovered`）。 | query 可选                                                                           |
-| POST | `/api/workspaces/directory/select`          | 打开本机目录选择器，返回用户选择的本地 workspace 目录；不创建 workspace，不写 storage binding。                                                                                                                                        | `{}`                                                                                 |
-| POST | `/api/workspaces/init`                      | 按本地目录 find-or-create 工作区，绑定 LOCAL storage，写 `.daireel/workspace.json`。                                                                                                                                                 | `{ directory }`                                                                      |
-| DELETE | `/api/workspaces/:workspaceId`            | 删除 DB 已登记工作区。LOCAL storage 只删除工作目录下的 `.daireel/` 创作数据；S3 storage 清理 `s3Prefix` 下对象；随后清理该 workspace 的业务记录。存在运行中生成/成片任务时返回 409。 | 无                                                                                   |
-| GET  | `/api/workspaces/:workspaceId/status`       | 返回 workspace、storage、active artifact 摘要、active shot set、active 一键成片任务摘要、下一步建议。                                                                                                                                 | 无                                                                                   |
-| GET  | `/api/workspaces/:workspaceId/storage`      | 返回工作区存储绑定。                                                                                                                                                                                                                 | 无                                                                                   |
-| POST | `/api/workspaces/:workspaceId/storage/bind` | 绑定 LOCAL 或 S3 storage。已绑定 active storage 时返回 409。                                                                                                                                                                         | `{ kind:"local", localPath }` 或 `{ kind:"s3", bucket, prefix, region?, endpoint? }` |
+| 方法   | 路径                                        | 业务逻辑                                                                                                                                                                                                                                           | 请求                                                                                 |
+| ------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| POST   | `/api/workspaces`                           | 新建逻辑工作区；`WORKSPACE_STORAGE_KIND=s3` 时自动绑定私有 S3-compatible bucket，prefix 固定为 `workspaces/{workspaceId}`；local 模式仍由本地目录入口创建可见草稿。                                                                                | `{ name? }`                                                                          |
+| GET    | `/api/workspaces`                           | 列出 DB 已登记的 S3 工作区，以及 DB 已登记且有有效本地路径的 LOCAL 工作区（配置 `WORKSPACE_DISCOVERY_ROOTS` 时仅展示这些 roots 下的 LOCAL workspace）；并扫描 `WORKSPACE_DISCOVERY_ROOTS` 下的磁盘草稿，返回未登记到 DB 的工作区（`discovered`）。 | query 可选                                                                           |
+| POST   | `/api/workspaces/directory/select`          | 打开本机目录选择器，返回用户选择的本地 workspace 目录；不创建 workspace，不写 storage binding。                                                                                                                                                    | `{}`                                                                                 |
+| POST   | `/api/workspaces/init`                      | 按本地目录 find-or-create 工作区，绑定 LOCAL storage，写 `.daireel/workspace.json`。                                                                                                                                                               | `{ directory }`                                                                      |
+| DELETE | `/api/workspaces/:workspaceId`              | 删除 DB 已登记工作区。LOCAL storage 只删除工作目录下的 `.daireel/` 创作数据；S3 storage 清理 `s3Prefix` 下对象；随后清理该 workspace 的业务记录。存在运行中生成/成片任务时返回 409。                                                               | 无                                                                                   |
+| GET    | `/api/workspaces/:workspaceId/status`       | 返回 workspace、storage、active artifact 摘要、active shot set、active 一键成片任务摘要、下一步建议。                                                                                                                                              | 无                                                                                   |
+| GET    | `/api/workspaces/:workspaceId/storage`      | 返回工作区存储绑定。                                                                                                                                                                                                                               | 无                                                                                   |
+| POST   | `/api/workspaces/:workspaceId/storage/bind` | 绑定 LOCAL 或 S3 storage。已绑定 active storage 时返回 409。                                                                                                                                                                                       | `{ kind:"local", localPath }` 或 `{ kind:"s3", bucket, prefix, region?, endpoint? }` |
 
 `GET /api/workspaces` 响应形如 `{ workspaces: [...], discovered: [{ localPath, workspaceId }] }`。`workspaces` 来自 DB；S3 active binding 的工作区即使 `localPath` 为空也应展示，LOCAL 则必须有可见本地路径。配置 `WORKSPACE_DISCOVERY_ROOTS` 后，列表只限制 LOCAL DB workspace 的可见 roots。`discovered` 是磁盘上存在 `.daireel/workspace.json` 但 DB 无对应行的工作区（例如 `reset:dev` 清空业务表后仍保留磁盘 `.daireel/`），按 `WORKSPACE_DISCOVERY_ROOTS`（逗号分隔的根目录，有界深度扫描）发现，已登记的路径会从 `discovered` 中去重剔除；云模式前端不展示本地目录和 discovered 入口。
 
@@ -77,47 +77,47 @@ Prompt requirements 是用户可编辑的结构化创作要求。用户可以分
 {
   "data": {
     "templates": [
-	      {
-	        "id": "consumable-youth-seeding",
-	        "name": "快消种草·青年",
-	        "summary": "自然种草质感，体验驱动，痛点到下单顺滑。",
-	        "version": "p0-2026-06",
-	        "productType": "consumable-good",
-	        "audiences": ["youth"],
-	        "strategy": "pain-solution",
-	        "creativeFactors": {
-	          "productType": "consumable-good",
-	          "audience": "youth",
-	          "strategy": "pain-solution"
-	        },
-	        "fields": {
-	          "factorGuidance.productType.subjectPresentation": {
-	            "label": "主体呈现",
-	            "value": "真实展示商品包装、质地、用量和使用瞬间。",
-	            "affects": ["image.style", "shotImage.global"]
-	          }
-	        },
-	        "values": {
-	          "imageStyle": "真实展示商品包装、质地、用量和使用瞬间。 保持真实拍摄质感和商品/服务身份可识别。",
-	          "imageComposition": "按开箱、展示、使用、效果感受和购买理由推进。 面向用户本人组织画面主体。",
-	          "imageAvoid": "虚假成分对比，夸大功效，违规功效承诺，避免制造身份、外貌、健康或收入焦虑。",
-	          "scriptTone": "直接、自然、有体验感，强调效率、颜值、实用和即时反馈。 用明确购买/报名/咨询路径收束。",
-	          "storyboardRhythm": "痛点进入、原因解释、解决方案、证据证明、行动引导。按开箱、展示、使用、效果感受和购买理由推进。",
-	          "shotImageGlobal": "真实展示商品包装、质地、用量和使用瞬间。 按开箱、展示、使用、效果感受和购买理由推进。",
-	          "shotVideoGlobal": "用痛点或反差场景开场,快速指出用户当下困扰。 按开箱、展示、使用、效果感受和购买理由推进。"
-	        }
-	      }
-	    ]
+      {
+        "id": "consumable-youth-seeding",
+        "name": "快消种草·青年",
+        "summary": "自然种草质感，体验驱动，痛点到下单顺滑。",
+        "version": "p0-2026-06",
+        "productType": "consumable-good",
+        "audiences": ["youth"],
+        "strategy": "pain-solution",
+        "creativeFactors": {
+          "productType": "consumable-good",
+          "audience": "youth",
+          "strategy": "pain-solution"
+        },
+        "fields": {
+          "factorGuidance.productType.subjectPresentation": {
+            "label": "主体呈现",
+            "value": "真实展示商品包装、质地、用量和使用瞬间。",
+            "affects": ["image.style", "shotImage.global"]
+          }
+        },
+        "values": {
+          "imageStyle": "真实展示商品包装、质地、用量和使用瞬间。 保持真实拍摄质感和商品/服务身份可识别。",
+          "imageComposition": "按开箱、展示、使用、效果感受和购买理由推进。 面向用户本人组织画面主体。",
+          "imageAvoid": "虚假成分对比，夸大功效，违规功效承诺，避免制造身份、外貌、健康或收入焦虑。",
+          "scriptTone": "直接、自然、有体验感，强调效率、颜值、实用和即时反馈。 用明确购买/报名/咨询路径收束。",
+          "storyboardRhythm": "痛点进入、原因解释、解决方案、证据证明、行动引导。按开箱、展示、使用、效果感受和购买理由推进。",
+          "shotImageGlobal": "真实展示商品包装、质地、用量和使用瞬间。 按开箱、展示、使用、效果感受和购买理由推进。",
+          "shotVideoGlobal": "用痛点或反差场景开场,快速指出用户当下困扰。 按开箱、展示、使用、效果感受和购买理由推进。"
+        }
+      }
+    ]
   }
 }
 ```
 
-| 方法 | 路径                                                       | 业务逻辑                                             | 请求                      |
-| ---- | ---------------------------------------------------------- | ---------------------------------------------------- | ------------------------- |
-| GET  | `/api/workspaces/:workspaceId/prompt-requirements`         | 返回当前 proposed 和 approved/current requirements。 | 无                        |
-| POST | `/api/workspaces/:workspaceId/prompt-requirements/propose` | 保存一份待审 requirements。通常不调用 provider。     | `{ data }`                |
-| POST | `/api/workspaces/:workspaceId/prompt-requirements/approve` | 将指定或内联 requirements 置为 approved/current。    | `{ artifactId? , data? }` |
-| POST | `/api/workspaces/:workspaceId/reference-video/import`      | 从参考视频 URL 或上传文件生成 requirements draft，推荐三因子，并创建/覆盖 proposed prompt requirements artifact；不 approve、不进入素材库。仅在 current approved requirements 不存在时可调用。 | JSON `{ source:{ type:"url", url } }` 或 multipart `file` |
+| 方法 | 路径                                                       | 业务逻辑                                                                                                                                                                                        | 请求                                                      |
+| ---- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| GET  | `/api/workspaces/:workspaceId/prompt-requirements`         | 返回当前 proposed 和 approved/current requirements。                                                                                                                                            | 无                                                        |
+| POST | `/api/workspaces/:workspaceId/prompt-requirements/propose` | 保存一份待审 requirements。通常不调用 provider。                                                                                                                                                | `{ data }`                                                |
+| POST | `/api/workspaces/:workspaceId/prompt-requirements/approve` | 将指定或内联 requirements 置为 approved/current。                                                                                                                                               | `{ artifactId? , data? }`                                 |
+| POST | `/api/workspaces/:workspaceId/reference-video/import`      | 从参考视频 URL 或上传文件分析结构并推荐三因子，由后端确定性编译并创建/覆盖 proposed prompt requirements artifact；不 approve、不进入素材库。仅在 current approved requirements 不存在时可调用。 | JSON `{ source:{ type:"url", url } }` 或 multipart `file` |
 
 响应包含：
 
@@ -145,13 +145,6 @@ Reference video import 成功响应形如：
       "downloaded": true,
       "contentType": "video/mp4",
       "sizeBytes": 12345678
-    },
-    "draft": {
-      "image": { "style": "真实电商产品摄影" },
-      "script": { "tone": "直接、可信、卖点清晰" },
-      "storyboard": { "rhythm": "开场快，卖点集中" },
-      "shotImage": { "global": "分镜图保持主体和场景连续" },
-      "shotVideo": { "global": "镜头运动平滑" }
     },
     "analysis": {
       "summary": "参考视频采用快节奏卖点证明结构。",
@@ -186,11 +179,12 @@ Reference video import 成功响应形如：
 
 - 参考视频只用于分析剧本结构、节奏、镜头组织和表达风格。
 - 导入结果会建议 `creativeFactors`，并通过 artifact service 创建或覆盖一条 proposed `prompt_requirements_artifacts`；用户 approve 后才成为下游 current input。
+- 响应不再包含 `draft`；7 项全局提示词字段只从 `artifact.data` 中读取，且由 `creativeFactors + factorGuidance` 编译得到。
 - 参考视频不写 `asset`，不参与 `material-intake.assets[]`。
 - 如果 workspace 已有 current approved requirements，返回 `409 REQUIREMENTS_ALREADY_APPROVED`。
 - URL 只支持可直接下载的视频资源；HTML/平台落地页返回 `REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD`。
 
-`prompt_requirements_artifacts.data` 可携带 `creativeFactors`、`factorGuidance`、`scriptInfluence`、`compiledRequirementSourceMap` 与 `creativeRequirementTemplate`。其中 `creativeRequirementTemplate.status` 为 `applied | customized | detached`：分别表示原样套用模板、基于模板修改了细分字段、或基于模板后又更换了主因子。成片成功后，final video `compiledManifest.creativeTags` 会快照 `creativeFactors` 和 `creativeRequirementTemplate`；登记发布到数据看板时，`campaign_publications.creative_tags` 原样复制这份 tags。
+`prompt_requirements_artifacts.data` 可携带 `creativeFactors`、`factorGuidance`、`scriptInfluence`、`compiledRequirementSourceMap` 与 `creativeRequirementTemplate`。其中 `creativeRequirementTemplate.status` 为 `applied | customized | detached`：分别表示原样套用模板、基于模板修改了细分字段、或基于模板后又更换了主因子。成片成功后，final video `compiledManifest.creativeTags` 会快照 `creativeFactors` 和 `creativeRequirementTemplate`；导入数据面板视频 artifact 或登记发布时，会分别复制到 `dashboard_video_artifacts.creative_tags/creative_factors` 与 `campaign_publications.creative_tags`。
 
 ---
 
@@ -213,27 +207,27 @@ Reference video import 成功响应形如：
 
 `storyboard` 另有局部重写接口：
 
-| 方法 | 路径 | 业务逻辑 |
-| ---- | ---- | -------- |
+| 方法 | 路径                                                        | 业务逻辑                                                                                                                                                                                                                                  |
+| ---- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST | `/api/workspaces/:workspaceId/storyboard/voiceover/propose` | 读取请求中的 15 秒三镜 storyboard draft、current product brief 与 material intake，调用 storyboard agent 只重写 `shots[].voiceover`，写入新的 proposed storyboard artifact。不会修改 current，不会推进 shotprompt；用户仍需显式 approve。 |
 
 `product-brief/propose` 支持商品卖点审核页的自然语言重生成：
 
-| 字段 | 语义 |
-| ---- | ---- |
-| `userDirection` | 商家本次调整要求，trim 后 1-1000 字。普通首次 propose 可省略；带 `draft` 或 `baseArtifactId` 时必填。 |
-| `draft` | 当前页面商品卖点表单草稿，服务端按 `ProductBriefArtifact` schema 校验；用于让模型基于商家已编辑内容改写。 |
+| 字段             | 语义                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `userDirection`  | 商家本次调整要求，trim 后 1-1000 字。普通首次 propose 可省略；带 `draft` 或 `baseArtifactId` 时必填。                                 |
+| `draft`          | 当前页面商品卖点表单草稿，服务端按 `ProductBriefArtifact` schema 校验；用于让模型基于商家已编辑内容改写。                             |
 | `baseArtifactId` | 当前页面来源 product brief artifact id；若提供，服务端校验属于同一 workspace，并写入 `sourceFingerprint.baseProductBriefArtifactId`。 |
 
 该接口只写入新的 proposed `product_brief_artifacts`，不修改 current，不自动 approve，也不推进 storyboard/shotprompt。只有用户批准新的商品卖点后，下游模块才会因 current product brief id 变化出现上游变化提示。
 
 ### 4.2 模块依赖
 
-| 模块              | 上游                                                               | 输出                                                           |
-| ----------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
-| `material-intake` | workspace materials + prompt requirements                          | 物料摘要、选用素材、图像输入描述                               |
-| `product-brief`   | material intake + prompt requirements                              | 产品卖点、受众、语气、约束                                     |
-| `storyboard`      | product brief + material intake + prompt requirements              | 视频结构、节奏、镜头目标                                       |
+| 模块              | 上游                                                               | 输出                                                                                                        |
+| ----------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `material-intake` | workspace materials + prompt requirements                          | 物料摘要、选用素材、图像输入描述                                                                            |
+| `product-brief`   | material intake + prompt requirements                              | 产品卖点、受众、语气、约束                                                                                  |
+| `storyboard`      | product brief + material intake + prompt requirements              | 视频结构、节奏、镜头目标                                                                                    |
 | `shotprompt`      | storyboard + product brief + material intake + prompt requirements | 每个 shot 的时间段、图像要求 `shotImage`、视频要求 `shotVideo`，以及全片统一口播声音策略 `tts.voiceProfile` |
 
 ### 4.3 approve 语义
@@ -254,11 +248,11 @@ Reference video import 成功响应形如：
 
 Shot set 是一次分镜链路实例。它把某个 approved/current shotprompt 固化为一组可生成图像/视频的 shot。
 
-| 方法 | 路径                                                      | 业务逻辑                                                                           | 请求                         |
-| ---- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------- |
-| GET  | `/api/workspaces/:workspaceId/shot-sets`                  | 列出工作区当前 active shot set；归档实例不作为商家工作台可打开资源返回。           | 无                           |
-| POST | `/api/workspaces/:workspaceId/shot-sets`                  | 将当前 approved shotprompt apply 为新的 active shot set；旧 active shot set 归档。 | `{ shotPromptArtifactId? }`  |
-| GET  | `/api/workspaces/:workspaceId/shots`                      | 便捷接口：返回 active shot set 的 shots。                                          | 无                           |
+| 方法 | 路径                                     | 业务逻辑                                                                           | 请求                        |
+| ---- | ---------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------- |
+| GET  | `/api/workspaces/:workspaceId/shot-sets` | 列出工作区当前 active shot set；归档实例不作为商家工作台可打开资源返回。           | 无                          |
+| POST | `/api/workspaces/:workspaceId/shot-sets` | 将当前 approved shotprompt apply 为新的 active shot set；旧 active shot set 归档。 | `{ shotPromptArtifactId? }` |
+| GET  | `/api/workspaces/:workspaceId/shots`     | 便捷接口：返回 active shot set 的 shots。                                          | 无                          |
 
 `GET /api/workspaces/:workspaceId/shot-sets` 返回的分镜链路实例包含 `shotCount` 与 `upstream`。`shotCount` 表示该 active 实例下的分镜脚本数量；`upstream.upstreamChanged` 表示该实例是否仍来自当前生效的分镜生成要求。归档实例的 shots、候选图、候选视频和选择记录保留在数据库中，但不提供商家工作台读取或操作入口。
 
@@ -274,10 +268,10 @@ apply 行为：
 
 Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。它服务于后续 image prompt / video script 的 prompt assembly，不自动触发重跑。
 
-| 方法 | 路径                           | 业务逻辑                                                                                           | 请求                                      |
-| ---- | ------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| GET  | `/api/shots/:shotId/asset-refs` | 列出 shot 当前素材引用，包含 `assetId`、`role`、`weight`、`position`，工作区素材应回填 `ref` / `url`。 | 无                                        |
-| PATCH | `/api/shots/:shotId/asset-refs` | 用请求体顺序替换当前 active shot 的素材引用，`position` 由数组顺序决定；不重跑下游链路。             | `{ refs: [{ assetId, role, weight? }] }` |
+| 方法  | 路径                            | 业务逻辑                                                                                               | 请求                                     |
+| ----- | ------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| GET   | `/api/shots/:shotId/asset-refs` | 列出 shot 当前素材引用，包含 `assetId`、`role`、`weight`、`position`，工作区素材应回填 `ref` / `url`。 | 无                                       |
+| PATCH | `/api/shots/:shotId/asset-refs` | 用请求体顺序替换当前 active shot 的素材引用，`position` 由数组顺序决定；不重跑下游链路。               | `{ refs: [{ assetId, role, weight? }] }` |
 
 `role` 固定为 `product_identity | reference_style | reference_scene | first_frame_hint | other`。服务端需要校验 shot 属于当前 active shot set，且 asset 属于同一 workspace 素材库或已存在 asset。历史 `shot set apply` 可继续读取 shotprompt 里的 `referenceAssetRefs` 初始化引用，但用户编辑后的行应按上述枚举归一。
 
@@ -285,14 +279,14 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 
 ## 6. 分镜图像链路
 
-| 方法 | 路径                                                                 | 业务逻辑                                                                                                                                                                                                                        | 请求                                                |
-| ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| GET  | `/api/shots/:shotId`                                                 | 返回单个 shot、requirements、active prompt/script、当前选择、下一步建议。                                                                                                                                                       | 无                                                  |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`   | 后端确定性装配分镜图 prompt。第一块读取当前 shot 的 `providerPrompt` 作为“镜头目标”，第二块读取 `shotImage` 的场景、构图、光线、商品呈现、参考图使用和负向约束；不再调用二次创意 agent。写 ACTIVE `image_prompt_artifacts`、保存 deterministic assembly metadata，并创建图像 batch。候选数量由 `candidateCount` 或服务端默认值决定，宽高比由当前 shotprompt 决定。 | `{ userDirection?, candidateCount? }` |
+| 方法 | 路径                                                                  | 业务逻辑                                                                                                                                                                                                                                                                                                                                                                                                                           | 请求                                                                           |
+| ---- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| GET  | `/api/shots/:shotId`                                                  | 返回单个 shot、requirements、active prompt/script、当前选择、下一步建议。                                                                                                                                                                                                                                                                                                                                                          | 无                                                                             |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`    | 后端确定性装配分镜图 prompt。第一块读取当前 shot 的 `providerPrompt` 作为“镜头目标”，第二块读取 `shotImage` 的场景、构图、光线、商品呈现、参考图使用和负向约束；不再调用二次创意 agent。写 ACTIVE `image_prompt_artifacts`、保存 deterministic assembly metadata，并创建图像 batch。候选数量由 `candidateCount` 或服务端默认值决定，宽高比由当前 shotprompt 决定。                                                                 | `{ userDirection?, candidateCount? }`                                          |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | 用户必须在最新 image round 的成功候选卡上填写文字反馈。服务端校验 `feedbackImageCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotImage` 和 `userDirection` 确定性装配新 prompt，写新的 ACTIVE `image_prompt_artifacts(created_by='user', base_artifact_id=...)` 和新的 image batch，不清空当前 `selected_image_id`。Seedream 图片输入顺序为：反馈候选图、本镜素材图、上一镜 selected image。 | `{ baseArtifactId, feedbackImageCandidateId, userDirection, candidateCount? }` |
-| GET  | `/api/shots/:shotId/image-prompts`                                   | 列出该 shot 的图像 prompt artifacts。                                                                                                                                                                                           | 无                                                  |
-| GET  | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds`            | 按 prompt artifact 聚合图像生成轮次、候选和当前选择；即使当前选择来自旧轮次，也会返回 current selection；每个 round 返回 `upstream`，提示该轮 prompt 是否基于旧上游。                                                                                                                                                                           | 无                                                  |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | 选择一张候选图。UPSERT `image_select_artifacts`，不 stale 其他候选。                                                                                                                                                            | `{ candidateId \| imageCandidateId, imageGenerationBatchId? }` |
+| GET  | `/api/shots/:shotId/image-prompts`                                    | 列出该 shot 的图像 prompt artifacts。                                                                                                                                                                                                                                                                                                                                                                                              | 无                                                                             |
+| GET  | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds`             | 按 prompt artifact 聚合图像生成轮次、候选和当前选择；即使当前选择来自旧轮次，也会返回 current selection；每个 round 返回 `upstream`，提示该轮 prompt 是否基于旧上游。                                                                                                                                                                                                                                                              | 无                                                                             |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select`  | 选择一张候选图。UPSERT `image_select_artifacts`，不 stale 其他候选。                                                                                                                                                                                                                                                                                                                                                               | `{ candidateId \| imageCandidateId, imageGenerationBatchId? }`                 |
 
 图像 provider 请求只允许图片类参考输入。`shot_asset_refs` 中的视频素材仍可用于分镜语义、场景说明和后续视频脚本，但在没有关键帧/海报帧提取产物前，服务端必须过滤掉 `.mp4` 等非图片素材，不能把其字节作为 Seedream `image` 字段发送。
 
@@ -308,13 +302,13 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 
 ## 7. 分镜视频链路
 
-| 方法 | 路径                                                                 | 业务逻辑                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 请求                                                |
-| ---- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose`   | 后端确定性装配分镜视频 prompt。`providerPrompt` 只作为镜头目标上下文，执行约束来自 `shotVideo`、当前 selected image 首帧、下一镜 selected image 尾帧（末镜为空）、duration、voiceover 和 `tts.voiceProfile`；不再调用二次创意 agent。写 ACTIVE `video_script_artifacts` 后**异步**入队每候选一个 `generate_video_candidate` job，立即返回 PENDING batch + PENDING candidates，shot 进入 `VIDEO_GENERATING`；客户端轮询 `video-rounds` 直到 `VIDEO_CANDIDATES_READY`。Seedance 返回临时 mp4 后候选先进入 `PERSISTING`，可通过 `previewVideoUrl` 临时预览，但仍不可选择或成片。 | `{ userDirection?, candidateCount? }` |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate` | 用户必须在最新 video round 的成功候选卡上填写文字反馈。服务端校验 `feedbackVideoCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotVideo`、首尾帧、duration、voiceover 和 voice profile 确定性装配新 video script artifact 与 video batch。反馈视频候选只记录为反馈对象和 trace，不作为 provider 视频输入；不清空当前 `selected_video_id`。 | `{ baseArtifactId, feedbackVideoCandidateId, userDirection, candidateCount? }` |
-| GET  | `/api/shots/:shotId/video-scripts`                                   | 列出该 shot 的视频脚本 artifacts。                                                                                                                                                                                                                                                                                                                                                                                                                               | 无                                                  |
-| GET  | `/api/workspaces/:workspaceId/shots/:shotId/video-rounds`            | 按 video script artifact 聚合视频生成轮次、候选和当前选择；每个 round 返回 `upstream`，提示该轮视频脚本是否基于旧上游或旧首尾帧。候选额外返回 `previewVideoUrl/providerTaskId/providerReadyAt/persistStatus`，其中 `PERSISTING` 表示 provider 已出片、正在保存素材，batch 仍未完成。                                                                                                                                            | 无                                                  |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | 选择一个候选视频。只接受 `SUCCEEDED` 且已有 stable `videoUrl/objectKey` 的候选；`PERSISTING` 的临时 provider URL 只用于预览，不能写选择或成片。UPSERT `video_select_artifacts`，不 stale 其他候选。                                                                                                                                                                                                 | `{ candidateId \| videoCandidateId, videoGenerationBatchId? }` |
+| 方法 | 路径                                                                  | 业务逻辑                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 请求                                                                           |
+| ---- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose`    | 后端确定性装配分镜视频 prompt。`providerPrompt` 只作为镜头目标上下文，执行约束来自 `shotVideo`、当前 selected image 首帧、下一镜 selected image 尾帧（末镜为空）、duration、voiceover 和 `tts.voiceProfile`；不再调用二次创意 agent。写 ACTIVE `video_script_artifacts` 后**异步**入队每候选一个 `generate_video_candidate` job，立即返回 PENDING batch + PENDING candidates，shot 进入 `VIDEO_GENERATING`；客户端轮询 `video-rounds` 直到 `VIDEO_CANDIDATES_READY`。Seedance 返回临时 mp4 后候选先进入 `PERSISTING`，可通过 `previewVideoUrl` 临时预览，但仍不可选择或成片。 | `{ userDirection?, candidateCount? }`                                          |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate` | 用户必须在最新 video round 的成功候选卡上填写文字反馈。服务端校验 `feedbackVideoCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotVideo`、首尾帧、duration、voiceover 和 voice profile 确定性装配新 video script artifact 与 video batch。反馈视频候选只记录为反馈对象和 trace，不作为 provider 视频输入；不清空当前 `selected_video_id`。                                                                                                                                                                                               | `{ baseArtifactId, feedbackVideoCandidateId, userDirection, candidateCount? }` |
+| GET  | `/api/shots/:shotId/video-scripts`                                    | 列出该 shot 的视频脚本 artifacts。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 无                                                                             |
+| GET  | `/api/workspaces/:workspaceId/shots/:shotId/video-rounds`             | 按 video script artifact 聚合视频生成轮次、候选和当前选择；每个 round 返回 `upstream`，提示该轮视频脚本是否基于旧上游或旧首尾帧。候选额外返回 `previewVideoUrl/providerTaskId/providerReadyAt/persistStatus`，其中 `PERSISTING` 表示 provider 已出片、正在保存素材，batch 仍未完成。                                                                                                                                                                                                                                                                                          | 无                                                                             |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select`  | 选择一个候选视频。只接受 `SUCCEEDED` 且已有 stable `videoUrl/objectKey` 的候选；`PERSISTING` 的临时 provider URL 只用于预览，不能写选择或成片。UPSERT `video_select_artifacts`，不 stale 其他候选。                                                                                                                                                                                                                                                                                                                                                                           | `{ candidateId \| videoCandidateId, videoGenerationBatchId? }`                 |
 
 视频脚本 propose 前置条件与一致性约束：
 
@@ -331,9 +325,9 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 
 ## 8. 重试与批次
 
-| 方法    | 路径                                                | 业务逻辑                                                                 | 请求                   |
-| ------- | --------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------- | ---------------- |
-| POST 🔑 | `/api/shots/:shotId/retry`                          | 对当前 active image prompt 或 video script 重新创建 batch。              | `{ what: "image_batch" | "video_batch" }` |
+| 方法    | 路径                                                | 业务逻辑                                                                                                                                                 | 请求                   |
+| ------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------- |
+| POST 🔑 | `/api/shots/:shotId/retry`                          | 对当前 active image prompt 或 video script 重新创建 batch。                                                                                              | `{ what: "image_batch" | "video_batch" }` |
 | GET     | `/api/workspaces/:workspaceId/shot-workflow-status` | 返回当前 active shot set 的整体状态、每个 shot 的候选/选择状态、是否可合成；不会混入 archived shot set rows；尚未生成 active shot set 时返回空 `shots`。 | 无                     |
 
 retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部创建 batch，可以由服务端生成幂等键。
@@ -344,11 +338,11 @@ retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部�
 
 ## 9. 分镜图自动选择任务
 
-| 方法    | 路径                                                            | 业务逻辑                                                                                                                                       | 请求                 |
-| ------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| POST 🔑 | `/api/workspaces/:workspaceId/shot-image-auto-selections`       | 启动“批量生成并选择分镜图”任务。按当前 active shot set 顺序推进，已有 selected image 的镜头跳过；未选择的镜头生成 image batch，batch 完成后选择首个 `SUCCEEDED` 且已有 stable URL 的候选图。同一 workspace 同时只允许一个运行中任务。 | `{ candidateCount? }` |
-| GET     | `/api/shot-image-auto-selections/:jobId`                        | 返回自动选图任务状态、当前阶段、阶段状态、候选数量、错误信息。                                                                                 | 无                   |
-| GET     | `/api/workspaces/:workspaceId/shot-image-auto-selections`       | 列出最近自动选图任务，供刷新恢复运行中、失败或完成状态。                                                                                       | 无                   |
+| 方法    | 路径                                                      | 业务逻辑                                                                                                                                                                                                                              | 请求                  |
+| ------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| POST 🔑 | `/api/workspaces/:workspaceId/shot-image-auto-selections` | 启动“批量生成并选择分镜图”任务。按当前 active shot set 顺序推进，已有 selected image 的镜头跳过；未选择的镜头生成 image batch，batch 完成后选择首个 `SUCCEEDED` 且已有 stable URL 的候选图。同一 workspace 同时只允许一个运行中任务。 | `{ candidateCount? }` |
+| GET     | `/api/shot-image-auto-selections/:jobId`                  | 返回自动选图任务状态、当前阶段、阶段状态、候选数量、错误信息。                                                                                                                                                                        | 无                    |
+| GET     | `/api/workspaces/:workspaceId/shot-image-auto-selections` | 列出最近自动选图任务，供刷新恢复运行中、失败或完成状态。                                                                                                                                                                              | 无                    |
 
 自动选图任务只处理分镜图，不生成分镜视频，不触发 final compose，也不写创作要求 artifact。自动选择策略固定为 `first_success`：按 `providerResponse.candidateIndex` 和创建时间排序，选择首个成功且有稳定 `imageUrl` 的候选。若 batch `SUCCEEDED/PARTIAL/FAILED` 后仍没有可选成功候选，任务失败并保留此前已完成的选择。
 
@@ -356,15 +350,25 @@ retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部�
 
 ## 10. 成片 Final Video
 
-| 方法    | 路径                                                              | 业务逻辑                                                                                             | 请求                                 |
-| ------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 方法    | 路径                                                              | 业务逻辑                                                                                                                                                                                                                                                                                                                 | 请求                                                                                      |
+| ------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | POST 🔑 | `/api/workspaces/:workspaceId/one-click-final-videos`             | 从素材解读审核页独立启动全自动一键成片。请求内 `materialIntake.data` 先被批准为 current，然后自动执行 product-brief propose/approve、storyboard propose/approve、shotprompt propose/approve、shot-set apply、逐分镜图生成/自动选择、分镜视频生成/自动选择和 final compose。同一 workspace 同时只允许一个运行中一键任务。 | `{ materialIntake:{ data }, outputAspectRatio?, autoSelectionStrategy?:"first_success" }` |
-| GET     | `/api/one-click-final-videos/:jobId`                              | 返回一键成片任务状态、当前阶段、阶段状态、中间 artifact/shot set/final job id 和错误信息。           | 无                                   |
-| GET     | `/api/workspaces/:workspaceId/one-click-final-videos`             | 列出最近一键成片任务，供刷新恢复运行中、失败或完成状态。                                             | 无                                   |
-| POST 🔑 | `/api/workspaces/:workspaceId/final-videos`                       | 基于 active shot set 的当前 `video_select_artifacts` 创建成片任务。缺选择返回 `MISSING_SELECTIONS`。 | `{ outputAspectRatio? }` |
-| GET     | `/api/final-videos/:finalVideoJobId`                              | 返回成片作业状态。                                                                                   | 无                                   |
-| GET     | `/api/workspaces/:workspaceId/final-videos`                       | 列出最近成片作业。                                                                                   | 无                                   |
-| GET     | `/api/workspaces/:workspaceId/final-videos/:finalVideoJobId/file` | 流式返回成片文件。未完成返回 `NOT_READY`。                                                           | 无                                   |
+| GET     | `/api/one-click-final-videos/:jobId`                              | 返回一键成片任务状态、当前阶段、阶段状态、中间 artifact/shot set/final job id 和错误信息。                                                                                                                                                                                                                               | 无                                                                                        |
+| GET     | `/api/workspaces/:workspaceId/one-click-final-videos`             | 列出最近一键成片任务，供刷新恢复运行中、失败或完成状态。                                                                                                                                                                                                                                                                 | 无                                                                                        |
+| POST 🔑 | `/api/workspaces/:workspaceId/final-videos`                       | 基于 active shot set 的当前 `video_select_artifacts` 创建成片任务。缺选择返回 `MISSING_SELECTIONS`。                                                                                                                                                                                                                     | `{ outputAspectRatio? }`                                                                  |
+| GET     | `/api/final-videos/:finalVideoJobId`                              | 返回成片作业状态。                                                                                                                                                                                                                                                                                                       | 无                                                                                        |
+| GET     | `/api/workspaces/:workspaceId/final-videos`                       | 列出最近成片作业。                                                                                                                                                                                                                                                                                                       | 无                                                                                        |
+| GET     | `/api/workspaces/:workspaceId/final-videos/:finalVideoJobId/file` | 流式返回成片文件。未完成返回 `NOT_READY`。                                                                                                                                                                                                                                                                               | 无                                                                                        |
+
+### 10.1 数据面板视频 Artifact
+
+| 方法 | 路径                                                        | 业务逻辑                                                                                                                                                                                                           | 请求                        |
+| ---- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| POST | `/api/workspaces/:workspaceId/dashboard/videos`             | 将已完成成片导入数据面板视频 artifact。后端校验成片属于当前 workspace 且 `status=SUCCEEDED`、已有 `localUrl`，然后快照成片 URL、名称、导入时间、时长、宽高、`compiledManifest.creativeTags` 与 `creativeFactors`。 | `{ finalVideoJobId, name }` |
+| GET  | `/api/workspaces/:workspaceId/dashboard/videos`             | 列出数据面板视频 artifact，供看板左侧“视频列表”渲染 metadata。                                                                                                                                                     | 无                          |
+| GET  | `/api/workspaces/:workspaceId/dashboard/videos/:artifactId` | 获取单个数据面板视频 artifact。                                                                                                                                                                                    | 无                          |
+
+当前后端不计算 CTR、3 秒留存、完播率、CVR、ROAS、GMV 或漏斗；这些投放效果指标不能从成片 artifact 推导。P0 看板的视频列表读取 `dashboard_video_artifacts`，诊断指标可以由前端样例 JSON 承载，后续接入真实投放数据时再由 campaign publication metrics 聚合。
 
 一键成片与手动审核链路是两个独立入口：素材解读页的“批准素材解读并生成商品卖点”仍只批准素材解读并生成商品卖点草稿；右侧“全自动一键成片”调用一键成片 API，不复用前端手动链路 mutation。自动候选选择策略固定为首个 `SUCCEEDED` 且已有 stable URL 的候选；视频候选处于 `PERSISTING` 时继续等待，不写选择。自动选择写 `selected_by='system:auto-one-click'`。任务失败后保留已批准 artifact、候选、选择和成片作业事实，用户可回到对应步骤手动继续。
 
@@ -414,19 +418,19 @@ trace 必须能回答 agent 链路调试问题：
 
 ## 14. 常见错误码
 
-| HTTP | code                                     | 触发                                                                       |
-| ---- | ---------------------------------------- | -------------------------------------------------------------------------- |
-| 400  | `IDEMPOTENCY_KEY_REQUIRED`               | 🔑 接口缺 `Idempotency-Key`                                                |
-| 400  | `NO_CURRENT_APPROVED_ARTIFACT`           | 下游模块缺少所需上游 current approved artifact                             |
-| 400  | `NO_ACTIVE_SHOT_SET`                     | shot 级操作前尚未 apply shot set                                           |
-| 400  | `IMAGE_SELECTION_INCOMPLETE`             | 视频脚本或成片前仍有 shot 缺少 selected image                              |
-| 400  | `INVALID_PROVIDER_DURATION`              | 单个候选视频时长不满足 provider 限制                                       |
+| HTTP | code                                     | 触发                                                                           |
+| ---- | ---------------------------------------- | ------------------------------------------------------------------------------ |
+| 400  | `IDEMPOTENCY_KEY_REQUIRED`               | 🔑 接口缺 `Idempotency-Key`                                                    |
+| 400  | `NO_CURRENT_APPROVED_ARTIFACT`           | 下游模块缺少所需上游 current approved artifact                                 |
+| 400  | `NO_ACTIVE_SHOT_SET`                     | shot 级操作前尚未 apply shot set                                               |
+| 400  | `IMAGE_SELECTION_INCOMPLETE`             | 视频脚本或成片前仍有 shot 缺少 selected image                                  |
+| 400  | `INVALID_PROVIDER_DURATION`              | 单个候选视频时长不满足 provider 限制                                           |
 | 400  | `UPSTREAM_STORYBOARD_NOT_P0`             | 分镜生成要求或 shot set apply 前，current approved storyboard 不是 P0 三镜脚本 |
-| 404  | `NOT_FOUND`                              | 工作区、artifact、shot、candidate 等不存在                                 |
-| 404  | `NOT_READY`                              | 成片文件尚未生成                                                           |
-| 400  | `INVALID_ASSET_REF`                      | shot 素材引用指向不存在或不属于当前 workspace 的 asset                     |
-| 400  | `SHOT_NOT_IN_ACTIVE_SET`                 | 对 archived shot 或非 active shot set 的 shot 执行链路/素材引用操作        |
-| 409  | `STORAGE_ALREADY_BOUND`                  | 工作区已有 active storage                                                  |
-| 409  | `CANDIDATE_NOT_SELECTABLE`               | candidate 不属于当前 shot/workspace 或未成功                               |
-| 409  | `MISSING_SELECTIONS`                     | 成片时 active shot set 存在未选定视频                                      |
-| 409  | `UPSTREAM_CHANGED_CONFIRMATION_REQUIRED` | 若接口选择强制二次确认，可在用户明确覆盖时使用；默认查询只返回提示，不报错 |
+| 404  | `NOT_FOUND`                              | 工作区、artifact、shot、candidate 等不存在                                     |
+| 404  | `NOT_READY`                              | 成片文件尚未生成                                                               |
+| 400  | `INVALID_ASSET_REF`                      | shot 素材引用指向不存在或不属于当前 workspace 的 asset                         |
+| 400  | `SHOT_NOT_IN_ACTIVE_SET`                 | 对 archived shot 或非 active shot set 的 shot 执行链路/素材引用操作            |
+| 409  | `STORAGE_ALREADY_BOUND`                  | 工作区已有 active storage                                                      |
+| 409  | `CANDIDATE_NOT_SELECTABLE`               | candidate 不属于当前 shot/workspace 或未成功                                   |
+| 409  | `MISSING_SELECTIONS`                     | 成片时 active shot set 存在未选定视频                                          |
+| 409  | `UPSTREAM_CHANGED_CONFIRMATION_REQUIRED` | 若接口选择强制二次确认，可在用户明确覆盖时使用；默认查询只返回提示，不报错     |

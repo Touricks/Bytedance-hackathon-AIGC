@@ -23,6 +23,7 @@ tags:
   - name: ShotSet
   - name: Shot
   - name: Generation
+  - name: Dashboard
   - name: Campaign
   - name: Trace
 
@@ -45,6 +46,11 @@ components:
       schema: { type: string }
     PublicationId:
       name: publicationId
+      in: path
+      required: true
+      schema: { type: string }
+    DashboardVideoArtifactId:
+      name: artifactId
       in: path
       required: true
       schema: { type: string }
@@ -155,9 +161,12 @@ components:
         productBriefArtifactId: { type: string }
         storyboardArtifactId: { type: string }
         baseStoryboardArtifactId:
-          { type: string, nullable: true, description: storyboard 局部重写所基于的原 artifact。 }
-        rewriteKind:
-          { type: string, description: 局部重写类型，例如 voiceover。 }
+          {
+            type: string,
+            nullable: true,
+            description: storyboard 局部重写所基于的原 artifact。
+          }
+        rewriteKind: { type: string, description: 局部重写类型，例如 voiceover。 }
         shotPromptArtifactId: { type: string }
         shotSetId: { type: string }
 
@@ -168,11 +177,7 @@ components:
         Prompt 组装元数据。workspace module artifact 记录 subject/contract 模板 id
         与 hash；逐 shot image/video artifact 由后端确定性 assembler 装配，通常只
         记录 moduleId、assemblerVersion、source、mode。
-      required:
-        [
-          moduleId,
-          assemblerVersion
-        ]
+      required: [moduleId, assemblerVersion]
       properties:
         moduleId:
           type: string
@@ -356,13 +361,41 @@ components:
           shotVideoGlobal
         ]
       properties:
-        imageStyle: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
-        imageComposition: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
-        imageAvoid: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
-        scriptTone: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
-        storyboardRhythm: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
-        shotImageGlobal: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
-        shotVideoGlobal: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        imageStyle:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
+        imageComposition:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
+        imageAvoid:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
+        scriptTone:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
+        storyboardRhythm:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
+        shotImageGlobal:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
+        shotVideoGlobal:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CompiledRequirementSource" }
+          }
 
     CreativeRequirementTemplateSource:
       type: object
@@ -549,14 +582,25 @@ components:
 
     ReferenceVideoImportResult:
       type: object
-      required: [source, draft, analysis]
+      required: [source, analysis, creativeFactorsRecommendation, artifact]
       properties:
         source:
           $ref: "#/components/schemas/ReferenceVideoImportSource"
-        draft:
-          $ref: "#/components/schemas/PromptRequirementData"
         analysis:
           $ref: "#/components/schemas/ReferenceVideoImportAnalysis"
+        creativeFactorsRecommendation:
+          type: object
+          additionalProperties: false
+          required: [recommendedFactors, confidence]
+          properties:
+            recommendedFactors:
+              $ref: "#/components/schemas/CreativeFactors"
+            confidence: { type: string, enum: [low, medium, high] }
+            reasons:
+              type: array
+              items: { type: string }
+        artifact:
+          $ref: "#/components/schemas/ModuleArtifact"
 
     ProposeRequest:
       type: object
@@ -836,13 +880,7 @@ components:
         role:
           type: string
           enum:
-            [
-              product_identity,
-              reference_style,
-              reference_scene,
-              first_frame_hint,
-              other
-            ]
+            [product_identity, reference_style, reference_scene, first_frame_hint, other]
         weight: { type: number, default: 1 }
         position: { type: integer, minimum: 0 }
         ref: { type: string }
@@ -1279,9 +1317,72 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    ImportDashboardVideoRequest:
+      type: object
+      required: [finalVideoJobId, name]
+      additionalProperties: false
+      properties:
+        finalVideoJobId:
+          type: string
+          minLength: 1
+          description: 必须属于当前 workspace，且成片作业 status=SUCCEEDED、已有 localUrl。
+        name:
+          type: string
+          minLength: 1
+          description: 数据面板视频展示名称。
+
+    DashboardVideoArtifact:
+      type: object
+      required:
+        [
+          id,
+          workspaceId,
+          name,
+          localUrl,
+          creativeTags,
+          metadata,
+          importedAt,
+          createdAt,
+          updatedAt
+        ]
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        finalVideoJobId: { type: string, nullable: true }
+        name: { type: string }
+        localUrl:
+          type: string
+          description: 成片 stable API URL。
+        durationSec: { type: integer, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        creativeTags:
+          $ref: "#/components/schemas/CreativeTags"
+        creativeFactors:
+          anyOf:
+            - $ref: "#/components/schemas/CreativeFactors"
+            - type: "null"
+        metadata:
+          type: object
+          additionalProperties: true
+          description: final video manifest hash、完成时间和来源候选/脚本 id 等快照。
+        importedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
     OneClickFinalVideoJob:
       type: object
-      required: [id, workspaceId, status, currentStage, autoSelectionStrategy, outputAspectRatio, createdAt, updatedAt]
+      required:
+        [
+          id,
+          workspaceId,
+          status,
+          currentStage,
+          autoSelectionStrategy,
+          outputAspectRatio,
+          createdAt,
+          updatedAt
+        ]
       properties:
         id: { type: string }
         workspaceId: { type: string }
@@ -1323,7 +1424,17 @@ components:
 
     ShotImageAutoSelectionJob:
       type: object
-      required: [id, workspaceId, status, currentStage, candidateCount, autoSelectionStrategy, createdAt, updatedAt]
+      required:
+        [
+          id,
+          workspaceId,
+          status,
+          currentStage,
+          candidateCount,
+          autoSelectionStrategy,
+          createdAt,
+          updatedAt
+        ]
       properties:
         id: { type: string }
         workspaceId: { type: string }
@@ -1818,11 +1929,11 @@ paths:
   /api/workspaces/{workspaceId}/reference-video/import:
     post:
       tags: [ModuleArtifacts]
-      summary: 从参考视频导入 prompt requirements 草稿
+      summary: 从参考视频推荐创作因子并创建 prompt requirements 草稿
       description: >
-        只生成 requirements draft 并返回给前端填表；不会创建 prompt_requirements_artifacts、
-        不会 approve requirements，也不会把参考视频登记到素材库。仅当 workspace 尚无
-        current approved prompt requirements 时可调用。
+        模型只返回参考视频分析和三因子推荐；后端用推荐因子确定性编译 prompt requirements，
+        创建或覆盖 proposed prompt_requirements_artifacts。不会 approve requirements，也不会把
+        参考视频登记到素材库。仅当 workspace 尚无 current approved prompt requirements 时可调用。
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       requestBody:
@@ -1841,7 +1952,7 @@ paths:
                   format: binary
       responses:
         "200":
-          description: Reference video requirements draft
+          description: Reference video factor recommendation and proposed requirements artifact
           content:
             application/json:
               schema:
@@ -2968,6 +3079,71 @@ paths:
               schema:
                 type: string
                 format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/dashboard/videos:
+    get:
+      tags: [Dashboard]
+      summary: 列出数据面板视频 artifact
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Dashboard video artifacts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DashboardVideoArtifact"
+    post:
+      tags: [Dashboard]
+      summary: 导入已完成成片为数据面板视频 artifact
+      description: >
+        后端校验 finalVideoJobId 属于当前 workspace，且成片作业 status=SUCCEEDED、已有 localUrl。
+        成功后快照成片 URL、名称、导入时间、时长、宽高、creativeTags 与 creativeFactors。
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportDashboardVideoRequest"
+      responses:
+        "200":
+          description: Dashboard video artifact
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DashboardVideoArtifact"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/workspaces/{workspaceId}/dashboard/videos/{artifactId}:
+    get:
+      tags: [Dashboard]
+      summary: 获取单个数据面板视频 artifact
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/DashboardVideoArtifactId"
+      responses:
+        "200":
+          description: Dashboard video artifact
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DashboardVideoArtifact"
         "404":
           $ref: "#/components/responses/Error"
 

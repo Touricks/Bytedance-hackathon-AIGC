@@ -194,3 +194,4 @@ When context is compacted or a new agent joins, use these files to regain the pr
 - 当完成修复issues时，检查docs/core/中的架构/接口/prompt链路文件是否需要更新
 - 使用$diagnose诊断时，将issue总结并写入docs/issues/P0
 - 前端基于apps/web/进行开发
+- 前端页面单文件代码控制在400行之内

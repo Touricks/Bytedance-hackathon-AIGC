@@ -41,6 +41,7 @@ erDiagram
     creative_workspace ||--o{ image_generation_batches : "image jobs"
     creative_workspace ||--o{ video_generation_batches : "video jobs"
     creative_workspace ||--o{ final_video_jobs : "compose jobs"
+    creative_workspace ||--o{ dashboard_video_artifacts : "dashboard videos"
     creative_workspace ||--o{ one_click_final_video_jobs : "one-click jobs"
     creative_workspace ||--o{ shot_image_auto_selection_jobs : "shot image auto-selection jobs"
     creative_workspace ||--o{ generation_jobs : "queue jobs"
@@ -74,6 +75,7 @@ erDiagram
     shot_sets ||--o{ shot_image_auto_selection_jobs : "image selection scope"
     one_click_final_video_jobs }o--o| material_intake_artifacts : "approved start"
     one_click_final_video_jobs }o--o| final_video_jobs : "compose result"
+    final_video_jobs ||--o{ dashboard_video_artifacts : "imported to dashboard"
     final_video_jobs ||--o{ campaign_publications : "published as"
     campaign_publications ||--o{ campaign_publication_metrics : "metrics"
 
@@ -355,6 +357,23 @@ erDiagram
         timestamptz updated_at
     }
 
+    dashboard_video_artifacts {
+        text id PK
+        text workspace_id FK
+        text final_video_job_id FK
+        text name
+        text local_url
+        int duration_sec
+        int width
+        int height
+        jsonb creative_tags
+        jsonb creative_factors
+        jsonb metadata
+        timestamptz imported_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     one_click_final_video_jobs {
         text id PK
         text workspace_id FK
@@ -605,7 +624,7 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 当 active shot set 变化后，旧 final video job 不失效；它仍然指向创建时的 shot set。
 
-登记发布到数据看板时，`campaign_publications.creative_tags` 原样复制对应 `final_video_jobs.compiled_manifest.creativeTags`；未绑定成片的发布记录该字段为空对象。
+导入数据面板视频列表时，`dashboard_video_artifacts` 快照对应成片的名称、URL、导入时间、时长/宽高、`creative_tags` 与解析后的 `creative_factors`。登记发布到数据看板投放聚合时，`campaign_publications.creative_tags` 原样复制对应 `final_video_jobs.compiled_manifest.creativeTags`；未绑定成片的发布记录该字段为空对象。
 
 ---
 

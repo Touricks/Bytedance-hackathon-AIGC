@@ -1,5 +1,7 @@
-import { Download, Play } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Download, Play, UploadCloud } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
+import { importDashboardVideoArtifact } from "../../../lib/api/dashboardVideoArtifacts.js";
 import { finalVideoDownloadUrl } from "../../../lib/api/finalVideo.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import { statusTone } from "../reviewFlow.js";
@@ -23,6 +25,34 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
     : null;
   const finalUrl = job?.localUrl ? toAbsoluteAssetUrl(job.localUrl) : null;
   const downloadUrl = finalUrl ? finalVideoDownloadUrl(finalUrl) : null;
+  const defaultImportName = job?.id ? `final-video-${job.id}` : "";
+  const [importName, setImportName] = useState(defaultImportName);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+
+  useEffect(() => {
+    setImportName(defaultImportName);
+    setImportMessage(null);
+  }, [defaultImportName]);
+
+  async function handleImportDashboard(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!job?.id || !finalUrl || !importName.trim()) return;
+    setImportMessage(null);
+    setIsImporting(true);
+    try {
+      await importDashboardVideoArtifact(vm.workspaceId, {
+        finalVideoJobId: job.id,
+        name: importName.trim(),
+      });
+      setImportMessage("已导入数据面板");
+    } catch (error) {
+      setImportMessage(error instanceof Error ? error.message : "导入数据面板失败");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   return (
     <section className="review-panel">
       <div className="review-panel__header">
@@ -72,6 +102,24 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
                 <Download size={14} />
                 下载 MP4
               </a>
+              <form className="review-final-import" onSubmit={handleImportDashboard}>
+                <label>
+                  <span>成片名称</span>
+                  <input
+                    value={importName}
+                    onChange={(event) => setImportName(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="review-secondary"
+                  disabled={isImporting || !importName.trim()}
+                >
+                  <UploadCloud size={14} />
+                  {isImporting ? "正在导入..." : "导入数据面板"}
+                </button>
+                {importMessage ? <p>{importMessage}</p> : null}
+              </form>
             </>
           ) : (
             <p className="review-muted">成片任务仍在处理中。</p>

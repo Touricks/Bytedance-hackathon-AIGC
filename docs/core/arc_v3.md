@@ -123,6 +123,7 @@ V3 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module �
 | video generation | `video_generation_batches` + `video_candidates` | per-round 候选事实；视频候选可处于 provider 已出片但 stable 保存中的 `PERSISTING`。 |
 | video-select     | `video_select_artifacts`                        | 每 shot current-only；UPSERT 覆盖当前选择。                  |
 | final-compose    | `final_video_jobs`                              | 每次 compose 一条 job。                                      |
+| dashboard-video  | `dashboard_video_artifacts`                     | 导入数据面板的视频 metadata 与成片生成因子快照。             |
 | campaign         | `campaign_publications` + `campaign_publication_metrics` | 发布记录复制成片创作标签，指标只绑定 publication。 |
 | one-click-final-video | `one_click_final_video_jobs`               | 每次一键成片一条 orchestrator job；同一 workspace 同时最多一个运行中任务。 |
 
@@ -346,6 +347,13 @@ prompt_requirements_artifacts.data.creativeFactors
   -> shot_prompt_artifacts.source_fingerprint.promptRequirementsArtifactId
   -> shot_sets.shot_prompt_artifact_id
   -> final_video_jobs.compiled_manifest.creativeTags
+  -> dashboard_video_artifacts.creative_factors
+  -> dashboard video list
+
+prompt_requirements_artifacts.data.creativeFactors
+  -> shot_prompt_artifacts.source_fingerprint.promptRequirementsArtifactId
+  -> shot_sets.shot_prompt_artifact_id
+  -> final_video_jobs.compiled_manifest.creativeTags
   -> campaign_publications.creative_tags
   -> campaign_publication_metrics
   -> dashboard aggregation
@@ -353,6 +361,7 @@ prompt_requirements_artifacts.data.creativeFactors
 
 - 成片创建时，后端从当前 shot set 对应的 shotprompt 反查当时的 `promptRequirementsArtifactId`，并把 `creativeFactors` 与可选 `creativeRequirementTemplate` 写入 `compiledManifest.creativeTags`。
 - 如果无法从 shot set 反查 requirements，则退回读取当前 approved requirements，并在 tags 中标记 `fallback=true`。
+- 导入数据面板时，`dashboard_video_artifacts` 快照成片名称、URL、导入时间、时长/宽高、`creativeTags` 和 `creativeFactors`，供视频列表读取。
 - 发布登记时，如果请求带 `finalVideoJobId`，`campaign_publications.creative_tags` 原样复制成片 `creativeTags`。未绑定成片的发布记录 `creative_tags={}`，看板归为“未归类”。
 - 数据看板 P0 聚合维度只读 `creativeTags.creativeFactors.productType`、`creativeTags.creativeFactors.audience`、`creativeTags.creativeFactors.strategy`。模板来源只用于 secondary breakdown。
 

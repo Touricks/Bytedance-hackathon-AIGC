@@ -1,7 +1,6 @@
 import {
   DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP,
   DEFAULT_CREATIVE_FACTORS,
-  applyCreativeFactorsToPromptRequirements,
   buildCreativeFactorRequirements,
   compileCreativeRequirementFields,
   creativeFactorRequirementsDataSchema,
@@ -11,7 +10,7 @@ import {
   type CreativeRequirementTemplateSource,
   type FactorGuidance,
   type FactorGuidanceFieldPath,
-  type ScriptInfluence,
+  type ScriptInfluence
 } from "@aigc-video/shared";
 import type { PromptRequirementsData } from "../../lib/api/client.js";
 
@@ -22,7 +21,7 @@ function stringifyRequirementValue(value: unknown, fallback: string) {
 
 function requirementSection(
   data: PromptRequirementsData | null,
-  section: "image" | "script" | "storyboard" | "shotImage" | "shotVideo",
+  section: "image" | "script" | "storyboard" | "shotImage" | "shotVideo"
 ) {
   const value = data?.[section];
   return value && typeof value === "object" && !Array.isArray(value)
@@ -43,7 +42,7 @@ function factorStateFromArtifact(data: PromptRequirementsData | null): FactorSta
   if (parsed.success) {
     const compiled = compileCreativeRequirementFields({
       factorGuidance: parsed.data.factorGuidance,
-      scriptInfluence: parsed.data.scriptInfluence,
+      scriptInfluence: parsed.data.scriptInfluence
     });
     return {
       creativeFactors: parsed.data.creativeFactors,
@@ -51,7 +50,7 @@ function factorStateFromArtifact(data: PromptRequirementsData | null): FactorSta
       scriptInfluence: parsed.data.scriptInfluence,
       compiledRequirementSourceMap:
         parsed.data.compiledRequirementSourceMap ?? compiled.compiledRequirementSourceMap,
-      creativeRequirementTemplate: parsed.data.creativeRequirementTemplate,
+      creativeRequirementTemplate: parsed.data.creativeRequirementTemplate
     };
   }
   const defaults = buildCreativeFactorRequirements(DEFAULT_CREATIVE_FACTORS);
@@ -60,7 +59,7 @@ function factorStateFromArtifact(data: PromptRequirementsData | null): FactorSta
     factorGuidance: defaults.factorGuidance,
     scriptInfluence: defaults.scriptInfluence,
     compiledRequirementSourceMap:
-      defaults.compiledRequirementSourceMap ?? DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP,
+      defaults.compiledRequirementSourceMap ?? DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP
   };
 }
 
@@ -82,12 +81,15 @@ export type RequirementsFormState = {
 export function syncCompiledRequirementFields(
   state: Pick<
     RequirementsFormState,
-    "creativeFactors" | "factorGuidance" | "scriptInfluence" | "creativeRequirementTemplate"
-  >,
+    | "creativeFactors"
+    | "factorGuidance"
+    | "scriptInfluence"
+    | "creativeRequirementTemplate"
+  >
 ): RequirementsFormState {
   const compiled = compileCreativeRequirementFields({
     factorGuidance: state.factorGuidance,
-    scriptInfluence: state.scriptInfluence,
+    scriptInfluence: state.scriptInfluence
   });
   return {
     ...state,
@@ -98,24 +100,24 @@ export function syncCompiledRequirementFields(
     storyboardRhythm: stringifyRequirementValue(compiled.storyboard.rhythm, ""),
     shotImageGlobal: stringifyRequirementValue(compiled.shotImage.global, ""),
     shotVideoGlobal: stringifyRequirementValue(compiled.shotVideo.global, ""),
-    compiledRequirementSourceMap: compiled.compiledRequirementSourceMap,
+    compiledRequirementSourceMap: compiled.compiledRequirementSourceMap
   };
 }
 
 export function requirementFormWithCreativeFactors(
   creativeFactors: CreativeFactors,
-  options: { creativeRequirementTemplate?: CreativeRequirementTemplateSource } = {},
+  options: { creativeRequirementTemplate?: CreativeRequirementTemplateSource } = {}
 ): RequirementsFormState {
   const data = buildCreativeFactorRequirements(creativeFactors);
   const form = requirementFormFromArtifact(data);
   return {
     ...form,
-    creativeRequirementTemplate: options.creativeRequirementTemplate,
+    creativeRequirementTemplate: options.creativeRequirementTemplate
   };
 }
 
 export function applyCreativeRequirementTemplate(
-  template: CreativeRequirementTemplate,
+  template: CreativeRequirementTemplate
 ): RequirementsFormState {
   const data = buildCreativeFactorRequirements(template.creativeFactors);
   return syncCompiledRequirementFields({
@@ -127,13 +129,13 @@ export function applyCreativeRequirementTemplate(
       templateId: template.id,
       templateNameSnapshot: template.name,
       templateVersion: template.version,
-      status: "applied",
-    },
+      status: "applied"
+    }
   });
 }
 
 export function requirementFormFromArtifact(
-  data: PromptRequirementsData | null,
+  data: PromptRequirementsData | null
 ): RequirementsFormState {
   const factorState = factorStateFromArtifact(data);
   const compiled = compileCreativeRequirementFields(factorState);
@@ -146,51 +148,38 @@ export function requirementFormFromArtifact(
     ...factorState,
     imageStyle: stringifyRequirementValue(
       image.style,
-      stringifyRequirementValue(compiled.image.style, ""),
+      stringifyRequirementValue(compiled.image.style, "")
     ),
     imageComposition: stringifyRequirementValue(
       image.composition,
-      stringifyRequirementValue(compiled.image.composition, ""),
+      stringifyRequirementValue(compiled.image.composition, "")
     ),
     imageAvoid: stringifyRequirementValue(
       image.avoid,
-      stringifyRequirementValue(compiled.image.avoid, ""),
+      stringifyRequirementValue(compiled.image.avoid, "")
     ),
     scriptTone: stringifyRequirementValue(
       script.tone,
-      stringifyRequirementValue(compiled.script.tone, ""),
+      stringifyRequirementValue(compiled.script.tone, "")
     ),
     storyboardRhythm: stringifyRequirementValue(
       storyboard.rhythm,
-      stringifyRequirementValue(compiled.storyboard.rhythm, ""),
+      stringifyRequirementValue(compiled.storyboard.rhythm, "")
     ),
     shotImageGlobal: stringifyRequirementValue(
       shotImage.global,
-      stringifyRequirementValue(compiled.shotImage.global, ""),
+      stringifyRequirementValue(compiled.shotImage.global, "")
     ),
     shotVideoGlobal: stringifyRequirementValue(
       shotVideo.global,
-      stringifyRequirementValue(compiled.shotVideo.global, ""),
+      stringifyRequirementValue(compiled.shotVideo.global, "")
     ),
-    compiledRequirementSourceMap: factorState.compiledRequirementSourceMap,
+    compiledRequirementSourceMap: factorState.compiledRequirementSourceMap
   };
 }
 
-export function requirementFormFromImportedDraft(
-  data: PromptRequirementsData,
-  fallback: RequirementsFormState,
-): RequirementsFormState {
-  const hasStructuredFactors = creativeFactorRequirementsDataSchema.safeParse(data)
-    .success;
-  return requirementFormFromArtifact(
-    hasStructuredFactors
-      ? data
-      : applyCreativeFactorsToPromptRequirements(data, fallback.creativeFactors),
-  );
-}
-
 export function promptRequirementsDataFromForm(
-  state: RequirementsFormState,
+  state: RequirementsFormState
 ): PromptRequirementsData {
   const data: PromptRequirementsData = {
     image: {
@@ -199,7 +188,7 @@ export function promptRequirementsDataFromForm(
       avoid: state.imageAvoid
         .split(/[,，]/)
         .map((item) => item.trim())
-        .filter(Boolean),
+        .filter(Boolean)
     },
     script: { tone: state.scriptTone },
     storyboard: { rhythm: state.storyboardRhythm },
@@ -208,7 +197,7 @@ export function promptRequirementsDataFromForm(
     creativeFactors: state.creativeFactors,
     factorGuidance: state.factorGuidance,
     scriptInfluence: state.scriptInfluence,
-    compiledRequirementSourceMap: state.compiledRequirementSourceMap,
+    compiledRequirementSourceMap: state.compiledRequirementSourceMap
   };
   if (state.creativeRequirementTemplate) {
     data.creativeRequirementTemplate = state.creativeRequirementTemplate;
@@ -218,12 +207,12 @@ export function promptRequirementsDataFromForm(
 
 function factorGuidanceFromTemplateFields(
   template: CreativeRequirementTemplate,
-  fallback: FactorGuidance,
+  fallback: FactorGuidance
 ): FactorGuidance {
   const next: FactorGuidance = {
     productType: { ...fallback.productType },
     audience: { ...fallback.audience },
-    strategy: { ...fallback.strategy },
+    strategy: { ...fallback.strategy }
   };
   for (const [path, field] of Object.entries(template.fields)) {
     setFactorGuidanceValue(next, path as FactorGuidanceFieldPath, field.value);
@@ -234,12 +223,12 @@ function factorGuidanceFromTemplateFields(
 function setFactorGuidanceValue(
   factorGuidance: FactorGuidance,
   path: FactorGuidanceFieldPath,
-  value: string,
+  value: string
 ) {
   const [, group, field] = path.split(".") as [
     "factorGuidance",
     keyof FactorGuidance,
-    string,
+    string
   ];
   (factorGuidance[group] as Record<string, string>)[field] = value;
 }

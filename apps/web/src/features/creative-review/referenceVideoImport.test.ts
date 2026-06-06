@@ -1,41 +1,24 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CREATIVE_REQUIREMENT_TEMPLATES } from "@aigc-video/shared";
+import {
+  CREATIVE_REQUIREMENT_TEMPLATES,
+  buildCreativeFactorRequirements
+} from "@aigc-video/shared";
 import {
   applyCreativeRequirementTemplate,
   promptRequirementsDataFromForm,
-  requirementFormFromImportedDraft,
   requirementFormFromArtifact,
-  syncCompiledRequirementFields,
+  syncCompiledRequirementFields
 } from "./requirementsForm.js";
 
 describe("reference video requirements import mapping", () => {
-  it("maps imported draft fields into factor state and compiled requirement fields", () => {
-    const fallback = requirementFormFromArtifact(null);
-    const form = requirementFormFromImportedDraft(
-      {
-        image: {
-          style: "真实电商产品摄影",
-          composition: "主体稳定",
-          avoid: ["文字贴片", "商品变形"],
-        },
-        script: {
-          tone: "直接可信",
-          structure: "开场痛点，中段证明，结尾行动引导",
-        },
-        storyboard: {
-          rhythm: "快节奏卖点证明",
-          beats: ["吸引注意", "展示卖点"],
-        },
-        shotImage: {
-          global: "分镜图保持场景连续",
-        },
-        shotVideo: {
-          global: "镜头运动平滑",
-        },
-      },
-      fallback,
-    );
+  it("maps imported artifact data into factor state and compiled requirement fields", () => {
+    const data = buildCreativeFactorRequirements({
+      productType: "offline-experience-service",
+      audience: "youth",
+      strategy: "review-comparison"
+    });
+    const form = requirementFormFromArtifact(data);
 
     assert.deepEqual(
       {
@@ -45,30 +28,37 @@ describe("reference video requirements import mapping", () => {
         scriptTone: form.scriptTone,
         storyboardRhythm: form.storyboardRhythm,
         shotImageGlobal: form.shotImageGlobal,
-        shotVideoGlobal: form.shotVideoGlobal,
+        shotVideoGlobal: form.shotVideoGlobal
       },
       {
-        imageStyle: "真实电商产品摄影",
-        imageComposition: "主体稳定",
-        imageAvoid: "文字贴片，商品变形",
-        scriptTone: "直接可信",
-        storyboardRhythm: "快节奏卖点证明",
-        shotImageGlobal: "分镜图保持场景连续",
-        shotVideoGlobal: "镜头运动平滑",
-      },
+        imageStyle:
+          "真实展示目的地、交通、场地、服务人员和体验者。 保持真实拍摄质感和商品/服务身份可识别。",
+        imageComposition:
+          "按出发、到达、服务交付、核心体验和保障证明推进。 强调效率、颜值、实用价值和即时体验。",
+        imageAvoid:
+          "避免虚假场地、不存在的交通/酒店承诺和夸大安全保障。，避免虚假对比、过度制造焦虑和绝对化承诺。",
+        scriptTone:
+          "向年轻用户说服,语气直接、有体验感。 强调效率、颜值、实用价值和即时体验。 用可验证对比和适用人群建议完成转化。",
+        storyboardRhythm:
+          "按测评标准、使用过程、对比结果、适用建议和行动引导推进。 用可验证对比和适用人群建议完成转化。 按出发、到达、服务交付、核心体验和保障证明推进。",
+        shotImageGlobal:
+          "真实展示目的地、交通、场地、服务人员和体验者。 按出发、到达、服务交付、核心体验和保障证明推进。",
+        shotVideoGlobal:
+          "用真实体验结论或前后差异开场,明确对比维度。 按出发、到达、服务交付、核心体验和保障证明推进。"
+      }
     );
     assert.deepEqual(form.creativeFactors, {
-      productType: "durable-good",
+      productType: "offline-experience-service",
       audience: "youth",
-      strategy: "scenario-demo",
+      strategy: "review-comparison"
     });
     assert.equal(
       form.factorGuidance.productType.subjectPresentation,
-      "真实展示商品主体、关键功能部位、使用场景和必要配件。",
+      "真实展示目的地、交通、场地、服务人员和体验者。"
     );
     assert.equal(
       form.scriptInfluence.strategy.openingPattern,
-      "用真实使用场景或操作瞬间开场,快速说明商品如何解决问题。",
+      "用真实体验结论或明确对比维度开场。"
     );
   });
 
@@ -88,16 +78,16 @@ describe("reference video requirements import mapping", () => {
       templateId: template.id,
       templateNameSnapshot: template.name,
       templateVersion: template.version,
-      status: "applied",
+      status: "applied"
     });
     assert.equal(
       form.factorGuidance.productType.subjectPresentation,
-      subjectPresentation.value,
+      subjectPresentation.value
     );
     assert.deepEqual(data.creativeRequirementTemplate, form.creativeRequirementTemplate);
     assert.deepEqual(
       data.compiledRequirementSourceMap?.imageStyle.map((source) => source.label),
-      ["商品/服务类型:主体呈现"],
+      ["商品/服务类型:主体呈现"]
     );
   });
 
@@ -111,23 +101,26 @@ describe("reference video requirements import mapping", () => {
         ...form.factorGuidance,
         productType: {
           ...form.factorGuidance.productType,
-          subjectPresentation: "展示产品开封、近景质地和真实使用动作。",
-        },
+          subjectPresentation: "展示产品开封、近景质地和真实使用动作。"
+        }
       },
       scriptInfluence: form.scriptInfluence,
       creativeRequirementTemplate: {
         ...form.creativeRequirementTemplate!,
-        status: "customized",
-      },
+        status: "customized"
+      }
     });
 
     const data = promptRequirementsDataFromForm(customized);
 
-    assert.equal(data.image?.style, "展示产品开封、近景质地和真实使用动作。 保持真实拍摄质感和商品/服务身份可识别。");
+    assert.equal(
+      data.image?.style,
+      "展示产品开封、近景质地和真实使用动作。 保持真实拍摄质感和商品/服务身份可识别。"
+    );
     assert.equal(data.creativeRequirementTemplate?.status, "customized");
     assert.deepEqual(
       data.compiledRequirementSourceMap?.shotVideoGlobal.map((source) => source.label),
-      ["推销手法:开场方式", "商品/服务类型:场景与交付"],
+      ["推销手法:开场方式", "商品/服务类型:场景与交付"]
     );
   });
 
@@ -139,17 +132,17 @@ describe("reference video requirements import mapping", () => {
         ...form.factorGuidance,
         strategy: {
           ...form.factorGuidance.strategy,
-          openingHook: "先用用户自定义的真实开场想法切入。",
-        },
+          openingHook: "先用用户自定义的真实开场想法切入。"
+        }
       },
       scriptInfluence: form.scriptInfluence,
-      creativeRequirementTemplate: form.creativeRequirementTemplate,
+      creativeRequirementTemplate: form.creativeRequirementTemplate
     });
     const data = promptRequirementsDataFromForm(customized);
 
     assert.equal(
       data.shotVideo?.global,
-      "先用用户自定义的真实开场想法切入。 按需求场景、功能展示、细节证明和使用结果推进。",
+      "先用用户自定义的真实开场想法切入。 按需求场景、功能展示、细节证明和使用结果推进。"
     );
   });
 });
