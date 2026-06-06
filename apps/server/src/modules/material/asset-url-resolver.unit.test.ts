@@ -27,6 +27,19 @@ describe("createAssetUrlResolver", () => {
     assert.equal(readFile.mock.callCount(), 1);
   });
 
+  it("drops non-image assets when resolving image references", async () => {
+    const lookup = mock.fn(async (id: string) => ({
+      id,
+      url: `/api/workspaces/ws-1/materials/${id}.mp4`,
+      mime: "video/mp4",
+    }));
+    const readFile = mock.fn(async () => Buffer.from("FAKE_VIDEO_BYTES"));
+    const resolver = createAssetUrlResolver({ lookup, readFile });
+    const urls = await resolver(["demo-video"]);
+    assert.deepEqual(urls, []);
+    assert.equal(readFile.mock.callCount(), 0);
+  });
+
   it("drops unknown ids without throwing", async () => {
     const lookup = mock.fn(async () => null);
     const readFile = mock.fn(async () => Buffer.from(""));

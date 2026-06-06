@@ -15,6 +15,21 @@ export interface AssetUrlResolverDeps {
   readFile: (path: string) => Promise<Buffer>;
 }
 
+const imageExtensionPattern = /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)(?:[?#].*)?$/i;
+const nonImageMediaExtensionPattern =
+  /\.(mp4|mov|m4v|webm|avi|mkv|mpg|mpeg|mp3|wav|m4a|aac|pdf)(?:[?#].*)?$/i;
+
+function isImageAsset(asset: AssetLookupResult) {
+  const mime = asset.mime?.trim().toLowerCase();
+  if (mime) {
+    return mime.startsWith("image/");
+  }
+  const reference = asset.localPath ?? asset.url;
+  if (imageExtensionPattern.test(reference)) return true;
+  if (nonImageMediaExtensionPattern.test(reference)) return false;
+  return true;
+}
+
 const DEFAULT_LOOKUP: AssetUrlResolverDeps["lookup"] = async (id) => {
   try {
     const row = await db.getAsset(id);
@@ -45,6 +60,14 @@ export function createAssetUrlResolver(deps: AssetUrlResolverDeps = { lookup: DE
       const asset = await deps.lookup(id);
       if (!asset) {
         logger.warn("asset-url-resolver: unknown asset id", { id });
+        continue;
+      }
+      if (!isImageAsset(asset)) {
+        logger.warn("asset-url-resolver: skipped non-image asset for image reference", {
+          id,
+          mime: asset.mime ?? null,
+          url: asset.url,
+        });
         continue;
       }
       if (

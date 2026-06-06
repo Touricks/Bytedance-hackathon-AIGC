@@ -148,13 +148,13 @@ prompt-requirements approve
 | `shot.shotImage` | `shot_prompt_requirements.shot_image`；作为 prompt 第二块“分镜图要求”。 |
 | `image_ref` | 首镜为主商品素材；后续镜头为上一镜 selected image。 |
 | `feedbackImageRef` | 仅反馈重生成时注入；来自 `feedbackImageCandidateId` 指向的最新轮成功候选，用作“基于这张图修改”的视觉基准。 |
-| `referenceAssets[]` | `shot_asset_refs`。 |
+| `referenceAssets[]` | `shot_asset_refs`。其中视频素材可作为 prompt 语义参考保留，但在未做关键帧/海报帧提取前，不得作为 Seedream `image` 参考图输入。 |
 | `previousImagePromptText` | 同 shot 上一版 image prompt，可为空。 |
 | `userHint` / `number` | 请求内联编辑方向和候选数量。 |
 
-输出写入 `image_prompt_artifacts.prompt_text/negative_prompt/prompt_json`，并创建 `image_generation_batches`。主路径不再调用 image-prompt 二次创意 agent，而由后端 deterministic assembler 按固定模板拼接镜头目标、`shotImage`、本轮反馈和参考图规则。`promptText` 只描述静态关键帧；不得写相机运动、主体运动、时长、首末帧、转场、旁白或字幕。Seedream provider request 使用 `promptText`、`negativePrompt`、`referenceImageUrls`、`count`、`aspectRatio`。
+输出写入 `image_prompt_artifacts.prompt_text/negative_prompt/prompt_json`，并创建 `image_generation_batches`。主路径不再调用 image-prompt 二次创意 agent，而由后端 deterministic assembler 按固定模板拼接镜头目标、`shotImage`、本轮反馈和参考图规则。`promptText` 只描述静态关键帧；不得写相机运动、主体运动、时长、首末帧、转场、旁白或字幕。Seedream provider request 使用 `promptText`、`negativePrompt`、`referenceImageUrls`、`count`、`aspectRatio`；其中 `referenceImageUrls` 必须经过图片类型过滤，只包含图片 data URL、workspace 图片文件、公开图片 URL 或已生成分镜图，不能包含 `.mp4` 等视频素材字节。
 
-用户反馈重生成走 `image-prompts/regenerate`；请求必须包含 `baseArtifactId`、`feedbackImageCandidateId`、非空 `userDirection`。`feedbackImageCandidateId` 必须属于当前 shot 最新 image round 的成功候选。服务端基于当前镜头目标、`shotImage`、反馈候选图和 `userDirection` 创建一版 user artifact 和新 image batch，保留当前 `selected_image_id`。本轮 Seedream 图片输入顺序固定为：反馈候选图、本镜 `referenceAssetRefs` 素材图、上一镜 selected image。
+用户反馈重生成走 `image-prompts/regenerate`；请求必须包含 `baseArtifactId`、`feedbackImageCandidateId`、非空 `userDirection`。`feedbackImageCandidateId` 必须属于当前 shot 最新 image round 的成功候选。服务端基于当前镜头目标、`shotImage`、反馈候选图和 `userDirection` 创建一版 user artifact 和新 image batch，保留当前 `selected_image_id`。本轮 Seedream 图片输入顺序固定为：反馈候选图、本镜图片类 `referenceAssetRefs` 素材图、上一镜 selected image；非图片素材只保留在 prompt/context 中，不进入 provider `image` 字段。
 
 ### 5.2 Video Script
 

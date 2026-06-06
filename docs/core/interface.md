@@ -257,6 +257,8 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 | GET  | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds`            | 按 prompt artifact 聚合图像生成轮次、候选和当前选择；即使当前选择来自旧轮次，也会返回 current selection；每个 round 返回 `upstream`，提示该轮 prompt 是否基于旧上游。                                                                                                                                                                           | 无                                                  |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | 选择一张候选图。UPSERT `image_select_artifacts`，不 stale 其他候选。                                                                                                                                                            | `{ candidateId \| imageCandidateId, imageGenerationBatchId? }` |
 
+图像 provider 请求只允许图片类参考输入。`shot_asset_refs` 中的视频素材仍可用于分镜语义、场景说明和后续视频脚本，但在没有关键帧/海报帧提取产物前，服务端必须过滤掉 `.mp4` 等非图片素材，不能把其字节作为 Seedream `image` 字段发送。
+
 图像选择校验：
 
 - candidate 必须属于同一个 workspace/shot。

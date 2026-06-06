@@ -278,7 +278,7 @@ prompt 装配：
 | `image_prompt_artifact_id` | 绑定本次图像提示 artifact。 |
 | `provider` | 当前为 `ark-seedream`。 |
 | `aspect_ratio` | 生成宽高比。 |
-| `provider_request` | provider 请求摘要：`prompt/negativePrompt/image_ref/feedbackImageRef/feedbackImageCandidateId/referenceImageOrder/count/aspectRatio/assemblerVersion`。反馈重生成时 `feedbackImageCandidateId` 对应的候选图进入 Seedream 图片输入第一位，本镜素材图随后，上一镜 selected image 最后。 |
+| `provider_request` | provider 请求摘要：`prompt/negativePrompt/image_ref/feedbackImageRef/feedbackImageCandidateId/referenceImageOrder/count/aspectRatio/assemblerVersion`。反馈重生成时 `feedbackImageCandidateId` 对应的候选图进入 Seedream 图片输入第一位，本镜图片类素材图随后，上一镜 selected image 最后；视频等非图片素材可出现在 `referenceImageOrder` 的语义记录中，但必须在 provider `referenceImageUrls` 阶段被过滤，不发送给 Seedream。 |
 | `idempotency_key` | propose 内部合成，retry 使用公开请求头。 |
 | `requested_count/succeeded_count/failed_count/status/error_message` | 生成批次状态。 |
 
