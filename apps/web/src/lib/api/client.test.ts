@@ -548,7 +548,7 @@ describe("api client", () => {
     ]);
   });
 
-  it("imports reference video requirements from a URL without proposing requirements", async () => {
+  it("imports reference video requirements from a URL and returns the proposed artifact", async () => {
     const calls: unknown[] = [];
     globalThis.fetch = async (url, init) => {
       calls.push({
@@ -577,6 +577,34 @@ describe("api client", () => {
             analysis: {
               summary: "参考视频采用快节奏卖点证明结构。",
               confidence: "medium"
+            },
+            creativeFactorsRecommendation: {
+              recommendedFactors: {
+                productType: "durable-good",
+                audience: "youth",
+                strategy: "scenario-demo"
+              },
+              confidence: "medium"
+            },
+            artifact: {
+              id: "prompt_req_123",
+              workspaceId: "workspace_123",
+              moduleId: "prompt-requirements",
+              type: "prompt-requirements",
+              status: "proposed",
+              isCurrent: false,
+              data: {
+                creativeFactors: {
+                  productType: "durable-good",
+                  audience: "youth",
+                  strategy: "scenario-demo"
+                }
+              },
+              sourceFingerprint: {},
+              promptAssembly: {},
+              createdAt: "2026-06-06T00:00:00.000Z",
+              updatedAt: "2026-06-06T00:00:00.000Z",
+              approvedAt: null
             }
           }
         }),
@@ -594,6 +622,12 @@ describe("api client", () => {
 
     assert.equal(imported.draft.image?.style, "真实电商产品摄影");
     assert.equal(imported.analysis.summary, "参考视频采用快节奏卖点证明结构。");
+    assert.equal(imported.artifact.status, "proposed");
+    assert.deepEqual(imported.creativeFactorsRecommendation.recommendedFactors, {
+      productType: "durable-good",
+      audience: "youth",
+      strategy: "scenario-demo"
+    });
     assert.deepEqual(calls, [
       {
         method: "POST",
@@ -637,6 +671,34 @@ describe("api client", () => {
             analysis: {
               summary: "参考视频采用快节奏卖点证明结构。",
               confidence: "medium"
+            },
+            creativeFactorsRecommendation: {
+              recommendedFactors: {
+                productType: "durable-good",
+                audience: "youth",
+                strategy: "scenario-demo"
+              },
+              confidence: "medium"
+            },
+            artifact: {
+              id: "prompt_req_123",
+              workspaceId: "workspace_123",
+              moduleId: "prompt-requirements",
+              type: "prompt-requirements",
+              status: "proposed",
+              isCurrent: false,
+              data: {
+                creativeFactors: {
+                  productType: "durable-good",
+                  audience: "youth",
+                  strategy: "scenario-demo"
+                }
+              },
+              sourceFingerprint: {},
+              promptAssembly: {},
+              createdAt: "2026-06-06T00:00:00.000Z",
+              updatedAt: "2026-06-06T00:00:00.000Z",
+              approvedAt: null
             }
           }
         }),
@@ -655,6 +717,7 @@ describe("api client", () => {
     });
 
     assert.equal(imported.draft.shotVideo?.global, "运动平滑");
+    assert.equal(imported.artifact.status, "proposed");
     assert.deepEqual(calls, [
       {
         method: "POST",

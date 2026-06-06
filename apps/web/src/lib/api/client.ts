@@ -1,10 +1,15 @@
 import type {
   Asset,
+  CompiledRequirementSourceMap,
+  CreativeFactors,
   CreativeRequirementTemplate,
+  CreativeRequirementTemplateSource,
   CreativeWorkspace,
+  FactorGuidance,
   GenerationJob,
   MaterialIntakeArtifact,
   ProductBriefArtifact,
+  ScriptInfluence,
   Script,
   ShotPromptArtifact,
   StoryboardArtifact,
@@ -105,6 +110,11 @@ export interface PromptRequirementsData {
   storyboard?: Record<string, unknown>;
   shotImage?: Record<string, unknown>;
   shotVideo?: Record<string, unknown>;
+  creativeFactors?: CreativeFactors;
+  factorGuidance?: FactorGuidance;
+  scriptInfluence?: ScriptInfluence;
+  compiledRequirementSourceMap?: CompiledRequirementSourceMap;
+  creativeRequirementTemplate?: CreativeRequirementTemplateSource;
   [key: string]: unknown;
 }
 
@@ -130,6 +140,12 @@ export interface ReferenceVideoRequirementsImportResult {
     detectedBeats?: string[];
     risks?: string[];
   };
+  creativeFactorsRecommendation: {
+    recommendedFactors: CreativeFactors;
+    confidence: "low" | "medium" | "high";
+    reasons?: string[];
+  };
+  artifact: WorkspacePromptRequirementsDetail["artifact"];
 }
 
 export interface CreativeRequirementTemplatesDetail {

@@ -543,9 +543,12 @@ create table if not exists campaign_publications (
   publish_url text,
   status text not null default 'planned',
   notes text,
+  creative_tags jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table if exists campaign_publications
+  add column if not exists creative_tags jsonb not null default '{}'::jsonb;
 create index if not exists idx_campaign_publications_workspace
   on campaign_publications(workspace_id, created_at desc);
 

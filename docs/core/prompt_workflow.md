@@ -95,6 +95,8 @@ prompt-requirements approve
 | `storyboard voiceover rewrite` | 请求内当前 15 秒三镜 storyboard draft、current material-intake、current product-brief。 | 复用 storyboard contract，runtime context 明确只重写 `shots[].voiceover`，并要求每段有效字数不超过 `durationSec * 5`。 | 新的 `storyboard_artifacts` proposed row；`source_fingerprint.rewriteKind = "voiceover"`，`baseStoryboardArtifactId` 指向来源 artifact。 | storyboard approve。 |
 | `shotprompt` | current prompt requirements、current material-intake、current product-brief、current storyboard、请求 `aspectRatio`。 | `shotprompt/subject.md` + runtime context：顶部先注入已批准 7 项创作要求（导演约束），再注入 `aspectRatio`、必须输出的 shot 数量、必须输出的 storyboard index 顺序、approved brief、`material.assets[]`、approved storyboard + `shotprompt/contract.md`。response format 同步使用 expected shot count，并要求 `tts.voiceProfile` 明确全片统一说话人性别、语气、声调和语速。 | `shot_prompt_artifacts.data`：全局 `prompt/negativePrompt/aspectRatio/tts`，其中 `tts.voiceProfile` 是全片口播声音策略；以及逐 shot 的 `providerPrompt/referenceAssetRefs/voiceover/shotImage/shotVideo`。 | shot-set apply。 |
 
+首屏创作因子在 `prompt_requirements_artifacts.data` 中以 `creativeFactors/factorGuidance/scriptInfluence` 保存，并编译为现有 7 项创作要求。各 agent 模块仍消费 approved/current prompt requirements 中的 7 项导演约束；`compiledRequirementSourceMap` 和 `creativeRequirementTemplate` 用于前端解释、刷新恢复和成片看板标签，不直接作为 provider-facing prompt 文案拼装入口。
+
 ### 3.1 Shotprompt 不变量
 
 `shot_prompt_artifacts.data.shots[]` 必须基于 P0 15 秒三镜 approved storyboard 生成，并与该 storyboard 的 `shots[]` 数量、顺序和 `index` 完全一致，不得省略、合并、拆分或新增镜头。每个 shot 必须包含：

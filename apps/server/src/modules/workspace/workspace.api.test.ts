@@ -777,6 +777,65 @@ describe("workspace API", () => {
     assert.equal(status.activeShotSet, null);
   });
 
+  it("keeps prompt requirements proposed as a single recoverable draft slot", async () => {
+    const { workspaceId } = await createBoundWorkspace(app);
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+      payload: {
+        data: {
+          image: { style: "first draft" },
+          script: { tone: "direct" },
+        },
+      },
+    });
+    assert.equal(first.statusCode, 200, first.body);
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+      payload: {
+        data: {
+          image: { style: "second draft" },
+          script: { tone: "warm" },
+        },
+      },
+    });
+    assert.equal(second.statusCode, 200, second.body);
+    assert.equal(second.json().data.id, first.json().data.id);
+
+    const proposedRows = await db.db2.pool().query(
+      `select count(*)::integer as count
+       from prompt_requirements_artifacts
+       where workspace_id = $1 and status = 'proposed'`,
+      [workspaceId],
+    );
+    assert.equal(proposedRows.rows[0]?.count, 1);
+
+    const state = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements`,
+    });
+    assert.equal(state.statusCode, 200, state.body);
+    assert.equal(state.json().data.proposed.id, first.json().data.id);
+    assert.equal(state.json().data.proposed.data.image.style, "second draft");
+
+    const approve = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+      payload: { artifactId: first.json().data.id },
+    });
+    assert.equal(approve.statusCode, 200, approve.body);
+
+    const afterApprove = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/prompt-requirements`,
+    });
+    assert.equal(afterApprove.statusCode, 200, afterApprove.body);
+    assert.equal(afterApprove.json().data.proposed, null);
+    assert.equal(afterApprove.json().data.current.id, approve.json().data.id);
+  });
+
   it("proposes a product brief rewrite from the current page draft without changing current", async () => {
     const { workspaceId } = await createBoundWorkspace(app);
     await approveMinimumWorkspaceInputs(app, workspaceId);

@@ -175,6 +175,7 @@ export const materialIntakeV2Service = {
                 initialPrompt: input.userDirection,
                 scanned,
                 textPreviews,
+                creativeRequirements: requirements.data,
               },
               {
                 traceLogger: await createWorkspaceTraceLoggerForWorkspace(

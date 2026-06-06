@@ -253,7 +253,11 @@ export const storyboardV2Service = {
       runtimeMode() === "real"
         ? (
             await generateStoryboardWithArk(
-              { brief, material },
+              {
+                brief,
+                material,
+                creativeRequirements: sources.requirements.data,
+              },
               {
                 traceLogger: await createWorkspaceTraceLoggerForWorkspace(
                   workspace,
@@ -327,6 +331,7 @@ export const storyboardV2Service = {
                 material,
                 storyboard: draft,
                 userDirection: input.userDirection,
+                creativeRequirements: sources.requirements.data,
               },
               {
                 traceLogger: await createWorkspaceTraceLoggerForWorkspace(

@@ -71,29 +71,43 @@
 
 Prompt requirements 是用户可编辑的结构化创作要求。用户可以分别约束图像、剧本、故事板、分镜图和分镜视频，但不能直接覆盖系统契约 prompt。
 
-`GET /api/setup-templates/creative-requirements` 提供只读内置「创作要求模板」。模板内容来自 `packages/shared/src/setup_template/creative-requirements.ts`，服务端模块加载时用 shared Zod schema 校验，失败时服务启动失败。模板带 `productType` 与 `audiences` 分类，供前端按商品种类和适用人群筛选。前端点击模板只确定性覆盖首屏 7 项表单草稿，不创建 `prompt_requirements_artifacts`，不 approve，也不触发素材解读。
+`GET /api/setup-templates/creative-requirements` 提供只读内置「创作要求模板」。模板内容来自 `packages/shared/src/setup_template/creative-requirements.ts`，服务端模块加载时用 shared Zod schema 校验，失败时服务启动失败。P0 模板不是一套新起的 7 项文案，而是 `商品/服务类型 + 适用人群 + 推销手法` 三主标签组合；`fields` 展开这三个主标签对 9 个可编辑细分字段的默认值，并声明每个细分字段会影响 7 项编译创作要求中的哪些字段。`values` 仅作为旧前端兼容缓存保留。前端点击模板只确定性回填首屏因子表单草稿，不 approve，也不触发素材解读；用户保存或提交后才写入 `prompt_requirements_artifacts` 的 proposed row。
 
 ```json
 {
   "data": {
     "templates": [
-      {
-        "id": "consumable-youth-seeding",
-        "name": "快消种草·青年",
-        "summary": "自然种草质感，体验驱动，痛点到下单顺滑。",
-        "productType": "consumable",
-        "audiences": ["youth"],
-        "values": {
-          "imageStyle": "真实生活感种草质感，保留商品包装、质地和使用瞬间的真实细节",
-          "imageComposition": "手部或人物与商品自然互动，商品始终是焦点，生活化背景但不杂乱",
-          "imageAvoid": "硬广摆拍，夸张滤镜，商品变形，虚假成分对比，违规功效贴片",
-          "scriptTone": "亲切真实有体验感，像朋友安利，卖点和使用感受清晰",
-          "storyboardRhythm": "开场抓痛点或场景，快速给体验和卖点，结尾给明确购买理由和优惠钩子",
-          "shotImageGlobal": "分镜图保持同一生活场景、商品包装和用量一致，人物动作自然可信",
-          "shotVideoGlobal": "镜头轻量自然贴近手机实拍，开箱、使用、特写节奏与口播一致"
-        }
-      }
-    ]
+	      {
+	        "id": "consumable-youth-seeding",
+	        "name": "快消种草·青年",
+	        "summary": "自然种草质感，体验驱动，痛点到下单顺滑。",
+	        "version": "p0-2026-06",
+	        "productType": "consumable-good",
+	        "audiences": ["youth"],
+	        "strategy": "pain-solution",
+	        "creativeFactors": {
+	          "productType": "consumable-good",
+	          "audience": "youth",
+	          "strategy": "pain-solution"
+	        },
+	        "fields": {
+	          "factorGuidance.productType.subjectPresentation": {
+	            "label": "主体呈现",
+	            "value": "真实展示商品包装、质地、用量和使用瞬间。",
+	            "affects": ["image.style", "shotImage.global"]
+	          }
+	        },
+	        "values": {
+	          "imageStyle": "真实展示商品包装、质地、用量和使用瞬间。 保持真实拍摄质感和商品/服务身份可识别。",
+	          "imageComposition": "按开箱、展示、使用、效果感受和购买理由推进。 面向用户本人组织画面主体。",
+	          "imageAvoid": "虚假成分对比，夸大功效，违规功效承诺，避免制造身份、外貌、健康或收入焦虑。",
+	          "scriptTone": "直接、自然、有体验感，强调效率、颜值、实用和即时反馈。 用明确购买/报名/咨询路径收束。",
+	          "storyboardRhythm": "痛点进入、原因解释、解决方案、证据证明、行动引导。按开箱、展示、使用、效果感受和购买理由推进。",
+	          "shotImageGlobal": "真实展示商品包装、质地、用量和使用瞬间。 按开箱、展示、使用、效果感受和购买理由推进。",
+	          "shotVideoGlobal": "用痛点或反差场景开场,快速指出用户当下困扰。 按开箱、展示、使用、效果感受和购买理由推进。"
+	        }
+	      }
+	    ]
   }
 }
 ```
@@ -150,10 +164,12 @@ Reference video import 成功响应形如：
 导入边界：
 
 - 参考视频只用于分析剧本结构、节奏、镜头组织和表达风格。
-- 导入结果只回填首屏 7 个创作要求字段；用户提交后才走 `prompt-requirements/propose`。
+- 导入结果会建议 `creativeFactors` 并回填首屏因子表单；用户提交后才走 `prompt-requirements/propose`。
 - 参考视频不写入 `prompt_requirements_artifacts`，不写 `asset`，不参与 `material-intake.assets[]`。
 - 如果 workspace 已有 current approved requirements，返回 `409 REQUIREMENTS_ALREADY_APPROVED`。
 - URL 只支持可直接下载的视频资源；HTML/平台落地页返回 `REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD`。
+
+`prompt_requirements_artifacts.data` 可携带 `creativeFactors`、`factorGuidance`、`scriptInfluence`、`compiledRequirementSourceMap` 与 `creativeRequirementTemplate`。其中 `creativeRequirementTemplate.status` 为 `applied | customized | detached`：分别表示原样套用模板、基于模板修改了细分字段、或基于模板后又更换了主因子。成片成功后，final video `compiledManifest.creativeTags` 会快照 `creativeFactors` 和 `creativeRequirementTemplate`；登记发布到数据看板时，`campaign_publications.creative_tags` 原样复制这份 tags。
 
 ---
 

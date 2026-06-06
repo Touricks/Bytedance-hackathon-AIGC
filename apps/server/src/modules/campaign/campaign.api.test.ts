@@ -5,6 +5,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
+import { db } from "../../db/client.js";
 
 async function createWorkspace(app: FastifyInstance, cleanupDirs: string[]) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "daireel-campaign-"));
@@ -57,12 +58,14 @@ describe("campaign publication API", () => {
         platform: string;
         channelName: string;
         kolName: string;
+        creativeTags: Record<string, unknown>;
         latestMetrics: null;
       };
     };
     assert.equal(created.data.workspaceId, workspaceId);
     assert.equal(created.data.platform, "douyin");
     assert.equal(created.data.channelName, "beauty-live-stream");
+    assert.deepEqual(created.data.creativeTags, {});
     assert.equal(created.data.latestMetrics, null);
 
     const metricsResponse = await app.inject({
@@ -102,6 +105,98 @@ describe("campaign publication API", () => {
     assert.equal(firstPublication.id, created.data.id);
     assert.equal(firstPublication.latestMetrics?.clicks, 125);
     assert.equal(firstPublication.latestMetrics?.ctr, 0.125);
+  });
+
+  it("snapshots final video creative tags into campaign publications", async () => {
+    const workspaceId = await createWorkspace(app, cleanupDirs);
+    const finalVideoJobId = `fv_campaign_tags_${Date.now()}`;
+    await db.db2.insertFinalVideoJob({
+      id: finalVideoJobId,
+      workspaceId,
+      shotSetId: null,
+      status: "SUCCEEDED",
+      sourceShotVideoIds: [],
+      sourceVideoScriptArtifactIds: [],
+      localPath: "final/fv_campaign_tags/final.mp4",
+      localUrl: `/api/workspaces/${workspaceId}/final-videos/${finalVideoJobId}/file`,
+      durationSec: 15,
+      width: 1080,
+      height: 1920,
+      compiledManifest: {
+        schemaVersion: "final-video.v1",
+        creativeTags: {
+          schemaVersion: "creative-tags.v1",
+          promptRequirementsArtifactId: "req_123",
+          shotPromptArtifactId: "shotprompt_123",
+          creativeFactors: {
+            productType: "offline-experience-service",
+            audience: "child",
+            strategy: "scenario-demo",
+          },
+          creativeRequirementTemplate: {
+            source: "setup-template",
+            templateId: "offline-child-travel",
+            templateNameSnapshot: "亲子旅游·家长向",
+            templateVersion: "p0-2026-06",
+            status: "applied",
+          },
+          fallback: false,
+        },
+      },
+      compiledManifestHash: "sha256:manifest",
+      ffmpegLog: null,
+      errorMessage: null,
+      idempotencyKey: `${finalVideoJobId}:idem`,
+      completedAt: "2026-06-06T00:00:00.000Z",
+    });
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/campaign-publications`,
+      payload: {
+        finalVideoJobId,
+        platform: "douyin",
+        channelName: "family-travel",
+      },
+    });
+
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const created = createResponse.json() as {
+      data: {
+        creativeTags: {
+          schemaVersion: string;
+          promptRequirementsArtifactId: string;
+          creativeFactors: {
+            productType: string;
+            audience: string;
+            strategy: string;
+          };
+          creativeRequirementTemplate: {
+            source: string;
+            templateId: string;
+            templateNameSnapshot: string;
+            templateVersion: string;
+            status: string;
+          };
+          fallback: boolean;
+        };
+      };
+    };
+    assert.equal(created.data.creativeTags.schemaVersion, "creative-tags.v1");
+    assert.equal(created.data.creativeTags.promptRequirementsArtifactId, "req_123");
+    assert.deepEqual(created.data.creativeTags.creativeFactors, {
+      productType: "offline-experience-service",
+      audience: "child",
+      strategy: "scenario-demo",
+    });
+    assert.deepEqual(created.data.creativeTags.creativeRequirementTemplate, {
+      source: "setup-template",
+      templateId: "offline-child-travel",
+      templateNameSnapshot: "亲子旅游·家长向",
+      templateVersion: "p0-2026-06",
+      status: "applied",
+    });
+    assert.equal(created.data.creativeTags.fallback, false);
   });
 
   it("keeps campaign publications scoped to their workspace", async () => {

@@ -1,4 +1,5 @@
 import type { MaterialIntakeArtifact } from "@aigc-video/shared";
+import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake.v1";
@@ -7,6 +8,7 @@ export interface BuildMaterialIntakePromptInput {
   initialPrompt?: string;
   scanned: MaterialIntakeArtifact;
   textPreviews?: Array<{ ref: string; text: string }>;
+  creativeRequirements?: unknown;
 }
 
 export interface RuntimePromptView {
@@ -45,6 +47,10 @@ function materialManifestPreview(input: MaterialIntakeArtifact) {
 export function buildMaterialIntakePromptView(
   input: BuildMaterialIntakePromptViewInput
 ): RuntimePromptView {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "material-intake",
+  );
   return {
     contractId: input.contractId,
     promptVersion: input.promptVersion,
@@ -69,6 +75,15 @@ export function buildMaterialIntakePromptView(
           label: "已选择素材清单",
           body: materialManifestPreview(input.scanned) || "没有选择可用素材。"
         },
+        ...(creativeRequirements
+          ? [
+              {
+                id: "creative_requirements",
+                label: "全局创作要求",
+                body: creativeRequirements,
+              },
+            ]
+          : []),
         {
           id: "task",
           label: "任务",
@@ -93,9 +108,14 @@ export function buildMaterialIntakePromptView(
 }
 
 export function buildMaterialIntakePrompt(input: BuildMaterialIntakePromptInput) {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "material-intake",
+  );
   return buildModulePrompt({
     moduleId: "material-intake",
     runtimeContext: [
+      creativeRequirements,
       "输入：",
       `用户初始意图：${input.initialPrompt ?? "未指定"}`,
       "已验证素材清单：",
@@ -104,6 +124,8 @@ export function buildMaterialIntakePrompt(input: BuildMaterialIntakePromptInput)
       JSON.stringify(input.scanned.rejected),
       "文本预览：",
       JSON.stringify(input.textPreviews ?? []),
-    ].join("\n"),
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join("\n"),
   }).prompt;
 }

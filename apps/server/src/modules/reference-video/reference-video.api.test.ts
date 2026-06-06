@@ -91,7 +91,7 @@ describe("reference video requirements import API", () => {
     await app.close();
   });
 
-  it("returns a requirements draft from an uploaded reference video without creating artifacts or material assets", async () => {
+  it("creates a proposed creative requirements artifact from an uploaded reference video without creating material assets", async () => {
     const workspace = await createWorkspace(app);
     const multipart = multipartFilePayload({
       fieldName: "file",
@@ -122,8 +122,35 @@ describe("reference video requirements import API", () => {
       "shotVideo",
       "storyboard",
     ]);
-    assert.equal(await artifactCount(workspace.id), 0);
+    assert.equal(body.data.artifact.moduleId, "prompt-requirements");
+    assert.equal(body.data.artifact.status, "proposed");
+    assert.equal(body.data.artifact.isCurrent, false);
+    assert.deepEqual(body.data.artifact.data.creativeFactors, {
+      productType: "durable-good",
+      audience: "youth",
+      strategy: "scenario-demo",
+    });
+    assert.equal(
+      body.data.artifact.data.factorGuidance.productType.subjectPresentation,
+      "真实展示商品主体、关键功能部位、使用场景和必要配件。",
+    );
+    assert.equal(
+      body.data.artifact.data.scriptInfluence.strategy.openingPattern,
+      "用真实使用场景或操作瞬间开场,快速说明商品如何解决问题。",
+    );
+    assert.deepEqual(
+      body.data.creativeFactorsRecommendation.recommendedFactors,
+      body.data.artifact.data.creativeFactors,
+    );
+    assert.equal(await artifactCount(workspace.id), 1);
     assert.equal(await assetCount(workspace.id), 0);
+
+    const state = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspace.id}/prompt-requirements`,
+    });
+    assert.equal(state.statusCode, 200, state.body);
+    assert.equal(state.json().data.proposed.id, body.data.artifact.id);
   });
 
   it("rejects reference video import after prompt requirements are approved", async () => {
@@ -147,7 +174,7 @@ describe("reference video requirements import API", () => {
     assert.equal(response.json().code, "REQUIREMENTS_ALREADY_APPROVED");
   });
 
-  it("downloads a directly accessible video URL and returns a requirements draft", async () => {
+  it("downloads a directly accessible video URL and creates a proposed requirements artifact", async () => {
     const workspace = await createWorkspace(app);
     globalThis.fetch = (async () =>
       new Response(Buffer.from("remote mp4 bytes"), {
@@ -177,7 +204,9 @@ describe("reference video requirements import API", () => {
     assert.equal(body.data.source.contentType, "video/mp4");
     assert.equal(body.data.source.sizeBytes, 16);
     assert.equal(typeof body.data.draft.script.structure, "string");
-    assert.equal(await artifactCount(workspace.id), 0);
+    assert.equal(body.data.artifact.moduleId, "prompt-requirements");
+    assert.equal(body.data.artifact.status, "proposed");
+    assert.equal(await artifactCount(workspace.id), 1);
     assert.equal(await assetCount(workspace.id), 0);
   });
 

@@ -4,6 +4,7 @@ import type {
   StoryboardArtifact,
 } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
+import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard.v1";
@@ -11,6 +12,7 @@ export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard.v1";
 export interface BuildStoryboardPromptInput {
   brief: ProductBriefArtifact;
   material: MaterialIntakeArtifact;
+  creativeRequirements?: unknown;
 }
 
 export interface BuildStoryboardVoiceoverRewritePromptInput
@@ -39,6 +41,10 @@ function storyboardMaterialSummary(input: MaterialIntakeArtifact) {
 export function buildStoryboardPromptView(
   input: BuildStoryboardPromptViewInput,
 ): RuntimePromptView {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "storyboard",
+  );
   return {
     contractId: input.contractId,
     promptVersion: input.promptVersion,
@@ -64,6 +70,15 @@ export function buildStoryboardPromptView(
             storyboardMaterialSummary(input.material) ||
             "没有可纳入生成的素材。",
         },
+        ...(creativeRequirements
+          ? [
+              {
+                id: "creative_requirements",
+                label: "全局创作要求",
+                body: creativeRequirements,
+              },
+            ]
+          : []),
         {
           id: "task",
           label: "任务",
@@ -88,24 +103,36 @@ export function buildStoryboardPromptView(
 }
 
 export function buildStoryboardPrompt(input: BuildStoryboardPromptInput) {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "storyboard",
+  );
   return buildModulePrompt({
     moduleId: "storyboard",
     runtimeContext: [
+      creativeRequirements,
       "输入：",
       "已确认商品 brief：",
       JSON.stringify(input.brief),
       "已确认素材清单：",
       JSON.stringify(input.material.assets),
-    ].join("\n"),
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join("\n"),
   }).prompt;
 }
 
 export function buildStoryboardVoiceoverRewritePrompt(
   input: BuildStoryboardVoiceoverRewritePromptInput,
 ) {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "storyboard",
+  );
   return buildModulePrompt({
     moduleId: "storyboard",
     runtimeContext: [
+      creativeRequirements,
       "任务：只重写分镜脚本中的 shots[].voiceover。",
       "边界：不得改变 narrative、totalDurationSec、shots 数量、index、purpose、durationSec、scene、visualDirection、productAssetRef、transition。",
       "节奏约束：每段口播有效字数必须小于等于 durationSec * 5。",
@@ -120,6 +147,8 @@ export function buildStoryboardVoiceoverRewritePrompt(
       "当前分镜脚本：",
       JSON.stringify(input.storyboard),
       "输出严格 JSON：{\"shots\":[{\"index\":0,\"voiceover\":\"...\"}]}。",
-    ].join("\n"),
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join("\n"),
   }).prompt;
 }

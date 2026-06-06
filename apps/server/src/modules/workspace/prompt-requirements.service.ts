@@ -80,14 +80,58 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
 export const promptRequirementsService = {
   async propose(workspaceId: string, data: unknown) {
     await db.getWorkspace(workspaceId);
-    const result = await db.db2.pool().query(
-      `insert into prompt_requirements_artifacts
-         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
-       values ($1, $2, 'proposed', false, $3, '{}'::jsonb, $4)
-       returning *`,
-      [nanoid(), workspaceId, jsonbParam(data), jsonbParam(defaultPromptAssembly(data))],
-    );
-    return toPromptRequirementsArtifact(result.rows[0]);
+    const client = await db.db2.pool().connect();
+    try {
+      await client.query("begin");
+      const existing = await client.query(
+        `select id
+         from prompt_requirements_artifacts
+         where workspace_id = $1
+           and status = 'proposed'
+         order by created_at desc, id desc
+         limit 1
+         for update`,
+        [workspaceId],
+      );
+
+      const result = existing.rows[0]
+        ? await client.query(
+            `update prompt_requirements_artifacts
+             set data = $2,
+                 source_fingerprint = '{}'::jsonb,
+                 prompt_assembly = $3,
+                 updated_at = now()
+             where workspace_id = $1
+               and id = $4
+             returning *`,
+            [
+              workspaceId,
+              jsonbParam(data),
+              jsonbParam(defaultPromptAssembly(data)),
+              existing.rows[0].id,
+            ],
+          )
+        : await client.query(
+            `insert into prompt_requirements_artifacts
+               (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+             values ($1, $2, 'proposed', false, $3, '{}'::jsonb, $4)
+             returning *`,
+            [
+              nanoid(),
+              workspaceId,
+              jsonbParam(data),
+              jsonbParam(defaultPromptAssembly(data)),
+            ],
+          );
+
+      await client.query("commit");
+      return toPromptRequirementsArtifact(result.rows[0]);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   },
 
   async approve(input: {
@@ -119,6 +163,15 @@ export const promptRequirementsService = {
          where workspace_id = $1
            and status = 'approved'
            and is_current = true`,
+        [input.workspaceId],
+      );
+      await client.query(
+        `update prompt_requirements_artifacts
+         set status = 'archived',
+             is_current = false,
+             updated_at = now()
+         where workspace_id = $1
+           and status = 'proposed'`,
         [input.workspaceId],
       );
       const result = await client.query(

@@ -3,6 +3,7 @@ import type {
   ProductBriefArtifact,
 } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
+import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const PRODUCT_BRIEF_PROMPT_VERSION = "product-brief.v1";
@@ -15,6 +16,7 @@ export interface BuildProductBriefPromptInput {
   stylePreference?: string;
   material: MaterialIntakeArtifact;
   draft?: ProductBriefArtifact;
+  creativeRequirements?: unknown;
 }
 
 export interface BuildProductBriefPromptViewInput extends BuildProductBriefPromptInput {
@@ -90,6 +92,10 @@ function rewriteGuidance(input: BuildProductBriefPromptInput) {
 export function buildProductBriefPromptView(
   input: BuildProductBriefPromptViewInput,
 ): RuntimePromptView {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "product-brief",
+  );
   return {
     contractId: input.contractId,
     promptVersion: input.promptVersion,
@@ -127,6 +133,15 @@ export function buildProductBriefPromptView(
             summarizeMaterial(input.material) ||
             "没有可纳入生成的素材。",
         },
+        ...(creativeRequirements
+          ? [
+              {
+                id: "creative_requirements",
+                label: "全局创作要求",
+                body: creativeRequirements,
+              },
+            ]
+          : []),
         {
           id: "task",
           label: "任务",
@@ -157,9 +172,14 @@ export function buildProductBriefPromptView(
 }
 
 export function buildProductBriefPrompt(input: BuildProductBriefPromptInput) {
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "product-brief",
+  );
   return buildModulePrompt({
     moduleId: "product-brief",
     runtimeContext: [
+      creativeRequirements,
       "输入：",
       `本次任务模式：${productBriefTaskMode(input)}`,
       `用户方向：${input.userDirection ?? "未指定"}`,
@@ -171,7 +191,9 @@ export function buildProductBriefPrompt(input: BuildProductBriefPromptInput) {
       `主商品素材 ref：${input.material.primaryProductRef}`,
       "可用素材清单：",
       JSON.stringify(input.material.assets),
-    ].join("\n"),
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join("\n"),
   }).prompt;
 }
 

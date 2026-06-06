@@ -209,7 +209,12 @@ export const productBriefV2Service = {
       runtimeMode() === "real"
         ? (
             await generateProductBriefWithArk(
-              { ...input, material, draft },
+              {
+                ...input,
+                material,
+                draft,
+                creativeRequirements: sources.requirements.data,
+              },
               {
                 imageInput: await productBriefImageInputForWorkspace(
                   input.workspaceId,

@@ -1,25 +1,20 @@
 import { z } from "zod";
-
-/**
- * 商品种类：虚拟服务 / 可消耗实体 / 不可消耗实体
- */
-export const productTypeSchema = z.enum([
-  "virtual-service", // 虚拟服务
-  "consumable", // 可消耗实体
-  "durable", // 不可消耗实体
-]);
-export type ProductType = z.infer<typeof productTypeSchema>;
-
-/**
- * 适用人群：幼儿 / 儿童 / 青年 / 老年
- */
-export const audienceSchema = z.enum([
-  "toddler", // 幼儿
-  "child", // 儿童
-  "youth", // 青年
-  "senior", // 老年
-]);
-export type Audience = z.infer<typeof audienceSchema>;
+import {
+  FACTOR_GUIDANCE_FIELD_AFFECTS,
+  audienceSchema,
+  buildCreativeFactorRequirements,
+  compileCreativeRequirementFields,
+  compiledRequirementFieldSchema,
+  creativeFactorsSchema,
+  factorGuidanceFieldPathSchema,
+  productTypeSchema,
+  strategySchema,
+  type Audience,
+  type CreativeFactors,
+  type FactorGuidance,
+  type FactorGuidanceFieldPath,
+  type ProductType,
+} from "../schemas/creative-factors.js";
 
 export const creativeRequirementTemplateValuesSchema = z.object({
   imageStyle: z.string().trim().min(1),
@@ -30,14 +25,39 @@ export const creativeRequirementTemplateValuesSchema = z.object({
   shotImageGlobal: z.string().trim().min(1),
   shotVideoGlobal: z.string().trim().min(1),
 });
+export type CreativeRequirementTemplateValues = z.infer<
+  typeof creativeRequirementTemplateValuesSchema
+>;
+
+export const creativeRequirementTemplateFieldSchema = z.object({
+  label: z.string().trim().min(1),
+  value: z.string().trim().min(1),
+  affects: z.array(compiledRequirementFieldSchema).min(1),
+});
+export type CreativeRequirementTemplateField = z.infer<
+  typeof creativeRequirementTemplateFieldSchema
+>;
+
+export const creativeRequirementTemplateFieldsSchema = z.record(
+  factorGuidanceFieldPathSchema,
+  creativeRequirementTemplateFieldSchema,
+);
+export type CreativeRequirementTemplateFields = z.infer<
+  typeof creativeRequirementTemplateFieldsSchema
+>;
 
 export const creativeRequirementTemplateSchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(1),
   summary: z.string().trim().min(1),
-  // 分类维度：商品种类 + 适用人群（人群用数组，单模板可覆盖多类，如母婴覆盖幼儿+儿童）
+  version: z.string().trim().min(1),
+  // 兼容旧调用方的平铺分类字段；新代码以 creativeFactors 为准。
   productType: productTypeSchema,
   audiences: z.array(audienceSchema).min(1),
+  strategy: strategySchema,
+  creativeFactors: creativeFactorsSchema,
+  fields: creativeRequirementTemplateFieldsSchema,
+  // 兼容缓存：必须由 creativeFactors + fields 编译得到，不再作为模板本体维护。
   values: creativeRequirementTemplateValuesSchema,
 });
 
@@ -55,6 +75,25 @@ export const creativeRequirementTemplatesSchema = z
         });
       }
       seen.add(template.id);
+      for (const sourcePath of Object.keys(FACTOR_GUIDANCE_FIELD_AFFECTS)) {
+        if (template.fields[sourcePath as FactorGuidanceFieldPath]) continue;
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "fields", sourcePath],
+          message: `${sourcePath} is required so template field influence is explicit`,
+        });
+      }
+      for (const [sourcePath, field] of Object.entries(template.fields)) {
+        const expected = FACTOR_GUIDANCE_FIELD_AFFECTS[sourcePath as FactorGuidanceFieldPath];
+        if (!expected) continue;
+        if (!sameSet(field.affects, expected.affects)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index, "fields", sourcePath, "affects"],
+            message: `${sourcePath} affects must match canonical factor guidance mapping`,
+          });
+        }
+      }
     }
   });
 
@@ -62,109 +101,382 @@ export type CreativeRequirementTemplate = z.infer<
   typeof creativeRequirementTemplateSchema
 >;
 
+type TemplateSeed = {
+  id: string;
+  name: string;
+  summary: string;
+  creativeFactors: CreativeFactors;
+  factorGuidanceOverrides?: {
+    productType?: Partial<FactorGuidance["productType"]>;
+    audience?: Partial<FactorGuidance["audience"]>;
+    strategy?: Partial<FactorGuidance["strategy"]>;
+  };
+  version?: string;
+};
+
+const TEMPLATE_VERSION = "p0-2026-06";
+
+const GUIDANCE_FIELD_LABELS: Record<FactorGuidanceFieldPath, string> = {
+  "factorGuidance.productType.subjectPresentation": "主体呈现",
+  "factorGuidance.productType.sceneAndDelivery": "场景与交付",
+  "factorGuidance.productType.authenticityBoundaries": "真实性边界",
+  "factorGuidance.audience.addressingAndTone": "称谓与语气",
+  "factorGuidance.audience.benefitFrame": "利益表达",
+  "factorGuidance.audience.sensitivityBoundaries": "敏感边界",
+  "factorGuidance.strategy.openingHook": "开场方式",
+  "factorGuidance.strategy.storyStructure": "故事结构",
+  "factorGuidance.strategy.evidenceAndCta": "证据与行动引导",
+};
+
+function sameSet(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every((value) => b.includes(value));
+}
+
+function valueAtFactorGuidancePath(
+  factorGuidance: FactorGuidance,
+  path: FactorGuidanceFieldPath,
+) {
+  const [, group, field] = path.split(".") as [
+    "factorGuidance",
+    keyof FactorGuidance,
+    string,
+  ];
+  return (factorGuidance[group] as Record<string, string>)[field] ?? "";
+}
+
+export function buildCreativeRequirementTemplateFields(
+  factorGuidance: FactorGuidance,
+): CreativeRequirementTemplateFields {
+  const entries = Object.entries(FACTOR_GUIDANCE_FIELD_AFFECTS).map(
+    ([sourcePath, descriptor]) => [
+      sourcePath,
+      {
+        label: GUIDANCE_FIELD_LABELS[sourcePath as FactorGuidanceFieldPath],
+        value: valueAtFactorGuidancePath(
+          factorGuidance,
+          sourcePath as FactorGuidanceFieldPath,
+        ),
+        affects: descriptor.affects,
+      },
+    ],
+  );
+  return creativeRequirementTemplateFieldsSchema.parse(Object.fromEntries(entries));
+}
+
+function stringifyRequirementValue(value: unknown) {
+  return Array.isArray(value) ? value.join("，") : String(value ?? "");
+}
+
+export function creativeRequirementValuesFromFactors(
+  creativeFactors: CreativeFactors,
+): CreativeRequirementTemplateValues {
+  const data = buildCreativeFactorRequirements(creativeFactors);
+  const compiled = compileCreativeRequirementFields(data);
+  return creativeRequirementValuesSchemaFromCompiled(compiled);
+}
+
+function creativeRequirementValuesSchemaFromCompiled(
+  compiled: ReturnType<typeof compileCreativeRequirementFields>,
+): CreativeRequirementTemplateValues {
+  return creativeRequirementTemplateValuesSchema.parse({
+    imageStyle: stringifyRequirementValue(compiled.image.style),
+    imageComposition: stringifyRequirementValue(compiled.image.composition),
+    imageAvoid: stringifyRequirementValue(compiled.image.avoid),
+    scriptTone: stringifyRequirementValue(compiled.script.tone),
+    storyboardRhythm: stringifyRequirementValue(compiled.storyboard.rhythm),
+    shotImageGlobal: stringifyRequirementValue(compiled.shotImage.global),
+    shotVideoGlobal: stringifyRequirementValue(compiled.shotVideo.global),
+  });
+}
+
+function mergeFactorGuidance(
+  base: FactorGuidance,
+  overrides: TemplateSeed["factorGuidanceOverrides"] = {},
+): FactorGuidance {
+  return {
+    productType: {
+      ...base.productType,
+      ...overrides.productType,
+    },
+    audience: {
+      ...base.audience,
+      ...overrides.audience,
+    },
+    strategy: {
+      ...base.strategy,
+      ...overrides.strategy,
+    },
+  };
+}
+
+function createTemplate(seed: TemplateSeed): CreativeRequirementTemplate {
+  const data = buildCreativeFactorRequirements(seed.creativeFactors);
+  const factorGuidance = mergeFactorGuidance(
+    data.factorGuidance,
+    seed.factorGuidanceOverrides,
+  );
+  const compiled = compileCreativeRequirementFields({
+    factorGuidance,
+    scriptInfluence: data.scriptInfluence,
+  });
+  return creativeRequirementTemplateSchema.parse({
+    id: seed.id,
+    name: seed.name,
+    summary: seed.summary,
+    version: seed.version ?? TEMPLATE_VERSION,
+    productType: data.creativeFactors.productType,
+    audiences: [data.creativeFactors.audience],
+    strategy: data.creativeFactors.strategy,
+    creativeFactors: data.creativeFactors,
+    fields: buildCreativeRequirementTemplateFields(factorGuidance),
+    values: creativeRequirementValuesSchemaFromCompiled(compiled),
+  });
+}
+
 export const CREATIVE_REQUIREMENT_TEMPLATES = [
-  // ① 可消耗实体 × 青年 —— 日常快消，最高频场景
-  {
+  createTemplate({
     id: "consumable-youth-seeding",
     name: "快消种草·青年",
-    summary: "自然种草质感，体验驱动，痛点到下单顺滑。",
-    productType: "consumable",
-    audiences: ["youth"],
-    values: {
-      imageStyle: "真实生活感种草质感，保留商品包装、质地和使用瞬间的真实细节",
-      imageComposition: "手部或人物与商品自然互动，商品始终是焦点，生活化背景但不杂乱",
-      imageAvoid: "硬广摆拍，夸张滤镜，商品变形，虚假成分对比，违规功效贴片",
-      scriptTone: "亲切真实有体验感，像朋友安利，卖点和使用感受清晰",
-      storyboardRhythm: "开场抓痛点或场景，快速给体验和卖点，结尾给明确购买理由和优惠钩子",
-      shotImageGlobal: "分镜图保持同一生活场景、商品包装和用量一致，人物动作自然可信",
-      shotVideoGlobal: "镜头轻量自然贴近手机实拍，开箱、使用、特写节奏与口播一致",
+    summary: "痛点直给，质地和体验可见，结尾给出轻决策购买理由。",
+    creativeFactors: {
+      productType: "consumable-good",
+      audience: "youth",
+      strategy: "pain-solution",
     },
-  },
-  // ② 不可消耗实体 × 青年 —— 数码家居好物
-  {
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "真实展示包装开封、近景质地、单次用量和使用瞬间,让商品状态可感知。",
+        sceneAndDelivery: "按痛点开场、开箱/质地、上手使用、即时感受、复购或下单理由推进。",
+        authenticityBoundaries: "避免虚假成分对比、夸大功效、过度磨皮修图和无法证明的立竿见影。",
+      },
+      audience: {
+        addressingAndTone: "面向年轻用户直接说体验,少形容词,多具体感受和可复现细节。",
+        benefitFrame: "强调省时、好看、好用、随手可得和试错成本低。",
+        sensitivityBoundaries: "避免制造容貌焦虑、身材焦虑和绝对化效果承诺。",
+      },
+      strategy: {
+        openingHook: "前3秒用一个高频痛点或反差体验切入,马上出现商品解决动作。",
+        storyStructure: "按痛点放大、方案出现、质地/用量证明、使用反馈、低门槛行动引导推进。",
+        evidenceAndCta: "用近景质地、真实使用动作、口碑或复购理由收束,避免强压式逼单。",
+      },
+    },
+  }),
+  createTemplate({
     id: "durable-youth-showcase",
     name: "数码家居·青年",
-    summary: "质感实拍，功能可视化，参数到场景说服。",
-    productType: "durable",
-    audiences: ["youth"],
-    values: {
-      imageStyle: "精致实拍质感，材质、做工和品牌识别清晰，兼顾科技感和生活感",
-      imageComposition: "主体稳定居中或场景化摆放，留白克制，突出关键功能部位",
-      imageAvoid: "廉价影棚感，参数贴片造假，商品变形，多余配件抢占画面，环境漂移",
-      scriptTone: "理性可信，强调功能、参数和使用场景，专业但不晦涩",
-      storyboardRhythm: "开场点需求，中段功能演示加参数证明，结尾场景代入和行动引导",
-      shotImageGlobal: "分镜图延续同一商品身份、配色和环境，功能特写保持结构真实",
-      shotVideoGlobal: "运镜稳定流畅，功能演示连贯，前后镜头空间一致，避免突兀转场",
+    summary: "场景先行，功能部位可视化，把参数翻译成日常收益。",
+    creativeFactors: {
+      productType: "durable-good",
+      audience: "youth",
+      strategy: "scenario-demo",
     },
-  },
-  // ③ 虚拟服务 × 青年 —— 知识/服务转化
-  {
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "突出商品主体、关键功能部位、材质细节、接口/配件和真实使用尺度。",
+        sceneAndDelivery: "按日常使用场景、功能演示、细节特写、前后效果和购买理由推进。",
+        authenticityBoundaries: "避免虚假参数、夸大续航/性能、商品结构变形和不存在的配件承诺。",
+      },
+      audience: {
+        addressingAndTone: "面向年轻用户讲效率和体验,把参数翻译成省事、好看、好用。",
+        benefitFrame: "强调桌面/居家/通勤场景里的效率提升、空间整洁和长期使用价值。",
+        sensitivityBoundaries: "避免参数堆砌、虚假横评和把个体体验说成绝对结论。",
+      },
+      strategy: {
+        openingHook: "用一个真实使用瞬间或问题场景开场,先让观众看到为什么需要它。",
+        storyStructure: "按场景进入、核心功能演示、细节证明、结果落点、行动引导推进。",
+        evidenceAndCta: "用功能演示、材质近景、使用前后变化完成转化,结尾给适用人群建议。",
+      },
+    },
+  }),
+  createTemplate({
     id: "virtual-youth-conversion",
     name: "知识服务·青年",
-    summary: "信任驱动，价值可视化，效果到报名转化。",
-    productType: "virtual-service",
-    audiences: ["youth"],
-    values: {
-      imageStyle: "干净专业的概念化视觉，用人物、界面或场景具象化抽象服务",
-      imageComposition: "主信息清晰，图文层次分明，避免空洞抽象画面",
-      imageAvoid: "纯文字大字报，夸大效果承诺贴片，虚假数据，与服务无关的炫技画面",
-      scriptTone: "可信有价值感，强调能解决什么问题、带来什么结果，避免空泛和绝对化承诺",
-      storyboardRhythm: "开场点焦虑或目标，中段讲方法和成果证明，结尾给低门槛行动引导",
-      shotImageGlobal: "分镜图统一视觉语言和品牌色，人物或界面演示保持一致身份",
-      shotVideoGlobal: "节奏明快信息密度高，画面切换贴合服务口播逻辑，避免冗长空镜",
+    summary: "先建立可信来源，再把抽象服务拆成流程、样例和报名路径。",
+    creativeFactors: {
+      productType: "digital-service",
+      audience: "youth",
+      strategy: "authority-proof",
     },
-  },
-  // ④ 可消耗实体 × 老年 —— 银发健康滋补（常为子女代购）
-  {
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "用课程界面、服务流程、案例截图、交付物样例和讲师/顾问出镜具象化服务。",
+        sceneAndDelivery: "按目标问题、服务流程、关键能力、案例证据和咨询/报名路径推进。",
+        authenticityBoundaries: "避免虚假数据、保过承诺、收益保证和无法验证的效果背书。",
+      },
+      audience: {
+        addressingAndTone: "面向年轻用户讲清投入产出,语气专业但不端着。",
+        benefitFrame: "强调节省试错、获得方法、明确路径和能马上开始执行。",
+        sensitivityBoundaries: "避免制造职业焦虑、学历焦虑和夸大单次服务效果。",
+      },
+      strategy: {
+        openingHook: "用资质、案例或一个清晰方法论开场,先降低观众对服务类商品的怀疑。",
+        storyStructure: "按可信来源、方法拆解、样例展示、适用边界、咨询报名推进。",
+        evidenceAndCta: "用真实案例、交付样例和明确报名路径收束,不把个例包装成普遍结果。",
+      },
+    },
+  }),
+  createTemplate({
     id: "consumable-senior-health",
     name: "银发滋补·老年",
-    summary: "温暖可信，功效克制合规，自用与孝心送礼双视角。",
-    productType: "consumable",
-    audiences: ["senior"],
-    values: {
-      imageStyle: "温暖真实的生活质感，保留商品和食用场景真实细节，画面明亮安心",
-      imageComposition: "商品与温馨家庭或自用场景结合，主体清晰，避免冰冷影棚感",
-      imageAvoid: "夸大功效，疾病治疗暗示，恐吓式对比，违规医疗承诺，商品变形",
-      scriptTone: "温暖可信有陪伴感，强调品质和日常滋养，避免夸大和恐吓，严守功效合规",
-      storyboardRhythm: "开场建立关心或生活场景，中段讲品质和适用人群，结尾给安心购买或孝心送礼引导",
-      shotImageGlobal: "分镜图保持温暖统一色调、商品身份和家庭场景连续",
-      shotVideoGlobal: "运镜平缓温和，节奏舒适不急促，贴近真实生活观感",
+    summary: "温和叙事，成分与礼赠场景并重，功效表达克制合规。",
+    creativeFactors: {
+      productType: "consumable-good",
+      audience: "senior",
+      strategy: "emotional-story",
     },
-  },
-  // ⑤ 不可消耗实体 × 儿童 —— 玩具/教育硬件（家长决策）
-  {
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "真实展示包装规格、成分来源、冲泡/食用方式、礼盒质感和日常摆放。",
+        sceneAndDelivery: "按关心长辈、送达/开封、日常食用、体面送礼和安心购买推进。",
+        authenticityBoundaries: "避免疾病治疗暗示、夸大滋补功效、虚假产地和医疗化承诺。",
+      },
+      audience: {
+        addressingAndTone: "面向银发用户或子女温和说明,语气稳重可信,不制造恐慌。",
+        benefitFrame: "强调安心、品质、日常便利、体面心意和长期陪伴感。",
+        sensitivityBoundaries: "避免恐吓式健康表达、替代专业医疗建议和绝对化功效。",
+      },
+      strategy: {
+        openingHook: "用一次探望、节日送礼或日常关心场景开场,先建立情绪动机。",
+        storyStructure: "按人物关系、关心理由、产品呈现、食用/送礼场景、安心引导推进。",
+        evidenceAndCta: "用成分、包装、食用方式和礼赠场景完成信任,结尾温和引导了解。",
+      },
+    },
+  }),
+  createTemplate({
     id: "durable-child-parent",
     name: "儿童好物·家长向",
-    summary: "安全可信，向家长说服，成长价值清晰。",
-    productType: "durable",
-    audiences: ["child"],
-    values: {
-      imageStyle: "明亮安全的实拍质感，保留材质、做工和安全细节，色彩友好",
-      imageComposition: "商品与儿童使用场景或家长视角结合，主体清晰，画面整洁",
-      imageAvoid: "危险使用示范，夸大教育效果，违规承诺，可能误导安全的画面，商品变形",
-      scriptTone: "向家长说服，强调安全、材质和成长发展价值，可信不夸大",
-      storyboardRhythm: "开场点家长关切，中段讲安全设计和成长价值，结尾给放心购买引导",
-      shotImageGlobal: "分镜图保持商品身份、安全细节和使用场景一致，儿童出镜自然",
-      shotVideoGlobal: "运镜稳定友好，演示符合安全规范，节奏明快但不躁",
+    summary: "把安全、耐用和孩子真实使用过程讲清楚，向家长做稳妥说服。",
+    creativeFactors: {
+      productType: "durable-good",
+      audience: "child",
+      strategy: "scenario-demo",
     },
-  },
-  // ⑥ 可消耗实体 × 幼儿 —— 母婴食品/用品（新手家长决策，强监管）
-  {
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "展示商品主体、圆角/材质/承重等安全细节、孩子使用尺度和家长辅助动作。",
+        sceneAndDelivery: "按家庭场景、孩子上手、关键功能、安全细节、收纳或长期使用推进。",
+        authenticityBoundaries: "避免危险示范、夸大教育效果、虚假材质和超龄/错龄使用承诺。",
+      },
+      audience: {
+        addressingAndTone: "面向家长说明选择理由,语气温暖可信,强调看得见的安全细节。",
+        benefitFrame: "强调安全、省心、耐用、陪伴和孩子愿意持续使用。",
+        sensitivityBoundaries: "避免制造教育焦虑、成长焦虑和把商品说成替代陪伴。",
+      },
+      strategy: {
+        openingHook: "用孩子真实使用或家长高频顾虑开场,马上给出场景代入。",
+        storyStructure: "按场景进入、孩子使用、家长观察、安全证明、购买建议推进。",
+        evidenceAndCta: "用材质细节、使用过程和家长反馈收束,结尾给适龄/适用场景建议。",
+      },
+    },
+  }),
+  createTemplate({
     id: "consumable-toddler-mombaby",
     name: "母婴用品·幼儿",
-    summary: "安全第一，成分透明合规，向新手家长建立信任。",
-    productType: "consumable",
-    audiences: ["toddler"],
-    values: {
-      imageStyle: "干净柔和的实拍质感，保留商品包装、成分和使用真实细节，画面安心",
-      imageComposition: "商品与温柔育儿场景或成分展示结合，主体清晰，背景柔和整洁",
-      imageAvoid: "夸大功效，替代母乳暗示，违规成分承诺，恐吓式育儿焦虑，商品变形",
-      scriptTone: "温柔可信向新手家长说话，强调安全成分和使用安心，严格合规不夸大",
-      storyboardRhythm: "开场共情育儿场景，中段讲成分安全和适用月龄，结尾给安心购买引导",
-      shotImageGlobal: "分镜图保持柔和色调、商品身份和成分展示一致，育儿场景温暖连续",
-      shotVideoGlobal: "运镜轻柔平缓，节奏舒缓安心，贴近真实育儿观感",
+    summary: "安全第一，成分和使用步骤透明，避免制造育儿焦虑。",
+    creativeFactors: {
+      productType: "consumable-good",
+      audience: "toddler",
+      strategy: "authority-proof",
     },
-  },
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "展示包装密封、成分信息、质地/用量、宝宝接触方式和家长操作手部特写。",
+        sceneAndDelivery: "按家长顾虑、成分/标准说明、使用步骤、宝宝反应和购买提醒推进。",
+        authenticityBoundaries: "避免替代专业建议、夸大成长效果、虚假检测和不适龄使用暗示。",
+      },
+      audience: {
+        addressingAndTone: "面向新手家长温柔说明,给确定感但不制造紧张。",
+        benefitFrame: "强调安全、成分透明、步骤简单、日常可执行和照护省心。",
+        sensitivityBoundaries: "避免育儿恐吓、贬低其他家长选择和绝对安全承诺。",
+      },
+      strategy: {
+        openingHook: "用成分、检测、适用年龄或家长高频疑问开场,先建立可信边界。",
+        storyStructure: "按可信来源、成分/标准、使用步骤、适用边界、购买咨询推进。",
+        evidenceAndCta: "用包装信息、标准说明和真实使用步骤收束,结尾提醒按需选择。",
+      },
+    },
+  }),
+  createTemplate({
+    id: "offline-child-travel",
+    name: "亲子旅游·家长向",
+    summary: "真实路线和服务保障优先，让家长看见省心、安全和孩子体验。",
+    creativeFactors: {
+      productType: "offline-experience-service",
+      audience: "child",
+      strategy: "scenario-demo",
+    },
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "真实展示目的地、交通衔接、酒店/营地、带队人员、亲子互动和孩子体验状态。",
+        sceneAndDelivery: "按出发准备、到达入住、核心景点/活动、服务保障、报名路径推进。",
+        authenticityBoundaries: "避免虚假景点、不存在的酒店交通承诺、夸大安全保障和摆拍冒充真实行程。",
+      },
+      audience: {
+        addressingAndTone: "面向家长说服,语气温暖可信,先回应安全和省心顾虑。",
+        benefitFrame: "强调省心安排、安全保障、亲子陪伴、孩子真实体验和路线清晰。",
+        sensitivityBoundaries: "避免制造教育焦虑、危险示范和把一次旅行夸大成决定性成长。",
+      },
+      strategy: {
+        openingHook: "用真实亲子出行片段或家长出行痛点开场,迅速建立代入。",
+        storyStructure: "按路线顺序和服务节点推进,每个节点都落到家长关心的保障或体验。",
+        evidenceAndCta: "用行程安排、服务人员、场地实拍和报名路径完成转化。",
+      },
+    },
+  }),
+  createTemplate({
+    id: "offline-youth-restaurant",
+    name: "到店餐饮·青年",
+    summary: "真实到店动线，出品、环境、服务和性价比都给出可验证判断。",
+    creativeFactors: {
+      productType: "offline-experience-service",
+      audience: "youth",
+      strategy: "review-comparison",
+    },
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "真实展示门头位置、排队/入座、环境氛围、招牌菜出品、服务动作和结账信息。",
+        sceneAndDelivery: "按到店动线、点单理由、出品近景、口味/分量反馈、适合人群和到店引导推进。",
+        authenticityBoundaries: "避免过度滤镜、虚假门店信息、摆拍冒充真实出餐和无法兑现的优惠承诺。",
+      },
+      audience: {
+        addressingAndTone: "面向年轻本地生活用户直接给判断,语气像真实探店但不标题党。",
+        benefitFrame: "强调好吃程度、环境氛围、拍照友好、价格感和约会/聚餐适配。",
+        sensitivityBoundaries: "避免踩一捧一、绝对化口味结论、诱导浪费和虚假排队热度。",
+      },
+      strategy: {
+        openingHook: "用一道招牌菜、门店反差或明确探店结论开场,先抛出值得去的理由。",
+        storyStructure: "按测评维度、到店过程、出品体验、价格/服务对比、适用建议推进。",
+        evidenceAndCta: "用菜单价格、菜品近景、环境实拍和适合场景收束,结尾给预约或到店路径。",
+      },
+    },
+  }),
+  createTemplate({
+    id: "offline-youth-photography",
+    name: "本地摄影·青年",
+    summary: "用拍摄前后、服务过程和情绪价值，推动咨询预约而非硬卖套餐。",
+    creativeFactors: {
+      productType: "offline-experience-service",
+      audience: "youth",
+      strategy: "emotional-story",
+    },
+    factorGuidanceOverrides: {
+      productType: {
+        subjectPresentation: "真实展示摄影棚/外景地、妆造沟通、拍摄引导、原片/精修对比和交付样片。",
+        sceneAndDelivery: "按拍摄顾虑、沟通过程、现场引导、成片前后变化、咨询预约推进。",
+        authenticityBoundaries: "避免盗用样片、过度修图承诺、虚假档期价格和把个案效果说成固定结果。",
+      },
+      audience: {
+        addressingAndTone: "面向年轻用户讲自我表达和纪念感,语气轻松真诚。",
+        benefitFrame: "强调被引导的安心感、出片稳定、风格匹配、纪念价值和社交展示。",
+        sensitivityBoundaries: "避免制造外貌焦虑、羞辱素人状态和承诺人人同款效果。",
+      },
+      strategy: {
+        openingHook: "用拍摄前的顾虑或成片反差开场,先让用户代入想被好好记录的情绪。",
+        storyStructure: "按人物处境、拍摄顾虑、服务引导、成片变化、预约咨询推进。",
+        evidenceAndCta: "用沟通片段、引导动作、前后对比和交付样片收束,结尾温和引导咨询档期。",
+      },
+    },
+  }),
 ] satisfies CreativeRequirementTemplate[];
 
 export function getCreativeRequirementTemplates(
@@ -174,8 +486,8 @@ export function getCreativeRequirementTemplates(
 }
 
 /**
- * 按商品种类 / 适用人群筛选模板，供剧本模块的二维选择器使用。
- * 两个条件均可选，均传时取交集。
+ * 按商品种类 / 适用人群筛选模板。新模板以 creativeFactors 为准；
+ * productType/audiences/strategy 平铺字段仅作为兼容输出。
  */
 export function filterCreativeRequirementTemplates(
   filters: { productType?: ProductType; audience?: Audience } = {},
@@ -183,8 +495,8 @@ export function filterCreativeRequirementTemplates(
 ): CreativeRequirementTemplate[] {
   const { productType, audience } = filters;
   return templates.filter((template) => {
-    if (productType && template.productType !== productType) return false;
-    if (audience && !template.audiences.includes(audience)) return false;
+    if (productType && template.creativeFactors.productType !== productType) return false;
+    if (audience && template.creativeFactors.audience !== audience) return false;
     return true;
   });
 }

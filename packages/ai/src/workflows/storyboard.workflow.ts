@@ -27,6 +27,7 @@ import type { FileTraceLogger } from "../trace/trace-log.js";
 export interface GenerateStoryboardInput {
   brief: ProductBriefArtifact;
   material: MaterialIntakeArtifact;
+  creativeRequirements?: unknown;
 }
 
 export interface RewriteStoryboardVoiceoversInput

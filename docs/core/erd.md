@@ -432,11 +432,23 @@ create unique index if not exists prompt_requirements_current_approved_idx
   },
   "shotVideo": {
     "global": "smooth motion, avoid abrupt camera jumps"
+  },
+  "creativeFactors": {
+    "productType": "offline-experience-service",
+    "audience": "child",
+    "strategy": "scenario-demo"
+  },
+  "creativeRequirementTemplate": {
+    "source": "setup-template",
+    "templateId": "offline-child-travel",
+    "templateNameSnapshot": "亲子旅游·家长向",
+    "templateVersion": "p0-2026-06",
+    "status": "applied"
   }
 }
 ```
 
-用户不直接编辑 provider system prompt。后端 assembler 将当前 requirements 注入主体 prompt。
+用户不直接编辑 provider system prompt。后端 assembler 将当前 requirements 注入主体 prompt。`factorGuidance` / `scriptInfluence` 保存三主标签展开后的细分字段；`compiledRequirementSourceMap` 保存 7 项字段的来源解释，供首屏和审计使用。
 
 ### 4.2 Prompt assembly
 
@@ -564,9 +576,11 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 - `source_video_candidate_ids`：按 shot 顺序排列的视频候选 id。
 - `source_video_script_artifact_ids`：生成这些候选时使用的视频脚本 artifact id。
-- `compiled_manifest`：ffmpeg concat 输入、输出文件、duration、sha256 等。
+- `compiled_manifest`：ffmpeg concat 输入、输出文件、duration、sha256 等，并包含 `creativeTags`。`creativeTags.schemaVersion="creative-tags.v1"`，快照成片所用 prompt requirements id、shotprompt id、`creativeFactors` 与可选 `creativeRequirementTemplate`。
 
 当 active shot set 变化后，旧 final video job 不失效；它仍然指向创建时的 shot set。
+
+登记发布到数据看板时，`campaign_publications.creative_tags` 原样复制对应 `final_video_jobs.compiled_manifest.creativeTags`；未绑定成片的发布记录该字段为空对象。
 
 ---
 

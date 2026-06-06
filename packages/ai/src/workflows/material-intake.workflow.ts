@@ -33,6 +33,7 @@ export interface GenerateMaterialIntakeInput {
   initialPrompt?: string;
   scanned: MaterialIntakeArtifact;
   textPreviews?: Array<{ ref: string; text: string }>;
+  creativeRequirements?: unknown;
 }
 
 export interface MaterialIntakeTrace {

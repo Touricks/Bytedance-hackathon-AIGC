@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ComposeFinalVideoJobData } from "@aigc-video/shared";
+import {
+  creativeFactorsSchema,
+  creativeRequirementTemplateSourceSchema,
+  type ComposeFinalVideoJobData,
+} from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
 import { traceService } from "../trace/trace.service.js";
@@ -11,6 +15,96 @@ import { ffprobe, runFfmpeg } from "./ffmpeg.js";
 
 function sha256(s: string) {
   return "sha256:" + createHash("sha256").update(s).digest("hex");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseCreativeFactors(data: unknown) {
+  if (!isRecord(data)) return null;
+  const parsed = creativeFactorsSchema.safeParse(data.creativeFactors);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseCreativeRequirementTemplate(data: unknown) {
+  if (!isRecord(data)) return null;
+  const parsed = creativeRequirementTemplateSourceSchema.safeParse(
+    data.creativeRequirementTemplate,
+  );
+  return parsed.success ? parsed.data : null;
+}
+
+async function loadCreativeTags(input: {
+  workspaceId: string;
+  shotSetId: string | null;
+}) {
+  const fallback = {
+    schemaVersion: "creative-tags.v1" as const,
+    promptRequirementsArtifactId: null as string | null,
+    shotPromptArtifactId: null as string | null,
+    creativeFactors: null,
+    creativeRequirementTemplate: null,
+    fallback: false,
+  };
+
+  if (input.shotSetId) {
+    const source = await db.db2.pool().query(
+      `select ss.shot_prompt_artifact_id,
+              sp.source_fingerprint->>'promptRequirementsArtifactId' as prompt_requirements_artifact_id
+       from shot_sets ss
+       join shot_prompt_artifacts sp on sp.id = ss.shot_prompt_artifact_id
+       where ss.workspace_id = $1 and ss.id = $2
+       limit 1`,
+      [input.workspaceId, input.shotSetId],
+    );
+    const sourceRow = source.rows[0];
+    const promptRequirementsArtifactId =
+      typeof sourceRow?.prompt_requirements_artifact_id === "string"
+        ? sourceRow.prompt_requirements_artifact_id
+        : null;
+    const shotPromptArtifactId =
+      typeof sourceRow?.shot_prompt_artifact_id === "string"
+        ? sourceRow.shot_prompt_artifact_id
+        : null;
+
+    if (promptRequirementsArtifactId) {
+      const requirements = await db.db2.pool().query(
+        `select data
+         from prompt_requirements_artifacts
+         where workspace_id = $1 and id = $2
+         limit 1`,
+        [input.workspaceId, promptRequirementsArtifactId],
+      );
+      const requirementsData = requirements.rows[0]?.data;
+      return {
+        schemaVersion: "creative-tags.v1",
+        promptRequirementsArtifactId,
+        shotPromptArtifactId,
+        creativeFactors: parseCreativeFactors(requirementsData),
+        creativeRequirementTemplate: parseCreativeRequirementTemplate(requirementsData),
+        fallback: false,
+      };
+    }
+    fallback.shotPromptArtifactId = shotPromptArtifactId;
+  }
+
+  const current = await db.db2.pool().query(
+    `select id, data
+     from prompt_requirements_artifacts
+     where workspace_id = $1 and status = 'approved' and is_current = true
+     order by approved_at desc, created_at desc, id desc
+     limit 1`,
+    [input.workspaceId],
+  );
+  return {
+    ...fallback,
+    promptRequirementsArtifactId:
+      typeof current.rows[0]?.id === "string" ? current.rows[0].id : null,
+    creativeFactors: parseCreativeFactors(current.rows[0]?.data),
+    creativeRequirementTemplate: parseCreativeRequirementTemplate(current.rows[0]?.data),
+    fallback: true,
+  };
 }
 
 async function downloadTo(url: string, outPath: string) {
@@ -102,6 +196,10 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
     const manifest = {
       schemaVersion: "final-video.v1",
       workspaceId: job.workspaceId,
+      creativeTags: await loadCreativeTags({
+        workspaceId: job.workspaceId,
+        shotSetId: job.shotSetId,
+      }),
       sources: candidates.map((c) => ({
         shotId: c.shotId,
         videoCandidateId: c.id,

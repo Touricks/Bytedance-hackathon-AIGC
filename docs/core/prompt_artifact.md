@@ -109,10 +109,15 @@ packages/ai/src/prompts/modules/<module>/
 | `storyboard` | 分镜节奏、叙事要求。 |
 | `shotImage` | 分镜图的全局或逐镜要求。 |
 | `shotVideo` | 分镜视频的全局或逐镜要求。 |
+| `creativeFactors` | 首屏三主标签：`productType + audience + strategy`。 |
+| `factorGuidance` | 三主标签展开后的 9 个可编辑细分字段，是编译 7 项创作要求的用户可见来源。 |
+| `scriptInfluence` | 三主标签对剧本角色、受众语气、叙事结构的结构化影响缓存。 |
+| `compiledRequirementSourceMap` | 7 项编译创作要求分别由哪些 `factorGuidance` 字段汇入，供前端解释“本次调整影响了什么”。 |
+| `creativeRequirementTemplate` | 可选首页模板来源：`templateId/templateNameSnapshot/templateVersion/status`。`status` 为 `applied | customized | detached`。 |
 
-参考视频导入不直接写入 `prompt_requirements_artifacts`。`POST /api/workspaces/:workspaceId/reference-video/import` 只把站外直连视频或上传视频分析为 requirements draft，返回给首屏表单填入现有字段；用户点击提交后才进入 `prompt-requirements/propose` / `approve` 生命周期。参考视频也不写入 `asset`，不参与 `material-intake.assets[]`。
+参考视频导入会让模型建议 `creativeFactors` 并生成 requirements draft。`POST /api/workspaces/:workspaceId/reference-video/import` 只把站外直连视频或上传视频分析为草稿，返回给首屏表单确认；用户点击保存或提交后才进入 `prompt-requirements/propose` / `approve` 生命周期。参考视频也不写入 `asset`，不参与 `material-intake.assets[]`。
 
-首屏「创作要求模板」来自 `packages/shared/src/setup_template/creative-requirements.ts`。服务端启动/模块加载时校验 shared Zod schema，并通过 `GET /api/setup-templates/creative-requirements` 返回给前端；点击模板只确定性填充这些 requirements draft 字段。它不会创建 `prompt_requirements_artifacts`，也不会批准 current artifact 或触发素材解读。
+首屏「创作要求模板」来自 `packages/shared/src/setup_template/creative-requirements.ts`。服务端启动/模块加载时校验 shared Zod schema，并通过 `GET /api/setup-templates/creative-requirements` 返回给前端；模板本体是 `商品/服务类型 + 适用人群 + 推销手法` 的组合，`fields` 声明每个细分字段会影响 7 项编译要求中的哪些字段。点击模板只确定性填充首屏因子表单草稿。它不会批准 current artifact 或触发素材解读；只有用户保存/提交后才写入 proposed `prompt_requirements_artifacts`。
 
 ### 2.2 `material_intake_artifacts.data`
 

@@ -265,6 +265,117 @@ components:
         storyboard: { type: object, additionalProperties: true }
         shotImage: { type: object, additionalProperties: true }
         shotVideo: { type: object, additionalProperties: true }
+        creativeFactors:
+          $ref: "#/components/schemas/CreativeFactors"
+        factorGuidance:
+          type: object
+          additionalProperties: true
+          description: 三主因子展开后的 9 个可编辑细分字段。
+        scriptInfluence:
+          type: object
+          additionalProperties: true
+          description: 三主因子对剧本生成的结构化影响缓存。
+        compiledRequirementSourceMap:
+          $ref: "#/components/schemas/CompiledRequirementSourceMap"
+        creativeRequirementTemplate:
+          $ref: "#/components/schemas/CreativeRequirementTemplateSource"
+
+    ProductType:
+      type: string
+      enum:
+        - consumable-good
+        - durable-good
+        - digital-service
+        - offline-experience-service
+
+    Audience:
+      type: string
+      enum: [toddler, child, youth, senior]
+
+    Strategy:
+      type: string
+      enum:
+        - pain-solution
+        - scenario-demo
+        - review-comparison
+        - tutorial-value
+        - authority-proof
+        - emotional-story
+        - curiosity-hook
+
+    CreativeFactors:
+      type: object
+      additionalProperties: false
+      required: [productType, audience, strategy]
+      properties:
+        productType:
+          $ref: "#/components/schemas/ProductType"
+        audience:
+          $ref: "#/components/schemas/Audience"
+        strategy:
+          $ref: "#/components/schemas/Strategy"
+
+    CompiledRequirementField:
+      type: string
+      enum:
+        - image.style
+        - image.composition
+        - image.avoid
+        - script.tone
+        - storyboard.rhythm
+        - shotImage.global
+        - shotVideo.global
+
+    CompiledRequirementSource:
+      type: object
+      additionalProperties: false
+      required: [sourcePath, label, factor, affects]
+      properties:
+        sourcePath: { type: string, minLength: 1 }
+        label: { type: string, minLength: 1 }
+        factor:
+          type: string
+          enum: [productType, audience, strategy, scriptInfluence]
+        affects:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CompiledRequirementField"
+
+    CompiledRequirementSourceMap:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          imageStyle,
+          imageComposition,
+          imageAvoid,
+          scriptTone,
+          storyboardRhythm,
+          shotImageGlobal,
+          shotVideoGlobal
+        ]
+      properties:
+        imageStyle: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        imageComposition: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        imageAvoid: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        scriptTone: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        storyboardRhythm: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        shotImageGlobal: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+        shotVideoGlobal: { type: array, items: { $ref: "#/components/schemas/CompiledRequirementSource" } }
+
+    CreativeRequirementTemplateSource:
+      type: object
+      additionalProperties: false
+      required: [source, templateId, templateNameSnapshot, templateVersion, status]
+      properties:
+        source: { type: string, const: setup-template }
+        templateId: { type: string, minLength: 1 }
+        templateNameSnapshot: { type: string, minLength: 1 }
+        templateVersion: { type: string, minLength: 1 }
+        status:
+          type: string
+          enum: [applied, customized, detached]
 
     CreativeRequirementTemplateValues:
       type: object
@@ -288,27 +399,93 @@ components:
         shotImageGlobal: { type: string, minLength: 1 }
         shotVideoGlobal: { type: string, minLength: 1 }
 
+    CreativeRequirementTemplateField:
+      type: object
+      additionalProperties: false
+      required: [label, value, affects]
+      properties:
+        label: { type: string, minLength: 1 }
+        value: { type: string, minLength: 1 }
+        affects:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CompiledRequirementField"
+
+    CreativeRequirementTemplateFields:
+      type: object
+      additionalProperties: false
+      description: >-
+        Key 为 factorGuidance.* 细分字段路径；每个字段声明它会影响 7 项编译创作要求中的哪些字段。
+      required:
+        - factorGuidance.productType.subjectPresentation
+        - factorGuidance.productType.sceneAndDelivery
+        - factorGuidance.productType.authenticityBoundaries
+        - factorGuidance.audience.addressingAndTone
+        - factorGuidance.audience.benefitFrame
+        - factorGuidance.audience.sensitivityBoundaries
+        - factorGuidance.strategy.openingHook
+        - factorGuidance.strategy.storyStructure
+        - factorGuidance.strategy.evidenceAndCta
+      properties:
+        factorGuidance.productType.subjectPresentation:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.productType.sceneAndDelivery:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.productType.authenticityBoundaries:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.audience.addressingAndTone:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.audience.benefitFrame:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.audience.sensitivityBoundaries:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.strategy.openingHook:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.strategy.storyStructure:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+        factorGuidance.strategy.evidenceAndCta:
+          $ref: "#/components/schemas/CreativeRequirementTemplateField"
+
     CreativeRequirementTemplate:
       type: object
       additionalProperties: false
-      required: [id, name, summary, productType, audiences, values]
+      required:
+        [
+          id,
+          name,
+          summary,
+          version,
+          productType,
+          audiences,
+          strategy,
+          creativeFactors,
+          fields,
+          values
+        ]
       properties:
         id: { type: string, minLength: 1 }
         name: { type: string, minLength: 1 }
         summary: { type: string, minLength: 1 }
+        version: { type: string, minLength: 1 }
         productType:
-          {
-            type: string,
-            enum: [virtual-service, consumable, durable],
-            description: 模板适用的商品种类。
-          }
+          allOf:
+            - $ref: "#/components/schemas/ProductType"
+          description: 兼容旧调用方的平铺字段；新调用方以 creativeFactors.productType 为准。
         audiences:
           type: array
           minItems: 1
-          description: 模板适用人群，可覆盖多个年龄/决策人群。
+          description: 兼容旧调用方的平铺字段；P0 内置模板只包含 creativeFactors.audience。
           items:
-            type: string
-            enum: [toddler, child, youth, senior]
+            $ref: "#/components/schemas/Audience"
+        strategy:
+          allOf:
+            - $ref: "#/components/schemas/Strategy"
+          description: 兼容旧调用方的平铺字段；新调用方以 creativeFactors.strategy 为准。
+        creativeFactors:
+          $ref: "#/components/schemas/CreativeFactors"
+        fields:
+          $ref: "#/components/schemas/CreativeRequirementTemplateFields"
         values:
           $ref: "#/components/schemas/CreativeRequirementTemplateValues"
 
@@ -1035,6 +1212,43 @@ components:
           $ref: "#/components/schemas/UpstreamChange"
         context: {}
 
+    CreativeTags:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          promptRequirementsArtifactId,
+          shotPromptArtifactId,
+          creativeFactors,
+          creativeRequirementTemplate,
+          fallback
+        ]
+      properties:
+        schemaVersion: { type: string, const: creative-tags.v1 }
+        promptRequirementsArtifactId: { type: string, nullable: true }
+        shotPromptArtifactId: { type: string, nullable: true }
+        creativeFactors:
+          anyOf:
+            - $ref: "#/components/schemas/CreativeFactors"
+            - type: "null"
+        creativeRequirementTemplate:
+          anyOf:
+            - $ref: "#/components/schemas/CreativeRequirementTemplateSource"
+            - type: "null"
+        fallback:
+          type: boolean
+          description: true 表示成片时从 current prompt requirements 回退读取 tags，而非从 shot set 指向的 artifact 读取。
+
+    FinalVideoManifest:
+      type: object
+      additionalProperties: true
+      properties:
+        schemaVersion: { type: string, const: final-video.v1 }
+        workspaceId: { type: string }
+        creativeTags:
+          $ref: "#/components/schemas/CreativeTags"
+
     FinalVideoJob:
       type: object
       properties:
@@ -1052,7 +1266,8 @@ components:
           items: { type: string }
         localUrl: { type: string, nullable: true }
         errorMessage: { type: string, nullable: true }
-        compiledManifest: { type: object, additionalProperties: true }
+        compiledManifest:
+          $ref: "#/components/schemas/FinalVideoManifest"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -1110,6 +1325,16 @@ components:
         publishUrl: { type: string, nullable: true }
         status: { type: string }
         notes: { type: string, nullable: true }
+        creativeTags:
+          type: object
+          additionalProperties: true
+          description: 从 finalVideoJob.compiledManifest.creativeTags 快照而来；未绑定成片时为空对象。
+        latestMetrics:
+          anyOf:
+            - $ref: "#/components/schemas/CampaignMetric"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     CampaignMetric:
       type: object
