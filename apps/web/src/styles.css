@@ -918,7 +918,6 @@ label {
 
 .review-topbar__title span,
 .review-rail__brand span,
-.review-panel__header span,
 .review-side__head h2,
 .review-current-shot span {
   display: block;
@@ -1410,13 +1409,6 @@ label {
   font-size: 27px;
   font-weight: 700;
   line-height: 1.12;
-}
-
-.review-panel__header p {
-  max-width: 68ch;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 14px;
 }
 
 .review-panel__actions {
@@ -3329,12 +3321,6 @@ label {
   font-size: 27px;
 }
 
-.review-panel:has(.review-image-grid) .review-panel__header span,
-.review-panel:has(.review-video-grid) .review-panel__header span,
-.review-panel:has(.review-final) .review-panel__header span,
-.review-panel:has(.review-image-grid) .review-panel__header p,
-.review-panel:has(.review-video-grid) .review-panel__header p,
-.review-panel:has(.review-final) .review-panel__header p,
 .review-panel:has(.review-image-grid) .review-action-note,
 .review-panel:has(.review-video-grid) .review-action-note,
 .review-panel:has(.review-final) .review-action-note,

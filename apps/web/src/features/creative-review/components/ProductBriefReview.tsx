@@ -93,9 +93,7 @@ export function ProductBriefReviewForm({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>待审创作产物</span>
         <h1>商品卖点审核</h1>
-        <p>确认商品名、核心卖点、人群、语气和禁用表达后，再生成分镜脚本。</p>
       </div>
       <section className="product-brief-chat" aria-label="调整商品卖点">
         <div className="product-brief-chat__head">
@@ -282,11 +280,6 @@ export function ProductBriefReview({
     return (
       <ProposalPlaceholder
         title="商品卖点审核"
-        description={
-          pending
-            ? "系统正在根据已批准的素材解读生成商品卖点，完成后会停在这里供你审核。"
-            : "素材理解完成后，需要生成商品卖点供商家确认。"
-        }
         actionLabel={pending ? "正在生成商品卖点..." : "生成商品卖点"}
         busy={vm.busy || pending}
         onAction={() => {

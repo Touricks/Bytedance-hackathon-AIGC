@@ -38,9 +38,7 @@ export function ApplyShotSetPanel({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>同步点</span>
         <h1>应用分镜</h1>
-        <p>将当前生效的分镜生成要求创建为分镜链路实例。旧实例、候选结果和成片会保留。</p>
       </div>
       {storyboardRequiresApproval ? (
         <div className="review-upstream-note">

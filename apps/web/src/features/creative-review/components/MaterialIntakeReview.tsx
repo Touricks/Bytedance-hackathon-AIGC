@@ -95,7 +95,6 @@ export function MaterialIntakeReview({
     return (
       <ProposalPlaceholder
         title="素材解读"
-        description="创作要求确认后，系统会清点上传素材并生成可审核的素材标签。"
         actionLabel="生成素材解读"
         busy={vm.busy}
         onAction={() => {
@@ -149,9 +148,7 @@ export function MaterialIntakeReview({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>{artifact.isCurrent ? "生效创作产物" : "待审创作产物"}</span>
         <h1>素材解读</h1>
-        <p>确认每个上传素材的角色、相关性和是否纳入后，再生成商品卖点审核。</p>
       </div>
       <div className="material-intake-summary">
         <div>

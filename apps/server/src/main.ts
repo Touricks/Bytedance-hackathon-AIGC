@@ -15,6 +15,7 @@ import {
 } from "./modules/generation/video.worker.js";
 import { processComposeFinalVideo } from "./modules/generation/final-compose.worker.js";
 import { processOneClickFinalVideo } from "./modules/generation/one-click-final-video.worker.js";
+import { processShotImageAutoSelection } from "./modules/generation/shot-image-auto-selection.worker.js";
 import { assertFfmpegAvailable } from "./modules/generation/ffmpeg.js";
 
 await assertFfmpegAvailable();
@@ -31,6 +32,9 @@ registerGenerationV2Processor(async (data, meta) => {
   if (data.kind === "compose_final_video") return processComposeFinalVideo(data);
   if (data.kind === "advance_one_click_final_video") {
     return processOneClickFinalVideo(data);
+  }
+  if (data.kind === "advance_shot_image_auto_selection") {
+    return processShotImageAutoSelection(data);
   }
 });
 if (shouldStartWorker()) {

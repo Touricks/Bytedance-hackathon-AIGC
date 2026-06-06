@@ -162,9 +162,7 @@ export function StoryboardReviewForm({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>待审创作产物</span>
         <h1>分镜脚本</h1>
-        <p>确认每段讲什么、讲多久，以及口播是否能在时长内说完。</p>
       </div>
 
       <section
@@ -553,11 +551,6 @@ export function StoryboardReview({
     return (
       <ProposalPlaceholder
         title="分镜脚本"
-        description={
-          pending
-            ? "系统正在根据已批准的商品卖点生成分镜脚本，完成后会停在这里供你审核。"
-            : "商品卖点批准后，生成视频口播、节奏和画面意图。"
-        }
         actionLabel={pending ? "正在生成分镜脚本..." : "生成分镜脚本"}
         busy={vm.busy || pending}
         onAction={() => {

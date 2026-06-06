@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { regenerateImagePrompt } from "./imagePrompt.js";
+import { proposeImagePrompt, regenerateImagePrompt } from "./imagePrompt.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -9,6 +9,56 @@ afterEach(() => {
 });
 
 describe("image prompt api client", () => {
+  it("proposes image prompts with candidate count", async () => {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(
+        String(url),
+        "http://localhost:3000/api/workspaces/workspace_123/shots/shot_1/image-prompts/propose",
+      );
+      assert.equal(init?.method, "POST");
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        userDirection: "更突出商品质感",
+        candidateCount: 4,
+      });
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "art_img_1",
+            shotId: "shot_1",
+            version: 1,
+            status: "ACTIVE",
+            promptText: "分镜图提示",
+            negativePrompt: null,
+            referenceAssetIds: [],
+            createdBy: "system",
+            createdAt: "2026-06-02T00:00:00.000Z",
+          },
+          artifact: {
+            id: "art_img_1",
+            shotId: "shot_1",
+            version: 1,
+            status: "ACTIVE",
+            promptText: "分镜图提示",
+            negativePrompt: null,
+            referenceAssetIds: [],
+            createdBy: "system",
+            createdAt: "2026-06-02T00:00:00.000Z",
+          },
+          batch: {},
+          candidates: [],
+        }),
+        { status: 200 },
+      );
+    };
+
+    const result = await proposeImagePrompt("workspace_123", "shot_1", {
+      userDirection: "更突出商品质感",
+      candidateCount: 4,
+    });
+
+    assert.equal(result.data.id, "art_img_1");
+  });
+
   it("regenerates image prompts with user feedback instead of final prompt JSON", async () => {
     globalThis.fetch = async (url, init) => {
       assert.equal(
@@ -20,6 +70,7 @@ describe("image prompt api client", () => {
         baseArtifactId: "art_img_base",
         feedbackImageCandidateId: "imc_feedback",
         userDirection: "入口标识更清晰",
+        candidateCount: 5,
       });
       return new Response(
         JSON.stringify({
@@ -56,6 +107,7 @@ describe("image prompt api client", () => {
       baseArtifactId: "art_img_base",
       feedbackImageCandidateId: "imc_feedback",
       userDirection: "入口标识更清晰",
+      candidateCount: 5,
     });
 
     assert.equal(result.data.id, "art_img_next");

@@ -4,7 +4,6 @@ import {
   mkdir,
   readFile,
   readdir,
-  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -33,7 +32,7 @@ import {
   assertValidRasterImageBytes,
 } from "../../common/image-validation.js";
 import { config } from "../../common/config.js";
-import { HttpError, NotFoundError } from "../../common/errors.js";
+import { HttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import type { WorkspaceStorageBindingRow } from "../../db/client.js";
 import { oneClickFinalVideoService } from "../generation/one-click-final-video.service.js";
@@ -140,7 +139,7 @@ function isWorkspaceVisibleInConfiguredRoots(localPath: string) {
   });
 }
 
-function managedWorkspaceName(input?: string) {
+function _managedWorkspaceName(input?: string) {
   const normalized =
     input
       ?.trim()
@@ -800,7 +799,7 @@ function workspaceMaterialMetadata(input: {
   };
 }
 
-async function ensureWorkspaceMaterialAsset(input: {
+async function _ensureWorkspaceMaterialAsset(input: {
   client: PoolClient;
   workspaceId: string;
   localPath: string;
@@ -1616,6 +1615,10 @@ export const workspaceService = {
       );
       await client.query(
         `delete from campaign_publications where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from shot_image_auto_selection_jobs where workspace_id = $1`,
         [workspaceId],
       );
       await client.query(`delete from generation_jobs where workspace_id = $1`, [

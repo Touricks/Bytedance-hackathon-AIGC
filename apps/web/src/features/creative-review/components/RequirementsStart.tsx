@@ -382,7 +382,6 @@ export function RequirementsStart({
   return (
     <section className="review-panel review-panel--start">
       <div className="review-panel__header">
-        <span>首屏</span>
         <h1>创作要求 + 上传素材</h1>
       </div>
       {!requirementsArtifact?.isCurrent ? (
@@ -516,7 +515,6 @@ export function RequirementsStart({
           <div>
             <span>全局创作因子</span>
           </div>
-          <p>每次调整都会重新编译下方全局创作要求，并影响后续素材解读、商品卖点和分镜生成。</p>
         </div>
         <div className="creative-factor-selects">
           <FormControl

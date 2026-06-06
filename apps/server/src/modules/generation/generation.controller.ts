@@ -6,6 +6,7 @@ import { db } from "../../db/client.js";
 import { getWorkspaceStorageAdapter } from "../workspace/storage/workspace-storage-resolver.js";
 import { generationService } from "./generation.service.js";
 import { oneClickFinalVideoService } from "./one-click-final-video.service.js";
+import { shotImageAutoSelectionService } from "./shot-image-auto-selection.service.js";
 
 const aspectRatioSchema = z.enum(["9:16", "16:9", "1:1"]);
 const createOneClickFinalVideoRequestSchema = z.object({
@@ -15,12 +16,61 @@ const createOneClickFinalVideoRequestSchema = z.object({
   outputAspectRatio: aspectRatioSchema.optional(),
   autoSelectionStrategy: z.literal("first_success").optional(),
 });
+const createShotImageAutoSelectionRequestSchema = z.object({
+  candidateCount: z.number().int().positive().optional(),
+});
 
 function finalVideoDownloadFilename(finalVideoJobId: string) {
   return `final-video-${finalVideoJobId.replace(/[^a-zA-Z0-9_.-]/g, "-")}.mp4`;
 }
 
 export async function registerGenerationController(app: FastifyInstance) {
+  app.post(
+    "/api/workspaces/:workspaceId/shot-image-auto-selections",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string };
+        const header = req.headers["idempotency-key"];
+        const key = Array.isArray(header) ? header[0] : header;
+        if (!key) {
+          return reply.status(400).send({ code: "IDEMPOTENCY_KEY_REQUIRED" });
+        }
+        const body = createShotImageAutoSelectionRequestSchema.parse(req.body ?? {});
+        return await shotImageAutoSelectionService.create({
+          workspaceId: params.workspaceId,
+          candidateCount: body.candidateCount,
+          idempotencyKey: key,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.get("/api/shot-image-auto-selections/:jobId", async (req, reply) => {
+    try {
+      const params = req.params as { jobId: string };
+      return await shotImageAutoSelectionService.get(params.jobId);
+    } catch (e) {
+      const err = toHttpError(e);
+      return reply.status(err.statusCode).send(err);
+    }
+  });
+
+  app.get(
+    "/api/workspaces/:workspaceId/shot-image-auto-selections",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string };
+        return await shotImageAutoSelectionService.list(params.workspaceId);
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
   app.post(
     "/api/workspaces/:workspaceId/one-click-final-videos",
     async (req, reply) => {

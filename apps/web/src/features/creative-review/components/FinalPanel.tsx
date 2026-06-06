@@ -26,9 +26,7 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>用户手动触发</span>
         <h1>生成成片</h1>
-        <p>全部分镜视频确认后，再由用户明确点击生成成片。</p>
       </div>
       {oneClickJob ? (
         <div className="review-one-click-progress">

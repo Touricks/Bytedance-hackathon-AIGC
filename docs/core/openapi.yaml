@@ -956,6 +956,10 @@ components:
           minLength: 1
           maxLength: 1000
           description: 用户对本次重新生成的文字反馈；必填。
+        candidateCount:
+          type: integer
+          minimum: 1
+          description: 本次重新生成的候选图数量；省略时使用服务端默认值，超过运行时 max 返回 COUNT_EXCEEDS_LIMIT。
 
     VideoScriptJson:
       type: object
@@ -1037,6 +1041,10 @@ components:
           minLength: 1
           maxLength: 1000
           description: 用户对本次重新生成的文字反馈；必填。
+        candidateCount:
+          type: integer
+          minimum: 1
+          description: 本次重新生成的候选视频数量；省略时使用服务端默认值，超过运行时 max 返回 COUNT_EXCEEDS_LIMIT。
 
     GenerationBatch:
       type: object
@@ -1305,6 +1313,37 @@ components:
           enum: [first_success]
         outputAspectRatio:
           $ref: "#/components/schemas/AspectRatio"
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        idempotencyKey: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+
+    ShotImageAutoSelectionJob:
+      type: object
+      required: [id, workspaceId, status, currentStage, candidateCount, autoSelectionStrategy, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        status:
+          type: string
+          enum: [PENDING, RUNNING, WAITING, SUCCEEDED, FAILED, CANCELLED]
+        currentStage:
+          type: string
+          enum: [image_selection, completed]
+        stageState:
+          type: object
+          additionalProperties: true
+          description: 保存当前分镜 index、每镜 image batch id 和已自动选择的 candidate id。
+        shotSetId: { type: string, nullable: true }
+        candidateCount:
+          type: integer
+          minimum: 1
+        autoSelectionStrategy:
+          type: string
+          enum: [first_success]
         errorCode: { type: string, nullable: true }
         errorMessage: { type: string, nullable: true }
         idempotencyKey: { type: string, nullable: true }
@@ -2195,6 +2234,10 @@ paths:
               additionalProperties: false
               properties:
                 userDirection: { type: string }
+                candidateCount:
+                  type: integer
+                  minimum: 1
+                  description: 本次生成的候选图数量；省略时使用服务端默认值，超过运行时 max 返回 COUNT_EXCEEDS_LIMIT。
       responses:
         "200":
           description: Image prompt artifact and batch
@@ -2391,6 +2434,10 @@ paths:
               additionalProperties: false
               properties:
                 userDirection: { type: string }
+                candidateCount:
+                  type: integer
+                  minimum: 1
+                  description: 本次生成的候选视频数量；省略时使用服务端默认值，超过运行时 max 返回 COUNT_EXCEEDS_LIMIT。
       responses:
         "200":
           description: Video script artifact plus a PENDING batch with PENDING candidates (poll video-rounds)
@@ -2676,6 +2723,84 @@ paths:
                               allOf:
                                 - $ref: "#/components/schemas/UpstreamChange"
                               description: 仅表示视频脚本/视频候选相对最新首尾帧、shotprompt、voice profile 等视频输入是否过期。
+
+  /api/workspaces/{workspaceId}/shot-image-auto-selections:
+    get:
+      tags: [Generation]
+      summary: 列出分镜图自动选择任务
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Shot image auto-selection jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ShotImageAutoSelectionJob"
+    post:
+      tags: [Generation]
+      summary: 批量生成并自动选择分镜图
+      description: >-
+        按当前 active shot set 的镜头顺序推进。已有 selected image 的镜头会跳过；
+        未选择的镜头创建 image batch，等待 batch 完成后选择首个 SUCCEEDED 且已有 stable URL
+        的候选图。任务只处理分镜图，不生成分镜视频或成片。同一 workspace 同时只允许一个
+        PENDING/RUNNING/WAITING 自动选图任务。
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                candidateCount:
+                  type: integer
+                  minimum: 1
+                  description: 每镜候选图数量；省略时使用服务端默认值，超过运行时 max 返回 COUNT_EXCEEDS_LIMIT。
+      responses:
+        "200":
+          description: Shot image auto-selection job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ShotImageAutoSelectionJob"
+                  deduped:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/shot-image-auto-selections/{jobId}:
+    get:
+      tags: [Generation]
+      summary: 获取分镜图自动选择任务
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Shot image auto-selection job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ShotImageAutoSelectionJob"
 
   /api/workspaces/{workspaceId}/one-click-final-videos:
     get:

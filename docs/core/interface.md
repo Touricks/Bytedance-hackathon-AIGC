@@ -267,13 +267,15 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 | 方法 | 路径                                                                 | 业务逻辑                                                                                                                                                                                                                        | 请求                                                |
 | ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | GET  | `/api/shots/:shotId`                                                 | 返回单个 shot、requirements、active prompt/script、当前选择、下一步建议。                                                                                                                                                       | 无                                                  |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`   | 后端确定性装配分镜图 prompt。第一块读取当前 shot 的 `providerPrompt` 作为“镜头目标”，第二块读取 `shotImage` 的场景、构图、光线、商品呈现、参考图使用和负向约束；不再调用二次创意 agent。写 ACTIVE `image_prompt_artifacts`、保存 deterministic assembly metadata，并创建图像 batch。候选数量与宽高比由服务端配置/当前 shotprompt 决定。 | `{ userDirection? }` |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | 用户必须在最新 image round 的成功候选卡上填写文字反馈。服务端校验 `feedbackImageCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotImage` 和 `userDirection` 确定性装配新 prompt，写新的 ACTIVE `image_prompt_artifacts(created_by='user', base_artifact_id=...)` 和新的 image batch，不清空当前 `selected_image_id`。Seedream 图片输入顺序为：反馈候选图、本镜素材图、上一镜 selected image。 | `{ baseArtifactId, feedbackImageCandidateId, userDirection }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/propose`   | 后端确定性装配分镜图 prompt。第一块读取当前 shot 的 `providerPrompt` 作为“镜头目标”，第二块读取 `shotImage` 的场景、构图、光线、商品呈现、参考图使用和负向约束；不再调用二次创意 agent。写 ACTIVE `image_prompt_artifacts`、保存 deterministic assembly metadata，并创建图像 batch。候选数量由 `candidateCount` 或服务端默认值决定，宽高比由当前 shotprompt 决定。 | `{ userDirection?, candidateCount? }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | 用户必须在最新 image round 的成功候选卡上填写文字反馈。服务端校验 `feedbackImageCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotImage` 和 `userDirection` 确定性装配新 prompt，写新的 ACTIVE `image_prompt_artifacts(created_by='user', base_artifact_id=...)` 和新的 image batch，不清空当前 `selected_image_id`。Seedream 图片输入顺序为：反馈候选图、本镜素材图、上一镜 selected image。 | `{ baseArtifactId, feedbackImageCandidateId, userDirection, candidateCount? }` |
 | GET  | `/api/shots/:shotId/image-prompts`                                   | 列出该 shot 的图像 prompt artifacts。                                                                                                                                                                                           | 无                                                  |
 | GET  | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds`            | 按 prompt artifact 聚合图像生成轮次、候选和当前选择；即使当前选择来自旧轮次，也会返回 current selection；每个 round 返回 `upstream`，提示该轮 prompt 是否基于旧上游。                                                                                                                                                                           | 无                                                  |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | 选择一张候选图。UPSERT `image_select_artifacts`，不 stale 其他候选。                                                                                                                                                            | `{ candidateId \| imageCandidateId, imageGenerationBatchId? }` |
 
 图像 provider 请求只允许图片类参考输入。`shot_asset_refs` 中的视频素材仍可用于分镜语义、场景说明和后续视频脚本，但在没有关键帧/海报帧提取产物前，服务端必须过滤掉 `.mp4` 等非图片素材，不能把其字节作为 Seedream `image` 字段发送。
+
+`candidateCount` 是本次生成/重生成的操作参数，不写入创作要求 artifact，也不推给数据看板；省略时使用 `DEFAULT_IMAGE_CANDIDATES`，超过 `MAX_IMAGE_CANDIDATES_PER_SHOT` 返回 `COUNT_EXCEEDS_LIMIT`。
 
 图像选择校验：
 
@@ -287,8 +289,8 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 
 | 方法 | 路径                                                                 | 业务逻辑                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 请求                                                |
 | ---- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose`   | 后端确定性装配分镜视频 prompt。`providerPrompt` 只作为镜头目标上下文，执行约束来自 `shotVideo`、当前 selected image 首帧、下一镜 selected image 尾帧（末镜为空）、duration、voiceover 和 `tts.voiceProfile`；不再调用二次创意 agent。写 ACTIVE `video_script_artifacts` 后**异步**入队每候选一个 `generate_video_candidate` job，立即返回 PENDING batch + PENDING candidates，shot 进入 `VIDEO_GENERATING`；客户端轮询 `video-rounds` 直到 `VIDEO_CANDIDATES_READY`。Seedance 返回临时 mp4 后候选先进入 `PERSISTING`，可通过 `previewVideoUrl` 临时预览，但仍不可选择或成片。 | `{ userDirection? }` |
-| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate` | 用户必须在最新 video round 的成功候选卡上填写文字反馈。服务端校验 `feedbackVideoCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotVideo`、首尾帧、duration、voiceover 和 voice profile 确定性装配新 video script artifact 与 video batch。反馈视频候选只记录为反馈对象和 trace，不作为 provider 视频输入；不清空当前 `selected_video_id`。 | `{ baseArtifactId, feedbackVideoCandidateId, userDirection }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose`   | 后端确定性装配分镜视频 prompt。`providerPrompt` 只作为镜头目标上下文，执行约束来自 `shotVideo`、当前 selected image 首帧、下一镜 selected image 尾帧（末镜为空）、duration、voiceover 和 `tts.voiceProfile`；不再调用二次创意 agent。写 ACTIVE `video_script_artifacts` 后**异步**入队每候选一个 `generate_video_candidate` job，立即返回 PENDING batch + PENDING candidates，shot 进入 `VIDEO_GENERATING`；客户端轮询 `video-rounds` 直到 `VIDEO_CANDIDATES_READY`。Seedance 返回临时 mp4 后候选先进入 `PERSISTING`，可通过 `previewVideoUrl` 临时预览，但仍不可选择或成片。 | `{ userDirection?, candidateCount? }` |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate` | 用户必须在最新 video round 的成功候选卡上填写文字反馈。服务端校验 `feedbackVideoCandidateId` 属于当前 shot 最新轮成功候选，然后用 `baseArtifactId`、当前镜头目标、`shotVideo`、首尾帧、duration、voiceover 和 voice profile 确定性装配新 video script artifact 与 video batch。反馈视频候选只记录为反馈对象和 trace，不作为 provider 视频输入；不清空当前 `selected_video_id`。 | `{ baseArtifactId, feedbackVideoCandidateId, userDirection, candidateCount? }` |
 | GET  | `/api/shots/:shotId/video-scripts`                                   | 列出该 shot 的视频脚本 artifacts。                                                                                                                                                                                                                                                                                                                                                                                                                               | 无                                                  |
 | GET  | `/api/workspaces/:workspaceId/shots/:shotId/video-rounds`            | 按 video script artifact 聚合视频生成轮次、候选和当前选择；每个 round 返回 `upstream`，提示该轮视频脚本是否基于旧上游或旧首尾帧。候选额外返回 `previewVideoUrl/providerTaskId/providerReadyAt/persistStatus`，其中 `PERSISTING` 表示 provider 已出片、正在保存素材，batch 仍未完成。                                                                                                                                            | 无                                                  |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | 选择一个候选视频。只接受 `SUCCEEDED` 且已有 stable `videoUrl/objectKey` 的候选；`PERSISTING` 的临时 provider URL 只用于预览，不能写选择或成片。UPSERT `video_select_artifacts`，不 stale 其他候选。                                                                                                                                                                                                 | `{ candidateId \| videoCandidateId, videoGenerationBatchId? }` |
@@ -302,6 +304,7 @@ Shot 素材引用是 active shot set 内每个 shot 的可编辑素材提示。�
 - 视频候选生命周期是候选级状态：`PENDING/RUNNING` 调用 provider；provider 返回临时 mp4 URL 后写 `PERSISTING`、`providerTaskId`、`providerReadyAt` 和 `previewVideoUrl`；本地 stable 保存完成后才写 `SUCCEEDED + videoUrl/objectKey`。
 - video provider 同时在飞调用数 ≤ `VIDEO_PROVIDER_CONCURRENCY`（进程级信号量）。Seedance task-create 阶段命中账号 RPM 429（如 `EndpointAccountRpmRateLimitExceeded`）时不在 provider 内原地等待，立即抛给 `generate_video_candidate` 的队列重试，释放 video provider slot；task polling 阶段的 429/5xx/超时仍按 `Retry-After` / 指数退避重试。
 - Seedance prompt 追加 approved shotprompt 的统一旁白 voice profile：同一说话人、`gender`、`tone`、`pitch`、`pace`、自然清晰普通话和电商短视频播报风格。每个 shot 只朗读本镜头 `voiceover`；旁白只进入音频，禁止将口播文案、旁白文字或其改写复制、叠加、渲染到视频画面内，也不要生成字幕样式、标题贴片或乱码文字。`video_script_artifacts.source_fingerprint` 记录 `firstFrameCandidateId`、`lastFrameCandidateId`、`voiceProfile`、`voiceProfileHash` 和本镜 `voiceover`。
+- `candidateCount` 是本次生成/重生成的操作参数；省略时使用 `DEFAULT_VIDEO_CANDIDATES`，超过 `MAX_VIDEO_CANDIDATES_PER_SHOT` 返回 `COUNT_EXCEEDS_LIMIT`。
 
 ---
 
@@ -318,7 +321,19 @@ retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部�
 
 ---
 
-## 9. 成片 Final Video
+## 9. 分镜图自动选择任务
+
+| 方法    | 路径                                                            | 业务逻辑                                                                                                                                       | 请求                 |
+| ------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| POST 🔑 | `/api/workspaces/:workspaceId/shot-image-auto-selections`       | 启动“批量生成并选择分镜图”任务。按当前 active shot set 顺序推进，已有 selected image 的镜头跳过；未选择的镜头生成 image batch，batch 完成后选择首个 `SUCCEEDED` 且已有 stable URL 的候选图。同一 workspace 同时只允许一个运行中任务。 | `{ candidateCount? }` |
+| GET     | `/api/shot-image-auto-selections/:jobId`                        | 返回自动选图任务状态、当前阶段、阶段状态、候选数量、错误信息。                                                                                 | 无                   |
+| GET     | `/api/workspaces/:workspaceId/shot-image-auto-selections`       | 列出最近自动选图任务，供刷新恢复运行中、失败或完成状态。                                                                                       | 无                   |
+
+自动选图任务只处理分镜图，不生成分镜视频，不触发 final compose，也不写创作要求 artifact。自动选择策略固定为 `first_success`：按 `providerResponse.candidateIndex` 和创建时间排序，选择首个成功且有稳定 `imageUrl` 的候选。若 batch `SUCCEEDED/PARTIAL/FAILED` 后仍没有可选成功候选，任务失败并保留此前已完成的选择。
+
+---
+
+## 10. 成片 Final Video
 
 | 方法    | 路径                                                              | 业务逻辑                                                                                             | 请求                                 |
 | ------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------ |
@@ -336,7 +351,7 @@ retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部�
 
 ---
 
-## 10. Campaign
+## 11. Campaign
 
 | 方法 | 路径                                                                        | 业务逻辑                 | 请求                                                                                    |
 | ---- | --------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------- |
@@ -347,7 +362,7 @@ retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部�
 
 ---
 
-## 11. Trace
+## 12. Trace
 
 | 方法 | 路径                                  | 业务逻辑                    | 请求                        |
 | ---- | ------------------------------------- | --------------------------- | --------------------------- |
@@ -366,7 +381,7 @@ trace 必须能回答 agent 链路调试问题：
 
 ---
 
-## 12. 静态文件流
+## 13. 静态文件流
 
 | 方法 | 路径                                       | 业务逻辑                                     |
 | ---- | ------------------------------------------ | -------------------------------------------- |
@@ -376,7 +391,7 @@ trace 必须能回答 agent 链路调试问题：
 
 ---
 
-## 13. 常见错误码
+## 14. 常见错误码
 
 | HTTP | code                                     | 触发                                                                       |
 | ---- | ---------------------------------------- | -------------------------------------------------------------------------- |

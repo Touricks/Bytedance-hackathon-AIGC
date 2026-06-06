@@ -533,6 +533,29 @@ create unique index if not exists idx_one_click_final_video_active_workspace
 create index if not exists idx_one_click_final_video_workspace_created
   on one_click_final_video_jobs(workspace_id, created_at desc);
 
+create table if not exists shot_image_auto_selection_jobs (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  status text not null default 'PENDING',
+  current_stage text not null default 'image_selection',
+  stage_state jsonb not null default '{}'::jsonb,
+  shot_set_id text references shot_sets(id) on delete set null,
+  candidate_count int not null,
+  auto_selection_strategy text not null default 'first_success',
+  error_code text,
+  error_message text,
+  idempotency_key text unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  started_at timestamptz,
+  completed_at timestamptz
+);
+create unique index if not exists idx_shot_image_auto_selection_active_workspace
+  on shot_image_auto_selection_jobs(workspace_id)
+  where status in ('PENDING', 'RUNNING', 'WAITING');
+create index if not exists idx_shot_image_auto_selection_workspace_created
+  on shot_image_auto_selection_jobs(workspace_id, created_at desc);
+
 create table if not exists campaign_publications (
   id text primary key,
   workspace_id text not null references creative_workspace(id) on delete cascade,
