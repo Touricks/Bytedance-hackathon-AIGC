@@ -1,6 +1,6 @@
-# arc_v2 — V2 模块化架构目标
+# arc_v3 — V3 多因子创作链路架构目标
 
-> 电商 AIGC 短视频生成系统（`ecommerce-aigc-video`）的 V2 目标架构。本文描述接下来要迁移到的模块化架构，而不是当前代码的混合态。
+> 电商 AIGC 短视频生成系统（`ecommerce-aigc-video`）的 V3 目标架构。本文以 V2 模块化链路为基座，补充多因子创作要求的导入、编译、成片快照与数据看板消费。
 >
 > 术语遵循 `CONTEXT.md`：创作工作目录、创作要求、待审创作产物、生效创作产物、上游变更提示、分镜链路实例、分镜图选择、分镜视频选择。
 
@@ -8,16 +8,19 @@
 
 ## 1. 一句话定位
 
-商家上传商品素材 → 模块化 AI 链路生成并批准生效创作产物 → 显式应用 shot prompt 创建分镜链路实例 → 手动逐分镜或批量生成并选择分镜图 → 逐分镜生成候选视频并选择当前结果 → ffmpeg 拼接成片。
+商家选择或导入多因子创作要求 → 上传商品素材 → 模块化 AI 链路生成并批准生效创作产物 → 显式应用 shot prompt 创建分镜链路实例 → 手动逐分镜或批量生成并选择分镜图 → 逐分镜生成候选视频并选择当前结果 → ffmpeg 拼接成片 → 发布记录携带创作标签进入数据看板。
 
-V2 的核心变化：
+V3 沿用 V2 的模块化 artifact 链路，并新增多因子创作要求与看板标签闭环：
 
 - 每个 prompt module 拥有自己的 artifact 表，`workspace_artifact` 退出主链路。
 - 用户编辑的是结构化**创作要求**，不是 raw prompt 或 system prompt。
+- 创作要求以 `商品/服务类型 + 适用人群 + 推销手法` 三因子为主标签，展开为 9 个可编辑细分字段，再编译为 7 项下游 prompt 要求。
+- 参考视频导入可以通过模型推荐三因子组合，并写入 recoverable proposed `prompt_requirements_artifacts`。
 - prompt 模板分离为主体 prompt 与契约/schema prompt，并由 assembler 组装。
 - module artifact 物理 append，业务上只暴露当前生效内容。
 - 上游变更不自动 reset 下游，只产生**上游变更提示**。
 - `shotprompt approve` 不再删除并重建 shots；必须显式创建新的**分镜链路实例**。
+- 成片创建时快照当时的 `creativeFactors` 与模板来源，发布记录复制该快照供数据看板聚合。
 - 图像/视频候选数量是每次生成/重生成的操作参数，受服务端默认值和最大值限制，不写入创作要求 artifact。
 - 创作审核台各模块不展示 artifact current/proposed 标签；P2-P9 主标题下方只展示业务标题，不展示开发脚手架说明或模块解释。
 
@@ -59,10 +62,11 @@ server  ──────────────► shared, ai
 
 ## 3. Module Graph
 
-V2 把链路显式拆成 prompt modules 与同步点 modules。
+V3 把链路显式拆成 prompt modules、同步点 modules 与看板消费节点。
 
 | 类型        | Module          | 输出                                                                          |
 | ----------- | --------------- | ----------------------------------------------------------------------------- |
+| Form/Import | prompt-requirements | 生效/待审创作要求 artifact，含 `creativeFactors`、9 个细分字段和 7 项编译字段 |
 | LLM         | material-intake | 生效/待审素材解读 artifact                                                    |
 | LLM         | product-brief   | 生效/待审商品 brief artifact                                                  |
 | LLM         | storyboard      | 生效/待审 storyboard artifact                                                 |
@@ -74,12 +78,14 @@ V2 把链路显式拆成 prompt modules 与同步点 modules。
 | LLM + Media | video-script    | per-shot 视频脚本 artifact + video candidates                                 |
 | Sync        | video-select    | per-shot 当前分镜视频选择                                                     |
 | Media       | final-compose   | 按当前分镜视频选择拼接成片                                                    |
+| Sync        | campaign-publication | 发布记录，复制成片 `creativeTags` 供数据看板消费                              |
 | Orchestrate | one-click-final-video | 从素材解读草稿自动批准并推进到成片；保留各模块原有 artifact/selection/job 事实 |
 
 主流程：
 
 ```
-material-intake
+prompt-requirements
+  -> material-intake
   -> product-brief
   -> storyboard
   -> shotprompt
@@ -88,6 +94,7 @@ material-intake
      or shot-image-auto-selection
   -> video-script -> video-select
   -> final-compose
+  -> campaign-publication
 ```
 
 素材解读页另有独立入口“全自动一键成片”。它不复用前端手动审核 mutation，而是调用一键成片 API；后端以请求中的素材解读草稿为起点，先批准 material-intake，再按上图顺序自动 propose/approve、apply、生成候选、选择首个成功候选并创建成片任务。手动按钮“批准素材解读并生成商品卖点”语义不变。
@@ -98,11 +105,11 @@ material-intake
 
 ## 4. Module-Owned Artifact Tables
 
-V2 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module 有自己的表和 schema。
+V3 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module 有自己的表和 schema。
 
 | Module           | 目标表                                          | 保存策略                                                     |
 | ---------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| 创作要求         | `prompt_requirements_artifacts`                 | append；业务只读 current approved。                          |
+| 创作要求         | `prompt_requirements_artifacts`                 | proposed 可覆盖；approved append；业务只读 current approved。 |
 | material-intake  | `material_intake_artifacts`                     | append；业务只读 current approved，UI 可读 latest proposed。 |
 | product-brief    | `product_brief_artifacts`                       | append；业务只读 current approved，UI 可读 latest proposed。 |
 | storyboard       | `storyboard_artifacts`                          | append；业务只读 current approved，UI 可读 latest proposed。 |
@@ -116,6 +123,7 @@ V2 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module �
 | video generation | `video_generation_batches` + `video_candidates` | per-round 候选事实；视频候选可处于 provider 已出片但 stable 保存中的 `PERSISTING`。 |
 | video-select     | `video_select_artifacts`                        | 每 shot current-only；UPSERT 覆盖当前选择。                  |
 | final-compose    | `final_video_jobs`                              | 每次 compose 一条 job。                                      |
+| campaign         | `campaign_publications` + `campaign_publication_metrics` | 发布记录复制成片创作标签，指标只绑定 publication。 |
 | one-click-final-video | `one_click_final_video_jobs`               | 每次一键成片一条 orchestrator job；同一 workspace 同时最多一个运行中任务。 |
 
 ### 4.1 Workspace Module Artifact 通用字段
@@ -217,22 +225,70 @@ packages/ai/src/prompts/modules/<module>/
 
 ## 6. 创作要求与 Shot Requirements
 
-workspace 级创作要求保存在 `prompt_requirements_artifacts`，作为当前生效要求参与所有 module 的 prompt assembly。
+workspace 级创作要求保存在 `prompt_requirements_artifacts`，作为当前生效要求参与所有 module 的 prompt assembly。V3 的创作要求不是 raw prompt，而是**三因子主标签 + 9 个细分字段 + 7 项编译字段**的结构化 artifact。详细字段见 [`factor_artifact.md`](./factor_artifact.md)。
 
-建议结构：
+当前结构：
 
 ```json
 {
-  "globalStyle": { "enabled": true, "instruction": "..." },
-  "materialImage": { "enabled": true, "instruction": "..." },
-  "briefScript": { "enabled": true, "instruction": "..." },
-  "storyboard": { "enabled": true, "instruction": "..." },
-  "shotprompt": { "enabled": true, "instruction": "..." },
-  "shotImage": { "enabled": true, "instruction": "..." },
-  "shotVideo": { "enabled": true, "instruction": "..." },
-  "negativeRequirements": { "enabled": true, "instruction": "..." }
+  "image": {
+    "style": "真实展示商品/服务主体...",
+    "composition": "按场景、交付和利益表达组织画面...",
+    "avoid": ["虚假承诺", "夸大效果"]
+  },
+  "script": {
+    "tone": "面向目标人群的称谓、语气和行动引导..."
+  },
+  "storyboard": {
+    "rhythm": "开场、证明、结果和 CTA 的推进结构..."
+  },
+  "shotImage": {
+    "global": "分镜图全局主体、场景和连续性要求..."
+  },
+  "shotVideo": {
+    "global": "分镜视频全局开场、过程连续和运镜要求..."
+  },
+  "creativeFactors": {
+    "productType": "offline-experience-service",
+    "audience": "youth",
+    "strategy": "scenario-demo"
+  },
+  "factorGuidance": {
+    "productType": {
+      "subjectPresentation": "...",
+      "sceneAndDelivery": "...",
+      "authenticityBoundaries": "..."
+    },
+    "audience": {
+      "addressingAndTone": "...",
+      "benefitFrame": "...",
+      "sensitivityBoundaries": "..."
+    },
+    "strategy": {
+      "openingHook": "...",
+      "storyStructure": "...",
+      "evidenceAndCta": "..."
+    }
+  },
+  "scriptInfluence": {},
+  "compiledRequirementSourceMap": {},
+  "creativeRequirementTemplate": {
+    "source": "setup-template",
+    "templateId": "offline-youth-restaurant",
+    "templateNameSnapshot": "到店餐饮·青年",
+    "templateVersion": "p0-2026-06",
+    "status": "customized"
+  }
 }
 ```
+
+约束：
+
+- `creativeFactors` 只保存三个主因子：商品/服务类型、适用人群、推销手法。
+- `factorGuidance` 是可编辑细分字段。用户修改后仍归属于原字段，不新建“自定义分类”。
+- 7 项编译字段是下游 prompt 模块的直接输入；`compiledRequirementSourceMap` 用于解释“每个细分字段影响了哪些编译字段”。
+- `creativeRequirementTemplate` 是来源标签，不是主分类标签。数据看板主聚合只读 `creativeFactors`。
+- proposed requirements 可被导入或保存覆盖；approved/current requirements 不原地修改。
 
 `shot_prompt_artifacts.data.shots[]` 必须包含每个 shot 的初始 dict：
 
@@ -266,7 +322,54 @@ workspace 级创作要求保存在 `prompt_requirements_artifacts`，作为当�
 
 ---
 
-## 7. 分镜链路实例（Shot Sets）
+## 7. 多因子导入与消费
+
+多因子进入链路有三个入口：
+
+| 入口 | 接口/位置 | 行为 |
+| --- | --- | --- |
+| 内置模板 | `GET /api/setup-templates/creative-requirements` | 返回 9 个内置模板。模板本体是三因子组合，`fields` 提供 9 个细分字段默认值和 `affects` 说明。 |
+| 参考视频导入 | `POST /api/workspaces/:workspaceId/reference-video/import` | 模型分析参考视频，通过 JSON schema 推荐三因子，并创建 proposed `prompt_requirements_artifacts`。不写素材库，不 approve。 |
+| 用户手动编辑 | 首屏因子表单 + `POST /api/workspaces/:workspaceId/prompt-requirements/propose` | 用户调整三因子或细分字段后保存 proposed；提交后 approve 成 current。 |
+
+下游消费规则：
+
+- `material-intake` 只读取素材解读视图：商品/服务类型、目标人群、主体呈现、交付过程和禁用承诺。它不得生成卖点、剧本、分镜或视频提示词。
+- `product-brief` 读取商品卖点视图：三因子组合、商品/服务剧本角色、证明对象、受众称谓、利益优先级和敏感边界。
+- `storyboard` 读取分镜生成视图：推销手法、开场方式、故事结构、口播语气、CTA 风格和交付顺序。
+- `shotprompt` 读取导演约束视图：7 项编译字段，以及结构化剧本影响。它不需要重新看到原始模板卡片。
+
+成片与数据看板消费规则：
+
+```text
+prompt_requirements_artifacts.data.creativeFactors
+  -> shot_prompt_artifacts.source_fingerprint.promptRequirementsArtifactId
+  -> shot_sets.shot_prompt_artifact_id
+  -> final_video_jobs.compiled_manifest.creativeTags
+  -> campaign_publications.creative_tags
+  -> campaign_publication_metrics
+  -> dashboard aggregation
+```
+
+- 成片创建时，后端从当前 shot set 对应的 shotprompt 反查当时的 `promptRequirementsArtifactId`，并把 `creativeFactors` 与可选 `creativeRequirementTemplate` 写入 `compiledManifest.creativeTags`。
+- 如果无法从 shot set 反查 requirements，则退回读取当前 approved requirements，并在 tags 中标记 `fallback=true`。
+- 发布登记时，如果请求带 `finalVideoJobId`，`campaign_publications.creative_tags` 原样复制成片 `creativeTags`。未绑定成片的发布记录 `creative_tags={}`，看板归为“未归类”。
+- 数据看板 P0 聚合维度只读 `creativeTags.creativeFactors.productType`、`creativeTags.creativeFactors.audience`、`creativeTags.creativeFactors.strategy`。模板来源只用于 secondary breakdown。
+
+暴露给数据看板的接口：
+
+| 接口 | 用途 |
+| --- | --- |
+| `POST /api/workspaces/:workspaceId/campaign-publications` | 登记成片发布，并复制成片 creative tags。 |
+| `GET /api/workspaces/:workspaceId/campaign-publications` | 返回发布记录、`creativeTags` 和最新指标。 |
+| `GET /api/workspaces/:workspaceId/campaign-publications/:publicationId` | 返回单条发布记录、`creativeTags` 和最新指标。 |
+| `POST /api/workspaces/:workspaceId/campaign-publications/:publicationId/metrics` | 写入指标；指标不重复保存标签。 |
+| `GET /api/workspaces/:workspaceId/final-videos` | 调试或发布前读取成片 manifest 与 `creativeTags`。 |
+| `GET /api/final-videos/:finalVideoJobId` | 读取单个成片任务及其标签快照。 |
+
+---
+
+## 8. 分镜链路实例（Shot Sets）
 
 `shotprompt approve` 与创建逐分镜链路必须解耦。
 
@@ -295,7 +398,7 @@ POST /api/workspaces/:workspaceId/shot-sets
 
 ---
 
-## 8. 上游变更提示
+## 9. 上游变更提示
 
 上游变更不等于下游 stale。
 
@@ -331,7 +434,7 @@ POST /api/workspaces/:workspaceId/shot-sets
 
 ---
 
-## 9. Select Modules
+## 10. Select Modules
 
 `image-select` 与 `video-select` 是同步点 module，并使用 artifact 表命名：
 
@@ -350,7 +453,7 @@ video_select_artifacts
 
 ---
 
-## 10. Runtime 与队列
+## 11. Runtime 与队列
 
 运行时仍保留 `generation_v2` 队列：
 
@@ -377,7 +480,7 @@ provider 走独立配额：text/image/video provider 调用分别由 `TEXT_PROVI
 
 ---
 
-## 11. Real-provider Probe Policy
+## 12. Real-provider Probe Policy
 
 当前没有官方真实 provider smoke package script。`scripts/` 只保留直接 provider 探针，用于手动诊断 provider 账号、网络和接口可用性：
 
@@ -394,7 +497,7 @@ node scripts/verify-provider-video.mjs --image-url <url> --json
 
 ---
 
-## 12. 迁移边界
+## 13. 迁移边界
 
 已清除或退出主链路的旧架构：
 
@@ -408,7 +511,7 @@ node scripts/verify-provider-video.mjs --image-url <url> --json
 
 ---
 
-## 13. 工作区身份与本地草稿发现
+## 14. 工作区身份与本地草稿发现
 
 工作区身份有两层：**磁盘 manifest 是持久身份，DB row 是可丢弃的业务状态。**
 

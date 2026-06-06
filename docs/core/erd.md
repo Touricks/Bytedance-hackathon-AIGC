@@ -1,6 +1,6 @@
-# erd — V2 数据库与缓存架构
+# erd — V3 数据库与缓存架构
 
-> 数据层目标文档。配套 [`arc_v2.md`](./arc_v2.md) 与 [`interface.md`](./interface.md)。
+> 数据层目标文档。配套 [`arc_v3.md`](./arc_v3.md) 与 [`interface.md`](./interface.md)。
 >
 > 引擎：**PostgreSQL 16** 是唯一业务事实源。访问层维持原生 `pg` Pool + 手写参数化 SQL，不引入 ORM。DDL 权威来源仍为 `apps/server/src/db/schema/schema.sql`，迁移期直接更新该文件。Redis 仅服务 BullMQ 队列，不作为业务缓存。
 
@@ -19,7 +19,7 @@
 - **当前工作流只读 active shot set**：`shot-workflow-status`、next shot、首尾帧、选图/选视频完成度和视频生成前置检查都限定在当前 active `shot_sets`；archived rows 不提供商家工作台读取或操作入口。
 - **选择是 current 指针**：每个 shot 至多一个 selected image 和 selected video，写入 `image_select_artifacts` / `video_select_artifacts`。重复选择用 UPSERT 覆盖，不使未选候选 stale。
 - **自动编排只保存编排状态**：`one_click_final_video_jobs` 与 `shot_image_auto_selection_jobs` 记录跨阶段进度和错误，不替代 artifact、candidate 或 selection 事实表。
-- **工作区身份持久于磁盘**：`.daireel/workspace.json` 保存 `workspaceId` 作为持久身份；DB `creative_workspace` 行是可被 `reset:dev` 清空的业务状态。DB 行缺失时 `POST /api/workspaces/init` 复用磁盘 manifest 的原始 `workspaceId` 重新登记（不新建），`GET /api/workspaces` 经 `WORKSPACE_DISCOVERY_ROOTS` 扫描出磁盘有 manifest 但 DB 无行的草稿（`discovered`）。详见 `arc_v2.md` §13。
+- **工作区身份持久于磁盘**：`.daireel/workspace.json` 保存 `workspaceId` 作为持久身份；DB `creative_workspace` 行是可被 `reset:dev` 清空的业务状态。DB 行缺失时 `POST /api/workspaces/init` 复用磁盘 manifest 的原始 `workspaceId` 重新登记（不新建），`GET /api/workspaces` 经 `WORKSPACE_DISCOVERY_ROOTS` 扫描出磁盘有 manifest 但 DB 无行的草稿（`discovered`）。详见 `arc_v3.md` §14。
 - **对象存储是 workspace storage binding，不是业务事实源**：`workspace_storage_bindings` 记录 LOCAL 或 S3-compatible 位置；S3 object key 固定在 `workspaces/{workspaceId}/{relativePath}` 下。DB 仍保存 artifact、候选、选择、trace 等业务事实，前端只访问 server 代理 URL。
 
 ---
@@ -627,7 +627,7 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 ## 11. 旧结构清理
 
-V2 主链路迁移完成后应清理或停止使用：
+V3 主链路迁移完成后应清理或停止使用：
 
 - `workspace_artifact`：不再承载 `assets/brief/storyboard/shotprompt/feedbackRoute` 主链路。
 - `selected_shot_images` / `selected_shot_videos`：由 `image_select_artifacts` / `video_select_artifacts` 替代。

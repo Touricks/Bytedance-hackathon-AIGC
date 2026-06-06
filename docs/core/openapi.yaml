@@ -3,14 +3,14 @@ info:
   title: ecommerce-aigc-video API
   version: 2.0.0
   description: >
-    V2 目标后端契约。全部路由前缀 /api，URL 无版本号，全站无鉴权。
+    V3 目标后端契约。全部路由前缀 /api，URL 无版本号，全站无鉴权。
     工作区级 agent 模块采用 propose -> approve 语义：propose 只生成待审 artifact，
     approve 才变为当前生效 artifact；下游只读取 approved/current。
     approve 不级联重置下游，shotprompt approve 也不重建 shots。
     新的分镜链路由显式创建 shot set 触发。上游变更通过 upstreamChanged 提示表达，
     不代表 stale，也不删除候选或选择。图像/视频选择写入 image_select_artifacts /
     video_select_artifacts，每个 shot 只有一个当前 selected image/video，重复选择用 UPSERT 覆盖。
-    业务语义见 docs/core/interface.md，架构见 docs/core/arc_v2.md，数据模型见 docs/core/erd.md。
+    业务语义见 docs/core/interface.md，架构见 docs/core/arc_v3.md，数据模型见 docs/core/erd.md。
 servers:
   - url: http://localhost:3000
     description: 本地开发（SERVER_PORT 默认 3000）
@@ -1458,8 +1458,8 @@ paths:
       summary: 获取内置创作要求模板
       description: >
         返回 server 启动时从 @aigc-video/shared setup_template 校验通过的创作要求模板。
-        只用于前端填充首屏 7 项 requirements draft；不创建 artifact、不 approve、
-        不触发素材解读，也不支持运行时编辑模板。
+        只用于前端填充首屏三因子、9 个细分字段和 7 项编译预览草稿；
+        不创建 artifact、不 approve、不触发素材解读，也不支持运行时编辑模板。
       responses:
         "200":
           description: Creative requirement templates

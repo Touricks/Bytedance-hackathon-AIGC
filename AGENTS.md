@@ -18,7 +18,7 @@ This file is the project constitution for Codex. Keep it short, factual, and spe
 
 ### Repository profile
 
-- Product: merchant-facing AIGC commerce video generation. The V2 flow is material upload -> material intake -> prompt requirements -> product brief -> storyboard -> shotprompt -> shot set apply -> per-shot image/video candidates -> final compose.
+- Product: merchant-facing AIGC commerce video generation. The V3 flow is prompt requirements / creative factors -> material upload -> material intake -> product brief -> storyboard -> shotprompt -> shot set apply -> per-shot image/video candidates -> final compose -> campaign publication tags.
 - Package manager: `pnpm@9.15.4` in a pnpm workspace (`apps/*`, `packages/*`) with Turbo tasks.
 - Runtime: Node.js 22+, PostgreSQL 16, Redis/BullMQ, local workspace files under `.daireel/`, and ffmpeg for final composition.
 - Current frontend target: `apps/web`.
@@ -48,7 +48,7 @@ apps/web/          # current React/Vite frontend on 5173
 packages/ai/       # provider clients, agents/workflows, prompt assembly, response schemas
 packages/shared/   # shared Zod contracts, domain types, job payload types
 packages/config/   # shared lint/prettier/typescript config
-docs/core/         # authoritative V2 architecture, ERD, interface, OpenAPI, prompt workflow/artifacts
+docs/core/         # authoritative V3 architecture, ERD, interface, OpenAPI, prompt workflow/artifacts
 docs/reference/    # provider API references for Ark text/image and Seedance video
 docs/reference_frontend/ # Claude design reference for frontend migration
 docs/test/         # Postman/Newman and acceptance-test documentation
@@ -76,7 +76,7 @@ CONTEXT.md         # canonical business language
 ### Source of truth rules
 
 - Before backend, provider, or contract work, read `CONTEXT.md` plus the relevant `docs/core/` files.
-- `docs/core/arc_v2.md` is the target architecture; `docs/core/interface.md` and `docs/core/openapi.yaml` are the API contract; `docs/core/prompt_workflow.md` and `docs/core/prompt_artifact.md` describe prompt assembly and persisted prompt facts.
+- `docs/core/arc_v3.md` is the target architecture; `docs/core/interface.md` and `docs/core/openapi.yaml` are the API contract; `docs/core/prompt_workflow.md` and `docs/core/prompt_artifact.md` describe prompt assembly and persisted prompt facts.
 - Use `docs/reference/` before changing Ark text/image or Seedance video request/response handling.
 - When API behavior changes, update frontend clients, `docs/core/openapi.yaml`, `docs/core/interface.md` together when applicable.
 - When fixing issues, check whether `docs/core/` architecture/interface/prompt-chain files need matching updates.

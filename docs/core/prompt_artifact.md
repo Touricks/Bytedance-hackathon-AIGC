@@ -115,7 +115,7 @@ packages/ai/src/prompts/modules/<module>/
 | `compiledRequirementSourceMap` | 7 项编译创作要求分别由哪些 `factorGuidance` 字段汇入，供前端解释“本次调整影响了什么”。 |
 | `creativeRequirementTemplate` | 可选首页模板来源：`templateId/templateNameSnapshot/templateVersion/status`。`status` 为 `applied | customized | detached`。 |
 
-参考视频导入会让模型建议 `creativeFactors` 并生成 requirements draft。`POST /api/workspaces/:workspaceId/reference-video/import` 只把站外直连视频或上传视频分析为草稿，返回给首屏表单确认；用户点击保存或提交后才进入 `prompt-requirements/propose` / `approve` 生命周期。参考视频也不写入 `asset`，不参与 `material-intake.assets[]`。
+参考视频导入会让模型建议 `creativeFactors` 并生成 requirements draft。`POST /api/workspaces/:workspaceId/reference-video/import` 会把站外直连视频或上传视频分析为草稿，并通过 artifact service 创建或覆盖一条 proposed `prompt_requirements_artifacts`；用户 approve 后才成为下游 current input。参考视频不写入 `asset`，不参与 `material-intake.assets[]`。
 
 首屏「创作要求模板」来自 `packages/shared/src/setup_template/creative-requirements.ts`。服务端启动/模块加载时校验 shared Zod schema，并通过 `GET /api/setup-templates/creative-requirements` 返回给前端；模板本体是 `商品/服务类型 + 适用人群 + 推销手法` 的组合，`fields` 声明每个细分字段会影响 7 项编译要求中的哪些字段。点击模板只确定性填充首屏因子表单草稿。它不会批准 current artifact 或触发素材解读；只有用户保存/提交后才写入 proposed `prompt_requirements_artifacts`。
 

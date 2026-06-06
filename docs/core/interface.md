@@ -1,8 +1,8 @@
-# interface — V2 对外接口与业务逻辑
+# interface — V3 对外接口与业务逻辑
 
-> 后端 HTTP 目标契约。机器可读契约见 [`openapi.yaml`](./openapi.yaml)，架构见 [`arc_v2.md`](./arc_v2.md)，数据模型见 [`erd.md`](./erd.md)。
+> 后端 HTTP 目标契约。机器可读契约见 [`openapi.yaml`](./openapi.yaml)，架构见 [`arc_v3.md`](./arc_v3.md)，数据模型见 [`erd.md`](./erd.md)。
 >
-> 本文描述迁移后的 V2 目标接口，不要求兼容旧工作区主链路。
+> 本文描述迁移后的 V3 目标接口，不要求兼容旧工作区主链路。
 
 ---
 
@@ -117,7 +117,7 @@ Prompt requirements 是用户可编辑的结构化创作要求。用户可以分
 | GET  | `/api/workspaces/:workspaceId/prompt-requirements`         | 返回当前 proposed 和 approved/current requirements。 | 无                        |
 | POST | `/api/workspaces/:workspaceId/prompt-requirements/propose` | 保存一份待审 requirements。通常不调用 provider。     | `{ data }`                |
 | POST | `/api/workspaces/:workspaceId/prompt-requirements/approve` | 将指定或内联 requirements 置为 approved/current。    | `{ artifactId? , data? }` |
-| POST | `/api/workspaces/:workspaceId/reference-video/import`      | 从参考视频 URL 或上传文件生成 requirements draft；不创建 artifact、不 approve、不进入素材库。仅在 current approved requirements 不存在时可调用。 | JSON `{ source:{ type:"url", url } }` 或 multipart `file` |
+| POST | `/api/workspaces/:workspaceId/reference-video/import`      | 从参考视频 URL 或上传文件生成 requirements draft，推荐三因子，并创建/覆盖 proposed prompt requirements artifact；不 approve、不进入素材库。仅在 current approved requirements 不存在时可调用。 | JSON `{ source:{ type:"url", url } }` 或 multipart `file` |
 
 响应包含：
 
@@ -156,6 +156,27 @@ Reference video import 成功响应形如：
     "analysis": {
       "summary": "参考视频采用快节奏卖点证明结构。",
       "confidence": "medium"
+    },
+    "creativeFactorsRecommendation": {
+      "recommendedFactors": {
+        "productType": "durable-good",
+        "audience": "youth",
+        "strategy": "scenario-demo"
+      },
+      "confidence": "medium",
+      "reasons": ["参考视频以场景演示推进"]
+    },
+    "artifact": {
+      "moduleId": "prompt-requirements",
+      "status": "proposed",
+      "isCurrent": false,
+      "data": {
+        "creativeFactors": {
+          "productType": "durable-good",
+          "audience": "youth",
+          "strategy": "scenario-demo"
+        }
+      }
     }
   }
 }
@@ -164,8 +185,8 @@ Reference video import 成功响应形如：
 导入边界：
 
 - 参考视频只用于分析剧本结构、节奏、镜头组织和表达风格。
-- 导入结果会建议 `creativeFactors` 并回填首屏因子表单；用户提交后才走 `prompt-requirements/propose`。
-- 参考视频不写入 `prompt_requirements_artifacts`，不写 `asset`，不参与 `material-intake.assets[]`。
+- 导入结果会建议 `creativeFactors`，并通过 artifact service 创建或覆盖一条 proposed `prompt_requirements_artifacts`；用户 approve 后才成为下游 current input。
+- 参考视频不写 `asset`，不参与 `material-intake.assets[]`。
 - 如果 workspace 已有 current approved requirements，返回 `409 REQUIREMENTS_ALREADY_APPROVED`。
 - URL 只支持可直接下载的视频资源；HTML/平台落地页返回 `REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD`。
 
