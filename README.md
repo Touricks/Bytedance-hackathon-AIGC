@@ -1,331 +1,92 @@
 # 电商场景 AIGC 带货视频生成系统
 
-ByteDance Hackathon AIGC 电商带货视频项目。根 README 只做项目入口说明；架构、数据、接口与 prompt 链路的权威细节以 `docs/core/` 为准。
+这是一个面向电商商家、运营和内容团队的 AIGC 带货视频创作审核台。你可以上传商品素材，按步骤审核系统生成的素材解读、商品卖点、分镜脚本、分镜图、分镜视频，并在确认后生成最终成片。
 
-当前 V2 方向是：商家上传商品素材 -> 模块化 AI 链路生成并批准生效创作产物 -> 显式应用 shot prompt 创建分镜链路实例 -> 逐分镜生成候选图/候选视频并选择当前结果 -> ffmpeg 拼接成片。
+它的核心目标不是一次性“盲生成”一条视频，而是把创作过程拆成可检查、可调整、可继续推进的环节：每一步都先给出待确认内容，用户确认后再进入后续生成。
 
-> 注意：`docs/core/arc_v2.md` 描述迁移目标架构，`docs/core/prompt_workflow.md` 描述当前 prompt 组装和跨模块 artifact 流通，`docs/core/prompt_artifact.md` 描述 prompt 相关表字段与存储契约。开发时需要同时看这些文档，避免把目标态、流程态和字段契约混在一起。
+## 适合做什么
 
-## 新会话先读
+- 用商品图片、场景图、参考视频和卖点文案生成电商带货短视频。
+- 在生成成片前逐步检查素材理解、商品卖点、镜头结构和画面表现。
+- 为每个分镜生成多张图像或多个视频候选，并选择满意版本。
+- 批量生成并选择分镜图，减少逐镜操作成本。
+- 在前置内容调整后保留已有候选和选择，由用户决定是否重新生成。
 
-1. [CONTEXT.md](./CONTEXT.md)
-   领域词汇表。先确认“创作工作目录”“创作要求”“待审创作产物”“生效创作产物”“分镜链路实例”“分镜图选择”“分镜视频选择”等词的含义。
+## 快速使用
 
-2. [AGENTS.md](./AGENTS.md)
-   Agent 协作约定、测试命令、trace 查看方式和 worktree 约定。
+1. 打开创作审核台。
+2. 创建或进入一个创作工作目录。
+3. 上传商品素材，填写商品名称、核心卖点、人群、语气和禁用表达。
+4. 按左侧步骤从上到下审核。
+5. 在分镜图和分镜视频阶段选择满意候选。
+6. 所有分镜视频确认后，点击生成成片。
 
-3. [docs/core/arc_v2.md](./docs/core/arc_v2.md)
-   V2 模块化目标架构。
+如果你使用的是本地体验环境，默认 Web 地址通常是 `http://localhost:5173`。具体地址以部署者提供的信息为准。
 
-4. [docs/core/erd.md](./docs/core/erd.md)
-   V2 数据表、artifact、selection、shot set、trace 与 queue 关系。
+## 创作流程
 
-5. [docs/core/interface.md](./docs/core/interface.md)
-   V2 HTTP 业务接口和状态语义。
-
-6. [docs/core/openapi.yaml](./docs/core/openapi.yaml)
-   机器可读 OpenAPI 契约。
-
-7. [docs/core/prompt_workflow.md](./docs/core/prompt_workflow.md)
-   当前 prompt 组装流程、workspace module 到 per-shot agent 的 artifact 流通和调试入口。
-
-8. [docs/core/prompt_artifact.md](./docs/core/prompt_artifact.md)
-   当前 prompt 链路相关 artifact 字段、状态锚点和 provider 生成记录。
-
-9. [docs/plan/](./docs/plan/) 与 [docs/test/](./docs/test/)
-   迁移计划、模块提案、Postman/Newman 测试数据和验收说明。
-
-## 仓库拓扑
-
-```text
-Bytedancehack/
-├── apps/
-│   ├── server/          # 后端：Fastify API、BullMQ worker、Postgres、文件落盘、ffmpeg compose
-│   └── web/             # 当前前端：React/Vite
-├── packages/
-│   ├── ai/              # provider、workspace workflow、prompt assembly
-│   ├── shared/          # Zod 契约、领域类型、job payload 类型
-│   └── config/          # lint/format/tsconfig 预设
-├── docs/
-│   ├── core/            # 架构、ERD、接口、OpenAPI、prompt workflow/artifact
-│   ├── plan/            # 迁移计划
-│   └── test/            # Postman/Newman 测试资料
-├── scripts/             # reset/dev/test orchestration
-└── CONTEXT.md           # 领域语言
-```
-
-依赖方向：
-
-```text
-shared  -> zod
-ai      -> shared, openai, zod
-web     -> shared
-server  -> shared, ai
-```
-
-## V2 主链路
-
-```text
-workspace init / storage bind
-  -> materials upload / material intake
-  -> prompt requirements propose / approve
-  -> material-intake propose / approve
-  -> product-brief propose / approve
-  -> storyboard propose / approve
-  -> shotprompt propose / approve
-  -> apply shot set
-  -> per shot:
-       image-prompt propose
-       image generation batch
-       image-select
-       video-script propose
-       video generation batch
-       video-select
-  -> final compose
-  -> final video file + compiled manifest
-```
-
-核心语义：
-
-- Workspace 级模块统一采用 `propose -> approve`：`propose` 只写待审 artifact，`approve` 才变为当前生效 artifact。
-- 下游只读取 `approved/current`，不会读取 proposed artifact。
-- 每个 prompt module 拥有自己的 artifact 表，`workspace_artifact` 退出 V2 主链路。
-- `shotprompt approve` 不创建、不删除、不重建 `storyboard_shots`；必须显式调用 shot set apply。
-- `shot_sets` 是分镜链路实例。新的 active shot set 会归档旧 active shot set，但不会物理删除旧候选、旧选择或旧成片。
-- 上游变化通过 `upstreamChanged` 提示表达，不级联 reset 下游，不删除候选，不清空选择。
-- `image_select_artifacts` 和 `video_select_artifacts` 是每个 shot 的 current selection 指针；重复选择用 UPSERT 覆盖。
-- `STALE` 只表示同一 shot 的旧 prompt/script 轮次不再是当前轮次，不表示上游 artifact 变化。
-- 产品上不做单会话版本追踪和回滚 UI；数据库物理 append 只服务审计、debug 和追溯。
-
-## Prompt 架构
-
-V2 将主体 prompt 和契约 prompt 分离：
-
-```text
-packages/ai/src/prompts/
-├── module-prompt-assembler.ts   # 组装 subject + runtime context + contract
-└── modules/<module>/
-    ├── subject.md               # 主体创作任务：模块要创作什么
-    └── contract.md              # 输入 artifact、输出 schema、JSON 格式、provider/safety 硬约束
-```
-
-边界：
-
-- 用户编辑的是结构化“创作要求”，不是 raw prompt 或 system prompt。
-- `subject.md` 可以迭代创作策略；`contract.md` 锁定输入、输出和 provider 约束。
-- `module-prompt-assembler.ts` 统一拼装 `Subject Prompt`、`Runtime Context` 和 `Schema Contract`，并生成 subject/contract 模板 id 与 hash。
-- workspace module 的 runtime context 由各 prompt builder 注入 approved artifact 与请求参数。
-- `prompt_requirements_artifacts.data` 当前主要作为 workspace module 的依赖门槛和 source fingerprint；逐 shot 阶段由 server deterministic assembler 读取 approved shotprompt 的 `providerPrompt`、`shotImage` / `shotVideo` dict 来组装图像和视频 provider prompt。
-- artifact 表保存 `prompt_assembly` 元数据和短 preview；完整 assembled prompt 写入 `trace_events` 和 workspace 本地 `.daireel/trace/events.jsonl`。
-- 跨 module artifact 流通和每个节点的读取/写入规则见 [docs/core/prompt_workflow.md](./docs/core/prompt_workflow.md)。
-- 文本 workflow 走 OpenAI-compatible provider boundary + Zod schema contract；`MODEL_MODE != real` 时 workflow wrapper 可短路到确定性 fixture。
-
-## 数据与运行时
-
-- PostgreSQL 16 是唯一业务事实源；访问层维持原生 `pg` Pool + 手写参数化 SQL。
-- Redis 只服务 BullMQ 队列，不作为业务缓存。
-- `trace_events` 表是可查询 trace 来源；workspace `.daireel/trace/events.jsonl` 是本地调试 trace。
-- `generation_v2` 队列承载 image candidate、video retry/recovery、final compose 等异步任务。
-- final compose 使用 ffmpeg，必须绑定具体 `shot_set_id` 和有序 `sourceVideoCandidateIds`。
-- 真实 provider 链路使用 Ark text、Ark Seedream image、Ark Seedance video；三组 provider env 独立配置。
-
-## 关键表与 artifact
-
-V2 目标主链路围绕这些表组织：
-
-| 模块 | 表 / artifact | 语义 |
+| 步骤 | 页面 | 你需要做什么 |
 |---|---|---|
-| 创作要求 | `prompt_requirements_artifacts` | 用户可编辑的结构化要求，作为 prompt 链路依赖和 source fingerprint。 |
-| material-intake | `material_intake_artifacts` | 素材解读、选用素材、图像输入描述。 |
-| product-brief | `product_brief_artifacts` | 商品卖点、人群、语气、约束。 |
-| storyboard | `storyboard_artifacts` | 视频结构、节奏和镜头目标。 |
-| shotprompt | `shot_prompt_artifacts` | 每个 shot 的时间段、`shotImage`、`shotVideo`。 |
-| shot-set | `shot_sets` + `storyboard_shots` | 显式应用 shotprompt 后生成的分镜链路实例。 |
-| shot requirements | `shot_prompt_requirements` | 每个 shot 的图像/视频要求 dict。 |
-| image-prompt | `image_prompt_artifacts` | per-shot 图像 prompt artifact。 |
-| image generation | `image_generation_batches` + `image_candidates` | 图像候选生成事实。 |
-| image-select | `image_select_artifacts` | 每个 shot 当前选定图。 |
-| video-script | `video_script_artifacts` | per-shot 视频脚本与 Seedance provider prompt。 |
-| video generation | `video_generation_batches` + `video_candidates` | 视频候选生成事实。 |
-| video-select | `video_select_artifacts` | 每个 shot 当前选定视频。 |
-| final-compose | `final_video_jobs` | 成片任务、输入 manifest、输出文件。 |
+| 1 | 创作要求与上传素材 | 上传商品素材，填写商品名、核心卖点、目标人群、语气和禁用表达。 |
+| 2 | 素材解读 | 检查系统对素材的理解，确认选用素材和商品信息。 |
+| 3 | 商品卖点审核 | 确认或调整商品卖点、人群、语气和禁用表达。 |
+| 4 | 分镜脚本 | 检查视频整体节奏、镜头顺序和每段要表达的内容。 |
+| 5 | 分镜生成要求 | 确认每个分镜的图像要求、视频动作、口播和约束。 |
+| 6 | 应用分镜 | 将已确认的分镜生成要求应用为当前分镜链路实例。 |
+| 7 | 分镜图选择 | 逐镜生成图像候选并选择，也可以批量生成并自动选择分镜图。 |
+| 8 | 分镜视频选择 | 在分镜图都确认后，生成并选择每个分镜的视频候选。 |
+| 9 | 生成成片 | 在所有分镜视频确认后生成最终成片。 |
 
-迁移完成后，`workspace_artifact`、`selected_shot_images`、`selected_shot_videos`、`shotprompt approve` 内级联删除并重建 shots 的逻辑都应退出主链路。
+## 审核与调整
 
-## 本地开发
+- 每个审核步骤都以用户确认为边界。未确认的内容不会自动驱动后续步骤。
+- 你可以在审核区补充调整要求，让系统重新生成当前步骤内容。
+- 修改前置内容后，下游已有候选、选择和成片不会被自动删除；系统会提示上游发生变化，你可以决定继续使用现有内容还是重新生成。
+- 分镜图和分镜视频的候选数量只影响本次生成或重生成。前端会记住当前工作区的候选数量偏好，但不会把它写入创作要求。
+- 审核台主标题区域只展示业务标题，不展示开发过程中的状态标签或说明小字。
 
-### 1. 准备依赖
+## 分镜图选择
 
-需要本机已安装：
+在分镜图选择页，你可以逐个分镜生成候选图，也可以使用“批量生成并选择分镜图”。
 
-- Node.js 22+
-- pnpm 9.x（仓库声明 `pnpm@9.15.4`）
-- Docker Desktop 或兼容 Docker Compose
-- ffmpeg
+批量生成并选择分镜图会按当前分镜顺序推进：
 
-安装 JS 依赖：
+- 已经选择过分镜图的镜头会跳过。
+- 未选择的镜头会生成新的图像候选。
+- 系统会选择首个成功生成且可稳定访问的候选图。
+- 这个任务只处理分镜图，不会生成分镜视频，也不会直接生成成片。
 
-```bash
-pnpm install
-```
+如果某个分镜没有可用候选，任务会停在失败状态；已经完成的选择会保留，你可以回到对应分镜手动调整或重新生成。
 
-启动基础设施：
+## 分镜视频选择
 
-```bash
-docker compose -f infra/docker-compose.yml up -d
-```
+分镜视频依赖已确认的分镜图。进入这一阶段前，请先确保所有分镜图都已经选择。
 
-### 2. 配置环境变量
+生成视频候选后，你可以预览每个候选并选择满意版本。只有稳定保存完成的视频候选才能被选择并进入最终成片。
 
-复制模板：
+## 一键成片
 
-```bash
-cp .env.example .env
-```
+素材解读页提供“全自动一键成片”入口。它会从当前素材解读草稿开始，自动推进商品卖点、分镜脚本、分镜生成要求、分镜图、分镜视频和最终成片。
 
-常用字段：
+一键成片适合快速获得一版完整结果。对于更重要的投放素材，建议仍然逐步审核关键内容，尤其是商品卖点、禁用表达、分镜图和分镜视频。
 
-| 字段 | 说明 |
-|---|---|
-| `WEB_PORT` | Vite 前端端口，默认常用 `5173`。 |
-| `SERVER_PORT` | Fastify 后端端口，默认常用 `3000`。 |
-| `PUBLIC_API_BASE_URL` | 前端 API base host；本地通常为 `http://localhost`。 |
-| `DATABASE_URL` | Postgres 业务事实源。 |
-| `REDIS_URL` | BullMQ 队列 Redis。 |
-| `USE_REDIS_QUEUE` | 是否启用 Redis 队列；真实链路推荐 `true`。 |
-| `MODEL_MODE` | `real` 调真实 provider，`mock` 用 fixture。 |
-| `TEXT_API_KEY` / `TEXT_BASE_URL` / `TEXT_ENDPOINT_ID` | Ark text provider。 |
-| `IMAGE_API_KEY` / `IMAGE_BASE_URL` / `IMAGE_ENDPOINT_ID` | Ark Seedream image provider。 |
-| `VIDEO_API_KEY` / `VIDEO_BASE_URL` / `VIDEO_ENDPOINT_ID` | Ark Seedance video provider。 |
-| `DEFAULT_IMAGE_CANDIDATES` / `MAX_IMAGE_CANDIDATES_PER_SHOT` / `DEFAULT_VIDEO_CANDIDATES` / `MAX_VIDEO_CANDIDATES_PER_SHOT` | 每个 shot 的默认/最大候选数量。 |
+## 素材与成片
 
-`MODEL_MODE=real` 的完整链路需要 text / image / video 三组 provider 配置齐全。workspace 本地存储通过 `POST /api/workspaces/:workspaceId/storage/bind` 绑定目录。
+- 建议上传清晰的商品主图、使用场景图和能表达卖点的参考素材。
+- 视频素材可以作为内容参考；是否能直接作为画面参考取决于当前生成环节。
+- 素材删除后，已提交给后续步骤的引用会被同步处理，避免继续引用已删除素材。
+- 最终成片会基于当前分镜视频选择生成。
 
-### 3. 启动服务
+## 使用建议
 
-```bash
-pnpm dev
-```
+- 先把商品名、核心卖点、目标人群和禁用表达写清楚，再开始后续生成。
+- 对真实商品图保持一致性要求，避免每个分镜出现不同外观。
+- 对生成不满意时，优先用简短、明确的反馈描述调整方向。
+- 批量生成适合快速推进；精修时建议逐镜查看并手动选择。
+- 生成成片前，至少完整预览一次所有已选分镜视频。
 
-也可以显式选择模式：
+## 项目资料
 
-```bash
-pnpm dev:real
-pnpm dev:mock
-```
+面向产品和业务协作时，优先使用 [CONTEXT.md](./CONTEXT.md) 中的领域语言。
 
-默认地址：
-
-- Web: `http://localhost:5173`
-- API: `http://localhost:3000`
-- Health check: `http://localhost:3000/api/health`
-
-### 4. 重置开发状态
-
-新一轮 Postman / 集成测试前推荐：
-
-```bash
-pnpm reset:dev -- --yes
-```
-
-该命令会清理开发端口、Postgres 业务表和 Redis 队列，然后启动 `pnpm dev`。
-
-只清空、不重启服务：
-
-```bash
-pnpm reset:dev -- --yes --no-dev
-```
-
-也可以单独执行：
-
-```bash
-pnpm db:clear -- --yes
-pnpm redis:clear -- --yes
-```
-
-重置脚本不会删除 workspace `.daireel/trace/events.jsonl`、deprecated repo-local `storage/trace` / `storage/uploads` 或 MinIO 内容。
-
-## 验证与调试
-
-常用验证：
-
-```bash
-pnpm typecheck
-pnpm lint
-pnpm --filter @aigc-video/ai test
-pnpm --filter @aigc-video/server test
-pnpm --filter @aigc-video/web test
-pnpm build
-```
-
-真实 provider smoke 仅保留后端图像链路 / 视频链路，并固定每条链路只生成 1 个候选：
-
-```bash
-pnpm --filter @aigc-video/server test:integration:smoke
-```
-
-多真实模型联调 package scripts 已移除。历史直连脚本不再保留兼容入口；旧命令应直接失败为 missing script/file。
-
-查看 workspace-local trace 时，直接打开 `<workspaceDirectory>/.daireel/trace/events.jsonl` 或 `<workspaceDirectory>/.daireel/trace/provider_call.jsonl`。
-
-集成测试：
-
-```bash
-pnpm --filter @aigc-video/server test:integration:smoke
-```
-
-Playwright e2e：
-
-```bash
-pnpm --filter @aigc-video/web test:e2e
-```
-
-V2 agent-chain 验收资料位于 `docs/test/agent-chain/`：
-
-```text
-docs/test/agent-chain/
-├── agent-chain.postman.json
-├── agent-chain.env.json
-└── agent-chain.data.json
-```
-
-这些 Postman/Newman 资产当前只作为公开契约参考保留；完整 agent-chain 真实模型联调入口已关闭。当前真实 provider 自动 smoke 只跑后端 image-flow / video-flow。
-
-## API 契约
-
-- 人类可读业务接口：[docs/core/interface.md](./docs/core/interface.md)
-- 机器可读 OpenAPI：[docs/core/openapi.yaml](./docs/core/openapi.yaml)
-- 测试侧 OpenAPI/Postman 资料：[docs/test/](./docs/test/)
-
-通用约定：
-
-- 全部路由前缀 `/api`，URL 无版本号。
-- 错误统一映射为 `{ code, message, details? }`。
-- 标记为幂等的 POST 必须携带 `Idempotency-Key`。
-- 宽高比枚举固定为 `9:16 | 16:9 | 1:1`。
-- 下游查询返回 `upstreamChanged` 提示，但不自动 reset 下游。
-
-## Worktree 环境
-
-后续 PRD 提炼和实现分支建议使用 git worktree。remote 不提交 `.env`、`node_modules`、本地上传文件和模型权重；这些都需要在每个 worktree 本地准备。
-
-从当前主工作目录创建 worktree：
-
-```bash
-git fetch origin
-git switch main
-git pull --ff-only origin main
-
-mkdir -p ../Bytedancehack-wt
-git worktree add -b feat/prd ../Bytedancehack-wt/prd main
-```
-
-进入 worktree 后复制本地环境变量：
-
-```bash
-cd ../Bytedancehack-wt/prd
-cp /Users/carrick/ResearchWorkspace/Bytedancehack/.env .env
-pnpm install
-```
-
-如果 worktree 要和主目录同时启动应用，注意调整 `WEB_PORT` 和 `SERVER_PORT`，避免端口冲突。
+项目维护资料放在 [docs/core/](./docs/core/)；日常使用创作审核台时无需阅读这些文档。

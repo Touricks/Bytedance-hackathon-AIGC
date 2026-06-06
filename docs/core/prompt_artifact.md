@@ -1,6 +1,6 @@
 # prompt_artifact — Prompt Artifact 字段与存储契约
 
-更新时间：2026-06-03
+更新时间：2026-06-06
 
 本文只描述当前架构中与 prompt 链路相关的 artifact、状态锚点和 provider 生成记录。跨 module 的 prompt 组装顺序、artifact 流通和上下游读取规则见 [`prompt_workflow.md`](./prompt_workflow.md)。机器契约以 `apps/server/src/db/schema/schema.sql`、`packages/shared/src/schemas/artifacts.ts`、`packages/ai/src/schemas/*` 为准。
 
@@ -15,7 +15,7 @@
 | Workspace module artifacts | `prompt_requirements_artifacts`、`material_intake_artifacts`、`product_brief_artifacts`、`storyboard_artifacts`、`shot_prompt_artifacts` | 保存 workspace 级 current approved / latest proposed 产物。 |
 | Shot set artifacts | `shot_sets`、`storyboard_shots`、`shot_prompt_requirements` | 把 approved shotprompt 显式 apply 为一个 active shot set，并保存每个 shot 的 image/video 要求 dict。 |
 | Per-shot artifacts | `image_prompt_artifacts`、`video_script_artifacts`、`image_select_artifacts`、`video_select_artifacts` | 存单个 shot 的图像提示词、视频脚本和当前选择，并驱动 image/video candidate 与 final compose。 |
-| Orchestrator jobs | `one_click_final_video_jobs` | 保存全自动一键成片的阶段状态、幂等键、中间 artifact id、shot set id 和 final compose job id。 |
+| Orchestrator jobs | `one_click_final_video_jobs`、`shot_image_auto_selection_jobs` | 保存全自动一键成片和独立分镜图自动选择的阶段状态、幂等键、中间 artifact/batch id、shot set id 和结果 job id。 |
 
 重要区别：
 
@@ -26,7 +26,7 @@
 - `shot-workflow-status`、`image-rounds`、`video-rounds` 会基于 `source_fingerprint` 返回 `upstream`，提示当前 shot/round 是否基于旧上游；这是 redo handoff 信号，不会自动删除候选、选择或成片链路。
 - workspace module artifact 的完整 assembled prompt 写入 trace，`prompt_assembly` 保存 subject/contract 模板 id 与 hash；逐 shot 的 `image_prompt_artifacts` / `video_script_artifacts` 当前由后端 deterministic assembler 直接持久化 provider-facing prompt 主体。
 - material-intake 的真实 Ark text provider 请求默认只发送纯文本 runtime context。product-brief 在真实模式下会读取 primary material image，并以 `image_url` 形式附给多模态 Ark text provider，避免只凭空 metadata 生成商品 brief。
-- 一键成片不创建新的 prompt artifact 类型；它从素材解读草稿 approve 开始，自动串起现有 prompt artifact、selection artifact 和 final video job，并在 `trace_events` 写阶段事件。
+- 一键成片和独立分镜图自动选择都不创建新的 prompt artifact 类型；一键成片串起现有 prompt artifact、candidate、selection 和 final video job，独立分镜图自动选择只串起 image candidate 与 image selection，并在 `trace_events` 写阶段事件。
 
 ### 1.1 Prompt 组装与跨模块流通
 
@@ -270,7 +270,7 @@ Schema：`shotPromptArtifactSchema`
 | `productVisibilityRule` | agent 输出。 |
 | `referenceImageUsage[]` | agent 输出；每项含 `assetId/usage/instruction`。 |
 | `qualityChecklist[]` | agent 输出。 |
-| `context` | server 注入的装配快照，包括 material/brief/shotprompt、镜头目标 `shotGoal`、前后镜、当前/前序候选、`image_ref`、反馈重生成的 `feedbackImageCandidateId/feedbackImageRef`、`number`、`shotImage`、`shotVideo`、`compiledShotRequirements`、`userDirection`、`assemblerVersion` 等。 |
+| `context` | server 注入的装配快照，包括 material/brief/shotprompt、镜头目标 `shotGoal`、前后镜、当前/前序候选、`image_ref`、反馈重生成的 `feedbackImageCandidateId/feedbackImageRef`、`candidateCount`、`shotImage`、`shotVideo`、`compiledShotRequirements`、`userDirection`、`assemblerVersion` 等。 |
 
 prompt 装配：
 
@@ -421,7 +421,7 @@ provider 调用审计：`trace_events(trace_type='provider_call')`
 
 | 字段 | Prompt 链路含义 |
 |---|---|
-| `job_type` | `generate_image_candidate / generate_images / generate_videos / compose_final_video / advance_one_click_final_video`。 |
+| `job_type` | `generate_image_candidate / generate_images / advance_shot_image_auto_selection / generate_videos / compose_final_video / advance_one_click_final_video`。 |
 | `related_batch_type` / `related_batch_id` | 关联 candidate、batch 或 final job。 |
 | `payload` | worker payload，包含 prompt artifact id、batch id、shot/workspace id、aspectRatio、referenceImageUrls 等。 |
 | `error_message` | worker 失败原因。 |
@@ -435,6 +435,16 @@ provider 调用审计：`trace_events(trace_type='provider_call')`
 | `auto_selection_strategy` | 当前固定为 `first_success`。 |
 | `final_video_job_id` | 进入 final compose 后关联最终成片任务。 |
 | `idempotency_key` | `POST /one-click-final-videos` 的幂等键。 |
+
+表：`shot_image_auto_selection_jobs`
+
+| 字段 | Prompt 链路含义 |
+|---|---|
+| `status/current_stage/stage_state` | 独立选图编排进度；`WAITING` 表示等待 image batch 终态后重入。 |
+| `shot_set_id` | 任务启动时绑定的 active shot set。 |
+| `candidate_count` | 本次为未选 shot 创建 image batch 时使用的候选数量。 |
+| `auto_selection_strategy` | 当前固定为 `first_success`。 |
+| `idempotency_key` | `POST /shot-image-auto-selections` 的幂等键。 |
 
 ---
 

@@ -1,6 +1,6 @@
 # prompt_workflow — Prompt 组装流程与 Artifact 流通
 
-更新时间：2026-06-03
+更新时间：2026-06-06
 
 本文记录当前版本 prompt 的实际组装方式，以及 workspace module、shot set、per-shot artifact 之间的流通。字段、表结构、状态锚点和 provider 生成记录见 [`prompt_artifact.md`](./prompt_artifact.md)。
 
@@ -65,6 +65,7 @@ prompt-requirements approve
   -> per shot image-prompt propose
   -> image generation batch
   -> image-select
+     or shot-image-auto-selection
   -> per shot video-script propose
   -> video generation batch
   -> video-select
@@ -73,11 +74,14 @@ prompt-requirements approve
 
 一键成片入口从素材解读审核页独立启动，起点是请求里的 `materialIntake.data` 草稿。后端先调用 material-intake approve，把这份草稿变成 current，再自动执行后续 workspace module 的 propose/approve、shot-set apply、逐 shot image/video 生成与选择、final compose。它不新增 prompt 模板或新的下游读取规则，只是把现有节点按相同契约串行编排。
 
+分镜图选择页的“批量生成并选择分镜图”也是独立 orchestrator，但只处理当前 active shot set 的图像侧。它跳过已有 selected image 的 shot，为未选 shot 生成 image batch，并在 batch 终态后选择首个 `SUCCEEDED` 且已有 stable URL 的候选；它不生成分镜视频，不触发 final compose，也不创建新的 prompt artifact 类型。
+
 核心规则：
 
 - 下游只读取 `approved/current` 的 workspace module artifact，不读取 latest proposed。
 - `source_fingerprint` 记录本次生成读取的上游 artifact id，用于 `upstreamChanged` / redo handoff；它不会自动删除下游候选、选择或成片。
 - `shotprompt approve` 只产生 current approved artifact，不创建 `storyboard_shots`；只有 `POST /api/workspaces/:workspaceId/shot-sets` 会创建 active shot set。
+- `candidateCount` 是本次生成/重生成的操作参数；服务端按默认值和最大值裁定，前端只保存 workspace 级 UI 偏好，不把候选数量写入创作要求或 prompt artifact。
 - `prompt_requirements_artifacts.data` 当前对 material-intake / product-brief / storyboard 主要是依赖门槛和 source fingerprint；shotprompt 会把 current approved requirements data 中的 7 项创作要求格式化注入 Runtime Context 顶部，作为分镜生成要求的导演约束输入。
 - material-intake 的 strict JSON schema 调用保持纯文本 runtime context，只使用素材 metadata、文本预览和用户字段。product-brief 在真实模式下会把 primary material image 以 `image_url` 形式附给多模态 Ark text provider，用于识别图片中的真实商品/服务信息。
 - 逐 shot 阶段不再直接读取原始 requirements data，而是读取 approved shotprompt 中的 `shotImage` / `shotVideo` dict，这两个 dict 经 `shot_prompt_requirements` 进入 image-prompt / video-script。
@@ -152,7 +156,7 @@ prompt-requirements approve
 | `feedbackImageRef` | 仅反馈重生成时注入；来自 `feedbackImageCandidateId` 指向的最新轮成功候选，用作“基于这张图修改”的视觉基准。 |
 | `referenceAssets[]` | `shot_asset_refs`。其中视频素材可作为 prompt 语义参考保留，但在未做关键帧/海报帧提取前，不得作为 Seedream `image` 参考图输入。 |
 | `previousImagePromptText` | 同 shot 上一版 image prompt，可为空。 |
-| `userHint` / `number` | 请求内联编辑方向和候选数量。 |
+| `userDirection` / `candidateCount` | 请求内联编辑方向和候选数量。 |
 
 输出写入 `image_prompt_artifacts.prompt_text/negative_prompt/prompt_json`，并创建 `image_generation_batches`。主路径不再调用 image-prompt 二次创意 agent，而由后端 deterministic assembler 按固定模板拼接镜头目标、`shotImage`、本轮反馈和参考图规则。`promptText` 只描述静态关键帧；不得写相机运动、主体运动、时长、首末帧、转场、旁白或字幕。Seedream provider request 使用 `promptText`、`negativePrompt`、`referenceImageUrls`、`count`、`aspectRatio`；其中 `referenceImageUrls` 必须经过图片类型过滤，只包含图片 data URL、workspace 图片文件、公开图片 URL 或已生成分镜图，不能包含 `.mp4` 等视频素材字节。
 
@@ -176,7 +180,7 @@ prompt-requirements approve
 | `durationSec` | `storyboard_shots.default_duration_sec`，server 夹到 Seedance 可接受范围。 |
 | `neighborImages` | active shot set 内相邻选择图。 |
 | `previousVideoScript` | 同 shot 上一版 video script，可为空。 |
-| `userHint` / `number` | 请求内联编辑方向和候选数量。 |
+| `userDirection` / `candidateCount` | 请求内联编辑方向和候选数量。 |
 
 输出写入 `video_script_artifacts.script_json/provider_prompt`，并创建 `video_generation_batches`。worker 发 Seedance 前不会直接裸用 `provider_prompt`，而是通过 `buildSeedanceShotVideoPrompt()` 追加 approved shotprompt 的 `tts.voiceProfile`、本镜口播、`generate_audio=true` 语义和“旁白只进音频，禁止将口播文案/旁白文字复制到视频画面内”约束；Seedance 请求体也固定传 `generate_audio: true`。`video_script_artifacts.source_fingerprint` 同步记录 `voiceProfileHash`，用于声音策略变化后的上游变化提示。
 
@@ -192,7 +196,7 @@ prompt-requirements approve
 | `video-select` | 不调用模型。 | UPSERT `video_select_artifacts`，并更新 `storyboard_shots.selected_video_id`；不删除未选候选。 |
 | `final compose` | 不调用 LLM / provider prompt。 | 读取 active shot set 下每个 shot 的 selected video，通过 workspace storage adapter 下载输入到临时目录；用 ffmpeg concat 成片后写回 workspace storage，并写 `final_video_jobs`。 |
 
-一键成片自动选择的 prompt 行为仍是“不调用模型”：image/video select 只选择首个 `SUCCEEDED` 且已有 stable URL 的候选，写 `selected_by='system:auto-one-click'`。视频候选处于 `PERSISTING` 时继续等待；终态没有成功候选时，一键任务失败并保留所有已生成中间产物。
+自动选择的 prompt 行为仍是“不调用模型”。一键成片的 image/video select 只选择首个 `SUCCEEDED` 且已有 stable URL 的候选，写 `selected_by='system:auto-one-click'`；独立分镜图自动选择只写 image selection，`selected_by='system:auto-shot-image-selection'`。视频候选处于 `PERSISTING` 时继续等待；终态没有成功候选时，对应 orchestrator 任务失败并保留所有已生成中间产物。
 
 旧 whole-video export prompt builder 已清理；当前成片阶段不调用 LLM 或 provider prompt，只读取已选分镜视频并用 ffmpeg 拼接。
 

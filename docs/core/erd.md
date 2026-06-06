@@ -18,6 +18,7 @@
 - **shot set 是分镜链路实例**：approved shot prompt 只有在显式 apply 后才创建新的 active `shot_sets`。旧 shot set 归档但候选、选择、trace 继续作为数据库事实保留。
 - **当前工作流只读 active shot set**：`shot-workflow-status`、next shot、首尾帧、选图/选视频完成度和视频生成前置检查都限定在当前 active `shot_sets`；archived rows 不提供商家工作台读取或操作入口。
 - **选择是 current 指针**：每个 shot 至多一个 selected image 和 selected video，写入 `image_select_artifacts` / `video_select_artifacts`。重复选择用 UPSERT 覆盖，不使未选候选 stale。
+- **自动编排只保存编排状态**：`one_click_final_video_jobs` 与 `shot_image_auto_selection_jobs` 记录跨阶段进度和错误，不替代 artifact、candidate 或 selection 事实表。
 - **工作区身份持久于磁盘**：`.daireel/workspace.json` 保存 `workspaceId` 作为持久身份；DB `creative_workspace` 行是可被 `reset:dev` 清空的业务状态。DB 行缺失时 `POST /api/workspaces/init` 复用磁盘 manifest 的原始 `workspaceId` 重新登记（不新建），`GET /api/workspaces` 经 `WORKSPACE_DISCOVERY_ROOTS` 扫描出磁盘有 manifest 但 DB 无行的草稿（`discovered`）。详见 `arc_v2.md` §13。
 - **对象存储是 workspace storage binding，不是业务事实源**：`workspace_storage_bindings` 记录 LOCAL 或 S3-compatible 位置；S3 object key 固定在 `workspaces/{workspaceId}/{relativePath}` 下。DB 仍保存 artifact、候选、选择、trace 等业务事实，前端只访问 server 代理 URL。
 
@@ -41,6 +42,7 @@ erDiagram
     creative_workspace ||--o{ video_generation_batches : "video jobs"
     creative_workspace ||--o{ final_video_jobs : "compose jobs"
     creative_workspace ||--o{ one_click_final_video_jobs : "one-click jobs"
+    creative_workspace ||--o{ shot_image_auto_selection_jobs : "shot image auto-selection jobs"
     creative_workspace ||--o{ generation_jobs : "queue jobs"
     creative_workspace ||--o{ trace_events : "trace"
 
@@ -69,6 +71,7 @@ erDiagram
     video_candidates ||--o{ video_select_artifacts : "selected candidate"
 
     shot_sets ||--o{ final_video_jobs : "compose source"
+    shot_sets ||--o{ shot_image_auto_selection_jobs : "image selection scope"
     one_click_final_video_jobs }o--o| material_intake_artifacts : "approved start"
     one_click_final_video_jobs }o--o| final_video_jobs : "compose result"
     final_video_jobs ||--o{ campaign_publications : "published as"
@@ -372,6 +375,24 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+
+    shot_image_auto_selection_jobs {
+        text id PK
+        text workspace_id FK
+        text status "PENDING/RUNNING/WAITING/SUCCEEDED/FAILED/CANCELLED"
+        text current_stage
+        jsonb stage_state
+        text shot_set_id FK
+        int candidate_count
+        text auto_selection_strategy
+        text error_code
+        text error_message
+        text idempotency_key
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz started_at
+        timestamptz completed_at
+    }
 ```
 
 ---
@@ -548,9 +569,13 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 `video_select_artifacts` 同理。成片合成读取 active shot set 下每个 shot 的 `video_select_artifacts.video_candidate_id`。
 
-一键成片自动选择也写入这两张 selection 表，`selected_by='system:auto-one-click'`。策略固定为首个 `SUCCEEDED` 且有 stable URL 的候选；视频候选在 `PERSISTING` 时只等待，不写 selection。若 batch 终态没有成功候选，一键任务进入 `FAILED`，但已写入的 artifact、候选和选择不回滚。
+自动选择同样写入 selection 表，不引入独立的“自动选择结果”事实表。一键成片写 `selected_by='system:auto-one-click'`，并可同时推进图像和视频选择；独立“批量生成并选择分镜图”只写 `image_select_artifacts`，`selected_by='system:auto-shot-image-selection'`，不生成分镜视频，也不触发 final compose。
+
+自动选择策略固定为首个 `SUCCEEDED` 且有 stable URL 的候选；视频候选在 `PERSISTING` 时只等待，不写 selection。若 batch 终态没有成功候选，对应 orchestrator 任务进入 `FAILED`，但已写入的 artifact、候选和选择不回滚。
 
 `one_click_final_video_jobs` 保存 orchestrator 状态，不替代上述业务事实表。`status in ('PENDING','RUNNING','WAITING')` 上有 workspace 级 active unique index，保证同一 workspace 同时最多一个一键任务运行。`stage_state` 记录每阶段进度，例如当前分镜图 index、各 shot batch id、已选 candidate id 和 final video job id。
+
+`shot_image_auto_selection_jobs` 保存独立选图 orchestrator 状态，不替代 `image_generation_batches`、`image_candidates` 或 `image_select_artifacts`。`status in ('PENDING','RUNNING','WAITING')` 上有 workspace 级 active unique index，保证同一 workspace 同时最多一个选图任务运行。`stage_state` 记录当前 shot index、各 shot batch id、已跳过/已选择/失败的 shot 和候选 id。
 
 ---
 

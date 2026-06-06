@@ -8,7 +8,7 @@
 
 ## 1. 一句话定位
 
-商家上传商品素材 → 模块化 AI 链路生成并批准生效创作产物 → 显式应用 shot prompt 创建分镜链路实例 → 逐分镜生成候选图/候选视频并选择当前结果 → ffmpeg 拼接成片。
+商家上传商品素材 → 模块化 AI 链路生成并批准生效创作产物 → 显式应用 shot prompt 创建分镜链路实例 → 手动逐分镜或批量生成并选择分镜图 → 逐分镜生成候选视频并选择当前结果 → ffmpeg 拼接成片。
 
 V2 的核心变化：
 
@@ -18,6 +18,8 @@ V2 的核心变化：
 - module artifact 物理 append，业务上只暴露当前生效内容。
 - 上游变更不自动 reset 下游，只产生**上游变更提示**。
 - `shotprompt approve` 不再删除并重建 shots；必须显式创建新的**分镜链路实例**。
+- 图像/视频候选数量是每次生成/重生成的操作参数，受服务端默认值和最大值限制，不写入创作要求 artifact。
+- 创作审核台各模块不展示 artifact current/proposed 标签；P2-P9 主标题下方只展示业务标题，不展示开发脚手架说明或模块解释。
 
 技术基座仍是 **Fastify 5 + Zod + BullMQ + 原生 `pg` + ffmpeg**，AI 调用走火山引擎 **Ark 文本 / Seedream 图像** 与 **Seedance 视频**。
 
@@ -68,6 +70,7 @@ V2 把链路显式拆成 prompt modules 与同步点 modules。
 | Apply       | shot-set        | 根据生效 shot prompt 创建分镜链路实例                                         |
 | LLM + Media | image-prompt    | per-shot 图像 prompt artifact + image candidates                              |
 | Sync        | image-select    | per-shot 当前分镜图选择                                                       |
+| Orchestrate | shot-image-auto-selection | 按 active shot set 顺序批量生成未选分镜图，并写入 `first_success` image selection |
 | LLM + Media | video-script    | per-shot 视频脚本 artifact + video candidates                                 |
 | Sync        | video-select    | per-shot 当前分镜视频选择                                                     |
 | Media       | final-compose   | 按当前分镜视频选择拼接成片                                                    |
@@ -82,11 +85,14 @@ material-intake
   -> shotprompt
   -> apply shot-set
   -> image-prompt -> image-select
+     or shot-image-auto-selection
   -> video-script -> video-select
   -> final-compose
 ```
 
 素材解读页另有独立入口“全自动一键成片”。它不复用前端手动审核 mutation，而是调用一键成片 API；后端以请求中的素材解读草稿为起点，先批准 material-intake，再按上图顺序自动 propose/approve、apply、生成候选、选择首个成功候选并创建成片任务。手动按钮“批准素材解读并生成商品卖点”语义不变。
+
+分镜图选择页另有独立入口“批量生成并选择分镜图”。它只处理当前 active shot set 的图像侧：已有 selected image 的 shot 会跳过，未选 shot 生成 image batch，batch 完成后选择首个 `SUCCEEDED` 且已有 stable URL 的候选。该任务不生成分镜视频，不触发 final compose，也不写创作要求 artifact。
 
 ---
 
@@ -105,6 +111,7 @@ V2 不再用 `workspace_artifact(type, data)` 承载主链路。每个 module �
 | image-prompt     | `image_prompt_artifacts`                        | per-shot propose round；保留生成事实。                       |
 | image generation | `image_generation_batches` + `image_candidates` | per-round 候选事实。                                         |
 | image-select     | `image_select_artifacts`                        | 每 shot current-only；UPSERT 覆盖当前选择。                  |
+| shot-image-auto-selection | `shot_image_auto_selection_jobs`         | 独立选图 orchestrator job；同一 workspace 同时最多一个运行中任务。 |
 | video-script     | `video_script_artifacts`                        | per-shot propose round；保留生成事实。                       |
 | video generation | `video_generation_batches` + `video_candidates` | per-round 候选事实；视频候选可处于 provider 已出片但 stable 保存中的 `PERSISTING`。 |
 | video-select     | `video_select_artifacts`                        | 每 shot current-only；UPSERT 覆盖当前选择。                  |
@@ -350,6 +357,7 @@ video_select_artifacts
 | kind                       | 用途                                                                     |
 | -------------------------- | ------------------------------------------------------------------------ |
 | `generate_image_candidate` | image-prompt 创建每个 image candidate job。                              |
+| `advance_shot_image_auto_selection` | 批量生成并选择分镜图任务的阶段推进，等待 image batch 终态后写 selection。 |
 | `generate_video_candidate` | video-script 创建每个 video candidate job（每 job 一次 Seedance 调用）。 |
 | `generate_videos`          | 旧版 video 批任务，仅保留给历史 job 的 recovery；主线已不再使用。        |
 | `compose_final_video`      | final compose。                                                          |
