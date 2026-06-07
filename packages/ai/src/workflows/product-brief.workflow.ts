@@ -39,6 +39,7 @@ export interface GenerateProductBriefInput {
   stylePreference?: string;
   material: MaterialIntakeArtifact;
   draft?: ProductBriefArtifact;
+  creativeRequirements?: unknown;
 }
 
 export interface ProductBriefTrace {

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const proposeImagePromptRequest = z.object({
   userDirection: z.string().optional(),
+  candidateCount: z.number().int().positive().optional(),
 }).strict();
 
 const shotAssetRefRoleSchema = z.enum([
@@ -30,6 +31,7 @@ export const regenerateImagePromptRequest = z.object({
   baseArtifactId: z.string().min(1),
   feedbackImageCandidateId: z.string().min(1),
   userDirection: z.string().trim().min(1).max(1000),
+  candidateCount: z.number().int().positive().optional(),
 }).strict();
 
 export const selectImageRequest = z.object({
@@ -54,12 +56,14 @@ export const selectImageRequest = z.object({
 
 export const proposeVideoScriptRequest = z.object({
   userDirection: z.string().optional(),
+  candidateCount: z.number().int().positive().optional(),
 }).strict();
 
 export const regenerateVideoScriptRequest = z.object({
   baseArtifactId: z.string().min(1),
   feedbackVideoCandidateId: z.string().min(1),
   userDirection: z.string().trim().min(1).max(1000),
+  candidateCount: z.number().int().positive().optional(),
 }).strict();
 
 export const selectVideoRequest = z.object({

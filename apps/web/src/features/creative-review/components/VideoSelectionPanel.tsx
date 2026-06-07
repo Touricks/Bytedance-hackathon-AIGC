@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import Card from "@mui/material/Card";
 import CardActions from "@mui/material/CardActions";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import { Clock3, Film, RefreshCw } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
 import {
@@ -27,11 +31,26 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>批量生成，逐分镜审核</span>
         <h1>分镜视频选择</h1>
-        <p>全部分镜图选择完成后，批量生成视频候选；用户仍然逐个分镜选择当前分镜视频。</p>
       </div>
       <div className="review-panel__actions">
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel id="video-candidate-count-label">候选视频数量</InputLabel>
+          <Select
+            labelId="video-candidate-count-label"
+            label="候选视频数量"
+            value={vm.candidateCounts.video}
+            onChange={(event) =>
+              vm.actions.setVideoCandidateCount(Number(event.target.value))
+            }
+          >
+            {vm.candidateCounts.videoOptions.map((count) => (
+              <MenuItem key={count} value={count}>
+                {count} 条
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <button
           type="button"
           className="review-primary"

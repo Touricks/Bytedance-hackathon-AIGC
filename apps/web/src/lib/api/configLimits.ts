@@ -11,6 +11,7 @@ export interface ConfigLimits {
     image: number;
     video: number;
   };
+  workspaceStorageKind?: "local" | "s3";
   aspectRatios: Array<"9:16" | "16:9" | "1:1">;
 }
 

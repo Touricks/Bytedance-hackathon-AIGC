@@ -4,6 +4,7 @@ import type {
   StoryboardArtifact,
 } from "@aigc-video/shared";
 import type { RuntimePromptView } from "./material-intake.prompt.js";
+import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 export const SHOTPROMPT_PROMPT_VERSION = "video-shotprompt.v1";
@@ -144,34 +145,23 @@ export function buildShotPromptPromptView(
 
 export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
   const categoryPreset = getCategoryVisualPreset(input.brief.product.category);
+  const creativeRequirements = formatCreativeRequirementsForModule(
+    input.creativeRequirements,
+    "shotprompt",
+  );
 
-  const runtimeLines = [
+  const runtimeLines: string[] = [
+    creativeRequirements ?? "",
     "输入：",
     `画幅比例：${input.aspectRatio}`,
+    `必须输出 shot 数量：${input.storyboard.shots.length}`,
+    `必须输出 shot index 顺序：${input.storyboard.shots.map((shot) => shot.index).join(", ")}`,
     "已确认商品 brief：",
-    JSON.stringify({
-      product: { name: input.brief.product.name, category: input.brief.product.category },
-      audience: input.brief.audience,
-      coreSellingPoint: input.brief.coreSellingPoint,
-      brandTone: input.brief.brandTone,
-      bannedExpressions: input.brief.bannedExpressions,
-    }),
+    JSON.stringify(input.brief),
     "已确认素材清单：",
     JSON.stringify(input.material.assets),
     "已确认分镜：",
-    JSON.stringify({
-      narrative: input.storyboard.narrative,
-      totalDurationSec: input.storyboard.totalDurationSec,
-      shots: input.storyboard.shots.map((s) => ({
-        index: s.index,
-        purpose: s.purpose,
-        durationSec: s.durationSec,
-        scene: s.scene,
-        visualDirection: s.visualDirection,
-        productAssetRef: s.productAssetRef,
-        voiceover: s.voiceover,
-      })),
-    }),
+    JSON.stringify(input.storyboard),
   ];
 
   if (categoryPreset) {
@@ -183,16 +173,6 @@ export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
     );
   }
 
-  if (input.creativeRequirements) {
-    const allowed = ["image", "script", "storyboard", "shotImage", "shotVideo"];
-    const filtered = Object.fromEntries(
-      Object.entries(input.creativeRequirements).filter(([k]) => allowed.includes(k)),
-    );
-    if (Object.keys(filtered).length > 0) {
-      runtimeLines.push("", "已批准创作要求（导演约束）：", JSON.stringify(filtered));
-    }
-  }
-
   if (input.brief.bannedExpressions.length > 0) {
     runtimeLines.push(
       "",
@@ -202,6 +182,6 @@ export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
 
   return buildModulePrompt({
     moduleId: "shotprompt",
-    runtimeContext: runtimeLines.join("\n"),
+    runtimeContext: runtimeLines.filter(Boolean).join("\n"),
   }).prompt;
 }

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  DEFAULT_CREATIVE_FACTORS,
+  creativeFactorsSchema,
+} from "@aigc-video/shared";
+import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
   type ProviderEnv,
@@ -21,9 +25,17 @@ export const referenceVideoRequirementsAnalysisSchema = z.object({
   risks: z.array(z.string()).optional(),
 });
 
+export const referenceVideoCreativeFactorsRecommendationSchema = z.object({
+  recommendedFactors: creativeFactorsSchema,
+  confidence: z.enum(["low", "medium", "high"]),
+  reasons: z.array(z.string()).optional(),
+});
+
 export const referenceVideoRequirementsResultSchema = z.object({
   draft: referenceVideoRequirementsDraftSchema,
   analysis: referenceVideoRequirementsAnalysisSchema,
+  creativeFactorsRecommendation:
+    referenceVideoCreativeFactorsRecommendationSchema,
 });
 
 export type ReferenceVideoRequirementsResult = z.infer<
@@ -61,6 +73,15 @@ const outputInstructions = `
     "confidence": "low" | "medium" | "high",
     "detectedBeats": string[],
     "risks": string[]
+  },
+  "creativeFactorsRecommendation": {
+    "recommendedFactors": {
+      "productType": "consumable-good" | "durable-good" | "digital-service" | "offline-experience-service",
+      "audience": "toddler" | "child" | "youth" | "senior",
+      "strategy": "pain-solution" | "scenario-demo" | "review-comparison" | "tutorial-value" | "authority-proof" | "emotional-story" | "curiosity-hook"
+    },
+    "confidence": "low" | "medium" | "high",
+    "reasons": string[]
   }
 }
 `;
@@ -162,6 +183,11 @@ function deterministicReferenceVideoRequirements(
         input.contentType.startsWith("video/")
           ? []
           : ["参考文件类型不是标准 video/*，请确认来源文件可播放"],
+    },
+    creativeFactorsRecommendation: {
+      recommendedFactors: DEFAULT_CREATIVE_FACTORS,
+      confidence: "medium",
+      reasons: ["参考视频呈现通用商品演示结构，适合先按耐用品、青年用户和场景演示策略导入。"],
     },
   });
 }

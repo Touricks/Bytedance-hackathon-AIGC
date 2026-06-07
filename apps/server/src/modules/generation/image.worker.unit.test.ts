@@ -287,6 +287,35 @@ describe("processGenerateImages", () => {
     ]);
   });
 
+  it("drops workspace video material references before provider conversion", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "daireel-ref-"));
+    const materialDir = path.join(workspaceDir, ".daireel", "materials");
+    await mkdir(materialDir, { recursive: true });
+    await writeFile(path.join(materialDir, "demo.mp4"), Buffer.from("fake-mp4"));
+    await writeFile(path.join(materialDir, "product.JPG"), Buffer.from("fake-jpg"));
+    let readCount = 0;
+
+    const prepared = await prepareImageReferenceUrlsForProvider({
+      workspaceId: "ws-1",
+      urls: [
+        "/api/workspaces/ws-1/materials/demo.mp4",
+        "/api/workspaces/ws-1/materials/product.JPG",
+      ],
+      resolveWorkspaceLocalPath: async () => workspaceDir,
+      readFile: async (filePath) => {
+        readCount += 1;
+        return Buffer.from(path.basename(filePath));
+      },
+    });
+
+    assert.equal(readCount, 1);
+    assert.deepEqual(prepared.sources, ["workspace_stable"]);
+    assert.equal(
+      prepared.urls[0],
+      `data:image/jpeg;base64,${Buffer.from("product.JPG").toString("base64")}`,
+    );
+  });
+
   it("generates one queued image candidate with a single-image provider request", async () => {
     const seenArgs: unknown[] = [];
     __setImageProviderForTests(async (args) => {

@@ -16,7 +16,7 @@ import {
   type ProviderCallTraceContext,
 } from "../trace/provider-call-trace.js";
 import { traceService } from "../trace/trace.service.js";
-import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
+import { getWorkspaceStorageAdapter } from "../workspace/storage/workspace-storage-resolver.js";
 import {
   persistGeneratedAsset,
   type GeneratedAssetPersister,
@@ -227,12 +227,14 @@ function mockImageResult(count: number): ArkImageResult {
 
 function imageContentTypeForPath(filePath: string) {
   const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".avif") return "image/avif";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
   if (ext === ".gif") return "image/gif";
   if (ext === ".bmp") return "image/bmp";
   if (ext === ".tif" || ext === ".tiff") return "image/tiff";
-  return "image/png";
+  return null;
 }
 
 function classifyReferenceImageSource(url: string): ReferenceImageSource {
@@ -250,6 +252,26 @@ function classifyReferenceImageSource(url: string): ReferenceImageSource {
     }
   }
   return "other";
+}
+
+function referenceUrlPathname(url: string) {
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  }
+  return url.split(/[?#]/, 1)[0] ?? url;
+}
+
+function isSupportedImageReferenceUrl(url: string) {
+  if (/^data:/i.test(url)) {
+    return /^data:image\/[a-z0-9.+-]+;base64,/i.test(url);
+  }
+  const ext = path.extname(referenceUrlPathname(url)).toLowerCase();
+  if (!ext) return true;
+  return imageContentTypeForPath(`asset${ext}`) !== null;
 }
 
 function workspaceMaterialRelativePath(workspaceId: string, url: string) {
@@ -272,27 +294,43 @@ export async function prepareImageReferenceUrlsForProvider(input: {
   resolveWorkspaceLocalPath?: (workspaceId: string) => Promise<string>;
   readFile?: (filePath: string) => Promise<Buffer>;
 }) {
-  const sources = input.urls.map(classifyReferenceImageSource);
-  const resolveLocalPath =
-    input.resolveWorkspaceLocalPath ?? resolveWorkspaceStorageLocalPath;
-  const readReferenceFile = input.readFile ?? readFile;
+  let adapter: Awaited<ReturnType<typeof getWorkspaceStorageAdapter>> | null = null;
   const urls: string[] = [];
+  const sources: ReferenceImageSource[] = [];
   for (const url of input.urls) {
     const relativePath = workspaceMaterialRelativePath(input.workspaceId, url);
     if (!relativePath) {
+      if (!isSupportedImageReferenceUrl(url)) {
+        continue;
+      }
       urls.push(url);
+      sources.push(classifyReferenceImageSource(url));
       continue;
     }
-    const workspaceLocalPath = await resolveLocalPath(input.workspaceId);
-    const materialRoot = path.resolve(workspaceLocalPath, ".daireel", "materials");
-    const filePath = path.resolve(materialRoot, relativePath);
-    if (!filePath.startsWith(materialRoot + path.sep)) {
-      throw new Error("WORKSPACE_IMAGE_REFERENCE_OUTSIDE_STORAGE");
+    const contentType = imageContentTypeForPath(relativePath);
+    if (!contentType) {
+      continue;
     }
-    const bytes = await readReferenceFile(filePath);
-    urls.push(
-      `data:${imageContentTypeForPath(filePath)};base64,${bytes.toString("base64")}`,
-    );
+    let bytes: Buffer;
+    if (input.resolveWorkspaceLocalPath || input.readFile) {
+      if (!input.resolveWorkspaceLocalPath) {
+        throw new Error("WORKSPACE_IMAGE_REFERENCE_TEST_OVERRIDES_INCOMPLETE");
+      }
+      const workspaceLocalPath = await input.resolveWorkspaceLocalPath(
+        input.workspaceId,
+      );
+      const materialRoot = path.resolve(workspaceLocalPath, ".daireel", "materials");
+      const filePath = path.resolve(materialRoot, relativePath);
+      if (!filePath.startsWith(materialRoot + path.sep)) {
+        throw new Error("WORKSPACE_IMAGE_REFERENCE_OUTSIDE_STORAGE");
+      }
+      bytes = await (input.readFile ?? readFile)(filePath);
+    } else {
+      adapter ??= await getWorkspaceStorageAdapter(input.workspaceId);
+      bytes = await adapter!.readObject(`materials/${relativePath}`);
+    }
+    urls.push(`data:${contentType};base64,${bytes.toString("base64")}`);
+    sources.push(classifyReferenceImageSource(url));
   }
   return { urls, sources };
 }

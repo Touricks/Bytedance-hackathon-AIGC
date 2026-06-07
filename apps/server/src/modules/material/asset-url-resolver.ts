@@ -15,6 +15,21 @@ export interface AssetUrlResolverDeps {
   readFile: (path: string) => Promise<Buffer>;
 }
 
+const imageExtensionPattern = /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)(?:[?#].*)?$/i;
+const nonImageMediaExtensionPattern =
+  /\.(mp4|mov|m4v|webm|avi|mkv|mpg|mpeg|mp3|wav|m4a|aac|pdf)(?:[?#].*)?$/i;
+
+function isImageAsset(asset: AssetLookupResult) {
+  const mime = asset.mime?.trim().toLowerCase();
+  if (mime) {
+    return mime.startsWith("image/");
+  }
+  const reference = asset.localPath ?? asset.url;
+  if (imageExtensionPattern.test(reference)) return true;
+  if (nonImageMediaExtensionPattern.test(reference)) return false;
+  return true;
+}
+
 const DEFAULT_LOOKUP: AssetUrlResolverDeps["lookup"] = async (id) => {
   try {
     const row = await db.getAsset(id);
@@ -25,6 +40,9 @@ const DEFAULT_LOOKUP: AssetUrlResolverDeps["lookup"] = async (id) => {
       return { id, url: row.url, localPath: row.url.replace(/^file:\/\//, ""), mime };
     }
     if (row.url.startsWith("http://") || row.url.startsWith("https://")) {
+      return { id, url: row.url, mime };
+    }
+    if (row.url.startsWith("/api/workspaces/")) {
       return { id, url: row.url, mime };
     }
     return { id, url: row.url, localPath: storagePath ?? row.url, mime };
@@ -44,7 +62,19 @@ export function createAssetUrlResolver(deps: AssetUrlResolverDeps = { lookup: DE
         logger.warn("asset-url-resolver: unknown asset id", { id });
         continue;
       }
-      if (asset.url.startsWith("https://") || asset.url.startsWith("http://")) {
+      if (!isImageAsset(asset)) {
+        logger.warn("asset-url-resolver: skipped non-image asset for image reference", {
+          id,
+          mime: asset.mime ?? null,
+          url: asset.url,
+        });
+        continue;
+      }
+      if (
+        asset.url.startsWith("https://") ||
+        asset.url.startsWith("http://") ||
+        asset.url.startsWith("/api/workspaces/")
+      ) {
         out.push(asset.url);
         continue;
       }

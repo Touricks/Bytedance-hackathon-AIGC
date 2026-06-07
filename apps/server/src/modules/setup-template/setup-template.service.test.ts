@@ -6,10 +6,11 @@ describe("setupTemplateService", () => {
   it("validates setup templates at startup", () => {
     const templates = validateCreativeRequirementTemplatesForStartup();
 
-    assert.equal(templates.length, 6);
+    assert.equal(templates.length, 9);
     assert.equal(templates[0]?.id, "consumable-youth-seeding");
-    assert.equal(templates[0]?.productType, "consumable");
+    assert.equal(templates[0]?.productType, "consumable-good");
     assert.deepEqual(templates[0]?.audiences, ["youth"]);
+    assert.equal(templates[0]?.strategy, "pain-solution");
   });
 
   it("fails fast when setup template content is invalid", () => {

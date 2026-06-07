@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import Card from "@mui/material/Card";
 import CardActions from "@mui/material/CardActions";
-import { CheckCircle2, Clock3, Image as ImageIcon, RefreshCw } from "lucide-react";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
+import { CheckCircle2, Clock3, Images, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import {
@@ -41,6 +45,7 @@ export function ImageSelectionPanel({
       round.candidates.some((candidate) => candidate.id === shot.selectedImageId)
     )
   );
+  const autoSelectionJob = vm.shotImageAutoSelection;
 
   useEffect(() => {
     if (
@@ -60,11 +65,7 @@ export function ImageSelectionPanel({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>按分镜顺序推进</span>
         <h1>分镜图选择</h1>
-        <p>
-          后一张分镜图会使用前一张已选分镜图作为场景连续性锚点，所以这里不能并行生成。
-        </p>
       </div>
       {!shot ? (
         <div className="review-empty-state">没有可生成的分镜图。</div>
@@ -81,6 +82,23 @@ export function ImageSelectionPanel({
             </p>
           ) : null}
           <div className="review-panel__actions">
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <InputLabel id="image-candidate-count-label">候选图数量</InputLabel>
+              <Select
+                labelId="image-candidate-count-label"
+                label="候选图数量"
+                value={vm.candidateCounts.image}
+                onChange={(event) =>
+                  vm.actions.setImageCandidateCount(Number(event.target.value))
+                }
+              >
+                {vm.candidateCounts.imageOptions.map((count) => (
+                  <MenuItem key={count} value={count}>
+                    {count} 张
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <button
               type="button"
               className="review-primary"
@@ -90,7 +108,26 @@ export function ImageSelectionPanel({
               <ImageIcon size={16} />
               {vm.pending?.image ? "正在生成分镜图..." : "生成分镜图候选"}
             </button>
+            <button
+              type="button"
+              className="review-secondary"
+              disabled={vm.busy || !nextImageShot}
+              onClick={vm.actions.startShotImageAutoSelection}
+            >
+              <Images size={16} />
+              {vm.pending?.shotImageAutoSelection
+                ? "正在批量生成..."
+                : "批量生成并选择分镜图"}
+            </button>
           </div>
+          {autoSelectionJob ? (
+            <p className="review-action-note">
+              自动选图任务：{autoSelectionJob.status}
+              {autoSelectionJob.status === "FAILED" && autoSelectionJob.errorMessage
+                ? ` · ${autoSelectionJob.errorMessage}`
+                : ` · 每镜 ${autoSelectionJob.candidateCount} 张`}
+            </p>
+          ) : null}
           {rounds.length > 0 ? (
             <>
               {rounds.map((round, index) => (

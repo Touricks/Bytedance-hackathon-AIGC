@@ -159,6 +159,15 @@ async function prepareGenerationJobForReplay(
       [job.relatedBatchId]
     );
   }
+
+  if (job.jobType === "advance_shot_image_auto_selection" && job.relatedBatchId) {
+    await pool.query(
+      `update shot_image_auto_selection_jobs
+       set status = 'PENDING', updated_at = now()
+       where id = $1 and status in ('PENDING','RUNNING','WAITING')`,
+      [job.relatedBatchId]
+    );
+  }
 }
 
 export async function enqueueGenerationV2(
@@ -359,6 +368,32 @@ export async function recoverInflightGenerationJobs() {
           kind: "advance_one_click_final_video",
           jobId: r.id,
           oneClickJobId: r.relatedBatchId,
+          workspaceId,
+          traceId: "recover",
+        });
+        if (queueJobId) {
+          await db.db2.updateGenerationJob(r.id, { queueJobId });
+        }
+      }
+    }
+    if (r.jobType === "advance_shot_image_auto_selection" && r.relatedBatchId) {
+      let workspaceId =
+        typeof r.payload.workspaceId === "string" ? r.payload.workspaceId : null;
+      if (!workspaceId) {
+        const result = await pool.query(
+          `select workspace_id from shot_image_auto_selection_jobs where id = $1 limit 1`,
+          [r.relatedBatchId],
+        );
+        workspaceId =
+          typeof result.rows[0]?.workspace_id === "string"
+            ? result.rows[0].workspace_id
+            : null;
+      }
+      if (workspaceId) {
+        const queueJobId = await enqueueGenerationV2({
+          kind: "advance_shot_image_auto_selection",
+          jobId: r.id,
+          shotImageAutoSelectionJobId: r.relatedBatchId,
           workspaceId,
           traceId: "recover",
         });

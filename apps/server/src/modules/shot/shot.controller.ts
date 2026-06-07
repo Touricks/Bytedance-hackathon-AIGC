@@ -15,7 +15,8 @@ import {
 export async function registerShotController(app: FastifyInstance) {
   app.get("/api/workspaces/:workspaceId/shots", async (req, reply) => {
     try {
-      return await shotWorkflowService.listShots((req.params as any).workspaceId);
+      const params = req.params as { workspaceId: string };
+      return await shotWorkflowService.listShots(params.workspaceId);
     } catch (e) {
       const err = toHttpError(e);
       return reply.status(err.statusCode).send(err);
@@ -24,7 +25,8 @@ export async function registerShotController(app: FastifyInstance) {
 
   app.get("/api/shots/:shotId", async (req, reply) => {
     try {
-      return await shotWorkflowService.getShot((req.params as any).shotId);
+      const params = req.params as { shotId: string };
+      return await shotWorkflowService.getShot(params.shotId);
     } catch (e) {
       const err = toHttpError(e);
       return reply.status(err.statusCode).send(err);
@@ -33,7 +35,8 @@ export async function registerShotController(app: FastifyInstance) {
 
   app.get("/api/shots/:shotId/asset-refs", async (req, reply) => {
     try {
-      return await shotWorkflowService.listShotAssetRefs((req.params as any).shotId);
+      const params = req.params as { shotId: string };
+      return await shotWorkflowService.listShotAssetRefs(params.shotId);
     } catch (e) {
       const err = toHttpError(e);
       return reply.status(err.statusCode).send(err);
@@ -56,7 +59,8 @@ export async function registerShotController(app: FastifyInstance) {
 
   app.get("/api/workspaces/:workspaceId/shot-workflow-status", async (req, reply) => {
     try {
-      return await shotWorkflowService.workflowStatus((req.params as any).workspaceId);
+      const params = req.params as { workspaceId: string };
+      return await shotWorkflowService.workflowStatus(params.workspaceId);
     } catch (e) {
       const err = toHttpError(e);
       return reply.status(err.statusCode).send(err);
@@ -74,6 +78,7 @@ export async function registerShotController(app: FastifyInstance) {
           workspaceId: params.workspaceId,
           shotId: params.shotId,
           userDirection: body.userDirection,
+          candidateCount: body.candidateCount,
         });
       } catch (e) {
         const err = toHttpError(e);
@@ -94,6 +99,7 @@ export async function registerShotController(app: FastifyInstance) {
           baseArtifactId: body.baseArtifactId,
           feedbackImageCandidateId: body.feedbackImageCandidateId,
           userDirection: body.userDirection,
+          candidateCount: body.candidateCount,
         });
       } catch (e) {
         const err = toHttpError(e);
@@ -158,6 +164,7 @@ export async function registerShotController(app: FastifyInstance) {
           workspaceId: params.workspaceId,
           shotId: params.shotId,
           userDirection: body.userDirection,
+          candidateCount: body.candidateCount,
         });
       } catch (e) {
         const err = toHttpError(e);
@@ -178,6 +185,7 @@ export async function registerShotController(app: FastifyInstance) {
           baseArtifactId: body.baseArtifactId,
           feedbackVideoCandidateId: body.feedbackVideoCandidateId,
           userDirection: body.userDirection,
+          candidateCount: body.candidateCount,
         });
       } catch (e) {
         const err = toHttpError(e);

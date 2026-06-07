@@ -28,6 +28,7 @@ import type {
   ProposeWorkspaceBriefInput,
 } from "../../lib/api/client.js";
 import { createFinalVideo, listFinalVideos } from "../../lib/api/finalVideo.js";
+import { getConfigLimits } from "../../lib/api/configLimits.js";
 import { listImageRounds } from "../../lib/api/imageBatch.js";
 import {
   proposeImagePrompt,
@@ -38,6 +39,11 @@ import {
   createOneClickFinalVideo,
   listOneClickFinalVideos,
 } from "../../lib/api/oneClickFinalVideo.js";
+import {
+  createShotImageAutoSelection,
+  listShotImageAutoSelections,
+  type ShotImageAutoSelectionStatus,
+} from "../../lib/api/shotImageAutoSelection.js";
 import {
   getWorkflowStatus,
   listShots,
@@ -58,8 +64,18 @@ import {
 } from "./oneClickState.js";
 import { roundPollingInterval } from "./roundPolling.js";
 import { getVideoBatchGenerationTargets } from "./videoBatchTargets.js";
+import {
+  clampCandidateCount,
+  readCandidateCountPreferences,
+  writeCandidateCountPreference,
+} from "./candidateCountPreferences.js";
 
 const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);
+const ACTIVE_AUTO_SELECTION_STATUSES = new Set<ShotImageAutoSelectionStatus>([
+  "PENDING",
+  "RUNNING",
+  "WAITING",
+]);
 
 function errorText(error: unknown) {
   if (!error) return null;
@@ -84,6 +100,80 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const [shotDirection, setShotDirection] = useState("");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [activeFinalJobId, setActiveFinalJobId] = useState<string | null>(null);
+  const [imageCandidateCount, setImageCandidateCountState] = useState(1);
+  const [videoCandidateCount, setVideoCandidateCountState] = useState(1);
+
+  const configLimits = useQuery({
+    queryKey: ["config-limits"],
+    queryFn: getConfigLimits,
+    staleTime: 60_000,
+  });
+  const limits = configLimits.data?.data;
+
+  useEffect(() => {
+    if (!limits) return;
+    const storage = typeof window === "undefined" ? null : window.localStorage;
+    const stored = readCandidateCountPreferences(storage, workspaceId);
+    setImageCandidateCountState(
+      clampCandidateCount({
+        value: stored.image,
+        fallback: limits.defaultImageCandidates,
+        max: limits.maxImageCandidatesPerShot,
+      }),
+    );
+    setVideoCandidateCountState(
+      clampCandidateCount({
+        value: stored.video,
+        fallback: limits.defaultVideoCandidates,
+        max: limits.maxVideoCandidatesPerShot,
+      }),
+    );
+  }, [
+    workspaceId,
+    limits?.defaultImageCandidates,
+    limits?.defaultVideoCandidates,
+    limits?.maxImageCandidatesPerShot,
+    limits?.maxVideoCandidatesPerShot,
+  ]);
+
+  const imageCandidateOptions = Array.from(
+    { length: limits?.maxImageCandidatesPerShot ?? imageCandidateCount },
+    (_, index) => index + 1,
+  );
+  const videoCandidateOptions = Array.from(
+    { length: limits?.maxVideoCandidatesPerShot ?? videoCandidateCount },
+    (_, index) => index + 1,
+  );
+
+  function setImageCandidateCount(value: number) {
+    const next = clampCandidateCount({
+      value,
+      fallback: limits?.defaultImageCandidates ?? imageCandidateCount,
+      max: limits?.maxImageCandidatesPerShot ?? Math.max(1, imageCandidateCount),
+    });
+    setImageCandidateCountState(next);
+    writeCandidateCountPreference({
+      storage: typeof window === "undefined" ? null : window.localStorage,
+      workspaceId,
+      kind: "image",
+      value: next,
+    });
+  }
+
+  function setVideoCandidateCount(value: number) {
+    const next = clampCandidateCount({
+      value,
+      fallback: limits?.defaultVideoCandidates ?? videoCandidateCount,
+      max: limits?.maxVideoCandidatesPerShot ?? Math.max(1, videoCandidateCount),
+    });
+    setVideoCandidateCountState(next);
+    writeCandidateCountPreference({
+      storage: typeof window === "undefined" ? null : window.localStorage,
+      workspaceId,
+      kind: "video",
+      value: next,
+    });
+  }
 
   const workspaceStatus = useQuery({
     queryKey: ["workspace-status", workspaceId],
@@ -178,12 +268,30 @@ export function useWorkbenchViewModel(workspaceId: string) {
         : 15_000,
   });
 
+  const shotImageAutoSelectionJobs = useQuery({
+    queryKey: ["shot-image-auto-selections", workspaceId],
+    queryFn: () => listShotImageAutoSelections(workspaceId),
+    refetchInterval: (query) =>
+      query.state.data?.data.some((job) => ACTIVE_AUTO_SELECTION_STATUSES.has(job.status))
+        ? 3_000
+        : 15_000,
+  });
+
   const oneClickState = resolveOneClickFinalVideoState({
     statusActiveJob: workspaceStatus.data?.activeOneClickFinalVideo,
     jobs: oneClickFinalVideoJobs.data?.data ?? [],
     mutationPending: false,
   });
   const oneClickFinalVideo = oneClickState.displayJob;
+  const shotImageAutoSelection =
+    shotImageAutoSelectionJobs.data?.data.find((job) =>
+      ACTIVE_AUTO_SELECTION_STATUSES.has(job.status),
+    ) ??
+    shotImageAutoSelectionJobs.data?.data[0] ??
+    null;
+  const hasActiveShotImageAutoSelection = Boolean(
+    shotImageAutoSelection && ACTIVE_AUTO_SELECTION_STATUSES.has(shotImageAutoSelection.status),
+  );
 
   const latestFinalJobId =
     finalVideoJobs.data?.data.find((job) => job.status === "PENDING" || job.status === "RUNNING")
@@ -205,6 +313,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       qc.invalidateQueries({ queryKey: ["traces", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["final-videos", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["one-click-final-videos", workspaceId] }),
+      qc.invalidateQueries({ queryKey: ["shot-image-auto-selections", workspaceId] }),
     ]);
   };
 
@@ -215,6 +324,23 @@ export function useWorkbenchViewModel(workspaceId: string) {
       qc.invalidateQueries({ queryKey: ["video-rounds", workspaceId] }),
     ]);
   };
+
+  useEffect(() => {
+    if (!hasActiveShotImageAutoSelection) return;
+    const timer = globalThis.setInterval(() => {
+      void invalidateShot();
+    }, 3_000);
+    return () => globalThis.clearInterval(timer);
+  }, [hasActiveShotImageAutoSelection, workspaceId]);
+
+  useEffect(() => {
+    if (
+      shotImageAutoSelection?.status === "SUCCEEDED" ||
+      shotImageAutoSelection?.status === "FAILED"
+    ) {
+      void invalidateShot();
+    }
+  }, [shotImageAutoSelection?.id, shotImageAutoSelection?.status]);
 
   const uploadMaterial = useMutation({
     mutationFn: (file: File) => uploadWorkspaceMaterial({ workspaceId, file }),
@@ -372,9 +498,10 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const proposeImage = useMutation({
-    mutationFn: () =>
+    mutationFn: (input?: { candidateCount?: number }) =>
       proposeImagePrompt(workspaceId, selectedShotId!, {
         userDirection: shotDirection.trim() || undefined,
+        candidateCount: input?.candidateCount ?? imageCandidateCount,
       }),
     onSuccess: invalidateShot,
   });
@@ -384,8 +511,12 @@ export function useWorkbenchViewModel(workspaceId: string) {
       baseArtifactId: string;
       feedbackImageCandidateId: string;
       userDirection: string;
+      candidateCount?: number;
     }) =>
-      regenerateImagePrompt(workspaceId, selectedShotId!, input),
+      regenerateImagePrompt(workspaceId, selectedShotId!, {
+        ...input,
+        candidateCount: input.candidateCount ?? imageCandidateCount,
+      }),
     onSuccess: invalidateShot,
   });
 
@@ -399,9 +530,10 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const proposeVideo = useMutation({
-    mutationFn: () =>
+    mutationFn: (input?: { candidateCount?: number }) =>
       proposeVideoScript(workspaceId, selectedShotId!, {
         userDirection: shotDirection.trim() || undefined,
+        candidateCount: input?.candidateCount ?? videoCandidateCount,
       }),
     onSuccess: invalidateShot,
   });
@@ -411,25 +543,41 @@ export function useWorkbenchViewModel(workspaceId: string) {
       baseArtifactId: string;
       feedbackVideoCandidateId: string;
       userDirection: string;
+      candidateCount?: number;
     }) =>
-      regenerateVideoScript(workspaceId, selectedShotId!, input),
+      regenerateVideoScript(workspaceId, selectedShotId!, {
+        ...input,
+        candidateCount: input.candidateCount ?? videoCandidateCount,
+      }),
     onSuccess: invalidateShot,
   });
 
   const proposeAllVideos = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (input?: { candidateCount?: number }) => {
       const allImagesSelected =
         workflowShots.length > 0 && workflowShots.every((shot) => Boolean(shot.selectedImageId));
       const targets = allImagesSelected ? getVideoBatchGenerationTargets(workflowShots) : [];
+      const candidateCount = input?.candidateCount ?? videoCandidateCount;
       await Promise.all(
         targets.map((shot) =>
           proposeVideoScript(workspaceId, shot.shotId, {
             userDirection: shotDirection.trim() || undefined,
+            candidateCount,
           }),
         ),
       );
       return targets.length;
     },
+    onSuccess: invalidateShot,
+  });
+
+  const startShotImageAutoSelection = useMutation({
+    mutationFn: (input?: { candidateCount?: number }) =>
+      createShotImageAutoSelection(
+        workspaceId,
+        { candidateCount: input?.candidateCount ?? imageCandidateCount },
+        `${workspaceId}:shot-image-auto-selection:${Date.now()}`,
+      ),
     onSuccess: invalidateShot,
   });
 
@@ -513,6 +661,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     proposeVideo,
     regenerateVideo,
     proposeAllVideos,
+    startShotImageAutoSelection,
     selectVideoCandidate,
     retryImage,
     retryVideo,
@@ -545,7 +694,17 @@ export function useWorkbenchViewModel(workspaceId: string) {
     traces: traces.data?.data ?? [],
     finalVideo: finalVideo.data?.data ?? null,
     oneClickFinalVideo,
+    shotImageAutoSelection,
     activeFinalJobId: displayedFinalJobId,
+    candidateCounts: {
+      image: imageCandidateCount,
+      video: videoCandidateCount,
+      imageOptions: imageCandidateOptions,
+      videoOptions: videoCandidateOptions,
+      loading: configLimits.isLoading,
+      maxImage: limits?.maxImageCandidatesPerShot ?? imageCandidateCount,
+      maxVideo: limits?.maxVideoCandidatesPerShot ?? videoCandidateCount,
+    },
     inputs: {
       materialPrompt,
       setMaterialPrompt,
@@ -572,6 +731,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
         proposeImage.isPending ||
         regenerateImage.isPending ||
         selectImageCandidate.isPending ||
+        startShotImageAutoSelection.isPending ||
+        hasActiveShotImageAutoSelection ||
         retryImage.isPending,
       video:
         proposeVideo.isPending ||
@@ -580,6 +741,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
         selectVideoCandidate.isPending ||
         retryVideo.isPending,
       finalVideo: composeFinal.isPending || hasActiveFinalVideo,
+      shotImageAutoSelection:
+        startShotImageAutoSelection.isPending || hasActiveShotImageAutoSelection,
     },
     actions: {
       setSelectedShotId,
@@ -626,22 +789,35 @@ export function useWorkbenchViewModel(workspaceId: string) {
       applyShotSet: () => applyShotSet.mutate(),
       approveShotPromptAndApply: (data: ShotPromptArtifact) =>
         approveShotPromptAndApply.mutate(data),
-      proposeImage: () => proposeImage.mutate(),
+      setImageCandidateCount,
+      setVideoCandidateCount,
+      proposeImage: () => proposeImage.mutate({ candidateCount: imageCandidateCount }),
       regenerateImage: (input: {
         baseArtifactId: string;
         feedbackImageCandidateId: string;
         userDirection: string;
+        candidateCount?: number;
       }) =>
-        regenerateImage.mutate(input),
+        regenerateImage.mutate({
+          ...input,
+          candidateCount: input.candidateCount ?? imageCandidateCount,
+        }),
       selectImageCandidate: (candidateId: string, batchId: string) =>
         selectImageCandidate.mutate({ candidateId, batchId }),
-      proposeVideo: () => proposeVideo.mutate(),
+      startShotImageAutoSelection: () =>
+        startShotImageAutoSelection.mutate({ candidateCount: imageCandidateCount }),
+      proposeVideo: () => proposeVideo.mutate({ candidateCount: videoCandidateCount }),
       regenerateVideo: (input: {
         baseArtifactId: string;
         feedbackVideoCandidateId: string;
         userDirection: string;
-      }) => regenerateVideo.mutate(input),
-      proposeAllVideos: () => proposeAllVideos.mutate(),
+        candidateCount?: number;
+      }) =>
+        regenerateVideo.mutate({
+          ...input,
+          candidateCount: input.candidateCount ?? videoCandidateCount,
+        }),
+      proposeAllVideos: () => proposeAllVideos.mutate({ candidateCount: videoCandidateCount }),
       selectVideoCandidate: (candidateId: string, batchId: string) =>
         selectVideoCandidate.mutate({ candidateId, batchId }),
       retryImage: () => retryImage.mutate(),
@@ -653,22 +829,33 @@ export function useWorkbenchViewModel(workspaceId: string) {
       workflow.isLoading ||
       shots.isLoading ||
       shotSets.isLoading ||
-      oneClickFinalVideoJobs.isLoading,
+      oneClickFinalVideoJobs.isLoading ||
+      shotImageAutoSelectionJobs.isLoading ||
+      configLimits.isLoading,
     refreshing:
       workspaceStatus.isFetching ||
       workflow.isFetching ||
       shots.isFetching ||
       shotSets.isFetching ||
-      oneClickFinalVideoJobs.isFetching,
+      oneClickFinalVideoJobs.isFetching ||
+      shotImageAutoSelectionJobs.isFetching ||
+      configLimits.isFetching,
     busy:
-      mutations.some((mutation) => mutation.isPending) || hasActiveOneClickFinalVideo,
-    hasActiveGeneration: Boolean(hasActiveGeneration) || hasActiveOneClickFinalVideo,
+      mutations.some((mutation) => mutation.isPending) ||
+      hasActiveOneClickFinalVideo ||
+      hasActiveShotImageAutoSelection,
+    hasActiveGeneration:
+      Boolean(hasActiveGeneration) ||
+      hasActiveOneClickFinalVideo ||
+      hasActiveShotImageAutoSelection,
     error:
       errorText(workspaceStatus.error) ??
       errorText(workflow.error) ??
       errorText(shots.error) ??
       errorText(shotSets.error) ??
       errorText(oneClickFinalVideoJobs.error) ??
+      errorText(shotImageAutoSelectionJobs.error) ??
+      errorText(configLimits.error) ??
       mutationErrorText(mutations),
   };
 }

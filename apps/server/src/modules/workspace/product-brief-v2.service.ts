@@ -11,12 +11,11 @@ import {
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import {
-  createWorkspaceTraceLogger,
-  productBriefImageInput,
-  resolveWorkspaceStorageLocalPath,
+  createWorkspaceTraceLoggerForWorkspace,
+  productBriefImageInputForWorkspace,
   runtimeMode,
   toProductBrief,
-  writeReviewSnapshot,
+  writeReviewSnapshotForWorkspace,
 } from "./workspace.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
@@ -192,7 +191,6 @@ export const productBriefV2Service = {
     baseArtifactId?: string;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
     const baseArtifact = input.baseArtifactId
       ? await getArtifactForWorkspace(input.workspaceId, input.baseArtifactId)
@@ -211,11 +209,21 @@ export const productBriefV2Service = {
       runtimeMode() === "real"
         ? (
             await generateProductBriefWithArk(
-              { ...input, material, draft },
               {
-                imageInput: await productBriefImageInput(localPath, material),
+                ...input,
+                material,
+                draft,
+                creativeRequirements: sources.requirements.data,
+              },
+              {
+                imageInput: await productBriefImageInputForWorkspace(
+                  input.workspaceId,
+                  material,
+                ),
                 includeImageInput: true,
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).productBrief
@@ -250,8 +258,7 @@ export const productBriefV2Service = {
         ),
       ],
     );
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "product-brief",
       status: "proposed",
@@ -270,7 +277,6 @@ export const productBriefV2Service = {
     data?: unknown;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     if (!input.artifactId && input.data === undefined) {
       throw new HttpError(400, "ARTIFACT_DATA_REQUIRED", "artifactId or data is required");
     }
@@ -292,8 +298,7 @@ export const productBriefV2Service = {
             data,
           });
 
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "product-brief",
       status: "approved",

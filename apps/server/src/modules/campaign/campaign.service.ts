@@ -30,9 +30,14 @@ export interface CampaignPublication {
   publishUrl: string | null;
   status: "planned" | "published" | "failed" | "archived";
   notes: string | null;
+  creativeTags: unknown;
   latestMetrics: CampaignMetrics | null;
   createdAt: string;
   updatedAt: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function iso(value: Date | string) {
@@ -68,6 +73,7 @@ function toPublication(row: Record<string, unknown>): CampaignPublication {
     publishUrl: (row.publish_url as string | null) ?? null,
     status: row.status as CampaignPublication["status"],
     notes: (row.notes as string | null) ?? null,
+    creativeTags: row.creative_tags ?? {},
     latestMetrics: row.metrics_id
       ? toMetrics({
           id: row.metrics_id,
@@ -91,7 +97,7 @@ async function ensureFinalVideoInWorkspace(
   workspaceId: string,
   finalVideoJobId?: string,
 ) {
-  if (!finalVideoJobId) return;
+  if (!finalVideoJobId) return null;
   const job = await db.db2.getFinalVideoJob(finalVideoJobId);
   if (job.workspaceId !== workspaceId) {
     throw new HttpError(
@@ -100,6 +106,15 @@ async function ensureFinalVideoInWorkspace(
       "finalVideoJobId does not belong to workspace",
     );
   }
+  return job;
+}
+
+function creativeTagsFromFinalVideoJob(
+  job: Awaited<ReturnType<typeof ensureFinalVideoInWorkspace>>,
+) {
+  if (!job || !isRecord(job.compiledManifest)) return {};
+  const tags = job.compiledManifest.creativeTags;
+  return isRecord(tags) ? tags : {};
 }
 
 const publicationSelect = `
@@ -129,14 +144,17 @@ export const campaignService = {
     input: CreateCampaignPublicationRequest,
   ) {
     await db.getWorkspace(workspaceId);
-    await ensureFinalVideoInWorkspace(workspaceId, input.finalVideoJobId);
+    const finalVideoJob = await ensureFinalVideoInWorkspace(
+      workspaceId,
+      input.finalVideoJobId,
+    );
     const pool = db.db2.pool();
     const id = nanoid();
     await pool.query(
       `insert into campaign_publications
         (id, workspace_id, final_video_job_id, platform, channel_name, kol_name,
-         publish_url, status, notes)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         publish_url, status, notes, creative_tags)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
         id,
         workspaceId,
@@ -147,6 +165,7 @@ export const campaignService = {
         input.publishUrl ?? null,
         input.status,
         input.notes ?? null,
+        JSON.stringify(creativeTagsFromFinalVideoJob(finalVideoJob)),
       ],
     );
     return { data: await this.getPublicationData(workspaceId, id) };

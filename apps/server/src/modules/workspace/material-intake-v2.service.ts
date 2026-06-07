@@ -11,11 +11,10 @@ import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import {
   applySelectedMaterialRefs,
-  collectWorkspaceMaterialLibrary,
+  collectWorkspaceMaterialLibraryForWorkspace,
   copySelectedLegacyRootMaterials,
-  createWorkspaceTraceLogger,
-  materialIntakeTextPreviews,
-  resolveWorkspaceStorageLocalPath,
+  createWorkspaceTraceLoggerForWorkspace,
+  materialIntakeTextPreviewsForWorkspace,
   runtimeMode,
 } from "./workspace.service.js";
 
@@ -145,13 +144,17 @@ export const materialIntakeV2Service = {
     userDirection?: string;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const requirements = await currentPromptRequirements(input.workspaceId);
-    await copySelectedLegacyRootMaterials({
-      directory: localPath,
-      selectedMaterialRefs: input.selectedMaterialRefs,
-    });
-    const materialLibrary = await collectWorkspaceMaterialLibrary(localPath);
+    const binding = await db.getActiveWorkspaceStorage(input.workspaceId);
+    if (binding?.kind === "LOCAL" && binding.localPath) {
+      await copySelectedLegacyRootMaterials({
+        directory: binding.localPath,
+        selectedMaterialRefs: input.selectedMaterialRefs,
+      });
+    }
+    const materialLibrary = await collectWorkspaceMaterialLibraryForWorkspace(
+      input.workspaceId,
+    );
     const selectedLibrary = applySelectedMaterialRefs(
       materialLibrary,
       input.selectedMaterialRefs,
@@ -160,7 +163,10 @@ export const materialIntakeV2Service = {
       ...selectedLibrary,
       primaryProductRef: selectedLibrary.primaryProductRef ?? "",
     });
-    const textPreviews = await materialIntakeTextPreviews(localPath, scanned);
+    const textPreviews = await materialIntakeTextPreviewsForWorkspace(
+      input.workspaceId,
+      scanned,
+    );
     const data: MaterialIntakeArtifact =
       runtimeMode() === "real"
         ? (
@@ -169,9 +175,12 @@ export const materialIntakeV2Service = {
                 initialPrompt: input.userDirection,
                 scanned,
                 textPreviews,
+                creativeRequirements: requirements.data,
               },
               {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).material

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { regenerateVideoScript } from "./videoScript.js";
+import { proposeVideoScript, regenerateVideoScript } from "./videoScript.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -9,6 +9,62 @@ afterEach(() => {
 });
 
 describe("video script api client", () => {
+  it("proposes video scripts with candidate count", async () => {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(
+        String(url),
+        "http://localhost:3000/api/workspaces/workspace_123/shots/shot_1/video-scripts/propose",
+      );
+      assert.equal(init?.method, "POST");
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        userDirection: "镜头节奏更稳",
+        candidateCount: 3,
+      });
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "art_vid_1",
+            shotId: "shot_1",
+            version: 1,
+            status: "ACTIVE",
+            durationSec: 4,
+            scriptJson: {},
+            providerPrompt: "分镜视频提示",
+            basedOnImageCandidateId: "imc_1",
+            basedOnPrevImageCandidateId: null,
+            basedOnNextImageCandidateId: null,
+            createdBy: "system",
+            createdAt: "2026-06-02T00:00:00.000Z",
+          },
+          artifact: {
+            id: "art_vid_1",
+            shotId: "shot_1",
+            version: 1,
+            status: "ACTIVE",
+            durationSec: 4,
+            scriptJson: {},
+            providerPrompt: "分镜视频提示",
+            basedOnImageCandidateId: "imc_1",
+            basedOnPrevImageCandidateId: null,
+            basedOnNextImageCandidateId: null,
+            createdBy: "system",
+            createdAt: "2026-06-02T00:00:00.000Z",
+          },
+          batch: {},
+          candidates: [],
+        }),
+        { status: 200 },
+      );
+    };
+
+    const result = await proposeVideoScript("workspace_123", "shot_1", {
+      userDirection: "镜头节奏更稳",
+      candidateCount: 3,
+    });
+
+    assert.equal(result.data.id, "art_vid_1");
+  });
+
   it("regenerates video scripts with required feedback candidate and text", async () => {
     globalThis.fetch = async (url, init) => {
       assert.equal(
@@ -20,6 +76,7 @@ describe("video script api client", () => {
         baseArtifactId: "art_vid_base",
         feedbackVideoCandidateId: "vcd_feedback",
         userDirection: "镜头慢一点，不要突然拉远",
+        candidateCount: 2,
       });
       return new Response(
         JSON.stringify({
@@ -62,6 +119,7 @@ describe("video script api client", () => {
       baseArtifactId: "art_vid_base",
       feedbackVideoCandidateId: "vcd_feedback",
       userDirection: "镜头慢一点，不要突然拉远",
+      candidateCount: 2,
     });
 
     assert.equal(result.data.id, "art_vid_next");

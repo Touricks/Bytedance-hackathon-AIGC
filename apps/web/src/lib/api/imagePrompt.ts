@@ -44,6 +44,7 @@ export function proposeImagePrompt(
   shotId: string,
   body: {
     userDirection?: string;
+    candidateCount?: number;
   },
 ) {
   return fetchJson<
@@ -68,6 +69,7 @@ export function regenerateImagePrompt(
     baseArtifactId: string;
     feedbackImageCandidateId: string;
     userDirection: string;
+    candidateCount?: number;
   },
 ) {
   return fetchJson<

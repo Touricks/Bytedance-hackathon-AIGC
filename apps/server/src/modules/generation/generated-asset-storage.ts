@@ -1,9 +1,10 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Transform, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
+import { getWorkspaceStorageAdapter } from "../workspace/storage/workspace-storage-resolver.js";
 
 type GeneratedAssetKind = "image" | "video";
 
@@ -124,20 +125,14 @@ export const persistGeneratedAsset: GeneratedAssetPersister = async (input) => {
     };
   }
 
-  const rootName =
-    input.kind === "image" ? path.join("materials", "generated-images") : "videos";
-  const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(
-    input.workspaceId,
-  );
-  const root = path.join(workspaceLocalPath, ".daireel", rootName);
-  await mkdir(root, { recursive: true });
+  const adapter = await getWorkspaceStorageAdapter(input.workspaceId);
 
   const dataUrl = parseDataUrl(input.sourceUrl);
-  let bytes: Buffer;
+  let bytes: Buffer | null = null;
   let byteCount: number | null = null;
   let contentType: string | null = null;
   let ext = extensionFromUrl(input.sourceUrl, input.kind);
-  let downloadedTempPath: string | null = null;
+  let tempDir: string | null = null;
 
   if (dataUrl) {
     bytes = dataUrl.bytes;
@@ -145,8 +140,9 @@ export const persistGeneratedAsset: GeneratedAssetPersister = async (input) => {
     contentType = dataUrl.contentType;
     ext = extensionFromContentType(contentType, input.kind);
   } else if (/^https?:\/\//i.test(input.sourceUrl)) {
-    downloadedTempPath = path.join(
-      root,
+    tempDir = await mkdtemp(path.join(tmpdir(), "daireel-provider-asset-"));
+    const downloadedTempPath = path.join(
+      tempDir,
       `${input.batchId}-${input.candidateId}-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}.download`,
@@ -160,6 +156,7 @@ export const persistGeneratedAsset: GeneratedAssetPersister = async (input) => {
     contentType = downloaded.contentType;
     byteCount = downloaded.bytes;
     ext = extensionFromContentType(contentType, input.kind);
+    bytes = await readFile(downloadedTempPath);
   } else {
     return {
       stableUrl: input.sourceUrl,
@@ -174,11 +171,16 @@ export const persistGeneratedAsset: GeneratedAssetPersister = async (input) => {
     input.kind === "image"
       ? `materials/generated-images/${filename}`
       : `videos/${filename}`;
-  const finalPath = path.join(root, filename);
-  if (downloadedTempPath) {
-    await rename(downloadedTempPath, finalPath);
-  } else {
-    await writeFile(finalPath, bytes!);
+  try {
+    await adapter.putObject({
+      relativePath: objectKey,
+      body: bytes!,
+      contentType: contentType ?? undefined,
+    });
+  } finally {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   return {

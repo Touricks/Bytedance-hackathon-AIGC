@@ -874,6 +874,7 @@ export const shotWorkflowService = {
     workspaceId: string;
     shotId: string;
     userDirection?: string;
+    candidateCount?: number;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -901,7 +902,7 @@ export const shotWorkflowService = {
     }
     const imageRefProviderUrl =
       shot.orderIndex > 0 ? imageReferenceUrl(hydrated.previousImageCandidate) : null;
-    const count = resolveBatchCount("image");
+    const count = resolveBatchCount("image", args.candidateCount);
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const traceId = nanoid();
     const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
@@ -1021,6 +1022,7 @@ export const shotWorkflowService = {
     baseArtifactId: string;
     feedbackImageCandidateId: string;
     userDirection: string;
+    candidateCount?: number;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -1066,7 +1068,7 @@ export const shotWorkflowService = {
     });
 
     const traceId = nanoid();
-    const count = resolveBatchCount("image");
+    const count = resolveBatchCount("image", args.candidateCount);
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const imageRefProviderUrl =
       shot.orderIndex > 0 ? imageReferenceUrl(hydrated.previousImageCandidate) : null;
@@ -1281,6 +1283,7 @@ export const shotWorkflowService = {
     workspaceId: string;
     shotId: string;
     userDirection?: string;
+    candidateCount?: number;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -1316,7 +1319,7 @@ export const shotWorkflowService = {
     const neighbors = { prev: undefined, next: frameNeighbors.next };
     const traceId = nanoid();
     const durationSec = durationForVideoScript(shot);
-    const count = resolveBatchCount("video");
+    const count = resolveBatchCount("video", args.candidateCount);
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     await db.db2.updateShot(args.shotId, { status: "VIDEO_SCRIPT_PROPOSING" });
     try {
@@ -1454,6 +1457,7 @@ export const shotWorkflowService = {
     baseArtifactId: string;
     feedbackVideoCandidateId: string;
     userDirection: string;
+    candidateCount?: number;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -1504,7 +1508,7 @@ export const shotWorkflowService = {
     const neighbors = { prev: undefined, next: frameNeighbors.next };
     const traceId = nanoid();
     const durationSec = durationForVideoScript(shot);
-    const count = resolveBatchCount("video");
+    const count = resolveBatchCount("video", args.candidateCount);
     const aspectRatio = hydrated.shotPrompt?.aspectRatio ?? "9:16";
     const shotGoal = shotGoalFor(shot, hydrated);
     const voiceProfile = hydrated.shotPrompt?.tts.voiceProfile;

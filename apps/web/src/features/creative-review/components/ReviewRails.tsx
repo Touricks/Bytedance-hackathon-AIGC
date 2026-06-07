@@ -196,7 +196,7 @@ export function RightRail({
                     disabled={deletingRef === asset.ref}
                     title={
                       shouldResetAfterDelete
-                        ? `删除 ${filename}，流程将返回模块一`
+                        ? `删除 ${filename}，流程将返回模块一:创作要求与上传素材`
                         : `删除 ${filename}`
                     }
                     onClick={() => deleteMaterial(asset.ref)}
@@ -211,7 +211,7 @@ export function RightRail({
         {deleteError ? <p className="review-error">{deleteError}</p> : null}
         {shouldResetAfterDelete ? (
           <p className="review-muted">
-            删除已提交后的素材会让流程返回模块一，避免后续模块继续引用已删除素材。
+            删除已提交后的素材会让流程返回模块一-创作要求与上传素材,避免后续模块继续引用已删除素材。
           </p>
         ) : null}
       </section>

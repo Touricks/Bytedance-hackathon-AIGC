@@ -21,6 +21,7 @@ export function proposeVideoScript(
   shotId: string,
   body: {
     userDirection?: string;
+    candidateCount?: number;
   },
 ) {
   return fetchJson<
@@ -49,6 +50,7 @@ export function regenerateVideoScript(
     baseArtifactId: string;
     feedbackVideoCandidateId: string;
     userDirection: string;
+    candidateCount?: number;
   },
 ) {
   return fetchJson<

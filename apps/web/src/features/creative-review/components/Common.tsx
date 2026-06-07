@@ -121,13 +121,11 @@ export function CandidateMediaFrame({
 
 export function ProposalPlaceholder({
   title,
-  description,
   actionLabel,
   busy,
   onAction
 }: {
   title: string;
-  description: string;
   actionLabel: string;
   busy: boolean;
   onAction: () => void;
@@ -135,9 +133,7 @@ export function ProposalPlaceholder({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>等待生成</span>
         <h1>{title}</h1>
-        <p>{description}</p>
       </div>
       <div className="review-empty-state">
         <FileText size={22} />

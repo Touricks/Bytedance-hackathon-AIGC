@@ -15,7 +15,8 @@ export type GenerationV2JobName =
   | "generate_videos"
   | "generate_video_candidate"
   | "compose_final_video"
-  | "advance_one_click_final_video";
+  | "advance_one_click_final_video"
+  | "advance_shot_image_auto_selection";
 
 export interface GenerateImagesJobData {
   kind: "generate_images";
@@ -85,10 +86,19 @@ export interface AdvanceOneClickFinalVideoJobData {
   traceId: string;
 }
 
+export interface AdvanceShotImageAutoSelectionJobData {
+  kind: "advance_shot_image_auto_selection";
+  jobId: string;
+  shotImageAutoSelectionJobId: string;
+  workspaceId: string;
+  traceId: string;
+}
+
 export type GenerationV2JobData =
   | GenerateImagesJobData
   | GenerateImageCandidateJobData
   | GenerateVideosJobData
   | GenerateVideoCandidateJobData
   | ComposeFinalVideoJobData
-  | AdvanceOneClickFinalVideoJobData;
+  | AdvanceOneClickFinalVideoJobData
+  | AdvanceShotImageAutoSelectionJobData;

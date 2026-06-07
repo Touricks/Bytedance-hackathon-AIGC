@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -18,7 +18,10 @@ async function createWorkspace(app: FastifyInstance, cleanupDirs: string[]) {
     payload: { directory },
   });
   assert.equal(response.statusCode, 200, response.body);
-  return response.json<{ workspace: { id: string } }>().workspace.id;
+  return {
+    directory,
+    workspaceId: response.json<{ workspace: { id: string } }>().workspace.id,
+  };
 }
 
 function sha256(bytes: Buffer) {
@@ -80,12 +83,12 @@ describe("generation controller final video downloads", () => {
   });
 
   it("serves final video files inline by default and as attachments for download links", async () => {
-    const workspaceId = await createWorkspace(app, cleanupDirs);
-    const directory = await mkdtemp(path.join(os.tmpdir(), "daireel-final-file-"));
-    cleanupDirs.push(directory);
-    const localPath = path.join(directory, "final.mp4");
-    await writeFile(localPath, Buffer.from("fake mp4 bytes"));
+    const { directory, workspaceId } = await createWorkspace(app, cleanupDirs);
     const finalVideoJobId = `fv_download_${Date.now()}`;
+    const localPath = `final/${finalVideoJobId}/final.mp4`;
+    const filePath = path.join(directory, ".daireel", localPath);
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, Buffer.from("fake mp4 bytes"));
 
     await db.db2.insertFinalVideoJob({
       id: finalVideoJobId,
@@ -128,7 +131,7 @@ describe("generation controller final video downloads", () => {
   });
 
   it("requires an idempotency key for one-click final video jobs", async () => {
-    const workspaceId = await createWorkspace(app, cleanupDirs);
+    const { workspaceId } = await createWorkspace(app, cleanupDirs);
     await approvePromptRequirements(app, workspaceId);
 
     const response = await app.inject({
@@ -145,7 +148,7 @@ describe("generation controller final video downloads", () => {
   });
 
   it("dedupes repeated one-click final video idempotency keys", async () => {
-    const workspaceId = await createWorkspace(app, cleanupDirs);
+    const { workspaceId } = await createWorkspace(app, cleanupDirs);
     await approvePromptRequirements(app, workspaceId);
     const idempotencyKey = `${workspaceId}:one-click:test`;
 
@@ -175,7 +178,7 @@ describe("generation controller final video downloads", () => {
   });
 
   it("rejects a second active one-click final video job for the same workspace", async () => {
-    const workspaceId = await createWorkspace(app, cleanupDirs);
+    const { workspaceId } = await createWorkspace(app, cleanupDirs);
     await approvePromptRequirements(app, workspaceId);
 
     const first = await app.inject({
@@ -204,7 +207,7 @@ describe("generation controller final video downloads", () => {
   });
 
   it("approves the submitted material intake draft as current before starting one-click", async () => {
-    const workspaceId = await createWorkspace(app, cleanupDirs);
+    const { workspaceId } = await createWorkspace(app, cleanupDirs);
     await approvePromptRequirements(app, workspaceId);
     const draft = materialDraft("一键成片使用页面上的素材解读草稿");
 

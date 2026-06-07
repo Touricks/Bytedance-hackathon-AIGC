@@ -1,9 +1,8 @@
 import { nanoid } from "nanoid";
 import {
-  generateViralImitationWithArk,
+  generateStoryboardWithArk,
   getModulePromptAssemblyMetadata,
   rewriteStoryboardVoiceoversWithArk,
-  searchTemplates,
 } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
@@ -17,11 +16,10 @@ import {
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import {
-  createWorkspaceTraceLogger,
-  resolveWorkspaceStorageLocalPath,
+  createWorkspaceTraceLoggerForWorkspace,
   runtimeMode,
   toStoryboard,
-  writeReviewSnapshot,
+  writeReviewSnapshotForWorkspace,
 } from "./workspace.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
@@ -283,23 +281,24 @@ function upstreamChange(input: {
 export const storyboardV2Service = {
   async propose(input: { workspaceId: string }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
     const brief = productBriefArtifactSchema.parse(sources.productBrief.data);
     const material = materialIntakeArtifactSchema.parse(
       sources.materialIntake.data,
     );
-    const requirements = sources.requirements.data as Record<string, unknown> | undefined;
-    const scriptSection = requirements?.script as Record<string, unknown> | undefined;
-    const scriptAngle = (requirements?.scriptAngle ?? scriptSection?.angle) as string | undefined;
-    const candidateTemplates = searchTemplates({ product: brief.product }, 3, scriptAngle);
     const data: StoryboardArtifact = storyboardArtifactSchema.parse(
       runtimeMode() === "real"
         ? (
-            await generateViralImitationWithArk(
-              { brief, material, candidateTemplates },
+            await generateStoryboardWithArk(
               {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                brief,
+                material,
+                creativeRequirements: sources.requirements.data,
+              },
+              {
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).storyboard
@@ -330,8 +329,7 @@ export const storyboardV2Service = {
         ),
       ],
     );
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "storyboard",
       status: "proposed",
@@ -351,7 +349,6 @@ export const storyboardV2Service = {
     userDirection?: string;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     const sources = await currentSources(input.workspaceId);
     if (input.baseArtifactId) {
       await getArtifactForWorkspace(input.workspaceId, input.baseArtifactId);
@@ -372,9 +369,12 @@ export const storyboardV2Service = {
                 material,
                 storyboard: draft,
                 userDirection: input.userDirection,
+                creativeRequirements: sources.requirements.data,
               },
               {
-                traceLogger: createWorkspaceTraceLogger(localPath, workspace),
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
               },
             )
           ).storyboard
@@ -407,8 +407,7 @@ export const storyboardV2Service = {
         ),
       ],
     );
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "storyboard",
       status: "proposed",
@@ -427,7 +426,6 @@ export const storyboardV2Service = {
     data?: unknown;
   }) {
     const workspace = await db.getWorkspace(input.workspaceId);
-    const localPath = await resolveWorkspaceStorageLocalPath(input.workspaceId);
     if (!input.artifactId && input.data === undefined) {
       throw new HttpError(400, "ARTIFACT_DATA_REQUIRED", "artifactId or data is required");
     }
@@ -451,8 +449,7 @@ export const storyboardV2Service = {
             data,
           });
 
-    await writeReviewSnapshot({
-      localPath,
+    await writeReviewSnapshotForWorkspace({
       workspace,
       artifact: "storyboard",
       status: "approved",

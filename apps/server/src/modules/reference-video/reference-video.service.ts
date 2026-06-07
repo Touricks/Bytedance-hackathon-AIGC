@@ -1,7 +1,9 @@
 import net from "node:net";
 import { analyzeReferenceVideoRequirements } from "@aigc-video/ai";
+import { applyCreativeFactorsToPromptRequirements } from "@aigc-video/shared";
 import { HttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
+import { promptRequirementsService } from "../workspace/prompt-requirements.service.js";
 
 const supportedVideoExtensions = new Set([
   ".mp4",
@@ -151,6 +153,19 @@ function contentType(response: Response) {
   return response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
 }
 
+async function createProposedRequirementsFromReferenceVideo(
+  workspaceId: string,
+  analyzed: Awaited<ReturnType<typeof analyzeReferenceVideoRequirements>>,
+) {
+  const recommendedFactors =
+    analyzed.creativeFactorsRecommendation.recommendedFactors;
+  const data = applyCreativeFactorsToPromptRequirements(
+    analyzed.draft,
+    recommendedFactors,
+  );
+  return promptRequirementsService.propose(workspaceId, data);
+}
+
 async function readVideoResponseBytes(response: Response) {
   if (!response.body) {
     return Buffer.alloc(0);
@@ -222,6 +237,10 @@ export const referenceVideoService = {
       sizeBytes: input.bytes.byteLength,
       videoUrl: toVideoDataUrl(input.contentType, input.bytes),
     });
+    const artifact = await createProposedRequirementsFromReferenceVideo(
+      workspaceId,
+      analyzed,
+    );
 
     return {
       source: {
@@ -231,6 +250,7 @@ export const referenceVideoService = {
         sizeBytes: input.bytes.byteLength,
       },
       ...analyzed,
+      artifact,
     };
   },
 
@@ -243,6 +263,10 @@ export const referenceVideoService = {
       sizeBytes: downloaded.bytes.byteLength,
       videoUrl: toVideoDataUrl(downloaded.contentType, downloaded.bytes),
     });
+    const artifact = await createProposedRequirementsFromReferenceVideo(
+      workspaceId,
+      analyzed,
+    );
 
     return {
       source: {
@@ -253,6 +277,7 @@ export const referenceVideoService = {
         sizeBytes: downloaded.bytes.byteLength,
       },
       ...analyzed,
+      artifact,
     };
   },
 };

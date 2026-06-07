@@ -284,9 +284,7 @@ export function ShotPromptReviewForm({
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>待审创作产物</span>
         <h1>分镜生成要求</h1>
-        <p>确认逐分镜的分镜图和分镜视频要求。批准后可进入应用分镜，创建分镜链路实例。</p>
       </div>
       <div className="shotprompt-summary">
         <div className="shotprompt-summary__metric">
@@ -641,9 +639,7 @@ function P0StoryboardRequiredPanel({ issues }: { issues: Array<{ message: string
   return (
     <section className="review-panel">
       <div className="review-panel__header">
-        <span>等待上游确认</span>
         <h1>分镜生成要求</h1>
-        <p>需要先让分镜脚本成为 15 秒三镜版本，再生成逐分镜的分镜图和分镜视频要求。</p>
       </div>
       <div className="review-empty-state">
         <Ban size={22} />
@@ -676,11 +672,6 @@ export function ShotPromptReview({
     return (
       <ProposalPlaceholder
         title="分镜生成要求"
-        description={
-          pending
-            ? "系统正在根据已批准的分镜脚本生成分镜图和分镜视频要求，完成后会停在这里供你审核。"
-            : "分镜脚本批准后，生成每个分镜的分镜图和分镜视频要求。"
-        }
         actionLabel={pending ? "正在生成分镜生成要求..." : "生成分镜生成要求"}
         busy={vm.busy || pending}
         onAction={() => {
