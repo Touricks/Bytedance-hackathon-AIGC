@@ -1,8 +1,9 @@
 import { nanoid } from "nanoid";
 import {
-  generateStoryboardWithArk,
+  generateViralImitationWithArk,
   getModulePromptAssemblyMetadata,
   rewriteStoryboardVoiceoversWithArk,
+  searchTemplates,
 } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
@@ -45,6 +46,43 @@ function toIsoString(value: unknown): string {
 
 function jsonbParam(value: unknown) {
   return JSON.stringify(value ?? {});
+}
+
+const HARDCODED_BANNED_VOICEOVER_PHRASES = [
+  "感兴趣的可以去看看哦",
+  "喜欢的可以去看看哦",
+  "喜欢的姐妹可以去看看哦",
+  "喜欢的可以点一下",
+  "心动不如行动",
+  "手慢无",
+  "快来了解",
+  "点击下方",
+  "赶紧入手",
+  "链接在主页",
+  "链接挂主页",
+  "赶紧下单",
+  "限时优惠",
+  "还在等什么",
+];
+
+function assertNoGlobalBannedExpressions(
+  data: StoryboardArtifact,
+  bannedExpressions: string[],
+) {
+  const allBanned = [
+    ...HARDCODED_BANNED_VOICEOVER_PHRASES,
+    ...bannedExpressions,
+  ];
+  for (const shot of data.shots) {
+    const found = allBanned.filter((phrase) => shot.voiceover.includes(phrase));
+    if (found.length > 0) {
+      throw new HttpError(
+        400,
+        "BANNED_VOICEOVER_EXPRESSION",
+        `分镜 ${shot.index + 1} 口播含禁用词：${found.join("、")}。请重新生成。`,
+      );
+    }
+  }
 }
 
 function assertValidP0StoryboardScript(data: StoryboardArtifact) {
@@ -251,11 +289,15 @@ export const storyboardV2Service = {
     const material = materialIntakeArtifactSchema.parse(
       sources.materialIntake.data,
     );
+    const requirements = sources.requirements.data as Record<string, unknown> | undefined;
+    const scriptSection = requirements?.script as Record<string, unknown> | undefined;
+    const scriptAngle = (requirements?.scriptAngle ?? scriptSection?.angle) as string | undefined;
+    const candidateTemplates = searchTemplates({ product: brief.product }, 3, scriptAngle);
     const data: StoryboardArtifact = storyboardArtifactSchema.parse(
       runtimeMode() === "real"
         ? (
-            await generateStoryboardWithArk(
-              { brief, material },
+            await generateViralImitationWithArk(
+              { brief, material, candidateTemplates },
               {
                 traceLogger: createWorkspaceTraceLogger(localPath, workspace),
               },
@@ -264,6 +306,7 @@ export const storyboardV2Service = {
         : toStoryboard(brief),
     );
     assertValidP0StoryboardScript(data);
+    assertNoGlobalBannedExpressions(data, brief.bannedExpressions);
     const sourceFingerprint = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,

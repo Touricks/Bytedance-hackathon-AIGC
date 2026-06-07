@@ -7,6 +7,6 @@ totalDurationSec 必须是 15。
 shots 必须且只能有 3 项。
 purpose 必须按顺序是 hook、proof、cta。
 durationSec 必须按顺序是 4、7、4。
-每个 voiceover 的有效字数必须小于或等于该 shot 的 durationSec * 5。
+每个 voiceover 的有效字数必须小于或等于该 shot 的 durationSec * 8（快速语速），且不低于 durationSec * 5（留白型 cta 除外）。
 productAssetRef 必须是已确认素材清单中的非空 ref。
 禁止输出占位符值，例如：字符串、string、TODO、N/A、示例、待补充。

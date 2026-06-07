@@ -4,7 +4,7 @@ export const STORYBOARD_SCRIPT_TOTAL_DURATION_SEC = 15;
 export const STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC = 4;
 export const STORYBOARD_SCRIPT_DEFAULT_DURATIONS = [4, 7, 4] as const;
 export const STORYBOARD_SCRIPT_DEFAULT_PURPOSES = ["hook", "proof", "cta"] as const;
-export const STORYBOARD_SCRIPT_VOICEOVER_CHARS_PER_SEC = 5;
+export const STORYBOARD_SCRIPT_VOICEOVER_CHARS_PER_SEC = 8;
 
 export type P0StoryboardScriptIssueCode =
   | "shot_count"
