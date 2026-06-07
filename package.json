@@ -25,12 +25,17 @@
     "newman": "^6.2.1",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
-    "typescript-eslint": "^8.20.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md,css}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.0.1"
   }
 }
