@@ -12,7 +12,7 @@ V1 不生成字幕，不要把可读文字作为视频生成要求。
 
 【TTS 声音配置推荐】
 根据商品和目标人群填写 voiceProfile，不要随机填：
-- gender：brief.audience 以女性为主（护肤/包袋/女装/食品/家居）→ female；以男性为主（运动/3C/工具）→ male；中性商品默认 female
+- gender：brief.audience 以女性为主（护肤/包袋/女装/家居）→ female；以男性为主（运动/3C/工具）→ male；食品/饮品根据 brief.audience.who 实际性别判断，不强制 female；中性商品默认 female
 - pitch：情感/颜值/氛围类商品 → high（明亮感）；功能/数据/权威类 → medium（稳重感）；家居/母婴/轻柔类 → low/medium（温和感）
 - tone：用一句话描述本条视频的情绪基调，与 voiceover 风格一致。例：「朋友分享感，轻松真实」「笃定有信息量，不急不催」「轻柔温和，像自言自语」「感官词密集，活力分享感」
 不要改变上游商品主张或目标人群。
