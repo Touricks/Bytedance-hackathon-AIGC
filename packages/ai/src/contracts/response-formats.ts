@@ -189,7 +189,7 @@ export function buildStoryboardResponseFormat(input: {
               scene: { type: "string", minLength: 30 },
               visualDirection: nonEmptyString,
               productAssetRef: refSchema(refs),
-              voiceover: { type: "string", minLength: 8 },
+              voiceover: { type: "string", minLength: 1 },
               transition: nonEmptyString,
             },
             [

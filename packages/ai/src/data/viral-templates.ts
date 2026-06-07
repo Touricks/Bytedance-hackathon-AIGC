@@ -25,7 +25,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "curiosity-hook",
     name: "好奇钩子",
     categories: [],
-    angleTypes: ["curiosity_hook"],
+    angleTypes: ["curiosity-hook"],
     hookTechnique:
       "开场说一句反转判断或悬念结论，故意不解释原因，让人停下来想「这什么意思」。" +
       "参考 Case E（包袋）：开场说「能退可以退了」——负面反转，后面才揭秘有多好。" +
@@ -59,7 +59,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "problem-solution",
     name: "痛点解决",
     categories: [],
-    angleTypes: ["problem_solution"],
+    angleTypes: ["pain-solution"],
     hookTechnique:
       "直接演示目标人群最熟悉的糟糕时刻，不问「你是否有这个问题」，而是把痛点场景搬上画面。" +
       "关键：越具体越有共鸣——不是「背包不够用」，是「手机钱包口红充电宝全要外挂」；" +
@@ -92,7 +92,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "before-after",
     name: "前后对比",
     categories: [],
-    angleTypes: ["before_after"],
+    angleTypes: ["scenario-demo"],
     hookTechnique:
       "开场展示「之前」的不理想状态，让人产生共鸣；之前状态越真实，对比冲击力越大。" +
       "参考 387 视频（家居画作）：前 7 秒展示空白墙壁，背景大面积留空传递「这里少了什么」的感觉，" +
@@ -125,7 +125,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "review-comparison",
     name: "测评对比",
     categories: [],
-    angleTypes: ["review_comparison"],
+    angleTypes: ["review-comparison"],
     hookTechnique:
       "以「买了N个同类/试遍市面」的测评者身份开场，或直接提出测评标准，让观众感受到这是有依据的推荐。" +
       "参考 Case A（水杯）：「你说怕水杯不能装开水冰水」——直接说出用户最大疑虑，同时画面里已经在做验证动作；" +
@@ -158,7 +158,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "tutorial-value",
     name: "教程价值",
     categories: [],
-    angleTypes: ["tutorial_value"],
+    angleTypes: ["tutorial-value"],
     hookTechnique:
       "先展示令人意外的最终结果或冷知识用法，制造「原来还能这样」的惊喜，再退回来教步骤——结果先行比步骤先行更抓人。" +
       "参考 387 视频原则：先让人看到「这个效果怎么做到的」，再展示过程；" +
@@ -191,7 +191,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "authority-proof",
     name: "权威证明",
     categories: [],
-    angleTypes: ["authority_proof"],
+    angleTypes: ["authority-proof"],
     hookTechnique:
       "用一句极有分量的结论性判断开场——来自回购者/深度用户/成分党视角，让人感觉这是内行人说的话，不是广告。" +
       "参考 Case D（护肤）：博主直视镜头，手举产品，说「618别的都可以不买」，语气毫不犹豫——" +
@@ -224,7 +224,7 @@ export const VIRAL_TEMPLATES: ViralTemplate[] = [
     id: "emotional-story",
     name: "情感故事",
     categories: [],
-    angleTypes: ["emotional_story"],
+    angleTypes: ["emotional-story"],
     hookTechnique:
       "从一个真实的日常情感时刻切入——不是「产品怎么好」，而是「我当时遇到了什么」，产品只是故事的一部分。" +
       "参考 Case B（饼干）：「本来是给儿子买的这个蔬菜小饼干」——" +

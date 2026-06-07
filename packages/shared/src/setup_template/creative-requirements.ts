@@ -9,11 +9,13 @@ import {
   factorGuidanceFieldPathSchema,
   productTypeSchema,
   strategySchema,
+  visualStyleSchema,
   type Audience,
   type CreativeFactors,
   type FactorGuidance,
   type FactorGuidanceFieldPath,
   type ProductType,
+  type VisualStyle,
 } from "../schemas/creative-factors.js";
 
 export const creativeRequirementTemplateValuesSchema = z.object({
@@ -105,7 +107,7 @@ type TemplateSeed = {
   id: string;
   name: string;
   summary: string;
-  creativeFactors: CreativeFactors;
+  creativeFactors: Omit<CreativeFactors, "visualStyle"> & { visualStyle?: VisualStyle };
   factorGuidanceOverrides?: {
     productType?: Partial<FactorGuidance["productType"]>;
     audience?: Partial<FactorGuidance["audience"]>;

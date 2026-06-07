@@ -16,6 +16,7 @@ const DETACHED_FACTORS: CreativeFactors = {
   productType: "consumable-good",
   audience: "toddler",
   strategy: "emotional-story",
+  visualStyle: "authentic",
 };
 
 function requirementsVm(

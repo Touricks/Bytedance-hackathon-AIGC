@@ -22,10 +22,14 @@ export const strategySchema = z.enum([
 ]);
 export type Strategy = z.infer<typeof strategySchema>;
 
+export const visualStyleSchema = z.enum(["authentic", "cinematic"]);
+export type VisualStyle = z.infer<typeof visualStyleSchema>;
+
 export const creativeFactorsSchema = z.object({
   productType: productTypeSchema,
   audience: audienceSchema,
   strategy: strategySchema,
+  visualStyle: visualStyleSchema.default("authentic"),
 });
 export type CreativeFactors = z.infer<typeof creativeFactorsSchema>;
 
@@ -155,6 +159,7 @@ export const DEFAULT_CREATIVE_FACTORS = {
   productType: "durable-good",
   audience: "youth",
   strategy: "scenario-demo",
+  visualStyle: "authentic",
 } as const satisfies CreativeFactors;
 
 const PRODUCT_TYPE_GUIDANCE = {
@@ -364,6 +369,19 @@ const STRATEGY_GUIDANCE = {
   }
 >;
 
+const VISUAL_STYLE_SHOT_GUIDANCE = {
+  authentic: {
+    shotImage: "视觉风格：UGC真实质感，自然光或窗边漫射光，曝光充足偏高，色彩干净通透，非广告棚感。",
+    shotVideo: "运镜质感：镜头固定或轻微手持晃动，动作有物理重量感，无过度运镜，真实UGC节奏。",
+    storyboard: "场景描写强调真实物理感，商品在自然生活场景中，人物极简（手部/局部优先）。",
+  },
+  cinematic: {
+    shotImage: "视觉风格：电影级产品摄影，戏剧性方向光，高饱和高对比，商品是绝对主角，允许完美布光与超现实色彩处理。",
+    shotVideo: "运镜质感：完美平滑运镜无手持感，允许AI原生视觉效果——极致慢动作、液体流动特效、光线折射、粒子爆散，追求品牌向往感而非真实感。",
+    storyboard: "场景可以写AI原生视觉：极致慢动作/光线爆发/液体流动特效/超现实材质特写，追求电影级品牌质感，不需要UGC真实感。",
+  },
+} satisfies Record<VisualStyle, { shotImage: string; shotVideo: string; storyboard: string }>;
+
 function compact(values: string[]) {
   return values.filter((value) => value.trim().length > 0);
 }
@@ -493,11 +511,13 @@ export const DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP =
 export function compileCreativeRequirementFields(input: {
   factorGuidance: FactorGuidance;
   scriptInfluence: ScriptInfluence;
+  visualStyle?: VisualStyle;
 }) {
   const { factorGuidance } = input;
+  const vs = VISUAL_STYLE_SHOT_GUIDANCE[input.visualStyle ?? "authentic"];
   return {
     image: {
-      style: `${factorGuidance.productType.subjectPresentation} 保持真实拍摄质感和商品/服务身份可识别。`,
+      style: `${factorGuidance.productType.subjectPresentation} 保持商品/服务身份可识别。 ${vs.shotImage}`,
       composition: `${factorGuidance.productType.sceneAndDelivery} ${factorGuidance.audience.benefitFrame}`,
       avoid: unique([
         factorGuidance.productType.authenticityBoundaries,
@@ -508,13 +528,13 @@ export function compileCreativeRequirementFields(input: {
       tone: `${factorGuidance.audience.addressingAndTone} ${factorGuidance.audience.benefitFrame} ${factorGuidance.strategy.evidenceAndCta}`,
     },
     storyboard: {
-      rhythm: `${factorGuidance.strategy.storyStructure} ${factorGuidance.strategy.evidenceAndCta} ${factorGuidance.productType.sceneAndDelivery}`,
+      rhythm: `${factorGuidance.strategy.storyStructure} ${factorGuidance.strategy.evidenceAndCta} ${factorGuidance.productType.sceneAndDelivery} ${vs.storyboard}`,
     },
     shotImage: {
-      global: `${factorGuidance.productType.subjectPresentation} ${factorGuidance.productType.sceneAndDelivery}`,
+      global: `${factorGuidance.productType.subjectPresentation} ${factorGuidance.productType.sceneAndDelivery} ${vs.shotImage}`,
     },
     shotVideo: {
-      global: `${factorGuidance.strategy.openingHook} ${factorGuidance.productType.sceneAndDelivery}`,
+      global: `${factorGuidance.strategy.openingHook} ${factorGuidance.productType.sceneAndDelivery} ${vs.shotVideo}`,
     },
     compiledRequirementSourceMap: DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP,
   };
@@ -542,7 +562,7 @@ export function buildCreativeFactorRequirements(
   };
 
   return creativeFactorRequirementsDataSchema.parse({
-    ...compileCreativeRequirementFields({ factorGuidance, scriptInfluence }),
+    ...compileCreativeRequirementFields({ factorGuidance, scriptInfluence, visualStyle: creativeFactors.visualStyle }),
     creativeFactors,
     factorGuidance,
     scriptInfluence,
