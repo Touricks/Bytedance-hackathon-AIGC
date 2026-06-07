@@ -1325,7 +1325,7 @@ components:
         finalVideoJobId:
           type: string
           minLength: 1
-          description: 必须属于当前 workspace，且成片作业 status=SUCCEEDED、已有 localUrl。
+          description: 必须属于当前 workspace，且成片作业 status=SUCCEEDED、已有 localUrl/localPath。
         name:
           type: string
           minLength: 1
@@ -1352,7 +1352,7 @@ components:
         name: { type: string }
         localUrl:
           type: string
-          description: 成片 stable API URL。
+          description: 数据面板全局 stable API URL，例如 /api/dashboard/videos/{artifactId}/file。
         durationSec: { type: integer, nullable: true }
         width: { type: integer, nullable: true }
         height: { type: integer, nullable: true }
@@ -3082,6 +3082,43 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/dashboard/videos:
+    get:
+      tags: [Dashboard]
+      summary: 列出全局数据面板视频 artifact
+      description: >
+        返回所有工作区已导入数据面板的视频 artifact，按 importedAt/createdAt 倒序排列。
+        视频文件通过 localUrl 指向的 server 代理 URL 读取。
+      responses:
+        "200":
+          description: Dashboard video artifacts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DashboardVideoArtifact"
+
+  /api/dashboard/videos/{artifactId}/file:
+    get:
+      tags: [Dashboard]
+      summary: 流式返回全局数据面板视频文件
+      parameters:
+        - $ref: "#/components/parameters/DashboardVideoArtifactId"
+      responses:
+        "200":
+          description: MP4 file
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/workspaces/{workspaceId}/dashboard/videos:
     get:
       tags: [Dashboard]
@@ -3104,8 +3141,9 @@ paths:
       tags: [Dashboard]
       summary: 导入已完成成片为数据面板视频 artifact
       description: >
-        后端校验 finalVideoJobId 属于当前 workspace，且成片作业 status=SUCCEEDED、已有 localUrl。
-        成功后快照成片 URL、名称、导入时间、时长、宽高、creativeTags 与 creativeFactors。
+        后端校验 finalVideoJobId 属于当前 workspace，且成片作业 status=SUCCEEDED、已有 localUrl/localPath。
+        成功后将成片复制到全局 DASHBOARD_ASSET_DIR/{artifactId}/video.mp4，
+        写 metadata.json 镜像，并快照全局视频 URL、名称、导入时间、时长、宽高、creativeTags 与 creativeFactors。
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       requestBody:

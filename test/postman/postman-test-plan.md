@@ -1,4 +1,4 @@
-# Postman / Newman Test Plan
+# Postman Test Plan
 
 更新时间：2026-06-02
 
@@ -16,12 +16,12 @@ Postman collection 是后端公开契约的可读测试定义。当前没有官�
 V2 collection 建议放在：
 
 ```text
-docs/test/agent-chain/agent-chain.postman.json
-docs/test/agent-chain/agent-chain.env.json
-docs/test/agent-chain/agent-chain.data.json
+test/postman/agent-chain/agent-chain.postman.json
+test/postman/agent-chain/agent-chain.env.json
+test/postman/agent-chain/agent-chain.data.json
 ```
 
-provider secrets 继续来自 `.env` 与现有 `docs/test/provider.env.json`。`agent-chain.env.json` 只保存非敏感的测试路径、轮询参数和 collection 变量。
+provider secrets 继续来自 `.env` 与现有 `test/postman/provider.env.json`。`agent-chain.env.json` 只保存非敏感的测试路径、轮询参数和 collection 变量。
 
 ---
 
@@ -235,7 +235,7 @@ trace 中不应出现：
 
 ---
 
-## Newman 断言建议
+## Postman 断言片段
 
 公共响应：
 

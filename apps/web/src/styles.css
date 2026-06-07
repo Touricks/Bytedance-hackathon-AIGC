@@ -892,6 +892,7 @@ label {
 /* ---------- Creative review shell ---------- */
 
 .review-desk {
+  --review-topbar-h: 64px;
   display: flex;
   min-height: 100dvh;
   flex-direction: column;
@@ -901,13 +902,13 @@ label {
 
 .review-topbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 14px;
   align-items: center;
-  height: 56px;
+  height: var(--review-topbar-h);
   flex: none;
   border-bottom: 1px solid var(--line);
-  padding: 0 16px 0 12px;
+  padding: 6px 16px 4px 12px;
   background: var(--surface);
   z-index: 20;
 }
@@ -953,7 +954,7 @@ label {
 
 .review-rail,
 .review-side {
-  height: calc(100dvh - 56px);
+  height: calc(100dvh - var(--review-topbar-h));
   overflow: auto;
   border-radius: 0;
   box-shadow: none;
@@ -3295,7 +3296,7 @@ label {
 .review-panel:has(.review-video-grid),
 .review-panel:has(.review-final) {
   display: grid;
-  max-height: calc(100dvh - 56px);
+  max-height: calc(100dvh - var(--review-topbar-h));
   border: 1px solid var(--line);
   border-radius: calc(var(--r-lg) * var(--radius-scale));
   margin: 18px 22px 40px;
@@ -3729,7 +3730,7 @@ label {
 }
 
 .review-loading div {
-  min-height: calc(100dvh - 56px);
+  min-height: calc(100dvh - var(--review-topbar-h));
   background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
@@ -3850,7 +3851,8 @@ label {
   .review-topbar {
     position: sticky;
     top: 0;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    gap: 10px;
   }
 
   .review-grid,

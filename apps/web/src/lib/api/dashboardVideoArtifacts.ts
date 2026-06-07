@@ -41,3 +41,7 @@ export function listDashboardVideoArtifacts(workspaceId: string) {
     `/api/workspaces/${workspaceId}/dashboard/videos`,
   );
 }
+
+export function listGlobalDashboardVideoArtifacts() {
+  return fetchJson<{ data: DashboardVideoArtifact[] }>("/api/dashboard/videos");
+}

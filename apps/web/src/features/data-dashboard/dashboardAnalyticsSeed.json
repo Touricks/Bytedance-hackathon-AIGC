@@ -82,6 +82,24 @@
         "name": "自定义",
         "status": "none"
       }
+    },
+    {
+      "id": "v2",
+      "name": "剧情_洁面_情绪故事_45s_v2",
+      "filename": "剧情_洁面_情绪故事_45s_v2.mp4",
+      "model": "Nano Banana",
+      "duration": "45s",
+      "publishedAt": "2025-05-05",
+      "audienceText": "美国女性 25-44",
+      "creativeFactors": {
+        "productType": "consumable-good",
+        "audience": "youth",
+        "strategy": "emotional-story"
+      },
+      "template": {
+        "name": "银发滋补·老年",
+        "status": "detached"
+      }
     }
   ],
   "factorCatalog": {
@@ -224,10 +242,10 @@
     {"key": "orders", "label": "下单", "value": 93516, "displayValue": "9.4万", "totalRate": 0.21, "stepRate": 30.3}
   ],
   "channels": [
-    {"id": "mia", "name": "@CleanWithMia", "platform": "TikTok Shop · 美国", "tier": "腰部达人", "isBest": true, "metrics": {"ctr": 3.42, "retain3s": 78.4, "complete": 41.2, "cvr": 2.58, "roas": 4.85, "gmv": 128000}},
-    {"id": "home", "name": "@HomeHacks.Sara", "platform": "TikTok Shop · 美国", "tier": "头部达人", "isBest": false, "metrics": {"ctr": 2.96, "retain3s": 71.2, "complete": 34.6, "cvr": 2.07, "roas": 3.62, "gmv": 94000}},
-    {"id": "glow", "name": "@GlowRoutine", "platform": "Instagram Reels", "tier": "腰部达人", "isBest": false, "metrics": {"ctr": 2.41, "retain3s": 64.8, "complete": 30.1, "cvr": 1.74, "roas": 2.96, "gmv": 51000}},
-    {"id": "tidy", "name": "@TidyTok.Jen", "platform": "TikTok Shop · 英国", "tier": "尾部达人", "isBest": false, "metrics": {"ctr": 2.08, "retain3s": 58.3, "complete": 26.4, "cvr": 1.52, "roas": 2.41, "gmv": 33000}},
+    {"id": "mia", "name": "@Fanshi", "platform": "TikTok Shop · 美国", "tier": "腰部达人", "isBest": true, "metrics": {"ctr": 3.42, "retain3s": 78.4, "complete": 41.2, "cvr": 2.58, "roas": 4.85, "gmv": 128000}},
+    {"id": "home", "name": "@Xuanyi", "platform": "TikTok Shop · 美国", "tier": "头部达人", "isBest": false, "metrics": {"ctr": 2.96, "retain3s": 71.2, "complete": 34.6, "cvr": 2.07, "roas": 3.62, "gmv": 94000}},
+    {"id": "glow", "name": "@Zihan", "platform": "Instagram Reels", "tier": "腰部达人", "isBest": false, "metrics": {"ctr": 2.41, "retain3s": 64.8, "complete": 30.1, "cvr": 1.74, "roas": 2.96, "gmv": 51000}},
+    {"id": "tidy", "name": "@Master", "platform": "TikTok Shop · 英国", "tier": "尾部达人", "isBest": false, "metrics": {"ctr": 2.08, "retain3s": 58.3, "complete": 26.4, "cvr": 1.52, "roas": 2.41, "gmv": 33000}},
     {"id": "organic", "name": "自然流量 / 商城", "platform": "TikTok Shop · 美国", "tier": "非达人", "isBest": false, "metrics": {"ctr": 1.82, "retain3s": 55.1, "complete": 24, "cvr": 1.38, "roas": 2.18, "gmv": 27000}}
   ],
   "strategyMatrix": {
@@ -268,6 +286,28 @@
           "tidy": {"roas": 2.41, "cvr": 1.52, "ctr": 2.08},
           "organic": {"roas": 2.18, "cvr": 1.38, "ctr": 1.82}
         }
+      },
+      {
+        "strategy": "emotional-story",
+        "samples": 6,
+        "metricsByChannel": {
+          "mia": {"roas": 3.6, "cvr": 2.3, "ctr": 2.9},
+          "home": {"roas": 3.1, "cvr": 2.0, "ctr": 2.6},
+          "glow": {"roas": 3.4, "cvr": 2.1, "ctr": 2.8},
+          "tidy": {"roas": 2.5, "cvr": 1.6, "ctr": 2.2},
+          "organic": {"roas": 2.1, "cvr": 1.4, "ctr": 1.9}
+        }
+      },
+      {
+        "strategy": "curiosity-hook",
+        "samples": 7,
+        "metricsByChannel": {
+          "mia": {"roas": 3.9, "cvr": 2.0, "ctr": 4.3},
+          "home": {"roas": 3.0, "cvr": 1.7, "ctr": 3.6},
+          "glow": {"roas": 4.1, "cvr": 2.2, "ctr": 4.5},
+          "tidy": {"roas": 2.4, "cvr": 1.4, "ctr": 2.9},
+          "organic": {"roas": 1.9, "cvr": 1.2, "ctr": 2.4}
+        }
       }
     ]
   },
@@ -277,15 +317,29 @@
       "metric": "推销手法",
       "tag": "主因",
       "title": "当前「场景演示」在主力渠道 ROAS 偏低",
-      "body": "该视频用「场景演示」手法，在 @HomeHacks.Sara 渠道 ROAS 仅 3.62。样例聚合数据中，「痛点解决」在同一渠道平均 ROAS 4.60。",
+      "body": "该视频用「场景演示」手法，在 @Xuanyi 渠道 ROAS 仅 3.62。样例聚合数据中，「痛点解决」在同一渠道平均 ROAS 4.60。",
       "lift": "换痛点解决预估 ROAS +27%"
     },
     {
       "level": "high",
       "metric": "手法 × 渠道",
       "tag": "最优组合",
-      "title": "「痛点解决 × @CleanWithMia」是全矩阵最优",
-      "body": "「痛点解决」在腰部生活达人 @CleanWithMia 渠道 ROAS 高达 5.40，是矩阵中的最高格。"
+      "title": "「痛点解决 × @Fanshi」是全矩阵最优",
+      "body": "「痛点解决」在腰部生活达人 @Fanshi 渠道 ROAS 高达 5.40，是矩阵中的最高格。"
+    },
+    {
+      "level": "medium",
+      "metric": "渠道适配",
+      "tag": "注意",
+      "title": "「好奇钩子」在 Instagram Reels CTR 最高但转化弱",
+      "body": "「好奇钩子」在 Instagram Reels 上 CTR 达 4.5%（全矩阵最高），但 CVR 仅 2.2%、ROAS 4.10。它适合做拉新曝光，目标为转化时不建议作为主力手法。"
+    },
+    {
+      "level": "medium",
+      "metric": "可调杠杆",
+      "tag": "保持",
+      "title": "同一商品 × 人群下，推销手法是最高杠杆",
+      "body": "商品（可消耗商品）与人群（青年）固定时，仅更换推销手法即可带来 20%+ 的 ROAS 差异。相比换渠道或调预算，调整推销手法是当前性价比最高的可控因子。"
     }
   ],
   "strategyRecommendation": {
@@ -294,14 +348,16 @@
     "suggestedTemplateName": "快消种草·青年",
     "lift": "+27%",
     "reasons": [
-      "当前渠道 @HomeHacks.Sara：痛点解决平均 ROAS 4.60，高于场景演示 3.62。",
+      "当前渠道 @Xuanyi：痛点解决平均 ROAS 4.60，高于场景演示 3.62。",
       "痛点开场强化 3 秒留存，缓解当前完播率偏低的问题。",
       "可消耗商品 + 青年人群下，痛点解决是矩阵中 ROAS 最高的推销手法。"
     ],
     "rankForCurrentChannel": [
       {"strategy": "pain-solution", "roas": 4.6, "isBest": true},
       {"strategy": "review-comparison", "roas": 3.9},
-      {"strategy": "scenario-demo", "roas": 3.62, "isCurrent": true}
+      {"strategy": "scenario-demo", "roas": 3.62, "isCurrent": true},
+      {"strategy": "emotional-story", "roas": 3.1},
+      {"strategy": "curiosity-hook", "roas": 3.0}
     ]
   },
   "assistantPresets": [
@@ -312,8 +368,18 @@
     },
     {
       "question": "哪种推销手法 ROAS 最高？",
-      "answer": "最高单格是「痛点解决 × @CleanWithMia = 5.40」。",
+      "answer": "最高单格是「痛点解决 × @Fanshi = 5.40」。",
       "chips": ["痛点解决在哪个渠道最好？", "这条视频该换什么推销手法？"]
+    },
+    {
+      "question": "痛点解决在哪个渠道最好？",
+      "answer": "「痛点解决」跨渠道 ROAS：@Fanshi 5.40（最佳）、@Xuanyi 4.60、@Zihan 3.80、@Master 3.00、自然流量 2.60。建议优先在 @Fanshi 这类腰部生活方式达人渠道分发。",
+      "chips": ["看推销手法×渠道矩阵", "这条视频该换什么推销手法？"]
+    },
+    {
+      "question": "好奇钩子适合用在哪？",
+      "answer": "「好奇钩子」高点击、弱转化：Instagram Reels CTR 4.5%（全矩阵最高），但 CVR 仅 2.2%。适合拉新/曝光目标；目标是转化时，建议改用痛点解决或测评对比。",
+      "chips": ["哪种推销手法 ROAS 最高？", "看推销手法×渠道矩阵"]
     }
   ]
 }

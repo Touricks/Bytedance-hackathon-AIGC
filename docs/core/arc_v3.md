@@ -43,8 +43,9 @@ Bytedancehack/
 │   └── config/                # lint/format/tsconfig 预设
 ├── docs/
 │   ├── core/                  # 架构、ERD、接口、OpenAPI
-│   ├── plan/                  # 迁移计划
-│   └── test/                  # Postman/Newman 测试数据
+│   └── plan/                  # 迁移计划
+├── test/
+│   └── postman/               # Postman collections、env/data 与测试计划
 ├── scripts/                   # reset/dev/test orchestration
 └── CONTEXT.md                 # 领域语言
 ```
@@ -361,7 +362,8 @@ prompt_requirements_artifacts.data.creativeFactors
 
 - 成片创建时，后端从当前 shot set 对应的 shotprompt 反查当时的 `promptRequirementsArtifactId`，并把 `creativeFactors` 与可选 `creativeRequirementTemplate` 写入 `compiledManifest.creativeTags`。
 - 如果无法从 shot set 反查 requirements，则退回读取当前 approved requirements，并在 tags 中标记 `fallback=true`。
-- 导入数据面板时，`dashboard_video_artifacts` 快照成片名称、URL、导入时间、时长/宽高、`creativeTags` 和 `creativeFactors`，供视频列表读取。
+- 导入数据面板时，前端在工作台成片区提交 `{ finalVideoJobId, name }`；后端校验 final job 属于当前 workspace、`status=SUCCEEDED` 且 `localPath/localUrl` 可用，再把成片 MP4 复制到全局本地目录 `DASHBOARD_ASSET_DIR/{artifactId}/video.mp4`，写同目录 `metadata.json` 镜像，并由 `dashboard_video_artifacts` 快照全局代理 URL、成片名称、导入时间、时长/宽高、`creativeTags` 和 `creativeFactors`。
+- 导入成功后前端跳转 `/dashboard?view=videos`。全局“视频列表”只读取 `GET /api/dashboard/videos` 返回的 artifact；`/dashboard/:workspaceId?view=videos` 读取 workspace-scoped 列表。点击列表行后切到“分析诊断”，视频标题、预览、导入时间和当前因子组合来自被点击的 artifact；P0 的 KPI、漏斗和渠道矩阵仍由样例指标承载，不作为视频列表数据源。
 - 发布登记时，如果请求带 `finalVideoJobId`，`campaign_publications.creative_tags` 原样复制成片 `creativeTags`。未绑定成片的发布记录 `creative_tags={}`，看板归为“未归类”。
 - 数据看板 P0 聚合维度只读 `creativeTags.creativeFactors.productType`、`creativeTags.creativeFactors.audience`、`creativeTags.creativeFactors.strategy`。模板来源只用于 secondary breakdown。
 
@@ -370,6 +372,8 @@ prompt_requirements_artifacts.data.creativeFactors
 | 接口 | 用途 |
 | --- | --- |
 | `POST /api/workspaces/:workspaceId/campaign-publications` | 登记成片发布，并复制成片 creative tags。 |
+| `GET /api/dashboard/videos` | 全局数据面板视频列表，跨 workspace 返回已导入视频 metadata。 |
+| `GET /api/dashboard/videos/:artifactId/file` | 全局数据面板视频文件代理。 |
 | `GET /api/workspaces/:workspaceId/campaign-publications` | 返回发布记录、`creativeTags` 和最新指标。 |
 | `GET /api/workspaces/:workspaceId/campaign-publications/:publicationId` | 返回单条发布记录、`creativeTags` 和最新指标。 |
 | `POST /api/workspaces/:workspaceId/campaign-publications/:publicationId/metrics` | 写入指标；指标不重复保存标签。 |
@@ -500,9 +504,9 @@ node scripts/verify-provider-video.mjs --image-url <url> --json
 
 这些探针只直接调用 provider endpoint，不覆盖 workspace 状态、队列、DB 写入、asset persistence、候选选择和 final compose。
 
-完整 real-provider agent-chain、Newman agent-chain、后端 image/video chain smoke、多 shot parallel、final compose 与 frontend real-provider E2E 均不作为当前脚本入口，避免把多真实模型联调、provider 配额和产品链路回归混在同一个自动测试入口里。
+完整 real-provider agent-chain、Postman agent-chain、后端 image/video chain smoke、多 shot parallel、final compose 与 frontend real-provider E2E 均不作为当前脚本入口，避免把多真实模型联调、provider 配额和产品链路回归混在同一个自动测试入口里。
 
-`docs/test/agent-chain/` 里的 Postman 资产可保留为公开契约参考，但不再作为当前自动真实 provider 验收入口。
+`test/postman/agent-chain/` 里的 Postman 资产可保留为公开契约参考，但不再作为当前自动真实 provider 验收入口。
 
 ---
 

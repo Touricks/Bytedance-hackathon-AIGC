@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
   importDashboardVideoArtifact,
+  listGlobalDashboardVideoArtifacts,
   listDashboardVideoArtifacts,
 } from "./dashboardVideoArtifacts.js";
 
@@ -100,5 +101,39 @@ describe("dashboard video artifact api client", () => {
     const result = await listDashboardVideoArtifacts("workspace_123");
 
     assert.equal(result.data[0]?.name, "618 亲子旅行成片");
+  });
+
+  it("lists global dashboard video metadata", async () => {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(init?.method ?? "GET", "GET");
+      assert.equal(String(url), "http://localhost:3000/api/dashboard/videos");
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "dash_video_1",
+              workspaceId: "workspace_123",
+              finalVideoJobId: "fv_1",
+              name: "618 亲子旅行成片",
+              localUrl: "/api/dashboard/videos/dash_video_1/file",
+              durationSec: 18,
+              width: 1080,
+              height: 1920,
+              creativeTags: {},
+              creativeFactors: null,
+              metadata: {},
+              importedAt: "2026-06-06T08:00:00.000Z",
+              createdAt: "2026-06-06T08:00:00.000Z",
+              updatedAt: "2026-06-06T08:00:00.000Z",
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    };
+
+    const result = await listGlobalDashboardVideoArtifacts();
+
+    assert.equal(result.data[0]?.localUrl, "/api/dashboard/videos/dash_video_1/file");
   });
 });

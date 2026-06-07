@@ -1,17 +1,3 @@
-## Agent skills
-
-### Issue tracker
-
-Issues and PRDs are tracked in GitHub Issues for `Touricks/Bytedance-hackathon-AIGC`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-This repo uses the canonical triage label vocabulary. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repo uses a single-context domain layout rooted at `CONTEXT.md`. See `docs/agents/domain.md`.
-
 ## System Prompt
 
 This file is the project constitution for Codex. Keep it short, factual, and specific to this AIGC commerce video repository.
@@ -51,7 +37,7 @@ packages/config/   # shared lint/prettier/typescript config
 docs/core/         # authoritative V3 architecture, ERD, interface, OpenAPI, prompt workflow/artifacts
 docs/reference/    # provider API references for Ark text/image and Seedance video
 docs/reference_frontend/ # Claude design reference for frontend migration
-docs/test/         # Postman/Newman and acceptance-test documentation
+test/postman/      # Postman collections, env/data files, and test-plan assets
 scripts/           # reset/dev/test/provider orchestration
 CONTEXT.md         # canonical business language
 ```
@@ -194,4 +180,5 @@ When context is compacted or a new agent joins, use these files to regain the pr
 - 当完成修复issues时，检查docs/core/中的架构/接口/prompt链路文件是否需要更新
 - 使用$diagnose诊断时，将issue总结并写入docs/issues/P0
 - 前端基于apps/web/进行开发
-- 前端页面单文件代码控制在400行之内
+- 前端页面单.ts文件代码控制在400行之内
+- 当用户提到“重启服务”时，你需要:1. 解除端口占用 2. 使用pnpm dev启动服务器

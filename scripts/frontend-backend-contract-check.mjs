@@ -1083,8 +1083,8 @@ Existing shot-set apply may keep legacy \`reference\` rows, but the edit API sho
 ## Acceptance
 
 - The endpoints are implemented in the shot controller/service.
-- \`docs/core/openapi.yaml\`, \`docs/core/interface.md\`, and \`docs/test/postman-test-plan.md\` remain aligned.
-- A Postman/Newman P0 case covers GET, PATCH add, PATCH remove, invalid shot, invalid asset, and archived shot behavior.
+- \`docs/core/openapi.yaml\`, \`docs/core/interface.md\`, and \`test/postman/postman-test-plan.md\` remain aligned.
+- A Postman P0 case covers GET, PATCH add, PATCH remove, invalid shot, invalid asset, and archived shot behavior.
 `;
   await writeFile(issuePath, content, "utf8");
   return issuePath;

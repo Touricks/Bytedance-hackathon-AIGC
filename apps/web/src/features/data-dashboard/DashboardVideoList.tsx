@@ -18,9 +18,13 @@ import { factorLabels, formatDateTime, formatSeconds } from "./dashboardFormatte
 export function DashboardVideoList({
   videos,
   snapshot,
+  selectedVideoId,
+  onSelectVideo,
 }: {
   videos: DashboardVideoArtifact[];
   snapshot: DashboardAnalyticsSnapshot;
+  selectedVideoId?: string | null;
+  onSelectVideo?: (videoId: string) => void;
 }) {
   return (
     <Stack spacing={1.5}>
@@ -55,7 +59,20 @@ export function DashboardVideoList({
                   ? factorLabels(snapshot, video.creativeFactors)
                   : null;
                 return (
-                  <TableRow key={video.id}>
+                  <TableRow
+                    key={video.id}
+                    hover
+                    selected={selectedVideoId === video.id}
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => onSelectVideo?.(video.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      onSelectVideo?.(video.id);
+                    }}
+                    sx={{ cursor: "pointer" }}
+                  >
                     <TableCell>
                       <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
                         <Box

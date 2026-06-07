@@ -15,6 +15,7 @@ function withoutDatabaseEnv() {
   delete env.TEST_DATABASE_URL;
   delete env.UPLOAD_DIR;
   delete env.UPLOAD_URL_PREFIX;
+  delete env.DASHBOARD_ASSET_DIR;
   delete env.AIGC_VIDEO_SKIP_ENV_FILE;
   return env;
 }

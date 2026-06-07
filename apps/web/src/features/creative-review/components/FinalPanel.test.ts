@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
-import { FinalPanel } from "./FinalPanel.js";
+import { FinalPanel, importFinalVideoToDashboard } from "./FinalPanel.js";
 
 function finalVm(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,5 +46,35 @@ describe("FinalPanel", () => {
     assert.match(html, /成片名称/);
     assert.match(html, /导入数据面板/);
     assert.match(html, /final-video-fv_1/);
+  });
+
+  it("imports the final video and opens the global dashboard video list", async () => {
+    const calls: unknown[] = [];
+
+    await importFinalVideoToDashboard(
+      {
+        workspaceId: "workspace_123",
+        finalVideoJobId: "fv_1",
+        name: "618 亲子旅行成片",
+      },
+      {
+        importDashboardVideoArtifact: async (workspaceId, body) => {
+          calls.push({ type: "import", workspaceId, body });
+          return { data: {} as never };
+        },
+        navigateToDataDashboard: (workspaceId, view) => {
+          calls.push({ type: "navigate", workspaceId, view });
+        },
+      },
+    );
+
+    assert.deepEqual(calls, [
+      {
+        type: "import",
+        workspaceId: "workspace_123",
+        body: { finalVideoJobId: "fv_1", name: "618 亲子旅行成片" },
+      },
+      { type: "navigate", workspaceId: undefined, view: "videos" },
+    ]);
   });
 });

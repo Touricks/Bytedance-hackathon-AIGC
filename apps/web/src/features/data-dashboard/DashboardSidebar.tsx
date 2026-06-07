@@ -1,7 +1,5 @@
-import { Avatar, Box, Button, Stack, Typography } from "@mui/material";
-import { BarChart3, FileVideo, Sparkles } from "lucide-react";
-
-export type DashboardView = "diagnosis" | "videos";
+import { BarChart3, FileVideo, Sparkles, User } from "lucide-react";
+import type { DashboardView } from "./dashboardTypes.js";
 
 interface DashboardSidebarProps {
   activeView: DashboardView;
@@ -9,67 +7,51 @@ interface DashboardSidebarProps {
   onViewChange: (view: DashboardView) => void;
 }
 
-const navItems = [
-  { id: "diagnosis" as const, label: "分析诊断", icon: BarChart3 },
-  { id: "videos" as const, label: "视频列表", icon: FileVideo },
+const NAV_ITEMS: { id: DashboardView; label: string; icon: typeof BarChart3 }[] = [
+  { id: "diagnosis", label: "分析诊断", icon: BarChart3 },
+  { id: "videos", label: "视频列表", icon: FileVideo },
 ];
 
-export function DashboardSidebar({
-  activeView,
-  userName,
-  onViewChange,
-}: DashboardSidebarProps) {
+export function DashboardSidebar({ activeView, userName, onViewChange }: DashboardSidebarProps) {
   return (
-    <Box
-      component="aside"
-      sx={{
-        width: 240,
-        flex: "0 0 240px",
-        minHeight: "100vh",
-        borderRight: "1px solid",
-        borderColor: "divider",
-        bgcolor: "background.paper",
-        p: 2,
-        display: "flex",
-        flexDirection: "column",
-        gap: 3,
-      }}
-    >
-      <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
-        <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
-          <Sparkles size={17} />
-        </Avatar>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>
-          DaiReel
-        </Typography>
-      </Stack>
+    <aside className="dash-sidebar">
+      <div className="dash-brand">
+        <span className="dash-brand-mark">
+          <Sparkles size={18} />
+        </span>
+        <span className="dash-brand-name">
+          Dai<b>Reel</b>
+        </span>
+        <span className="dash-brand-pro">Pro</span>
+      </div>
 
-      <Stack component="nav" spacing={1} aria-label="数据看板导航">
-        {navItems.map((item) => {
+      <nav className="dash-nav" aria-label="数据看板导航">
+        {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          const active = item.id === activeView;
           return (
-            <Button
+            <button
               key={item.id}
               type="button"
-              variant={active ? "contained" : "text"}
-              color={active ? "primary" : "inherit"}
-              startIcon={<Icon size={17} />}
+              className={"dash-nav-item" + (item.id === activeView ? " is-active" : "")}
               onClick={() => onViewChange(item.id)}
-              sx={{ justifyContent: "flex-start", borderRadius: 1.5 }}
             >
-              {item.label}
-            </Button>
+              <Icon size={18} strokeWidth={1.7} />
+              <span>{item.label}</span>
+            </button>
           );
         })}
-      </Stack>
+      </nav>
 
-      <Stack direction="row" spacing={1.25} sx={{ mt: "auto", alignItems: "center" }}>
-        <Avatar sx={{ width: 34, height: 34 }}>{userName.slice(0, 1)}</Avatar>
-        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-          {userName}
-        </Typography>
-      </Stack>
-    </Box>
+      <div className="dash-nav dash-nav-bottom">
+        <div className="dash-user">
+          <span className="dash-user-ava">
+            <User size={16} strokeWidth={1.8} />
+          </span>
+          <div className="dash-user-meta">
+            <b>{userName}</b>
+          </div>
+        </div>
+      </div>
+    </aside>
   );
 }

@@ -1,126 +1,125 @@
-import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
-import type {
-  ChannelMetric,
-  DashboardAnalyticsSnapshot,
-  StrategyMetric,
-} from "./dashboardTypes.js";
 import { DashboardAdvisor } from "./DashboardAdvisor.js";
-import { DashboardAnalysisSections } from "./DashboardAnalysisSections.js";
+import { DashboardCard } from "./DashboardCard.js";
+import { DashboardChannelCompare } from "./DashboardChannelCompare.js";
+import { DashboardSegmented } from "./DashboardControls.js";
+import { DashboardFilterBar } from "./DashboardFilterBar.js";
+import { DashboardFunnel } from "./DashboardFunnel.js";
 import { DashboardMetricCards } from "./DashboardMetricCards.js";
-import { currentVideo, factorLabels, selectedItem } from "./dashboardFormatters.js";
+import { DashboardScopeBar } from "./DashboardScopeBar.js";
+import { DashboardStrategyMatrix } from "./DashboardStrategyMatrix.js";
+import type { ChannelMetric, StrategyMetric } from "./dashboardTypes.js";
+import type { DataDashboardViewModel } from "./useDataDashboardViewModel.js";
 
-interface DashboardOverviewProps {
-  snapshot: DashboardAnalyticsSnapshot;
-  channelMetric: ChannelMetric;
-  strategyMetric: StrategyMetric;
-  onChannelMetricChange: (metric: ChannelMetric) => void;
-  onStrategyMetricChange: (metric: StrategyMetric) => void;
-}
+const CHANNEL_METRIC_OPTIONS: { value: ChannelMetric; label: string }[] = [
+  { value: "roas", label: "ROAS" },
+  { value: "cvr", label: "CVR" },
+  { value: "ctr", label: "CTR" },
+  { value: "complete", label: "完播率" },
+];
 
-export function DashboardOverview({
-  snapshot,
-  channelMetric,
-  strategyMetric,
-  onChannelMetricChange,
-  onStrategyMetricChange,
-}: DashboardOverviewProps) {
-  const video = currentVideo(snapshot);
-  const channel = selectedItem(snapshot.channels, snapshot.filters.selectedChannelId, "channel");
-  const labels = factorLabels(snapshot, video.creativeFactors);
+const STRATEGY_METRIC_OPTIONS: { value: StrategyMetric; label: string }[] = [
+  { value: "roas", label: "ROAS" },
+  { value: "cvr", label: "CVR" },
+  { value: "ctr", label: "CTR" },
+];
+
+export function DashboardOverview({ vm }: { vm: DataDashboardViewModel }) {
+  const { snapshot } = vm;
+  const videoContext = vm.dashboardVideoContext;
+
+  if (!videoContext) {
+    return (
+      <>
+        <DashboardFilterBar vm={vm} />
+        <DashboardCard
+          title="选择数据面板视频"
+          badge="V"
+          info="分析诊断会基于已导入成片展示当前视频上下文"
+        >
+          <div className="dash-empty-panel">
+            <strong>暂无选中视频</strong>
+            <span>请先从视频列表选择一条已导入成片。</span>
+            <button
+              type="button"
+              className="dash-hbtn dash-empty-action"
+              onClick={() => vm.setActiveView("videos")}
+            >
+              前往视频列表
+            </button>
+          </div>
+        </DashboardCard>
+      </>
+    );
+  }
 
   return (
-    <Stack spacing={1.5}>
-      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ flexWrap: "wrap", alignItems: "center" }}
-        >
-          <Chip label={`视频 ${video.name}`} />
-          <Chip label={`平台 ${snapshot.filters.selectedPlatform}`} />
-          <Chip label={`KOL渠道 ${channel.name}`} />
-          <Chip label={`时间 ${snapshot.filters.selectedRange}`} />
-          <Chip label={`目标 ${snapshot.filters.selectedGoal}`} />
-          <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>
-            {snapshot.meta.updatedLabel}
-          </Typography>
-        </Stack>
-      </Paper>
+    <>
+      <DashboardFilterBar vm={vm} />
+      <DashboardScopeBar snapshot={snapshot} video={videoContext} channel={vm.channel} />
+      <DashboardMetricCards kpis={vm.kpis} />
 
-      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-        <Stack
-          direction={{ xs: "column", md: "row" }}
-          spacing={2}
-          sx={{ justifyContent: "space-between" }}
-        >
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-            <Box
-              sx={{
-                width: 120,
-                aspectRatio: "16/9",
-                borderRadius: 1.5,
-                bgcolor: "action.hover",
-                display: "grid",
-                placeItems: "center",
-                fontWeight: 800,
-              }}
+      <div className="dash-grid-main">
+        <div className="dash-col-left">
+          <DashboardCard
+            title="转化漏斗"
+            badge="A"
+            info="曝光 → 点击 → 到商品页 → 加购 → 下单"
+            right={
+              <span className="dash-ov-conv">
+                整体转化 <b>{vm.channel.metrics.cvr}%</b>
+              </span>
+            }
+          >
+            <DashboardFunnel steps={snapshot.funnel} />
+          </DashboardCard>
+
+          <div ref={vm.channelRef}>
+            <DashboardCard
+              title="多渠道对比 · 同一条视频"
+              badge="B"
+              info="同一条视频在不同 KOL / 平台渠道的分发表现"
+              right={
+                <DashboardSegmented
+                  options={CHANNEL_METRIC_OPTIONS}
+                  value={vm.channelMetric}
+                  onChange={vm.setChannelMetric}
+                />
+              }
             >
-              16:9
-            </Box>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                {video.filename}
-              </Typography>
-              <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap" }}>
-                <Chip size="small" label={`商品 ${labels.productType.label}`} />
-                <Chip size="small" label={`人群 ${labels.audience.label}`} />
-                <Chip size="small" label={`推销手法 ${labels.strategy.label}`} />
-                {video.template.status !== "none" ? (
-                  <Chip size="small" label={`模板 ${video.template.name}`} />
-                ) : null}
-              </Stack>
-            </Box>
-          </Stack>
+              <DashboardChannelCompare
+                channels={snapshot.channels}
+                metric={vm.channelMetric}
+                channelId={vm.channelId}
+                onPick={vm.setChannel}
+              />
+            </DashboardCard>
+          </div>
 
-          <Stack direction="row" spacing={3}>
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                受众
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                {video.audienceText}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                分发渠道
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                {channel.name} · {channel.tier}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                发布
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                {video.publishedAt}
-              </Typography>
-            </Box>
-          </Stack>
-        </Stack>
-      </Paper>
+          <div ref={vm.matrixRef}>
+            <DashboardCard
+              title="推销手法 × 量化渠道 · 效果矩阵"
+              badge="C"
+              info="按发布记录聚合：每种推销手法在各渠道的表现"
+              right={
+                <DashboardSegmented
+                  options={STRATEGY_METRIC_OPTIONS}
+                  value={vm.strategyMetric}
+                  onChange={vm.setStrategyMetric}
+                />
+              }
+            >
+              <DashboardStrategyMatrix
+                snapshot={snapshot}
+                channels={snapshot.channels}
+                metric={vm.strategyMetric}
+                currentChannelId={vm.channelId}
+              />
+            </DashboardCard>
+          </div>
+        </div>
 
-      <DashboardMetricCards kpis={snapshot.kpis} />
-      <DashboardAnalysisSections
-        snapshot={snapshot}
-        video={video}
-        channelMetric={channelMetric}
-        strategyMetric={strategyMetric}
-        onChannelMetricChange={onChannelMetricChange}
-        onStrategyMetricChange={onStrategyMetricChange}
-      />
-      <DashboardAdvisor snapshot={snapshot} />
-    </Stack>
+        <DashboardAdvisor snapshot={snapshot} video={videoContext} />
+      </div>
+    </>
   );
 }

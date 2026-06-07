@@ -1,49 +1,65 @@
-import { Card, CardContent, Grid, Stack, Typography } from "@mui/material";
-import type { DashboardKpi } from "./dashboardTypes.js";
+import { ArrowDown, ArrowUp, Info } from "lucide-react";
+import { buildSparkline } from "./dashboardFormatters.js";
+import type { DashboardKpiView } from "./useDataDashboardViewModel.js";
 
-function sparklinePoints(values: number[]) {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  return values
-    .map((value, index) => {
-      const x = (index / Math.max(1, values.length - 1)) * 120;
-      const y = 24 - ((value - min) / (max - min || 1)) * 20;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
+export function DashboardMetricCards({ kpis }: { kpis: DashboardKpiView[] }) {
+  return (
+    <div className="dash-kpi-row">
+      {kpis.map((kpi) => (
+        <DashboardKpiCard key={kpi.key} kpi={kpi} />
+      ))}
+    </div>
+  );
 }
 
-export function DashboardMetricCards({ kpis }: { kpis: DashboardKpi[] }) {
+function DashboardKpiCard({ kpi }: { kpi: DashboardKpiView }) {
+  const width = 150;
+  const height = 32;
+  const { path, area } = buildSparkline(kpi.sparkline, width, height);
+  const gradientId = `dash-spark-${kpi.key}`;
+  const Arrow = kpi.delta.up ? ArrowUp : ArrowDown;
+
   return (
-    <Grid container spacing={1.5}>
-      {kpis.map((kpi) => (
-        <Grid key={kpi.key} size={{ xs: 12, sm: 6, lg: 2.4 }}>
-          <Card variant="outlined" sx={{ height: "100%", borderRadius: 2 }}>
-            <CardContent>
-              <Stack spacing={1}>
-                <Typography variant="caption" color="text.secondary">
-                  {kpi.label}
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                  {kpi.displayValue}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {kpi.deltaDisplay} {kpi.benchmarkLabel}
-                </Typography>
-                <svg viewBox="0 0 120 28" role="img" aria-label={`${kpi.label} 趋势`}>
-                  <polyline
-                    points={sparklinePoints(kpi.sparkline)}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      ))}
-    </Grid>
+    <div className="dash-kpi">
+      <div className="dash-kpi-top">
+        <span className="dash-kpi-label">{kpi.label}</span>
+        <span className="dash-kpi-info">
+          <Info size={13} strokeWidth={1.6} />
+        </span>
+      </div>
+      <div className="dash-kpi-val">{kpi.displayValue}</div>
+      <div className="dash-kpi-foot">
+        <span className={`dash-delta dash-delta-${kpi.delta.tone}`}>
+          <Arrow size={12} strokeWidth={2.2} />
+          {kpi.delta.text}
+        </span>
+        <span className="dash-kpi-bench">{kpi.benchmarkLabel}</span>
+      </div>
+      <svg
+        className="spark"
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`${kpi.label} 趋势`}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={kpi.color} stopOpacity={0.24} />
+            <stop offset="100%" stopColor={kpi.color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gradientId})`} />
+        <path
+          d={path}
+          fill="none"
+          stroke={kpi.color}
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
   );
 }

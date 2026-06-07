@@ -13,6 +13,8 @@ export type DashboardMetricTab = Exclude<DashboardMetricKey, "gmv" | "funnel">;
 export type ChannelMetric = "roas" | "cvr" | "ctr" | "complete";
 export type StrategyMetric = "roas" | "cvr" | "ctr";
 
+export type DashboardView = "diagnosis" | "videos";
+
 export interface FactorOption {
   label: string;
   description: string;
@@ -41,6 +43,22 @@ export interface DashboardVideoSeed {
     name: string;
     status: "applied" | "customized" | "detached" | "none";
   };
+}
+
+export interface DashboardVideoContext {
+  id: string;
+  name: string;
+  filename: string;
+  model: string;
+  duration: string;
+  publishedAt: string;
+  audienceText: string;
+  creativeFactors: CreativeFactors | null;
+  template: {
+    name: string;
+    status: "applied" | "customized" | "detached" | "none";
+  };
+  localUrl: string | null;
 }
 
 export interface DashboardKpi {

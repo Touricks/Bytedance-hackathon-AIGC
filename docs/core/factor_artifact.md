@@ -181,7 +181,7 @@ reference video import / setup template / manual edit
 
 数据看板不直接按 workspace current requirements 聚合，因为 current 会随用户继续编辑而变化。P0 看板有两个消费入口：
 
-- 视频列表读取 `dashboard_video_artifacts`，展示从“导出成片”导入的数据面板视频 metadata。
+- 视频列表读取 `dashboard_video_artifacts`，展示从“导出成片”导入的数据面板视频 metadata；导入时 MP4 会复制到全局本地目录 `DASHBOARD_ASSET_DIR/{artifactId}/video.mp4`，并写同目录 `metadata.json` 镜像。
 - 投放效果聚合读取 `campaign_publications` 和 `campaign_publication_metrics`，消费发布记录上的成片标签快照。
 
 标签快照链路：
@@ -232,8 +232,10 @@ prompt_requirements_artifacts.data.creativeFactors
 
 | 接口                                                                             | 看板用途                                                                                                 | 标签来源                                          |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `POST /api/workspaces/:workspaceId/dashboard/videos`                             | 从已完成成片导入数据面板视频 artifact，保存名称、成片 URL、导入时间、时长/宽高和生成因子快照。           | `final_video_jobs.compiled_manifest.creativeTags` |
-| `GET /api/workspaces/:workspaceId/dashboard/videos`                              | 看板“视频列表”读取导入的视频 metadata 与 `creativeFactors`。                                             | `dashboard_video_artifacts.creative_factors`      |
+| `POST /api/workspaces/:workspaceId/dashboard/videos`                             | 从已完成成片导入数据面板视频 artifact，复制 MP4 到全局本地目录并保存名称、全局成片代理 URL、导入时间、时长/宽高和生成因子快照。 | `final_video_jobs.compiled_manifest.creativeTags` |
+| `GET /api/dashboard/videos`                                                      | 全局看板“视频列表”跨 workspace 读取导入的视频 metadata 与 `creativeFactors`。                            | `dashboard_video_artifacts.creative_factors`      |
+| `GET /api/dashboard/videos/:artifactId/file`                                     | 读取全局本地目录中的数据面板 MP4。                                                                       | `dashboard_video_artifacts.local_url`             |
+| `GET /api/workspaces/:workspaceId/dashboard/videos`                              | workspace 过滤视图读取导入的视频 metadata 与 `creativeFactors`。                                         | `dashboard_video_artifacts.creative_factors`      |
 | `GET /api/workspaces/:workspaceId/dashboard/videos/:artifactId`                  | 获取单条数据面板视频 artifact。                                                                          | `dashboard_video_artifacts.creative_factors`      |
 | `POST /api/workspaces/:workspaceId/campaign-publications`                        | 登记一次成片发布。请求带 `finalVideoJobId` 时，后端复制成片 `compiledManifest.creativeTags` 到发布记录。 | `final_video_jobs.compiled_manifest.creativeTags` |
 | `GET /api/workspaces/:workspaceId/campaign-publications`                         | 按 workspace 列出发布记录和最新指标，返回 `creativeTags`。                                               | `campaign_publications.creative_tags`             |

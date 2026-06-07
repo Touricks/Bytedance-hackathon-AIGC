@@ -6,6 +6,28 @@ import { dashboardVideoArtifactService } from "./dashboard-video-artifact.servic
 export async function registerDashboardVideoArtifactController(
   app: FastifyInstance,
 ) {
+  app.get("/api/dashboard/videos", async (_request, reply) => {
+    try {
+      return await dashboardVideoArtifactService.listAll();
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.get("/api/dashboard/videos/:artifactId/file", async (request, reply) => {
+    try {
+      const params = request.params as { artifactId: string };
+      reply.header("Content-Type", "video/mp4");
+      return reply.send(
+        await dashboardVideoArtifactService.streamVideo(params.artifactId),
+      );
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
   app.post("/api/workspaces/:workspaceId/dashboard/videos", async (request, reply) => {
     try {
       const params = request.params as { workspaceId: string };

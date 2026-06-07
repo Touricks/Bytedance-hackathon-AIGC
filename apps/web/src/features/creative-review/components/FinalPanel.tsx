@@ -3,6 +3,7 @@ import { Download, Play, UploadCloud } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
 import { importDashboardVideoArtifact } from "../../../lib/api/dashboardVideoArtifacts.js";
 import { finalVideoDownloadUrl } from "../../../lib/api/finalVideo.js";
+import { navigateToDataDashboard } from "../../../routes/routeState.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import { statusTone } from "../reviewFlow.js";
 
@@ -16,6 +17,24 @@ const oneClickStageLabels: Record<string, string> = {
   final_compose: "生成成片",
   completed: "已生成成片",
 };
+
+export async function importFinalVideoToDashboard(
+  input: {
+    workspaceId: string;
+    finalVideoJobId: string;
+    name: string;
+  },
+  deps = {
+    importDashboardVideoArtifact,
+    navigateToDataDashboard,
+  },
+) {
+  await deps.importDashboardVideoArtifact(input.workspaceId, {
+    finalVideoJobId: input.finalVideoJobId,
+    name: input.name,
+  });
+  deps.navigateToDataDashboard(undefined, "videos");
+}
 
 export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
   const job = vm.finalVideo;
@@ -41,7 +60,8 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
     setImportMessage(null);
     setIsImporting(true);
     try {
-      await importDashboardVideoArtifact(vm.workspaceId, {
+      await importFinalVideoToDashboard({
+        workspaceId: vm.workspaceId,
         finalVideoJobId: job.id,
         name: importName.trim(),
       });

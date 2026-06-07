@@ -624,7 +624,7 @@ workspace module artifact 表的 `prompt_assembly` 保存 subject/contract 模�
 
 当 active shot set 变化后，旧 final video job 不失效；它仍然指向创建时的 shot set。
 
-导入数据面板视频列表时，`dashboard_video_artifacts` 快照对应成片的名称、URL、导入时间、时长/宽高、`creative_tags` 与解析后的 `creative_factors`。登记发布到数据看板投放聚合时，`campaign_publications.creative_tags` 原样复制对应 `final_video_jobs.compiled_manifest.creativeTags`；未绑定成片的发布记录该字段为空对象。
+导入数据面板视频列表时，工作台前端提交 `{ finalVideoJobId, name }`；后端复制成片 MP4 到全局本地目录 `DASHBOARD_ASSET_DIR/{artifactId}/video.mp4`，写 `metadata.json` 镜像；`dashboard_video_artifacts` 快照对应成片的全局代理 URL、名称、导入时间、时长/宽高、`creative_tags` 与解析后的 `creative_factors`。全局视频列表只读取 `dashboard_video_artifacts`，点击列表行进入分析诊断时，当前视频上下文来自该 artifact；样例投放指标不反写到此表。登记发布到数据看板投放聚合时，`campaign_publications.creative_tags` 原样复制对应 `final_video_jobs.compiled_manifest.creativeTags`；未绑定成片的发布记录该字段为空对象。
 
 ---
 

@@ -5,7 +5,7 @@ import ListItem from "@mui/material/ListItem";
 import ListItemAvatar from "@mui/material/ListItemAvatar";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
-import { Clock3, Layers3, Trash2, Upload } from "lucide-react";
+import { Clock3, Trash2, Upload } from "lucide-react";
 import {
   toAbsoluteAssetUrl,
   toWorkspaceMaterialUrl,
@@ -42,10 +42,7 @@ export function StepRail({
   return (
     <aside className="review-rail">
       <div className="review-rail__brand">
-        <Layers3 size={18} />
-        <div>
-          <span>创作审核台</span>
-        </div>
+        <span>创作审核台</span>
       </div>
       <ol className="review-steps">
         {steps.map((step, index) => {

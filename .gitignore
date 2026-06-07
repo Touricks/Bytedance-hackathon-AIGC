@@ -26,6 +26,3 @@ apps/web/playwright-report/
 docs/*
 !docs/core/
 !docs/core/**
-docs/core/*.pdf
-!docs/test/
-!docs/test/**

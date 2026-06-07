@@ -147,6 +147,10 @@ const uploadDir = legacyUploadDir
 const uploadUrlPrefix = legacyUploadUrlPrefix
   ? normalizeUploadUrlPrefix(legacyUploadUrlPrefix)
   : undefined;
+const dashboardAssetDir = resolveWorkspacePath(
+  process.env.DASHBOARD_ASSET_DIR ?? "storage/dashboard-videos",
+  envFileRoot
+);
 const maxImageCandidatesPerShot = positiveIntEnv("MAX_IMAGE_CANDIDATES_PER_SHOT", 6);
 const defaultImageCandidates = Math.min(
   positiveIntEnv("DEFAULT_IMAGE_CANDIDATES", 3),
@@ -176,6 +180,7 @@ export const config = {
   runtime: process.env.SERVER_RUNTIME ?? "all",
   uploadDir,
   uploadUrlPrefix,
+  dashboardAssetDir,
   defaultImageCandidates,
   maxImageCandidatesPerShot,
   defaultVideoCandidates,

@@ -364,11 +364,22 @@ retry 使用调用方提供的 `Idempotency-Key`。普通 propose 路由内部�
 
 | 方法 | 路径                                                        | 业务逻辑                                                                                                                                                                                                           | 请求                        |
 | ---- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| POST | `/api/workspaces/:workspaceId/dashboard/videos`             | 将已完成成片导入数据面板视频 artifact。后端校验成片属于当前 workspace 且 `status=SUCCEEDED`、已有 `localUrl`，然后快照成片 URL、名称、导入时间、时长、宽高、`compiledManifest.creativeTags` 与 `creativeFactors`。 | `{ finalVideoJobId, name }` |
-| GET  | `/api/workspaces/:workspaceId/dashboard/videos`             | 列出数据面板视频 artifact，供看板左侧“视频列表”渲染 metadata。                                                                                                                                                     | 无                          |
+| POST | `/api/workspaces/:workspaceId/dashboard/videos`             | 将已完成成片导入全局数据面板视频 artifact。后端校验成片属于当前 workspace 且 `status=SUCCEEDED`、已有 `localUrl/localPath`，然后复制 MP4 到 `DASHBOARD_ASSET_DIR/{artifactId}/video.mp4`、写 `metadata.json` 镜像，并快照全局视频 URL、名称、导入时间、时长、宽高、`compiledManifest.creativeTags` 与 `creativeFactors`。 | `{ finalVideoJobId, name }` |
+| GET  | `/api/dashboard/videos`                                     | 列出全局数据面板视频 artifact，供无 workspace 的全局看板“视频列表”渲染 metadata。                                                                                                                                                                                                  | 无                          |
+| GET  | `/api/dashboard/videos/:artifactId/file`                    | 从全局本地数据面板资产目录流式返回导入后的 MP4。                                                                                                                                                                                                                                   | 无                          |
+| GET  | `/api/workspaces/:workspaceId/dashboard/videos`             | 列出该 workspace 已导入的数据面板视频 artifact，供工作区过滤视图渲染 metadata。                                                                                                                                                                                                     | 无                          |
 | GET  | `/api/workspaces/:workspaceId/dashboard/videos/:artifactId` | 获取单个数据面板视频 artifact。                                                                                                                                                                                    | 无                          |
 
-当前后端不计算 CTR、3 秒留存、完播率、CVR、ROAS、GMV 或漏斗；这些投放效果指标不能从成片 artifact 推导。P0 看板的视频列表读取 `dashboard_video_artifacts`，诊断指标可以由前端样例 JSON 承载，后续接入真实投放数据时再由 campaign publication metrics 聚合。
+当前后端不计算 CTR、3 秒留存、完播率、CVR、ROAS、GMV 或漏斗；这些投放效果指标不能从成片 artifact 推导。P0 看板的视频列表读取 `dashboard_video_artifacts`，视频文件读取全局 server 代理 URL `/api/dashboard/videos/:artifactId/file`；诊断指标可以由前端样例 JSON 承载，后续接入真实投放数据时再由 campaign publication metrics 聚合。
+
+当前工作台到数据面板的导入链路：
+
+1. 工作台“生成成片”模块只在 `final_video_jobs.status=SUCCEEDED` 且已有 stable `localUrl/localPath` 时展示 MP4 预览、下载和“导入数据面板”表单。
+2. 商家提交成片名称后，前端调用 `POST /api/workspaces/:workspaceId/dashboard/videos`，请求体为 `{ finalVideoJobId, name }`。
+3. Server 校验 workspace 归属和成片可读性后，从 workspace storage 读取 `final_video_jobs.local_path`，复制到全局本地目录 `DASHBOARD_ASSET_DIR/{artifactId}/video.mp4`，同目录写 `metadata.json` 镜像。
+4. Server 写入 `dashboard_video_artifacts`，其中 `local_url` 使用全局代理 `/api/dashboard/videos/:artifactId/file`，并快照名称、导入时间、时长/宽高、`creative_tags` 与解析后的 `creative_factors`。
+5. 导入成功后前端跳转 `/dashboard?view=videos`；全局视频列表调用 `GET /api/dashboard/videos`，工作区过滤页 `/dashboard/:workspaceId?view=videos` 调用 workspace-scoped 列表。
+6. “视频列表”不再读取 seed/mock 视频；点击某条 artifact 后切到“分析诊断”，范围栏与当前因子组合基于该 artifact，样例 KPI/渠道矩阵仍只作为 P0 诊断指标占位。
 
 一键成片与手动审核链路是两个独立入口：素材解读页的“批准素材解读并生成商品卖点”仍只批准素材解读并生成商品卖点草稿；右侧“全自动一键成片”调用一键成片 API，不复用前端手动链路 mutation。自动候选选择策略固定为首个 `SUCCEEDED` 且已有 stable URL 的候选；视频候选处于 `PERSISTING` 时继续等待，不写选择。自动选择写 `selected_by='system:auto-one-click'`。任务失败后保留已批准 artifact、候选、选择和成片作业事实，用户可回到对应步骤手动继续。
 
