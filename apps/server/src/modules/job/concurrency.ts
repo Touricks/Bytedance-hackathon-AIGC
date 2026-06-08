@@ -1,8 +1,8 @@
 /**
- * Resolve the BullMQ worker concurrency for the generation_v2 queue.
+ * Resolve the BullMQ worker concurrency for the generation queue.
  *
  * Candidate count limits are separate from queue execution and provider gates:
- * this value only decides how many `generation_v2` jobs one worker may run at
+ * this value only decides how many `generation` jobs one worker may run at
  * the same time. Text, image, and video provider calls are each capped again by
  * provider-specific semaphores.
  */

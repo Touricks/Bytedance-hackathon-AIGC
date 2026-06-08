@@ -93,6 +93,10 @@ describe("FinalPanel", () => {
           calls.push({ type: "import", workspaceId, body });
           return { data: {} as never };
         },
+        listDashboardVideoArtifacts: async (workspaceId) => {
+          calls.push({ type: "list", workspaceId });
+          return { data: [] };
+        },
         navigateToDataDashboard: (workspaceId, view) => {
           calls.push({ type: "navigate", workspaceId, view });
         },
@@ -101,11 +105,76 @@ describe("FinalPanel", () => {
 
     assert.deepEqual(calls, [
       {
+        type: "list",
+        workspaceId: "workspace_123",
+      },
+      {
         type: "import",
         workspaceId: "workspace_123",
         body: { finalVideoJobId: "fv_1", name: "618 亲子旅行成片" },
       },
-      { type: "navigate", workspaceId: undefined, view: "videos" },
+      { type: "navigate", workspaceId: "workspace_123", view: "diagnosis" },
+    ]);
+  });
+
+  it("cancels importing and opens the existing dashboard video for duplicate job ids", async () => {
+    const calls: unknown[] = [];
+
+    const result = await importFinalVideoToDashboard(
+      {
+        workspaceId: "workspace_123",
+        finalVideoJobId: "fv_1",
+        name: "重复成片",
+      },
+      {
+        listDashboardVideoArtifacts: async (workspaceId) => {
+          calls.push({ type: "list", workspaceId });
+          return {
+            data: [
+              {
+                id: "dash_video_1",
+                workspaceId,
+                finalVideoJobId: "fv_1",
+                name: "已导入成片",
+                localUrl: "/api/dashboard/videos/dash_video_1/file",
+                durationSec: 18,
+                width: 1080,
+                height: 1920,
+                creativeFactors: {
+                  productCategory: "beauty-personal-care",
+                  dealType: "repeat-consumable",
+                  audience: "youth",
+                  strategy: "scenario-demo",
+                },
+                importedAt: "2026-06-06T08:00:00.000Z",
+                createdAt: "2026-06-06T08:00:00.000Z",
+                updatedAt: "2026-06-06T08:00:00.000Z",
+              },
+            ],
+          };
+        },
+        importDashboardVideoArtifact: async () => {
+          calls.push({ type: "import" });
+          return { data: {} as never };
+        },
+        navigateToDataDashboard: (workspaceId, view, finalVideoJobId) => {
+          calls.push({ type: "navigate", workspaceId, view, finalVideoJobId });
+        },
+      },
+    );
+
+    assert.equal(result.status, "already-exists");
+    assert.deepEqual(calls, [
+      {
+        type: "list",
+        workspaceId: "workspace_123",
+      },
+      {
+        type: "navigate",
+        workspaceId: "workspace_123",
+        view: "diagnosis",
+        finalVideoJobId: "fv_1",
+      },
     ]);
   });
 });

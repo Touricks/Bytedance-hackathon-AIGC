@@ -47,7 +47,7 @@ describe("server config", () => {
     assert.match(result.stderr, /DATABASE_URL is required/);
   });
 
-  it("loads V1 runtime config without legacy upload env", () => {
+  it("loads current runtime config without legacy upload env", () => {
     const result = spawnSync(
       tsxBin,
       [

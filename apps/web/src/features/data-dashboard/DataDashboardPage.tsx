@@ -20,6 +20,7 @@ interface DataDashboardPageProps {
   initialView?: DashboardView;
   initialDashboardVideos?: DashboardVideoArtifact[];
   initialSelectedDashboardVideoId?: string | null;
+  initialFinalVideoJobId?: string | null;
 }
 
 function goToCreativeReview(workspaceId?: string) {
@@ -35,6 +36,7 @@ export function DataDashboardPage({
   initialView = "diagnosis",
   initialDashboardVideos = [],
   initialSelectedDashboardVideoId = null,
+  initialFinalVideoJobId = null,
 }: DataDashboardPageProps) {
   const snapshot = getDashboardAnalyticsSnapshot();
   const vm = useDataDashboardViewModel({
@@ -43,6 +45,7 @@ export function DataDashboardPage({
     initialView,
     initialDashboardVideos,
     initialSelectedDashboardVideoId,
+    initialFinalVideoJobId,
   });
 
   return (

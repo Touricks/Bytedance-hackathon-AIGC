@@ -5,6 +5,7 @@ import {
   computeMatrixScale,
   fmtNum,
   formatDelta,
+  formatKpiDelta,
   heatmapColor,
   heatmapTextColor,
   kpiDisplay,
@@ -26,11 +27,26 @@ describe("formatDelta", () => {
 });
 
 describe("kpiDisplay & matrixMetricDisplay", () => {
-  it("keeps two decimals for ROAS and a percent suffix otherwise", () => {
+  it("keeps two decimals for ROAS, formats GMV as currency, and appends percent otherwise", () => {
     assert.equal(kpiDisplay("roas", 3.6), "3.60");
+    assert.equal(kpiDisplay("gmv", 128000), "¥12.8万");
     assert.equal(kpiDisplay("ctr", 2.96), "2.96%");
     assert.equal(matrixMetricDisplay("roas", 5.4), "5.40");
     assert.equal(matrixMetricDisplay("cvr", 3.1), "3.10%");
+  });
+
+  it("formats KPI deltas with currency only for GMV", () => {
+    assert.deepEqual(formatKpiDelta("gmv", -34000), {
+      up: false,
+      tone: "bad",
+      text: "¥3.4万",
+    });
+    assert.deepEqual(formatKpiDelta("gmv", 0), { up: true, tone: "good", text: "¥0" });
+    assert.deepEqual(formatKpiDelta("roas", -1.23), {
+      up: false,
+      tone: "bad",
+      text: "1.23",
+    });
   });
 });
 

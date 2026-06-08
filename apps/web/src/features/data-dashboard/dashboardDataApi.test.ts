@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   audienceSchema,
-  creativeFactorsSchema,
-  productTypeSchema,
+  dealTypeSchema,
+  productCategorySchema,
   strategySchema,
 } from "@aigc-video/shared";
 import { loadDashboardAnalyticsSnapshot } from "./dashboardDataApi.js";
@@ -12,7 +12,7 @@ describe("dashboard analytics seed data contract", () => {
   it("exposes every section needed by the 分析诊断看板", async () => {
     const snapshot = await loadDashboardAnalyticsSnapshot();
 
-    assert.equal(snapshot.schemaVersion, "dashboard-analytics-seed.v1");
+    assert.equal(snapshot.schemaVersion, "dashboard-analytics-seed");
     assert.ok(snapshot.fieldGuide.sections.kpis.includes("CTR"));
     assert.deepEqual(Object.keys(snapshot).sort(), [
       "assistantPresets",
@@ -51,8 +51,12 @@ describe("dashboard analytics seed data contract", () => {
     const snapshot = await loadDashboardAnalyticsSnapshot();
 
     assert.deepEqual(
-      Object.keys(snapshot.factorCatalog.productTypes).sort(),
-      [...productTypeSchema.options].sort(),
+      Object.keys(snapshot.factorCatalog.productCategories).sort(),
+      [...productCategorySchema.options].sort(),
+    );
+    assert.deepEqual(
+      Object.keys(snapshot.factorCatalog.dealTypes).sort(),
+      [...dealTypeSchema.options].sort(),
     );
     assert.deepEqual(
       Object.keys(snapshot.factorCatalog.audiences).sort(),
@@ -68,11 +72,17 @@ describe("dashboard analytics seed data contract", () => {
     );
   });
 
-  it("keeps every sample video tied to a valid creative factor snapshot", async () => {
+  it("keeps every sample video tied to the full four dashboard attribution factors", async () => {
     const snapshot = await loadDashboardAnalyticsSnapshot();
 
     for (const video of snapshot.videos) {
-      assert.doesNotThrow(() => creativeFactorsSchema.parse(video.creativeFactors));
+      assert.equal("productCategory" in video.creativeFactors, true);
+      assert.doesNotThrow(() =>
+        productCategorySchema.parse(video.creativeFactors.productCategory),
+      );
+      assert.doesNotThrow(() => dealTypeSchema.parse(video.creativeFactors.dealType));
+      assert.doesNotThrow(() => audienceSchema.parse(video.creativeFactors.audience));
+      assert.doesNotThrow(() => strategySchema.parse(video.creativeFactors.strategy));
     }
   });
 });

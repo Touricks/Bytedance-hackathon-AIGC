@@ -35,7 +35,8 @@ describe("analyzeReferenceVideoRequirements", () => {
                   },
                   creativeFactorsRecommendation: {
                     recommendedFactors: {
-                      productType: "offline-experience-service",
+                      productCategory: "food-beverage",
+                      dealType: "seeding-nonstandard",
                       audience: "youth",
                       strategy: "review-comparison"
                     },
@@ -52,16 +53,16 @@ describe("analyzeReferenceVideoRequirements", () => {
     );
 
     assert.deepEqual(result.creativeFactorsRecommendation.recommendedFactors, {
-      productType: "offline-experience-service",
+      productCategory: "food-beverage",
+      dealType: "seeding-nonstandard",
       audience: "youth",
-      strategy: "review-comparison",
-      visualStyle: "authentic"
+      strategy: "review-comparison"
     });
     assert.deepEqual(
       (calls[0] as { text: { format: { type: string; name: string } } }).text.format,
       {
         type: "json_schema",
-        name: "reference_video_requirements_v1",
+        name: "reference_video_requirements",
         description: "从参考视频分析结构并推荐全局创作因子。",
         strict: true,
         schema: (calls[0] as { text: { format: { schema: unknown } } }).text.format.schema

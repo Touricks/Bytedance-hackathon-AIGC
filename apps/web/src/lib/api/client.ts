@@ -9,7 +9,6 @@ import type {
   GenerationJob,
   MaterialIntakeArtifact,
   ProductBriefArtifact,
-  ScriptInfluence,
   Script,
   ShotPromptArtifact,
   StoryboardArtifact,
@@ -109,8 +108,11 @@ export interface PromptRequirementsData {
   shotVideo?: Record<string, unknown>;
   creativeFactors?: CreativeFactors;
   factorGuidance?: FactorGuidance;
-  scriptInfluence?: ScriptInfluence;
   compiledRequirementSourceMap?: CompiledRequirementSourceMap;
+  factorPromptVersion?: string;
+  factorComboKey?: string;
+  compiledRequirementsHash?: string;
+  attributionEligible?: boolean;
   creativeRequirementTemplate?: CreativeRequirementTemplateSource;
   [key: string]: unknown;
 }
@@ -364,7 +366,7 @@ function looksLikeZodIssueJson(value: string) {
   }
 }
 
-// ----- v2 envelope -----
+// ----- current envelope -----
 export interface WorkflowEnvelope<T> {
   data: T;
   shotStatus?: string;

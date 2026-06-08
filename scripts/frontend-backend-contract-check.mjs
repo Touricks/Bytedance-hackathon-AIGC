@@ -73,7 +73,7 @@ function moduleArtifact(moduleId, data, status = "approved") {
     },
     promptAssembly: {
       moduleId,
-      assemblerVersion: "contract-check.v1",
+      assemblerVersion: "contract-check",
       subjectTemplateId: `${moduleId}/subject.md`,
       contractTemplateId: `${moduleId}/contract.md`,
       subjectHash: "sha256:subject",
@@ -365,7 +365,7 @@ const contracts = [
     path: "/api/pipeline/contracts",
     source: ['app.get("/api/pipeline/contracts"'],
     mock: () => ({
-      contractSet: "v1",
+      contractSet: "current",
       steps: [{ id: "material_intake" }, { id: "shotprompt" }],
     }),
     validate: (body) => {

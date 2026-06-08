@@ -10,9 +10,7 @@ export interface DashboardVideoArtifact {
   durationSec: number | null;
   width: number | null;
   height: number | null;
-  creativeTags: unknown;
-  creativeFactors: CreativeFactors | null;
-  metadata: unknown;
+  creativeFactors: CreativeFactors;
   importedAt: string;
   createdAt: string;
   updatedAt: string;

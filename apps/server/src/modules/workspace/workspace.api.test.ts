@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
+import { buildCreativeFactorRequirements, type CreativeFactors } from "@aigc-video/shared";
 import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
@@ -17,12 +18,12 @@ async function createBoundWorkspace(app: FastifyInstance) {
   const createResponse = await app.inject({
     method: "POST",
     url: "/api/workspaces",
-    payload: { name: `workspace-v2-${Date.now()}` },
+    payload: { name: `workspace-current-${Date.now()}` },
   });
   assert.equal(createResponse.statusCode, 200, createResponse.body);
   const workspace = createResponse.json().workspace as { id: string };
 
-  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-v2-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-current-"));
   cleanupDirs.push(directory);
   const bindResponse = await app.inject({
     method: "POST",
@@ -35,7 +36,7 @@ async function createBoundWorkspace(app: FastifyInstance) {
 }
 
 async function createInitializedWorkspace(app: FastifyInstance) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-v2-init-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-current-init-"));
   cleanupDirs.push(directory);
   const initResponse = await app.inject({
     method: "POST",
@@ -49,18 +50,22 @@ async function createInitializedWorkspace(app: FastifyInstance) {
   };
 }
 
+function testPromptRequirementsData(input: Partial<CreativeFactors> = {}) {
+  return buildCreativeFactorRequirements({
+    productCategory: "consumer-electronics",
+    dealType: "search-standard",
+    audience: "youth",
+    strategy: "review-comparison",
+    ...input,
+  });
+}
+
 async function approveMinimumWorkspaceInputs(app: FastifyInstance, workspaceId: string) {
   const requirementsApprove = await app.inject({
     method: "POST",
     url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
     payload: {
-      data: {
-        image: { style: "真实商品或服务素材" },
-        script: { tone: "direct" },
-        storyboard: { structure: "开场钩子-卖点证明-行动号召" },
-        shotImage: { global: "保持商品身份一致" },
-        shotVideo: { global: "镜头运动稳定" },
-      },
+      data: testPromptRequirementsData(),
     },
   });
   assert.equal(requirementsApprove.statusCode, 200, requirementsApprove.body);
@@ -125,7 +130,7 @@ function assertPromptAssembly(value: unknown, moduleId: string) {
   assert.ok(value && typeof value === "object", "expected promptAssembly object");
   const assembly = value as Record<string, unknown>;
   assert.equal(assembly.moduleId, moduleId);
-  assert.equal(assembly.assemblerVersion, "v2");
+  assert.equal(assembly.assemblerVersion, "module-prompt-assembler");
   assert.match(String(assembly.subjectHash), /^[a-f0-9]{64}$/);
   assert.match(String(assembly.contractHash), /^[a-f0-9]{64}$/);
 }
@@ -427,10 +432,7 @@ describe("workspace API", () => {
       method: "POST",
       url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
       payload: {
-        data: {
-          image: { style: "真实商品或服务素材" },
-          script: { tone: "direct" },
-        },
+        data: testPromptRequirementsData(),
       },
     });
     assert.equal(requirementsPropose.statusCode, 200, requirementsPropose.body);
@@ -466,6 +468,69 @@ describe("workspace API", () => {
     assert.equal(assetRows.rows[0]?.count, 0);
   });
 
+  it("deletes completed one-click final video job rows before referenced artifacts", async () => {
+    const { workspaceId } = await createInitializedWorkspace(app);
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const materialIntakeArtifactId = `delete-mi-${suffix}`;
+    const productBriefArtifactId = `delete-pb-${suffix}`;
+    const storyboardArtifactId = `delete-sb-${suffix}`;
+    const shotPromptArtifactId = `delete-sp-${suffix}`;
+    const oneClickJobId = `delete-ocv-${suffix}`;
+    await db.db2.pool().query(
+      `insert into material_intake_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+       values ($1, $2, 'approved', true, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, now())`,
+      [materialIntakeArtifactId, workspaceId],
+    );
+    await db.db2.pool().query(
+      `insert into product_brief_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+       values ($1, $2, 'approved', true, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, now())`,
+      [productBriefArtifactId, workspaceId],
+    );
+    await db.db2.pool().query(
+      `insert into storyboard_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+       values ($1, $2, 'approved', true, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, now())`,
+      [storyboardArtifactId, workspaceId],
+    );
+    await db.db2.pool().query(
+      `insert into shot_prompt_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+       values ($1, $2, 'approved', true, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, now())`,
+      [shotPromptArtifactId, workspaceId],
+    );
+    await db.db2.pool().query(
+      `insert into one_click_final_video_jobs
+         (id, workspace_id, status, current_stage, stage_state,
+          material_intake_artifact_id, product_brief_artifact_id,
+          storyboard_artifact_id, shot_prompt_artifact_id, completed_at)
+       values ($1, $2, 'SUCCEEDED', 'completed', '{}'::jsonb, $3, $4, $5, $6, now())`,
+      [
+        oneClickJobId,
+        workspaceId,
+        materialIntakeArtifactId,
+        productBriefArtifactId,
+        storyboardArtifactId,
+        shotPromptArtifactId,
+      ],
+    );
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
+    });
+
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    const rows = await db.db2.pool().query(
+      `select count(*)::integer as count
+       from one_click_final_video_jobs
+       where id = $1`,
+      [oneClickJobId],
+    );
+    assert.equal(rows.rows[0]?.count, 0);
+  });
+
   it("deletes workspace rows when the .daireel directory is already missing", async () => {
     const { workspaceId, directory } = await createInitializedWorkspace(app);
     await rm(path.join(directory, ".daireel"), { recursive: true, force: true });
@@ -489,7 +554,7 @@ describe("workspace API", () => {
     await db.db2.pool().query(
       `insert into generation_jobs
          (id, workspace_id, job_type, status, queue_name, payload)
-       values ($1, $2, 'generate_images', 'PENDING', 'generation_v2', '{}'::jsonb)`,
+       values ($1, $2, 'generate_images', 'PENDING', 'generation', '{}'::jsonb)`,
       [jobId, workspaceId],
     );
 
@@ -509,6 +574,32 @@ describe("workspace API", () => {
       assert.equal(statusResponse.statusCode, 200, statusResponse.body);
     } finally {
       await db.db2.pool().query(`delete from generation_jobs where id = $1`, [jobId]);
+    }
+  });
+
+  it("rejects deleting a workspace with active one-click final video work", async () => {
+    const { workspaceId, directory } = await createInitializedWorkspace(app);
+    const oneClickJobId = `delete-busy-ocv-${Date.now()}`;
+    await db.db2.pool().query(
+      `insert into one_click_final_video_jobs
+         (id, workspace_id, status, current_stage, stage_state)
+       values ($1, $2, 'WAITING', 'image_generation', '{}'::jsonb)`,
+      [oneClickJobId, workspaceId],
+    );
+
+    try {
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/workspaces/${workspaceId}`,
+      });
+
+      assert.equal(deleteResponse.statusCode, 409, deleteResponse.body);
+      assert.equal(deleteResponse.json().code, "WORKSPACE_DELETE_BUSY");
+      await stat(path.join(directory, ".daireel", "workspace.json"));
+    } finally {
+      await db.db2.pool().query(`delete from one_click_final_video_jobs where id = $1`, [
+        oneClickJobId,
+      ]);
     }
   });
 
@@ -578,6 +669,74 @@ describe("workspace API", () => {
     }
   });
 
+  it("deletes the workspace row even when the storage purge fails (best-effort)", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: `s3-purge-fail-${Date.now()}` },
+    });
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const workspaceId = createResponse.json().workspace.id as string;
+    const bindResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/storage/bind`,
+      payload: {
+        kind: "s3",
+        bucket: "test-bucket",
+        prefix: `workspaces/${workspaceId}`,
+        endpoint: "http://localhost:9000",
+      },
+    });
+    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    let purgeAttempted = false;
+    __setWorkspaceStorageAdapterFactoryForTests((binding) => ({
+      kind: "S3",
+      binding,
+      putObject: async () => ({
+        relativePath: "unused",
+        size: null,
+        contentType: null,
+        lastModified: null,
+      }),
+      readObject: async () => Buffer.alloc(0),
+      streamObject: async () => {
+        throw new Error("unused");
+      },
+      deleteObject: async () => undefined,
+      listObjects: async () => [],
+      statObject: async () => ({
+        relativePath: "unused",
+        size: null,
+        contentType: null,
+        lastModified: null,
+      }),
+      exists: async () => false,
+      downloadToTemp: async () => undefined,
+      deletePrefix: async () => {
+        purgeAttempted = true;
+        throw new Error("s3 purge boom");
+      },
+    }));
+
+    try {
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/workspaces/${workspaceId}`,
+      });
+
+      assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+      assert.equal(deleteResponse.json().data.deleted, true);
+      assert.equal(purgeAttempted, true);
+      const statusResponse = await app.inject({
+        method: "GET",
+        url: `/api/workspaces/${workspaceId}/status`,
+      });
+      assert.equal(statusResponse.statusCode, 404, statusResponse.body);
+    } finally {
+      __setWorkspaceStorageAdapterFactoryForTests(undefined);
+    }
+  });
+
   it("rejects path traversal material deletes", async () => {
     const { workspaceId } = await createBoundWorkspace(app);
     const deleteResponse = await app.inject({
@@ -618,13 +777,7 @@ describe("workspace API", () => {
             method: "POST",
             url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
             payload: {
-              data: {
-                image: { style: "真实商品或服务素材" },
-                script: { tone: "direct" },
-                storyboard: { structure: "hook-benefit-proof-cta" },
-                shotImage: { continuity: "preserve visual identity" },
-                shotVideo: { motion: "stable product-first movement" },
-              },
+              data: testPromptRequirementsData(),
             },
           });
           assert.equal(
@@ -692,7 +845,7 @@ describe("workspace API", () => {
     }
   });
 
-  it("stores current V2 module artifacts outside workspace_artifact", async () => {
+  it("stores module-owned artifacts outside workspace_artifact", async () => {
     const { workspaceId } = await createBoundWorkspace(app);
     const uploadResponse = await app.inject({
       method: "POST",
@@ -708,13 +861,7 @@ describe("workspace API", () => {
       method: "POST",
       url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
       payload: {
-        data: {
-          image: { style: "clean ecommerce product photo" },
-          script: { tone: "direct" },
-          storyboard: { structure: "hook-benefit-proof-cta" },
-          shotImage: { continuity: "preserve product identity" },
-          shotVideo: { motion: "stable product-first movement" },
-        },
+        data: testPromptRequirementsData(),
       },
     });
     assert.equal(requirementsPropose.statusCode, 200, requirementsPropose.body);
@@ -783,10 +930,7 @@ describe("workspace API", () => {
       method: "POST",
       url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
       payload: {
-        data: {
-          image: { style: "first draft" },
-          script: { tone: "direct" },
-        },
+        data: testPromptRequirementsData({ strategy: "scenario-demo" }),
       },
     });
     assert.equal(first.statusCode, 200, first.body);
@@ -795,10 +939,7 @@ describe("workspace API", () => {
       method: "POST",
       url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
       payload: {
-        data: {
-          image: { style: "second draft" },
-          script: { tone: "warm" },
-        },
+        data: testPromptRequirementsData({ strategy: "emotional-story" }),
       },
     });
     assert.equal(second.statusCode, 200, second.body);
@@ -818,7 +959,10 @@ describe("workspace API", () => {
     });
     assert.equal(state.statusCode, 200, state.body);
     assert.equal(state.json().data.proposed.id, first.json().data.id);
-    assert.equal(state.json().data.proposed.data.image.style, "second draft");
+    assert.equal(
+      state.json().data.proposed.data.creativeFactors.strategy,
+      "emotional-story",
+    );
 
     const approve = await app.inject({
       method: "POST",

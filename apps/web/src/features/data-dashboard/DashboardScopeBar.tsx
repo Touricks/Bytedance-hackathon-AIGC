@@ -1,13 +1,14 @@
 import { Play } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../lib/api/client.js";
 import { factorLabels } from "./dashboardFormatters.js";
+import { dashboardVideoPosterDataUrl } from "./dashboardVideoPoster.js";
 import type {
   DashboardAnalyticsSnapshot,
   DashboardChannel,
   DashboardVideoContext,
 } from "./dashboardTypes.js";
 
-/** Current-video scope bar with the three creative-factor chips (推销手法 = 可调杠杆). */
+/** Current-video scope bar with dashboard attribution-factor chips (推销手法 = 可调杠杆). */
 export function DashboardScopeBar({
   snapshot,
   video,
@@ -17,7 +18,7 @@ export function DashboardScopeBar({
   video: DashboardVideoContext;
   channel: DashboardChannel;
 }) {
-  const labels = video.creativeFactors ? factorLabels(snapshot, video.creativeFactors) : null;
+  const labels = factorLabels(snapshot, video.creativeFactors);
 
   return (
     <div className="dash-scope">
@@ -25,8 +26,10 @@ export function DashboardScopeBar({
         {video.localUrl ? (
           <video
             src={toAbsoluteAssetUrl(video.localUrl)}
+            poster={dashboardVideoPosterDataUrl(video.id)}
             muted
             playsInline
+            preload="none"
             className="dash-scope-preview"
             aria-label={video.name}
           />
@@ -42,16 +45,20 @@ export function DashboardScopeBar({
         </div>
         <div className="dash-scope-tags">
           <span className="dash-factor-chip">
-            <i>商品</i>
-            {labels?.productType.label ?? "--"}
+            <i>类目</i>
+            {labels.productCategory.label}
+          </span>
+          <span className="dash-factor-chip">
+            <i>成交</i>
+            {labels.dealType.label}
           </span>
           <span className="dash-factor-chip">
             <i>人群</i>
-            {labels?.audience.label ?? "--"}
+            {labels.audience.label}
           </span>
           <span className="dash-factor-chip is-lever">
             <i>推销手法</i>
-            {labels?.strategy.label ?? "--"}
+            {labels.strategy.label}
           </span>
           {video.template.status !== "none" ? (
             <span className="dash-factor-chip ghost">

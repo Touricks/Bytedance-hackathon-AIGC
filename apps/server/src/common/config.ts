@@ -151,6 +151,13 @@ const dashboardAssetDir = resolveWorkspacePath(
   process.env.DASHBOARD_ASSET_DIR ?? "storage/dashboard-videos",
   envFileRoot
 );
+// Dedicated dashboard S3 bucket so dashboard copies never live in a workspace bucket.
+// Defaults to the global app bucket when the deployment runs in S3 mode so existing
+// S3 deployments keep working; LOCAL deployments leave it undefined (LOCAL dashboard dir).
+const dashboardS3Bucket =
+  process.env.DASHBOARD_S3_BUCKET?.trim() ||
+  (workspaceStorageKindEnv() === "s3" ? process.env.S3_BUCKET?.trim() : undefined) ||
+  undefined;
 const maxImageCandidatesPerShot = positiveIntEnv("MAX_IMAGE_CANDIDATES_PER_SHOT", 6);
 const defaultImageCandidates = Math.min(
   positiveIntEnv("DEFAULT_IMAGE_CANDIDATES", 3),
@@ -181,6 +188,7 @@ export const config = {
   uploadDir,
   uploadUrlPrefix,
   dashboardAssetDir,
+  dashboardS3Bucket,
   defaultImageCandidates,
   maxImageCandidatesPerShot,
   defaultVideoCandidates,

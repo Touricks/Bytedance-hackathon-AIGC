@@ -267,8 +267,8 @@ async function mockVisualApi(page: Page) {
           ...(includesInsertedCandidate
             ? [
                 imageRound({
-                  artifactId: "image-prompt-visual-v2",
-                  batchId: "image-batch-visual-v2",
+                  artifactId: "image-prompt-visual-current",
+                  batchId: "image-batch-visual-current",
                   candidateId: "image-candidate-visual-inserted",
                   imageUrl: "/visual-candidate-inserted.png",
                   version: 2,
@@ -292,8 +292,8 @@ async function mockVisualApi(page: Page) {
     ) {
       includesInsertedCandidate = true;
       const insertedRound = imageRound({
-        artifactId: "image-prompt-visual-v2",
-        batchId: "image-batch-visual-v2",
+        artifactId: "image-prompt-visual-current",
+        batchId: "image-batch-visual-current",
         candidateId: "image-candidate-visual-inserted",
         imageUrl: "/visual-candidate-inserted.png",
         version: 2,

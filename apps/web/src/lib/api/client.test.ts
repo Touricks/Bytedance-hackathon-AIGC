@@ -36,7 +36,7 @@ function moduleArtifact(moduleId: string, data: unknown, status = "proposed") {
     sourceFingerprint: {},
     promptAssembly: {
       moduleId,
-      assemblerVersion: "v2",
+      assemblerVersion: "module-prompt-assembler",
       subjectHash: "a".repeat(64),
       contractHash: "b".repeat(64)
     },
@@ -122,17 +122,15 @@ describe("api client", () => {
           data: {
             templates: [
               {
-                id: "real-product-demo",
-                name: "真实商品讲解",
-                summary: "真实电商摄影，卖点清晰，前后镜头连续。",
-                values: {
-                  imageStyle: "真实电商产品摄影",
-                  imageComposition: "主体稳定",
-                  imageAvoid: "文字贴片",
-                  scriptTone: "直接可信",
-                  storyboardRhythm: "开场快",
-                  shotImageGlobal: "分镜图连续",
-                  shotVideoGlobal: "镜头平滑"
+                id: "consumer-electronics-search-youth-review",
+                name: "3C数码 · 搜索测评 · 青年",
+                summary: "面向青年用户的搜索型 3C 标品测评组合。",
+                version: "factor-preset.2026-06",
+                creativeFactors: {
+                  productCategory: "consumer-electronics",
+                  dealType: "search-standard",
+                  audience: "youth",
+                  strategy: "review-comparison"
                 }
               }
             ]
@@ -144,8 +142,9 @@ describe("api client", () => {
 
     const detail = await listCreativeRequirementTemplates();
 
-    assert.equal(detail.templates[0]?.id, "real-product-demo");
-    assert.equal(detail.templates[0]?.values.shotVideoGlobal, "镜头平滑");
+    assert.equal(detail.templates[0]?.id, "consumer-electronics-search-youth-review");
+    assert.equal(detail.templates[0]?.creativeFactors.productCategory, "consumer-electronics");
+    assert.equal("values" in detail.templates[0]!, false);
     assert.deepEqual(calls, [
       {
         method: "GET",
@@ -566,10 +565,10 @@ describe("api client", () => {
             },
             creativeFactorsRecommendation: {
               recommendedFactors: {
-                productType: "durable-good",
+                productCategory: "food-beverage",
+                dealType: "search-standard",
                 audience: "youth",
-                strategy: "scenario-demo",
-                visualStyle: "authentic"
+                strategy: "scenario-demo"
               },
               confidence: "medium"
             },
@@ -582,10 +581,10 @@ describe("api client", () => {
               isCurrent: false,
               data: {
                 creativeFactors: {
-                  productType: "durable-good",
+                  productCategory: "food-beverage",
+                  dealType: "search-standard",
                   audience: "youth",
-                  strategy: "scenario-demo",
-                  visualStyle: "authentic"
+                  strategy: "scenario-demo"
                 }
               },
               sourceFingerprint: {},
@@ -612,10 +611,10 @@ describe("api client", () => {
     assert.equal(imported.artifact.status, "proposed");
     assert.equal("draft" in imported, false);
     assert.deepEqual(imported.creativeFactorsRecommendation.recommendedFactors, {
-      productType: "durable-good",
+      productCategory: "food-beverage",
+      dealType: "search-standard",
       audience: "youth",
-      strategy: "scenario-demo",
-      visualStyle: "authentic"
+      strategy: "scenario-demo"
     });
     assert.deepEqual(calls, [
       {
@@ -656,10 +655,10 @@ describe("api client", () => {
             },
             creativeFactorsRecommendation: {
               recommendedFactors: {
-                productType: "durable-good",
+                productCategory: "food-beverage",
+                dealType: "search-standard",
                 audience: "youth",
-                strategy: "scenario-demo",
-                visualStyle: "authentic"
+                strategy: "scenario-demo"
               },
               confidence: "medium"
             },
@@ -672,10 +671,10 @@ describe("api client", () => {
               isCurrent: false,
               data: {
                 creativeFactors: {
-                  productType: "durable-good",
+                  productCategory: "food-beverage",
+                  dealType: "search-standard",
                   audience: "youth",
-                  strategy: "scenario-demo",
-                  visualStyle: "authentic"
+                  strategy: "scenario-demo"
                 }
               },
               sourceFingerprint: {},
@@ -757,7 +756,7 @@ describe("api client", () => {
           ],
           discovered: [
             {
-              localPath: "/Users/demo/Drafts/IntegrationTest_v1",
+              localPath: "/Users/demo/Drafts/IntegrationTest_current",
               workspaceId: "VBuy2YQUO9cwRY42fdcy8"
             }
           ]
@@ -773,7 +772,7 @@ describe("api client", () => {
     assert.equal(listed.workspaces[0]?.id, "workspace_123");
     assert.equal(
       listed.discovered[0]?.localPath,
-      "/Users/demo/Drafts/IntegrationTest_v1"
+      "/Users/demo/Drafts/IntegrationTest_current"
     );
     assert.equal(listed.discovered[0]?.workspaceId, "VBuy2YQUO9cwRY42fdcy8");
     assert.deepEqual(calls, [
@@ -973,7 +972,7 @@ describe("api client", () => {
     );
   });
 
-  it("approves workspace brief artifacts through the V2 module API", async () => {
+  it("approves workspace brief artifacts through the current module API", async () => {
     globalThis.fetch = async (url, init) => {
       assert.equal(
         String(url),

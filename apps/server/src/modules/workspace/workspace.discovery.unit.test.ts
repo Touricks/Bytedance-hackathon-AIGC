@@ -49,10 +49,10 @@ describe("filterUnregisteredDiscovered", () => {
       ["/p/IntegrationTest_v0/onePicture"],
       [
         { localPath: "/p/IntegrationTest_v0/onePicture", workspaceId: "OZ" },
-        { localPath: "/p/IntegrationTest_v1", workspaceId: "VBuy" },
+        { localPath: "/p/IntegrationTest_current", workspaceId: "VBuy" },
       ],
     );
-    assert.deepEqual(result, [{ localPath: "/p/IntegrationTest_v1", workspaceId: "VBuy" }]);
+    assert.deepEqual(result, [{ localPath: "/p/IntegrationTest_current", workspaceId: "VBuy" }]);
   });
 
   it("deduplicates discovered entries by local path", () => {

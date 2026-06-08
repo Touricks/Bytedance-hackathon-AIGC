@@ -32,7 +32,7 @@ import {
   type ShotPromptFormState,
   type ShotPromptLayer
 } from "../shotPromptForm.js";
-import { ProposalPlaceholder } from "./Common.js";
+import { ProposalPlaceholder, ReviewActionDock } from "./Common.js";
 
 function ShotPromptDict({
   title,
@@ -616,7 +616,7 @@ export function ShotPromptReviewForm({
           );
         })}
       </div>
-      <div className="review-panel__actions">
+      <ReviewActionDock>
         <button
           type="button"
           className="review-primary"
@@ -626,7 +626,7 @@ export function ShotPromptReviewForm({
           <CheckCircle2 size={16} />
           批准分镜生成要求
         </button>
-      </div>
+      </ReviewActionDock>
     </section>
   );
 }

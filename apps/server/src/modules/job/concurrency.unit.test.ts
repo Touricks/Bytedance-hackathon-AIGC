@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { resolveWorkerConcurrency } from "./concurrency.js";
 
-describe("generation_v2 worker concurrency", () => {
+describe("generation worker concurrency", () => {
   it("is governed by the explicit worker concurrency", () => {
     assert.equal(resolveWorkerConcurrency({ generationWorkerConcurrency: 17 }), 17);
     assert.equal(resolveWorkerConcurrency({ generationWorkerConcurrency: 3 }), 3);

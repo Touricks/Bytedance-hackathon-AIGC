@@ -1,6 +1,10 @@
 import {
   STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
   STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
+  audienceSchema,
+  dealTypeSchema,
+  productCategorySchema,
+  strategySchema,
   type MaterialIntakeArtifact
 } from "@aigc-video/shared";
 import type { ArkJsonSchemaResponseFormat } from "../providers/ark-text.provider.js";
@@ -67,8 +71,8 @@ export function buildMaterialIntakeResponseFormat(
   schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "material_intake_v1",
-    description: "为 V1 素材清点步骤中的工作区素材打标。",
+    name: "material_intake",
+    description: "为素材清点步骤中的工作区素材打标。",
     schemaVersion,
     schema: strictObject(
       {
@@ -115,8 +119,8 @@ export function buildProductBriefResponseFormat(
   schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "product_brief_v1",
-    description: "生成可编辑的 V1 商品 brief artifact。",
+    name: "product_brief",
+    description: "生成可编辑的商品 brief artifact。",
     schemaVersion,
     schema: strictObject(
       {
@@ -167,7 +171,7 @@ export function buildReferenceVideoRequirementsResponseFormat(
   schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "reference_video_requirements_v1",
+    name: "reference_video_requirements",
     description: "从参考视频分析结构并推荐全局创作因子。",
     schemaVersion,
     schema: strictObject(
@@ -185,34 +189,21 @@ export function buildReferenceVideoRequirementsResponseFormat(
           {
             recommendedFactors: strictObject(
               {
-                productType: {
+                productCategory: {
                   type: "string",
-                  enum: [
-                    "consumable-good",
-                    "durable-good",
-                    "digital-service",
-                    "offline-experience-service"
-                  ]
+                  enum: productCategorySchema.options
                 },
+                dealType: { type: "string", enum: dealTypeSchema.options },
                 audience: {
                   type: "string",
-                  enum: ["general", "toddler", "child", "youth", "senior"]
+                  enum: audienceSchema.options
                 },
                 strategy: {
                   type: "string",
-                  enum: [
-                    "pain-solution",
-                    "scenario-demo",
-                    "review-comparison",
-                    "tutorial-value",
-                    "authority-proof",
-                    "emotional-story",
-                    "curiosity-hook",
-                    "visual-story"
-                  ]
+                  enum: strategySchema.options
                 }
               },
-              ["productType", "audience", "strategy"]
+              ["productCategory", "dealType", "audience", "strategy"]
             ),
             confidence: confidenceSchema,
             reasons: arrayOf(nonEmptyString)
@@ -231,8 +222,8 @@ export function buildStoryboardResponseFormat(input: {
 }): ArkJsonSchemaResponseFormat {
   const refs = materialRefs(input.material);
   return responseFormat({
-    name: "ugc_storyboard_v1",
-    description: "生成可编辑的 V1 口播分镜 artifact。",
+    name: "ugc_storyboard",
+    description: "生成可编辑的口播分镜 artifact。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
       {
@@ -281,7 +272,7 @@ export function buildStoryboardVoiceoverRewriteResponseFormat(input: {
   expectedShotCount: number;
 }): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "ugc_storyboard_voiceover_rewrite_v1",
+    name: "ugc_storyboard_voiceover_rewrite",
     description: "按已确认分镜结构重写每段中文口播，只返回 index 与 voiceover。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
@@ -350,8 +341,8 @@ export function buildShotPromptResponseFormat(input: {
     ]
   );
   return responseFormat({
-    name: "video_shotprompt_v1",
-    description: "生成可编辑的 V1 Seedance 视频生成提示词 artifact。",
+    name: "video_shotprompt",
+    description: "生成可编辑的Seedance 视频生成提示词 artifact。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
       {

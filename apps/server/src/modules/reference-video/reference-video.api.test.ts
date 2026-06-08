@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, after, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
+import { buildCreativeFactorRequirements } from "@aigc-video/shared";
 import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
 
@@ -60,13 +61,7 @@ async function approveRequirements(app: FastifyInstance, workspaceId: string) {
     method: "POST",
     url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
     payload: {
-      data: {
-        image: { style: "clean ecommerce" },
-        script: { tone: "direct" },
-        storyboard: { rhythm: "hook proof cta" },
-        shotImage: { global: "consistent image" },
-        shotVideo: { global: "smooth motion" }
-      }
+      data: buildCreativeFactorRequirements()
     }
   });
   assert.equal(propose.statusCode, 200, propose.body);
@@ -120,22 +115,24 @@ describe("reference video requirements import API", () => {
     assert.equal(body.data.artifact.status, "proposed");
     assert.equal(body.data.artifact.isCurrent, false);
     assert.deepEqual(body.data.artifact.data.creativeFactors, {
-      productType: "durable-good",
+      productCategory: "consumer-electronics",
+      dealType: "search-standard",
       audience: "youth",
-      strategy: "scenario-demo",
-      visualStyle: "authentic"
+      strategy: "review-comparison"
     });
     assert.equal(
-      body.data.artifact.data.factorGuidance.productType.subjectPresentation,
-      "真实展示商品主体、关键功能部位、使用场景和必要配件。"
+      body.data.artifact.data.factorGuidance.productCategory.requiredVisualElements[0],
+      "设备本体"
     );
-    assert.equal(
-      body.data.artifact.data.scriptInfluence.strategy.openingPattern,
-      "用真实使用场景或操作瞬间开场,快速说明商品如何解决问题。"
-    );
+    assert.match(body.data.artifact.data.compiledRequirementsHash, /^fnv1a:/);
     assert.deepEqual(
       body.data.creativeFactorsRecommendation.recommendedFactors,
-      body.data.artifact.data.creativeFactors
+      {
+        productCategory: body.data.artifact.data.creativeFactors.productCategory,
+        dealType: body.data.artifact.data.creativeFactors.dealType,
+        audience: body.data.artifact.data.creativeFactors.audience,
+        strategy: body.data.artifact.data.creativeFactors.strategy,
+      }
     );
     assert.equal(await artifactCount(workspace.id), 1);
     assert.equal(await assetCount(workspace.id), 0);
@@ -199,7 +196,7 @@ describe("reference video requirements import API", () => {
     assert.equal(body.data.source.contentType, "video/mp4");
     assert.equal(body.data.source.sizeBytes, 16);
     assert.equal("draft" in body.data, false);
-    assert.equal(typeof body.data.artifact.data.script.tone, "string");
+    assert.ok(Array.isArray(body.data.artifact.data.script.tone));
     assert.equal(body.data.artifact.moduleId, "prompt-requirements");
     assert.equal(body.data.artifact.status, "proposed");
     assert.equal(await artifactCount(workspace.id), 1);

@@ -1,9 +1,9 @@
 import { nanoid } from "nanoid";
-import { GENERATION_V2_QUEUE_NAME } from "@aigc-video/shared";
+import { GENERATION_QUEUE_NAME } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { HttpError } from "../../common/errors.js";
 import { jobRepository } from "../job/job.repository.js";
-import { enqueueGenerationV2 } from "../job/job.queue.js";
+import { enqueueGeneration } from "../job/job.queue.js";
 import { shotWorkflowService } from "../shot/shot.service.js";
 
 export const generationService = {
@@ -76,7 +76,7 @@ export const generationService = {
         shotId: input.shotId,
         jobType: "generate_image_candidate",
         status: "PENDING",
-        queueName: GENERATION_V2_QUEUE_NAME,
+        queueName: GENERATION_QUEUE_NAME,
         queueJobId: null,
         relatedBatchType: "image_candidate",
         relatedBatchId: candidate.id,
@@ -88,7 +88,7 @@ export const generationService = {
         startedAt: null,
         completedAt: null,
       });
-      const queueJobId = await enqueueGenerationV2({
+      const queueJobId = await enqueueGeneration({
         kind: "generate_image_candidate",
         jobId: job.id,
         batchId: batch.id,
@@ -186,7 +186,7 @@ export const generationService = {
         shotId: input.shotId,
         jobType: "generate_video_candidate",
         status: "PENDING",
-        queueName: GENERATION_V2_QUEUE_NAME,
+        queueName: GENERATION_QUEUE_NAME,
         queueJobId: null,
         relatedBatchType: "video_candidate",
         relatedBatchId: candidate.id,
@@ -206,7 +206,7 @@ export const generationService = {
         startedAt: null,
         completedAt: null,
       });
-      const queueJobId = await enqueueGenerationV2({
+      const queueJobId = await enqueueGeneration({
         kind: "generate_video_candidate",
         jobId: job.id,
         batchId: batch.id,
@@ -323,7 +323,7 @@ export const generationService = {
       shotId: null,
       jobType: "compose_final_video",
       status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
+      queueName: GENERATION_QUEUE_NAME,
       queueJobId: null,
       relatedBatchType: "final_video_job",
       relatedBatchId: fv.id,
@@ -335,7 +335,7 @@ export const generationService = {
       startedAt: null,
       completedAt: null,
     });
-    await enqueueGenerationV2({
+    await enqueueGeneration({
       kind: "compose_final_video",
       jobId: job.id,
       finalVideoJobId: fv.id,

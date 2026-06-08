@@ -59,7 +59,6 @@ import {
 import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "./useFinalVideo.js";
 import {
-  isActiveOneClickStatus,
   oneClickPollingInterval,
   resolveOneClickFinalVideoState,
 } from "./oneClickState.js";

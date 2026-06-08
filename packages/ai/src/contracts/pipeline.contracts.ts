@@ -179,7 +179,7 @@ function withActiveVersionOverride(step: PipelineContractStep): PipelineContract
 
 export function getPipelineContracts(): PipelineContractRegistry {
   return {
-    contractSet: process.env.AIGC_VIDEO_PIPELINE_CONTRACT_SET ?? "v1",
+    contractSet: process.env.AIGC_VIDEO_PIPELINE_CONTRACT_SET ?? "current",
     steps: steps.map(withActiveVersionOverride)
   };
 }

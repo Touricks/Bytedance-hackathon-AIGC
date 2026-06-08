@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CardMedia from "@mui/material/CardMedia";
@@ -10,6 +10,10 @@ import {
   materialPreviewModeLabel,
   type MaterialPreviewMode
 } from "../materialPreview.js";
+
+export function ReviewActionDock({ children }: { children: ReactNode }) {
+  return <div className="review-action-dock">{children}</div>;
+}
 
 export function MaterialAssetPreview({
   kind,

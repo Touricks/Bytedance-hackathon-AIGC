@@ -1,13 +1,19 @@
-import { createReadStream } from "node:fs";
-import { mkdir, stat, writeFile } from "node:fs/promises";
-import path from "node:path";
+import type { PoolClient } from "pg";
 import { nanoid } from "nanoid";
-import { creativeFactorsSchema } from "@aigc-video/shared";
-import { config } from "../../common/config.js";
+import {
+  type CreativeFactors,
+  creativeFactorsSchema,
+  dashboardVideoMetadataSchema,
+} from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import type { FinalVideoJobRow } from "../../db/client.js";
 import { getWorkspaceStorageAdapter } from "../workspace/storage/workspace-storage-resolver.js";
+import type { DashboardAssetLocator } from "./dashboard-asset-storage.js";
+import {
+  persistDashboardVideoAsset,
+  streamDashboardVideoAsset,
+} from "./dashboard-asset-storage.js";
 import type { ImportDashboardVideoRequest } from "./dashboard-video-artifact.schema.js";
 
 export interface DashboardVideoArtifact {
@@ -19,9 +25,7 @@ export interface DashboardVideoArtifact {
   durationSec: number | null;
   width: number | null;
   height: number | null;
-  creativeTags: unknown;
-  creativeFactors: unknown;
-  metadata: unknown;
+  creativeFactors: CreativeFactors;
   importedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -45,60 +49,26 @@ function toArtifact(row: Record<string, unknown>): DashboardVideoArtifact {
     durationSec: row.duration_sec === null ? null : Number(row.duration_sec),
     width: row.width === null ? null : Number(row.width),
     height: row.height === null ? null : Number(row.height),
-    creativeTags: row.creative_tags ?? {},
-    creativeFactors: row.creative_factors ?? null,
-    metadata: row.metadata ?? {},
+    creativeFactors: creativeFactorsSchema.parse(row.creative_factors),
     importedAt: iso(row.imported_at as Date | string),
     createdAt: iso(row.created_at as Date | string),
     updatedAt: iso(row.updated_at as Date | string),
   };
 }
 
-function creativeTagsFromFinalVideoJob(job: FinalVideoJobRow) {
-  if (!isRecord(job.compiledManifest)) return {};
-  const tags = job.compiledManifest.creativeTags;
-  return isRecord(tags) ? tags : {};
-}
-
-function creativeFactorsFromTags(tags: unknown) {
-  if (!isRecord(tags)) return null;
-  const parsed = creativeFactorsSchema.safeParse(tags.creativeFactors);
-  return parsed.success ? parsed.data : null;
-}
-
-function isInsideDirectory(filePath: string, rootPath: string) {
-  const relativePath = path.relative(rootPath, filePath);
-  return !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
-}
-
-function isNodeNotFoundError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
-function dashboardArtifactDir(artifactId: string) {
-  const rootPath = path.resolve(config.dashboardAssetDir);
-  const dir = path.resolve(rootPath, artifactId);
-  if (!isInsideDirectory(dir, rootPath)) {
+function creativeFactorsFromFinalVideoJob(job: FinalVideoJobRow): CreativeFactors {
+  const manifest = job.compiledManifest;
+  const attribution = isRecord(manifest) ? manifest.creativeAttribution : undefined;
+  const raw = isRecord(attribution) ? attribution.creativeFactors : undefined;
+  const parsed = creativeFactorsSchema.safeParse(raw);
+  if (!parsed.success) {
     throw new HttpError(
-      400,
-      "INVALID_DASHBOARD_ARTIFACT_ID",
-      "Dashboard artifact id must stay inside the dashboard asset root",
+      409,
+      "FINAL_VIDEO_MISSING_CREATIVE_FACTORS",
+      "Final video has no resolved creative factors and cannot be imported into the dashboard",
     );
   }
-  return dir;
-}
-
-function dashboardArtifactVideoPath(artifactId: string) {
-  return path.join(dashboardArtifactDir(artifactId), "video.mp4");
-}
-
-function dashboardArtifactMetadataPath(artifactId: string) {
-  return path.join(dashboardArtifactDir(artifactId), "metadata.json");
+  return parsed.data;
 }
 
 function dashboardVideoUrl(artifactId: string) {
@@ -112,11 +82,11 @@ function dashboardMetadata(input: {
   name: string;
   localUrl: string;
   importedAt: string;
-  creativeTags: Record<string, unknown>;
-  creativeFactors: unknown;
+  creativeFactors: CreativeFactors;
+  locator: DashboardAssetLocator;
 }) {
-  return {
-    schemaVersion: "dashboard-video-artifact.v1",
+  return dashboardVideoMetadataSchema.parse({
+    schemaVersion: "dashboard-video-metadata",
     id: input.artifactId,
     workspaceId: input.workspaceId,
     finalVideoJobId: input.job.id,
@@ -126,8 +96,14 @@ function dashboardMetadata(input: {
     durationSec: input.job.durationSec,
     width: input.job.width,
     height: input.job.height,
-    creativeTags: input.creativeTags,
     creativeFactors: input.creativeFactors,
+    storage: {
+      kind: input.locator.storageKind,
+      bucket: input.locator.storageBucket,
+      videoObjectKey: input.locator.videoObjectKey,
+      metadataObjectKey: input.locator.metadataObjectKey,
+      localAssetDir: input.locator.localAssetDir,
+    },
     source: {
       finalVideoLocalPath: input.job.localPath,
       finalVideoLocalUrl: input.job.localUrl,
@@ -136,7 +112,7 @@ function dashboardMetadata(input: {
       sourceShotVideoIds: input.job.sourceShotVideoIds,
       sourceVideoScriptArtifactIds: input.job.sourceVideoScriptArtifactIds,
     },
-  };
+  });
 }
 
 async function persistDashboardAsset(input: {
@@ -146,8 +122,7 @@ async function persistDashboardAsset(input: {
   name: string;
   localUrl: string;
   importedAt: string;
-  creativeTags: Record<string, unknown>;
-  creativeFactors: unknown;
+  creativeFactors: CreativeFactors;
 }) {
   if (!input.job.localPath) {
     throw new HttpError(
@@ -157,16 +132,12 @@ async function persistDashboardAsset(input: {
     );
   }
   const storage = await getWorkspaceStorageAdapter(input.workspaceId);
-  const assetDir = dashboardArtifactDir(input.artifactId);
-  await mkdir(assetDir, { recursive: true });
-  await writeFile(
-    dashboardArtifactVideoPath(input.artifactId),
-    await storage.readObject(input.job.localPath),
-  );
-  await writeFile(
-    dashboardArtifactMetadataPath(input.artifactId),
-    `${JSON.stringify(dashboardMetadata(input), null, 2)}\n`,
-  );
+  return persistDashboardVideoAsset({
+    artifactId: input.artifactId,
+    sourceStorage: storage,
+    sourceRelativePath: input.job.localPath,
+    metadata: (locator) => dashboardMetadata({ ...input, locator }),
+  });
 }
 
 async function ensureImportableFinalVideo(
@@ -191,6 +162,22 @@ async function ensureImportableFinalVideo(
   return job;
 }
 
+async function findExistingImport(
+  client: PoolClient,
+  finalVideoJobId: string,
+) {
+  const result = await client.query(
+    `select *
+     from dashboard_video_artifacts
+     where final_video_job_id = $1
+     order by imported_at asc, created_at asc
+     limit 1`,
+    [finalVideoJobId],
+  );
+  const row = result.rows[0];
+  return row ? toArtifact(row) : null;
+}
+
 export const dashboardVideoArtifactService = {
   async importFinalVideo(
     workspaceId: string,
@@ -198,49 +185,65 @@ export const dashboardVideoArtifactService = {
   ) {
     await db.getWorkspace(workspaceId);
     const job = await ensureImportableFinalVideo(workspaceId, input.finalVideoJobId);
-    const creativeTags = creativeTagsFromFinalVideoJob(job);
-    const creativeFactors = creativeFactorsFromTags(creativeTags);
-    const id = nanoid();
-    const localUrl = dashboardVideoUrl(id);
-    const importedAt = new Date().toISOString();
-    await persistDashboardAsset({
-      artifactId: id,
-      workspaceId,
-      job,
-      name: input.name,
-      localUrl,
-      importedAt,
-      creativeTags,
-      creativeFactors,
-    });
-    const result = await db.db2.pool().query(
-      `insert into dashboard_video_artifacts
-        (id, workspace_id, final_video_job_id, name, local_url, duration_sec,
-         width, height, creative_tags, creative_factors, metadata, imported_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       returning *`,
-      [
-        id,
+    const creativeFactors = creativeFactorsFromFinalVideoJob(job);
+    const client = await db.db2.pool().connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        [`dashboard-video-import:${input.finalVideoJobId}`],
+      );
+
+      const existing = await findExistingImport(client, input.finalVideoJobId);
+      if (existing) {
+        await client.query("commit");
+        return { data: existing };
+      }
+
+      const id = nanoid();
+      const localUrl = dashboardVideoUrl(id);
+      const importedAt = new Date().toISOString();
+      const locator = await persistDashboardAsset({
+        artifactId: id,
         workspaceId,
-        input.finalVideoJobId,
-        input.name,
+        job,
+        name: input.name,
         localUrl,
-        job.durationSec,
-        job.width,
-        job.height,
-        JSON.stringify(creativeTags),
-        creativeFactors ? JSON.stringify(creativeFactors) : null,
-        JSON.stringify({
-          compiledManifestHash: job.compiledManifestHash,
-          finalVideoCompletedAt: job.completedAt,
-          sourceShotVideoIds: job.sourceShotVideoIds,
-          sourceVideoScriptArtifactIds: job.sourceVideoScriptArtifactIds,
-          dashboardAssetDir: config.dashboardAssetDir,
-        }),
         importedAt,
-      ],
-    );
-    return { data: toArtifact(result.rows[0]) };
+        creativeFactors,
+      });
+      const result = await client.query(
+        `insert into dashboard_video_artifacts
+          (id, workspace_id, final_video_job_id, name, local_url, duration_sec,
+           width, height, creative_factors, imported_at, storage_kind,
+           storage_bucket, video_object_key, metadata_object_key)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         returning *`,
+        [
+          id,
+          workspaceId,
+          input.finalVideoJobId,
+          input.name,
+          localUrl,
+          job.durationSec,
+          job.width,
+          job.height,
+          JSON.stringify(creativeFactors),
+          importedAt,
+          locator.storageKind,
+          locator.storageBucket,
+          locator.videoObjectKey,
+          locator.metadataObjectKey,
+        ],
+      );
+      await client.query("commit");
+      return { data: toArtifact(result.rows[0]) };
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   },
 
   async listAll() {
@@ -281,17 +284,12 @@ export const dashboardVideoArtifactService = {
 
   async streamVideo(artifactId: string) {
     const result = await db.db2.pool().query(
-      `select id from dashboard_video_artifacts where id = $1`,
+      `select id, storage_kind, storage_bucket, video_object_key
+       from dashboard_video_artifacts where id = $1`,
       [artifactId],
     );
-    if (!result.rows[0]) throw new NotFoundError("DashboardVideoArtifact");
-    const videoPath = dashboardArtifactVideoPath(artifactId);
-    try {
-      await stat(videoPath);
-    } catch (error) {
-      if (isNodeNotFoundError(error)) throw new NotFoundError("DashboardVideoFile");
-      throw error;
-    }
-    return createReadStream(videoPath);
+    const row = result.rows[0];
+    if (!row) throw new NotFoundError("DashboardVideoArtifact");
+    return streamDashboardVideoAsset(row);
   },
 };

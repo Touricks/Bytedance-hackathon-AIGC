@@ -1,4 +1,10 @@
-import type { Audience, CreativeFactors, ProductType, Strategy } from "@aigc-video/shared";
+import type {
+  Audience,
+  CreativeFactors,
+  DealType,
+  ProductCategory,
+  Strategy,
+} from "@aigc-video/shared";
 
 export type DashboardMetricKey =
   | "ctr"
@@ -9,7 +15,7 @@ export type DashboardMetricKey =
   | "gmv"
   | "funnel";
 
-export type DashboardMetricTab = Exclude<DashboardMetricKey, "gmv" | "funnel">;
+export type DashboardMetricTab = Exclude<DashboardMetricKey, "funnel">;
 export type ChannelMetric = "roas" | "cvr" | "ctr" | "complete";
 export type StrategyMetric = "roas" | "cvr" | "ctr";
 
@@ -25,7 +31,8 @@ export interface StrategyOption extends FactorOption {
 }
 
 export interface DashboardFactorCatalog {
-  productTypes: Record<ProductType, FactorOption>;
+  productCategories: Record<ProductCategory, FactorOption>;
+  dealTypes: Record<DealType, FactorOption>;
   audiences: Record<Audience, FactorOption>;
   strategies: Record<Strategy, StrategyOption>;
 }
@@ -41,7 +48,7 @@ export interface DashboardVideoSeed {
   creativeFactors: CreativeFactors;
   template: {
     name: string;
-    status: "applied" | "customized" | "detached" | "none";
+    status: "selected" | "detached" | "none";
   };
 }
 
@@ -53,10 +60,10 @@ export interface DashboardVideoContext {
   duration: string;
   publishedAt: string;
   audienceText: string;
-  creativeFactors: CreativeFactors | null;
+  creativeFactors: CreativeFactors;
   template: {
     name: string;
-    status: "applied" | "customized" | "detached" | "none";
+    status: "selected" | "detached" | "none";
   };
   localUrl: string | null;
 }
@@ -134,7 +141,7 @@ export interface DashboardAssistantPreset {
 }
 
 export interface DashboardAnalyticsSnapshot {
-  schemaVersion: "dashboard-analytics-seed.v1";
+  schemaVersion: "dashboard-analytics-seed";
   fieldGuide: {
     purpose: string;
     sections: Record<string, string> & { kpis: string };

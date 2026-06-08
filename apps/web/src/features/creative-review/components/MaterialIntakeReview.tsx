@@ -7,7 +7,7 @@ import {
 import { toWorkspaceMaterialUrl } from "../../../lib/api/client.js";
 import { materialAssetFilename } from "../../../lib/materials.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
-import { MaterialAssetPreview, ProposalPlaceholder } from "./Common.js";
+import { MaterialAssetPreview, ProposalPlaceholder, ReviewActionDock } from "./Common.js";
 import { OneClickProgress } from "./OneClickProgress.js";
 
 const materialRoleOptions: Array<MaterialIntakeArtifact["assets"][number]["role"]> = [
@@ -282,23 +282,7 @@ export function MaterialIntakeReview({
           </div>
         </div>
       ) : null}
-      <div className="review-panel__actions">
-        <button
-          type="button"
-          className="review-primary"
-          disabled={vm.busy || !canApprove}
-          onClick={() => {
-            vm.actions.approveMaterialIntakeAndProposeBrief(
-              normalizeMaterialIntakeDraft(draft)
-            );
-            onActionComplete();
-          }}
-        >
-          <CheckCircle2 size={16} />
-          {vm.pending?.productBrief
-            ? "正在生成商品卖点..."
-            : "批准素材解读并生成商品卖点"}
-        </button>
+      <div className="review-secondary-action-row">
         <button
           type="button"
           className="review-primary review-primary--one-click"
@@ -324,6 +308,24 @@ export function MaterialIntakeReview({
           description="一键链路会保留已生成的中间产物，可随时回到对应步骤手动继续。"
         />
       ) : null}
+      <ReviewActionDock>
+        <button
+          type="button"
+          className="review-primary"
+          disabled={vm.busy || !canApprove}
+          onClick={() => {
+            vm.actions.approveMaterialIntakeAndProposeBrief(
+              normalizeMaterialIntakeDraft(draft)
+            );
+            onActionComplete();
+          }}
+        >
+          <CheckCircle2 size={16} />
+          {vm.pending?.productBrief
+            ? "正在生成商品卖点..."
+            : "批准素材解读并生成商品卖点"}
+        </button>
+      </ReviewActionDock>
     </section>
   );
 }

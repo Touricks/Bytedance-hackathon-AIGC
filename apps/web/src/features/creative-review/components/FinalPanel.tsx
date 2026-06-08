@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Download, Play, UploadCloud } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
-import { importDashboardVideoArtifact } from "../../../lib/api/dashboardVideoArtifacts.js";
+import {
+  importDashboardVideoArtifact,
+  listDashboardVideoArtifacts,
+} from "../../../lib/api/dashboardVideoArtifacts.js";
 import { finalVideoDownloadUrl } from "../../../lib/api/finalVideo.js";
 import { navigateToDataDashboard } from "../../../routes/routeState.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
@@ -16,14 +19,25 @@ export async function importFinalVideoToDashboard(
   },
   deps = {
     importDashboardVideoArtifact,
+    listDashboardVideoArtifacts,
     navigateToDataDashboard,
   },
 ) {
-  await deps.importDashboardVideoArtifact(input.workspaceId, {
+  const existingVideos = await deps.listDashboardVideoArtifacts(input.workspaceId);
+  const existingVideo = existingVideos.data.find(
+    (video) => video.finalVideoJobId === input.finalVideoJobId,
+  );
+  if (existingVideo) {
+    deps.navigateToDataDashboard(input.workspaceId, "diagnosis", input.finalVideoJobId);
+    return { status: "already-exists" as const, data: existingVideo };
+  }
+
+  const created = await deps.importDashboardVideoArtifact(input.workspaceId, {
     finalVideoJobId: input.finalVideoJobId,
     name: input.name,
   });
-  deps.navigateToDataDashboard(undefined, "videos");
+  deps.navigateToDataDashboard(input.workspaceId, "diagnosis", input.finalVideoJobId);
+  return { status: "imported" as const, data: created.data };
 }
 
 export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
@@ -48,12 +62,16 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
     setImportMessage(null);
     setIsImporting(true);
     try {
-      await importFinalVideoToDashboard({
+      const result = await importFinalVideoToDashboard({
         workspaceId: vm.workspaceId,
         finalVideoJobId: job.id,
         name: importName.trim(),
       });
-      setImportMessage("已导入数据面板");
+      setImportMessage(
+        result.status === "already-exists"
+          ? "该成片已在数据面板，正在打开对应诊断看板"
+          : "已导入数据面板",
+      );
     } catch (error) {
       setImportMessage(error instanceof Error ? error.message : "导入数据面板失败");
     } finally {

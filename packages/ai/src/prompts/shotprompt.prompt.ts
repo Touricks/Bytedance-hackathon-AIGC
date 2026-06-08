@@ -7,7 +7,7 @@ import type { RuntimePromptView } from "./material-intake.prompt.js";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const SHOTPROMPT_PROMPT_VERSION = "video-shotprompt.v1";
+export const SHOTPROMPT_PROMPT_VERSION = "video-shotprompt";
 
 export interface BuildShotPromptPromptInput {
   brief: ProductBriefArtifact;
@@ -61,7 +61,7 @@ export function buildShotPromptPromptView(
         {
           id: "task",
           label: "任务",
-          body: "生成面向 Seedance 的提示词，必须保留商品、时间、参考素材和口播。V1 不生成字幕。",
+          body: "生成面向 Seedance 的提示词，必须保留商品、时间、参考素材和口播。当前链路不生成字幕。",
         },
         {
           id: "output_contract",

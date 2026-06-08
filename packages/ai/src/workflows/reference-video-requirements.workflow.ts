@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { DEFAULT_CREATIVE_FACTORS, creativeFactorsSchema } from "@aigc-video/shared";
+import {
+  DEFAULT_CREATIVE_FACTORS,
+  creativeFactorsSchema
+} from "@aigc-video/shared";
 import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
@@ -51,6 +54,10 @@ const outputInstructions = `
 不要把参考视频当作后续可复用素材。
 不要生成具体 storyboard shots 或 provider prompt。
 不要生成创作要求 draft 字段；只返回 analysis 和 creativeFactorsRecommendation。
+creativeFactorsRecommendation.recommendedFactors 必须只包含 productCategory、dealType、audience、strategy。
+productCategory: 从视频中可见商品、包装、使用场景和功能线索推断商品一级类目；无法判断时使用最接近的默认类目并在 reasons 说明不确定性。
+dealType: 推断商品成交决策类型；audience: 推断主要表达对象；strategy: 推断推销手法。
+不要返回旧 productType、visualStyle 或 draft。
 按 Responses API text.format.json_schema 返回，不要包含 Markdown。
 `;
 
@@ -86,7 +93,7 @@ async function analyzeWithProvider(
     throw new Error("Reference video analysis requires a video URL or data URL");
   }
   const responseFormat = buildReferenceVideoRequirementsResponseFormat(
-    "reference-video-requirements.v1"
+    "reference-video-requirements"
   );
 
   const response = await generateResponsesTextWithArk(
@@ -137,10 +144,15 @@ function deterministicReferenceVideoRequirements(
         : ["参考文件类型不是标准 video/*，请确认来源文件可播放"]
     },
     creativeFactorsRecommendation: {
-      recommendedFactors: DEFAULT_CREATIVE_FACTORS,
+      recommendedFactors: {
+        productCategory: DEFAULT_CREATIVE_FACTORS.productCategory,
+        dealType: DEFAULT_CREATIVE_FACTORS.dealType,
+        audience: DEFAULT_CREATIVE_FACTORS.audience,
+        strategy: DEFAULT_CREATIVE_FACTORS.strategy
+      },
       confidence: "medium",
       reasons: [
-        "参考视频呈现通用商品演示结构，适合先按耐用品、青年用户和场景演示策略导入。"
+        "参考视频呈现通用商品测评结构，适合先按搜索型标品、青年用户和测评对比策略导入。"
       ]
     }
   });

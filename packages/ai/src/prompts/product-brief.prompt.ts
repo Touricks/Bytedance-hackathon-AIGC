@@ -6,7 +6,7 @@ import type { RuntimePromptView } from "./material-intake.prompt.js";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const PRODUCT_BRIEF_PROMPT_VERSION = "product-brief.v1";
+export const PRODUCT_BRIEF_PROMPT_VERSION = "product-brief";
 
 export interface BuildProductBriefPromptInput {
   userDirection?: string;

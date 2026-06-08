@@ -3,8 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  creativeFactorsSchema,
-  creativeRequirementTemplateSourceSchema,
+  CREATIVE_ATTRIBUTION_SCHEMA_VERSION,
+  creativeFactorRequirementsDataSchema,
+  creativeAttributionSchema,
+  finalVideoManifestSchema,
   type ComposeFinalVideoJobData,
 } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
@@ -17,35 +19,36 @@ function sha256(s: string) {
   return "sha256:" + createHash("sha256").update(s).digest("hex");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function parseCreativeFactors(data: unknown) {
-  if (!isRecord(data)) return null;
-  const parsed = creativeFactorsSchema.safeParse(data.creativeFactors);
+  const parsed = creativeFactorRequirementsDataSchema.safeParse(data);
   return parsed.success ? parsed.data : null;
 }
 
-function parseCreativeRequirementTemplate(data: unknown) {
-  if (!isRecord(data)) return null;
-  const parsed = creativeRequirementTemplateSourceSchema.safeParse(
-    data.creativeRequirementTemplate,
-  );
-  return parsed.success ? parsed.data : null;
+function creativeAttributionFromRequirements(input: {
+  requirementsData: unknown;
+  promptRequirementsArtifactId: string | null;
+  shotPromptArtifactId: string | null;
+}) {
+  const parsed = parseCreativeFactors(input.requirementsData);
+  return creativeAttributionSchema.parse({
+    schemaVersion: CREATIVE_ATTRIBUTION_SCHEMA_VERSION,
+    promptRequirementsArtifactId: input.promptRequirementsArtifactId,
+    shotPromptArtifactId: input.shotPromptArtifactId,
+    creativeFactors: parsed?.creativeFactors ?? null,
+    factorPromptVersion: parsed?.factorPromptVersion ?? null,
+  });
 }
 
-async function loadCreativeTags(input: {
+async function loadCreativeAttribution(input: {
   workspaceId: string;
   shotSetId: string | null;
 }) {
-  const fallback = {
-    schemaVersion: "creative-tags.v1" as const,
+  const sourceSnapshot = {
+    schemaVersion: CREATIVE_ATTRIBUTION_SCHEMA_VERSION,
     promptRequirementsArtifactId: null as string | null,
     shotPromptArtifactId: null as string | null,
     creativeFactors: null,
-    creativeRequirementTemplate: null,
-    fallback: false,
+    factorPromptVersion: null,
   };
 
   if (input.shotSetId) {
@@ -77,16 +80,13 @@ async function loadCreativeTags(input: {
         [input.workspaceId, promptRequirementsArtifactId],
       );
       const requirementsData = requirements.rows[0]?.data;
-      return {
-        schemaVersion: "creative-tags.v1",
+      return creativeAttributionFromRequirements({
+        requirementsData,
         promptRequirementsArtifactId,
         shotPromptArtifactId,
-        creativeFactors: parseCreativeFactors(requirementsData),
-        creativeRequirementTemplate: parseCreativeRequirementTemplate(requirementsData),
-        fallback: false,
-      };
+      });
     }
-    fallback.shotPromptArtifactId = shotPromptArtifactId;
+    sourceSnapshot.shotPromptArtifactId = shotPromptArtifactId;
   }
 
   const current = await db.db2.pool().query(
@@ -97,14 +97,12 @@ async function loadCreativeTags(input: {
      limit 1`,
     [input.workspaceId],
   );
-  return {
-    ...fallback,
+  return creativeAttributionFromRequirements({
+    requirementsData: current.rows[0]?.data,
     promptRequirementsArtifactId:
       typeof current.rows[0]?.id === "string" ? current.rows[0].id : null,
-    creativeFactors: parseCreativeFactors(current.rows[0]?.data),
-    creativeRequirementTemplate: parseCreativeRequirementTemplate(current.rows[0]?.data),
-    fallback: true,
-  };
+    shotPromptArtifactId: sourceSnapshot.shotPromptArtifactId,
+  });
 }
 
 async function downloadTo(url: string, outPath: string) {
@@ -193,10 +191,10 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
       body: await readFile(outPath),
       contentType: "video/mp4",
     });
-    const manifest = {
-      schemaVersion: "final-video.v1",
+    const manifest = finalVideoManifestSchema.parse({
+      schemaVersion: "final-video-manifest",
       workspaceId: job.workspaceId,
-      creativeTags: await loadCreativeTags({
+      creativeAttribution: await loadCreativeAttribution({
         workspaceId: job.workspaceId,
         shotSetId: job.shotSetId,
       }),
@@ -207,7 +205,7 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
         providerPromptHash: sha256(JSON.stringify(c.providerResponse)),
       })),
       transition: "cut",
-    };
+    });
     const manifestHash = sha256(JSON.stringify(manifest));
 
     await db.db2.updateFinalVideoJob(job.id, {

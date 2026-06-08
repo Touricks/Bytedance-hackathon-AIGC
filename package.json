@@ -11,6 +11,8 @@
     "db:clear": "node scripts/clear-postgres.mjs",
     "redis:clear": "node scripts/clear-redis.mjs",
     "reset:dev": "node scripts/reset-dev-session.mjs",
+    "dev:reset": "node scripts/reset-dev-session.mjs",
+    "check:versioned-naming": "node scripts/check-versioned-naming.mjs",
     "contract:frontend-backend": "node scripts/frontend-backend-contract-check.mjs",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",

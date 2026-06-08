@@ -14,6 +14,7 @@ import { toAbsoluteAssetUrl } from "../../lib/api/client.js";
 import type { DashboardVideoArtifact } from "../../lib/api/dashboardVideoArtifacts.js";
 import type { DashboardAnalyticsSnapshot } from "./dashboardTypes.js";
 import { factorLabels, formatDateTime, formatSeconds } from "./dashboardFormatters.js";
+import { dashboardVideoPosterDataUrl } from "./dashboardVideoPoster.js";
 
 export function DashboardVideoList({
   videos,
@@ -55,9 +56,7 @@ export function DashboardVideoList({
             </TableHead>
             <TableBody>
               {videos.map((video) => {
-                const labels = video.creativeFactors
-                  ? factorLabels(snapshot, video.creativeFactors)
-                  : null;
+                const labels = factorLabels(snapshot, video.creativeFactors);
                 return (
                   <TableRow
                     key={video.id}
@@ -78,7 +77,9 @@ export function DashboardVideoList({
                         <Box
                           component="video"
                           src={toAbsoluteAssetUrl(video.localUrl)}
+                          poster={dashboardVideoPosterDataUrl(video.id)}
                           muted
+                          preload="none"
                           sx={{
                             width: 96,
                             aspectRatio: "16/9",
@@ -101,15 +102,12 @@ export function DashboardVideoList({
                     <TableCell>{formatDateTime(video.importedAt)}</TableCell>
                     <TableCell>{video.finalVideoJobId ?? "--"}</TableCell>
                     <TableCell>
-                      {labels ? (
-                        <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap" }}>
-                          <Chip size="small" label={labels.productType.label} />
-                          <Chip size="small" label={labels.audience.label} />
-                          <Chip size="small" label={labels.strategy.label} />
-                        </Stack>
-                      ) : (
-                        "--"
-                      )}
+                      <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap" }}>
+                        <Chip size="small" label={labels.productCategory.label} />
+                        <Chip size="small" label={labels.dealType.label} />
+                        <Chip size="small" label={labels.audience.label} />
+                        <Chip size="small" label={labels.strategy.label} />
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 );

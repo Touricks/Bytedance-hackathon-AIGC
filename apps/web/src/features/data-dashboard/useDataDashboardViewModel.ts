@@ -16,8 +16,8 @@ import type {
 } from "./dashboardTypes.js";
 import {
   factorLabels,
-  formatDelta,
   formatDateTime,
+  formatKpiDelta,
   formatSeconds,
   kpiDisplay,
   kpiMeta,
@@ -37,34 +37,15 @@ export interface DashboardKpiView {
 
 type DashboardTemplateStatus = DashboardVideoContext["template"]["status"];
 
-function templateFromCreativeTags(
-  tags: DashboardVideoArtifact["creativeTags"],
-): DashboardVideoContext["template"] {
-  const value =
-    tags && typeof tags === "object" && !Array.isArray(tags)
-      ? (tags as Record<string, unknown>).creativeRequirementTemplate
-      : null;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { name: "未绑定创作模板", status: "none" as DashboardTemplateStatus };
-  }
-
-  const record = value as Record<string, unknown>;
-  const name = typeof record.name === "string" ? record.name : "导入成片模板";
-  const status: DashboardTemplateStatus =
-    record.status === "applied" ||
-    record.status === "customized" ||
-    record.status === "detached" ||
-    record.status === "none"
-      ? record.status
-      : "none";
-  return { name, status };
+function importedVideoTemplate(): DashboardVideoContext["template"] {
+  return { name: "未绑定创作预设", status: "none" as DashboardTemplateStatus };
 }
 
 export function dashboardVideoContextFromArtifact(
   snapshot: DashboardAnalyticsSnapshot,
   video: DashboardVideoArtifact,
 ): DashboardVideoContext {
-  const labels = video.creativeFactors ? factorLabels(snapshot, video.creativeFactors) : null;
+  const labels = factorLabels(snapshot, video.creativeFactors);
   return {
     id: video.id,
     name: video.name,
@@ -72,9 +53,9 @@ export function dashboardVideoContextFromArtifact(
     model: "数据面板导入",
     duration: formatSeconds(video.durationSec),
     publishedAt: formatDateTime(video.importedAt),
-    audienceText: labels?.audience.label ?? "未归类人群",
+    audienceText: labels.audience.label,
     creativeFactors: video.creativeFactors,
-    template: templateFromCreativeTags(video.creativeTags),
+    template: importedVideoTemplate(),
     localUrl: video.localUrl,
   };
 }
@@ -98,7 +79,7 @@ export function deriveDashboardKpis(
       key: kpi.key,
       label: kpi.label,
       displayValue: kpiDisplay(kpi.key, value),
-      delta: formatDelta(value - benchmark, meta.unit),
+      delta: formatKpiDelta(kpi.key, value - benchmark),
       benchmarkLabel: kpi.benchmarkLabel,
       color: meta.color,
       sparkline: kpi.sparkline,
@@ -148,6 +129,7 @@ export interface UseDataDashboardViewModelParams {
   initialView?: DashboardView;
   initialDashboardVideos?: DashboardVideoArtifact[];
   initialSelectedDashboardVideoId?: string | null;
+  initialFinalVideoJobId?: string | null;
 }
 
 /**
@@ -161,6 +143,7 @@ export function useDataDashboardViewModel({
   initialView = "diagnosis",
   initialDashboardVideos = [],
   initialSelectedDashboardVideoId = null,
+  initialFinalVideoJobId = null,
 }: UseDataDashboardViewModelParams): DataDashboardViewModel {
   const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [selectedVideoId, setSelectedVideoId] = useState(snapshot.filters.selectedVideoId);
@@ -239,8 +222,14 @@ export function useDataDashboardViewModel({
 
   const selectedDashboardVideo = useMemo(
     () =>
-      dashboardVideos.find((candidate) => candidate.id === selectedDashboardVideoId) ?? null,
-    [dashboardVideos, selectedDashboardVideoId],
+      dashboardVideos.find((candidate) => candidate.id === selectedDashboardVideoId) ??
+      dashboardVideos.find(
+        (candidate) =>
+          Boolean(initialFinalVideoJobId) &&
+          candidate.finalVideoJobId === initialFinalVideoJobId,
+      ) ??
+      null,
+    [dashboardVideos, initialFinalVideoJobId, selectedDashboardVideoId],
   );
 
   const dashboardVideoContext = useMemo(
@@ -283,7 +272,7 @@ export function useDataDashboardViewModel({
     channel,
     kpis,
     dashboardVideos,
-    selectedDashboardVideoId,
+    selectedDashboardVideoId: selectedDashboardVideo?.id ?? selectedDashboardVideoId,
     selectedDashboardVideo,
     dashboardVideoContext,
     chatOpen,

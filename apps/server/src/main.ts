@@ -3,8 +3,8 @@ import { logger } from "./common/logger.js";
 import { buildServer } from "./app.js";
 import { db } from "./db/client.js";
 import {
-  registerGenerationV2Processor,
-  startGenerationV2Worker,
+  registerGenerationProcessor,
+  startGenerationWorker,
   recoverInflightGenerationJobs,
 } from "./modules/job/job.queue.js";
 import { processGenerateImages } from "./modules/generation/image.worker.js";
@@ -20,7 +20,7 @@ import { assertFfmpegAvailable } from "./modules/generation/ffmpeg.js";
 
 await assertFfmpegAvailable();
 
-registerGenerationV2Processor(async (data, meta) => {
+registerGenerationProcessor(async (data, meta) => {
   if (data.kind === "generate_images") return processGenerateImages(data);
   if (data.kind === "generate_image_candidate") {
     return processGenerateImageCandidate(data, db.db2, meta);
@@ -38,7 +38,7 @@ registerGenerationV2Processor(async (data, meta) => {
   }
 });
 if (shouldStartWorker()) {
-  startGenerationV2Worker();
+  startGenerationWorker();
 }
 
 if (shouldStartApi()) {

@@ -1,6 +1,6 @@
 import net from "node:net";
 import { analyzeReferenceVideoRequirements } from "@aigc-video/ai";
-import { buildCreativeFactorRequirements } from "@aigc-video/shared";
+import { DEFAULT_CREATIVE_FACTORS, buildCreativeFactorRequirements } from "@aigc-video/shared";
 import { HttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { promptRequirementsService } from "../workspace/prompt-requirements.service.js";
@@ -153,7 +153,10 @@ async function createProposedRequirementsFromReferenceVideo(
   analyzed: Awaited<ReturnType<typeof analyzeReferenceVideoRequirements>>
 ) {
   const recommendedFactors = analyzed.creativeFactorsRecommendation.recommendedFactors;
-  const data = buildCreativeFactorRequirements(recommendedFactors);
+  const data = buildCreativeFactorRequirements({
+    ...DEFAULT_CREATIVE_FACTORS,
+    ...recommendedFactors,
+  });
   return promptRequirementsService.propose(workspaceId, data);
 }
 

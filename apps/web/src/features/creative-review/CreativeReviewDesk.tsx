@@ -10,7 +10,6 @@ import { MainPanel } from "./components/MainPanel.js";
 import { RightRail, StepRail } from "./components/ReviewRails.js";
 
 export {
-  applyCreativeRequirementTemplate,
   requirementFormFromArtifact
 } from "./requirementsForm.js";
 export type { RequirementsFormState } from "./requirementsForm.js";

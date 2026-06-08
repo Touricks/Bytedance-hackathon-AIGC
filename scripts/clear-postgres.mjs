@@ -12,8 +12,9 @@ const requireFromServer = createRequire(
 const { Client } = requireFromServer("pg");
 
 const tables = [
-  "campaign_publication_metrics",
-  "campaign_publications",
+  "external_kol_metrics",
+  "external_kol_publications",
+  "dashboard_video_artifacts",
   "trace_events",
   "final_video_jobs",
   "generation_jobs",

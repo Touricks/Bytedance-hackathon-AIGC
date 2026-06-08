@@ -5,7 +5,7 @@ import type {
 import { db } from "../../db/client.js";
 import { traceService } from "../trace/trace.service.js";
 import { jobRepository } from "../job/job.repository.js";
-import type { GenerationV2JobMeta } from "../job/job.queue.js";
+import type { GenerationJobMeta } from "../job/job.queue.js";
 import {
   runImageGenerationCandidate,
   runImageGenerationBatch,
@@ -98,7 +98,7 @@ async function refreshImageBatchCompletion(
 export async function processGenerateImageCandidate(
   data: GenerateImageCandidateJobData,
   adapter: Adapter = db.db2,
-  meta?: GenerationV2JobMeta,
+  meta?: GenerationJobMeta,
 ) {
   const batch = await adapter.getImageBatch(data.batchId);
   if (batch.status !== "PENDING" && batch.status !== "RUNNING") return;

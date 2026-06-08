@@ -1,0 +1,399 @@
+import { nanoid } from "nanoid";
+import {
+  generateProductBriefWithArk,
+  getModulePromptAssemblyMetadata,
+} from "@aigc-video/ai";
+import {
+  materialIntakeArtifactSchema,
+  productBriefArtifactSchema,
+  type ProductBriefArtifact,
+} from "@aigc-video/shared";
+import { HttpError, NotFoundError } from "../../common/errors.js";
+import { db } from "../../db/client.js";
+import {
+  createWorkspaceTraceLoggerForWorkspace,
+  productBriefImageInputForWorkspace,
+  runtimeMode,
+  toProductBrief,
+  writeReviewSnapshotForWorkspace,
+} from "./workspace.service.js";
+
+type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
+
+export interface ProductBriefModuleArtifact {
+  id: string;
+  workspaceId: string;
+  moduleId: "product-brief";
+  status: ModuleArtifactStatus;
+  isCurrent: boolean;
+  data: unknown;
+  sourceFingerprint: Record<string, unknown>;
+  promptAssembly: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+}
+
+function toIsoString(value: unknown): string {
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function jsonbParam(value: unknown) {
+  return JSON.stringify(value ?? {});
+}
+
+function toProductBriefArtifact(
+  row: Record<string, unknown>,
+): ProductBriefModuleArtifact {
+  return {
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    moduleId: "product-brief",
+    status: row.status as ModuleArtifactStatus,
+    isCurrent: Boolean(row.is_current),
+    data: row.data,
+    sourceFingerprint:
+      row.source_fingerprint && typeof row.source_fingerprint === "object"
+        ? (row.source_fingerprint as Record<string, unknown>)
+        : {},
+    promptAssembly:
+      row.prompt_assembly && typeof row.prompt_assembly === "object"
+        ? (row.prompt_assembly as Record<string, unknown>)
+        : {},
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+    approvedAt: row.approved_at ? toIsoString(row.approved_at) : null,
+  };
+}
+
+async function currentArtifact(input: {
+  workspaceId: string;
+  table: "prompt_requirements_artifacts" | "material_intake_artifacts";
+  code: string;
+  label: string;
+}) {
+  const result = await db.db2.pool().query(
+    `select *
+     from ${input.table}
+     where workspace_id = $1
+       and status = 'approved'
+       and is_current = true
+     order by approved_at desc, created_at desc, id desc
+     limit 1`,
+    [input.workspaceId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(400, input.code, `${input.label} is required`);
+  }
+  return {
+    id: String(row.id),
+    data: row.data,
+  };
+}
+
+async function currentSources(workspaceId: string) {
+  const [requirements, materialIntake] = await Promise.all([
+    currentArtifact({
+      workspaceId,
+      table: "prompt_requirements_artifacts",
+      code: "NO_CURRENT_APPROVED_ARTIFACT",
+      label: "Current approved prompt requirements",
+    }),
+    currentArtifact({
+      workspaceId,
+      table: "material_intake_artifacts",
+      code: "NO_CURRENT_APPROVED_ARTIFACT",
+      label: "Current approved material intake",
+    }),
+  ]);
+  return { requirements, materialIntake };
+}
+
+async function getArtifactForWorkspace(workspaceId: string, artifactId: string) {
+  const result = await db.db2.pool().query(
+    `select *
+     from product_brief_artifacts
+     where workspace_id = $1 and id = $2
+     limit 1`,
+    [workspaceId, artifactId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new NotFoundError("ProductBriefArtifact");
+  }
+  return toProductBriefArtifact(row);
+}
+
+function promptAssembly(input: {
+  requirementArtifactId: string;
+  data: unknown;
+  userDirection?: string;
+  baseProductBriefArtifactId?: string | null;
+  rewriteKind?: "merchant_direction";
+}) {
+  const metadata = getModulePromptAssemblyMetadata("product-brief");
+  return {
+    ...metadata,
+    requirementArtifactId: input.requirementArtifactId,
+    userDirection: input.userDirection ?? null,
+    baseProductBriefArtifactId: input.baseProductBriefArtifactId ?? null,
+    ...(input.rewriteKind ? { rewriteKind: input.rewriteKind } : {}),
+    preview:
+      typeof input.data === "object" && input.data
+        ? Object.keys(input.data).slice(0, 5).join(", ")
+        : "",
+  };
+}
+
+function upstreamChange(input: {
+  artifact: ProductBriefModuleArtifact | null;
+  promptRequirementsArtifactId: string | null;
+  materialIntakeArtifactId: string | null;
+}) {
+  if (
+    !input.artifact ||
+    !input.promptRequirementsArtifactId ||
+    !input.materialIntakeArtifactId
+  ) {
+    return { upstreamChanged: false, changedSources: [] };
+  }
+
+  const changedSources = [];
+  if (
+    input.artifact.sourceFingerprint.promptRequirementsArtifactId !==
+    input.promptRequirementsArtifactId
+  ) {
+    changedSources.push("promptRequirementsArtifactId");
+  }
+  if (
+    input.artifact.sourceFingerprint.materialIntakeArtifactId !==
+    input.materialIntakeArtifactId
+  ) {
+    changedSources.push("materialIntakeArtifactId");
+  }
+
+  return {
+    upstreamChanged: changedSources.length > 0,
+    changedSources,
+  };
+}
+
+export const productBriefService = {
+  async propose(input: {
+    workspaceId: string;
+    userDirection?: string;
+    title?: string;
+    sellingPoints?: string;
+    audience?: string;
+    stylePreference?: string;
+    draft?: ProductBriefArtifact;
+    baseArtifactId?: string;
+  }) {
+    const workspace = await db.getWorkspace(input.workspaceId);
+    const sources = await currentSources(input.workspaceId);
+    const baseArtifact = input.baseArtifactId
+      ? await getArtifactForWorkspace(input.workspaceId, input.baseArtifactId)
+      : null;
+    const material = materialIntakeArtifactSchema.parse(
+      sources.materialIntake.data,
+    );
+    const draft =
+      input.draft ??
+      (baseArtifact
+        ? productBriefArtifactSchema.parse(baseArtifact.data)
+        : undefined);
+    const rewriteKind =
+      draft || input.baseArtifactId ? "merchant_direction" : undefined;
+    const data: ProductBriefArtifact = productBriefArtifactSchema.parse(
+      runtimeMode() === "real"
+        ? (
+            await generateProductBriefWithArk(
+              {
+                ...input,
+                material,
+                draft,
+                creativeRequirements: sources.requirements.data,
+              },
+              {
+                imageInput: await productBriefImageInputForWorkspace(
+                  input.workspaceId,
+                  material,
+                ),
+                includeImageInput: true,
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
+                  workspace,
+                ),
+              },
+            )
+          ).productBrief
+        : toProductBrief({ ...input, material, draft }),
+    );
+    const sourceFingerprint: Record<string, unknown> = {
+      promptRequirementsArtifactId: sources.requirements.id,
+      materialIntakeArtifactId: sources.materialIntake.id,
+    };
+    if (rewriteKind) {
+      sourceFingerprint.baseProductBriefArtifactId = input.baseArtifactId ?? null;
+      sourceFingerprint.rewriteKind = rewriteKind;
+    }
+    const result = await db.db2.pool().query(
+      `insert into product_brief_artifacts
+         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+       values ($1, $2, 'proposed', false, $3, $4, $5)
+       returning *`,
+      [
+        nanoid(),
+        input.workspaceId,
+        jsonbParam(data),
+        jsonbParam(sourceFingerprint),
+        jsonbParam(
+          promptAssembly({
+            requirementArtifactId: sources.requirements.id,
+            data,
+            userDirection: input.userDirection,
+            baseProductBriefArtifactId: input.baseArtifactId ?? null,
+            rewriteKind,
+          }),
+        ),
+      ],
+    );
+    await writeReviewSnapshotForWorkspace({
+      workspace,
+      artifact: "product-brief",
+      status: "proposed",
+      schemaVersion: "product-brief",
+      data,
+    });
+    await db.updateWorkspace(input.workspaceId, {
+      status: "brief_proposed",
+    });
+    return toProductBriefArtifact(result.rows[0]);
+  },
+
+  async approve(input: {
+    workspaceId: string;
+    artifactId?: string;
+    data?: unknown;
+  }) {
+    const workspace = await db.getWorkspace(input.workspaceId);
+    if (!input.artifactId && input.data === undefined) {
+      throw new HttpError(400, "ARTIFACT_DATA_REQUIRED", "artifactId or data is required");
+    }
+
+    const sources = await currentSources(input.workspaceId);
+    const source = input.artifactId
+      ? await getArtifactForWorkspace(input.workspaceId, input.artifactId)
+      : null;
+    const data = productBriefArtifactSchema.parse(input.data ?? source?.data);
+    const sourceFingerprint = source?.sourceFingerprint ?? {
+      promptRequirementsArtifactId: sources.requirements.id,
+      materialIntakeArtifactId: sources.materialIntake.id,
+    };
+    const assembly =
+      source?.promptAssembly && Object.keys(source.promptAssembly).length > 0
+        ? source.promptAssembly
+        : promptAssembly({
+            requirementArtifactId: sources.requirements.id,
+            data,
+          });
+
+    await writeReviewSnapshotForWorkspace({
+      workspace,
+      artifact: "product-brief",
+      status: "approved",
+      schemaVersion: "product-brief",
+      data,
+    });
+    const client = await db.db2.pool().connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `update product_brief_artifacts
+         set is_current = false,
+             updated_at = now()
+         where workspace_id = $1
+           and status = 'approved'
+           and is_current = true`,
+        [input.workspaceId],
+      );
+      const result = await client.query(
+        `insert into product_brief_artifacts
+           (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+         values ($1, $2, 'approved', true, $3, $4, $5, now())
+         returning *`,
+        [
+          nanoid(),
+          input.workspaceId,
+          jsonbParam(data),
+          jsonbParam(sourceFingerprint),
+          jsonbParam(assembly),
+        ],
+      );
+      await client.query(
+        `update creative_workspace
+         set status = 'brief_approved',
+             updated_at = now(),
+             last_seen_at = now()
+         where id = $1`,
+        [input.workspaceId],
+      );
+      await client.query("commit");
+      return toProductBriefArtifact(result.rows[0]);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  async getState(workspaceId: string) {
+    await db.getWorkspace(workspaceId);
+    let promptRequirementsArtifactId: string | null = null;
+    let materialIntakeArtifactId: string | null = null;
+    try {
+      const sources = await currentSources(workspaceId);
+      promptRequirementsArtifactId = sources.requirements.id;
+      materialIntakeArtifactId = sources.materialIntake.id;
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+    }
+
+    const [proposedResult, currentResult] = await Promise.all([
+      db.db2.pool().query(
+        `select *
+         from product_brief_artifacts
+         where workspace_id = $1 and status = 'proposed'
+         order by created_at desc, id desc
+         limit 1`,
+        [workspaceId],
+      ),
+      db.db2.pool().query(
+        `select *
+         from product_brief_artifacts
+         where workspace_id = $1 and status = 'approved' and is_current = true
+         order by approved_at desc, created_at desc, id desc
+         limit 1`,
+        [workspaceId],
+      ),
+    ]);
+    const proposed = proposedResult.rows[0]
+      ? toProductBriefArtifact(proposedResult.rows[0])
+      : null;
+    const current = currentResult.rows[0]
+      ? toProductBriefArtifact(currentResult.rows[0])
+      : null;
+
+    return {
+      moduleId: "product-brief" as const,
+      proposed,
+      current,
+      upstream: upstreamChange({
+        artifact: current,
+        promptRequirementsArtifactId,
+        materialIntakeArtifactId,
+      }),
+    };
+  },
+};

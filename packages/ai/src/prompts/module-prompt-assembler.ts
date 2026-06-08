@@ -12,7 +12,7 @@ export type PromptModuleId =
 
 export interface ModulePromptAssemblyMetadata {
   moduleId: PromptModuleId;
-  assemblerVersion: "v2";
+  assemblerVersion: "module-prompt-assembler";
   subjectTemplateId: string;
   contractTemplateId: string;
   subjectHash: string;
@@ -54,7 +54,7 @@ export function getModulePromptAssemblyMetadata(
   const contract = loadTemplate(moduleId, "contract");
   return {
     moduleId,
-    assemblerVersion: "v2",
+    assemblerVersion: "module-prompt-assembler",
     subjectTemplateId: templateId(moduleId, "subject"),
     contractTemplateId: templateId(moduleId, "contract"),
     subjectHash: sha256(subject),

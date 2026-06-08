@@ -33,6 +33,7 @@ import {
 } from "../../common/image-validation.js";
 import { config } from "../../common/config.js";
 import { HttpError } from "../../common/errors.js";
+import { logger } from "../../common/logger.js";
 import { db } from "../../db/client.js";
 import type { WorkspaceStorageBindingRow } from "../../db/client.js";
 import { oneClickFinalVideoService } from "../generation/one-click-final-video.service.js";
@@ -49,7 +50,7 @@ import {
 import type { WorkspaceStorageAdapter } from "./storage/workspace-storage.adapter.js";
 import { getWorkspaceStorageAdapter } from "./storage/workspace-storage-resolver.js";
 import { joinObjectKey } from "./storage/workspace-storage.keys.js";
-import { compareSourceFingerprint } from "./upstream-drift-v2.service.js";
+import { compareSourceFingerprint } from "./upstream-drift.service.js";
 
 const workspaceManifestRelativePath = path.join(".daireel", "workspace.json");
 const workspaceTraceFile = ".daireel/trace/events.jsonl" as const;
@@ -1587,6 +1588,9 @@ export const workspaceService = {
          union all
          select 1 from final_video_jobs
          where workspace_id = $1 and status in ('PENDING', 'RUNNING')
+         union all
+         select 1 from one_click_final_video_jobs
+         where workspace_id = $1 and status in ('PENDING', 'RUNNING', 'WAITING')
        ) as busy`,
       [workspaceId],
     );
@@ -1598,27 +1602,32 @@ export const workspaceService = {
       );
     }
 
-    if (binding) {
-      const adapter = await getWorkspaceStorageAdapter(workspaceId);
-      await adapter.deletePrefix("");
-    }
+    // Capture the storage adapter before the transaction: the binding row is
+    // removed by the cascade below and getWorkspaceStorageAdapter re-queries it.
+    const adapter = binding
+      ? await getWorkspaceStorageAdapter(workspaceId)
+      : null;
 
     const client = await db.db2.pool().connect();
     try {
       await client.query("begin");
       await client.query(
-        `delete from campaign_publication_metrics
+        `delete from external_kol_metrics
          where publication_id in (
-           select id from campaign_publications where workspace_id = $1
+           select id from external_kol_publications where workspace_id = $1
          )`,
         [workspaceId],
       );
       await client.query(
-        `delete from campaign_publications where workspace_id = $1`,
+        `delete from external_kol_publications where workspace_id = $1`,
         [workspaceId],
       );
       await client.query(
         `delete from shot_image_auto_selection_jobs where workspace_id = $1`,
+        [workspaceId],
+      );
+      await client.query(
+        `delete from one_click_final_video_jobs where workspace_id = $1`,
         [workspaceId],
       );
       await client.query(`delete from generation_jobs where workspace_id = $1`, [
@@ -1724,6 +1733,20 @@ export const workspaceService = {
       throw error;
     } finally {
       client.release();
+    }
+
+    // Best-effort purge after the DB delete has committed. A failure here leaves
+    // orphaned storage objects (cheaper than dangling DB references), so we log
+    // and still report the workspace as deleted.
+    if (adapter) {
+      try {
+        await adapter.deletePrefix("");
+      } catch (err) {
+        logger.error("workspace storage purge failed; objects orphaned", {
+          workspaceId,
+          err,
+        });
+      }
     }
 
     return {

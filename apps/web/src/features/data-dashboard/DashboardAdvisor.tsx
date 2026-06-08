@@ -54,7 +54,7 @@ export function DashboardAdvisor({
             <StrategyRec
               snapshot={snapshot}
               recommendation={snapshot.strategyRecommendation}
-              currentStrategy={video.creativeFactors?.strategy}
+              currentStrategy={video.creativeFactors.strategy}
             />
           </section>
         </div>
@@ -70,11 +70,12 @@ function FactorCombo({
   snapshot: DashboardAnalyticsSnapshot;
   video: DashboardVideoContext;
 }) {
-  const labels = video.creativeFactors ? factorLabels(snapshot, video.creativeFactors) : null;
+  const labels = factorLabels(snapshot, video.creativeFactors);
   const items = [
-    { key: "商品/服务类型", value: labels?.productType.label ?? "--", lever: false },
-    { key: "适用人群", value: labels?.audience.label ?? "--", lever: false },
-    { key: "推销手法", value: labels?.strategy.label ?? "--", lever: true },
+    { key: "商品类目", value: labels.productCategory.label, lever: false },
+    { key: "商品成交类型", value: labels.dealType.label, lever: false },
+    { key: "适用人群", value: labels.audience.label, lever: false },
+    { key: "推销手法", value: labels.strategy.label, lever: true },
   ];
   return (
     <div className="dash-combo">

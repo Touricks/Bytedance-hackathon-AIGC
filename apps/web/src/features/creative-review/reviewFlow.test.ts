@@ -211,7 +211,7 @@ describe("deriveReviewStepIndicators", () => {
     const steps = deriveReviewStepIndicators(vm);
 
     assert.equal(deriveActiveStep(vm), "material");
-    assert.equal(steps.find((step) => step.id === "material")?.state, "proposed");
+    assert.equal(steps.find((step) => step.id === "material")?.state, "待审核");
     assert.equal(steps.find((step) => step.id === "material")?.tone, "review");
     assert.equal(steps.find((step) => step.id === "brief")?.state, "上游已变化");
     assert.equal(steps.find((step) => step.id === "brief")?.tone, "danger");
@@ -579,7 +579,7 @@ describe("deriveReviewStepIndicators", () => {
     assert.deepEqual(steps.find((step) => step.id === "brief"), {
       id: "brief",
       label: "商品卖点审核",
-      state: "proposed",
+      state: "待审核",
       tone: "review",
     });
   });

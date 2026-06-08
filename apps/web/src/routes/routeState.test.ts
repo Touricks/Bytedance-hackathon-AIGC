@@ -24,6 +24,15 @@ describe("resolveAppRoute", () => {
       type: "data-dashboard",
       initialView: "videos",
     });
+    assert.deepEqual(
+      resolveAppRoute("/dashboard/ws_123", "?view=diagnosis&finalVideoJobId=fv_1"),
+      {
+        type: "data-dashboard",
+        workspaceId: "ws_123",
+        initialView: "diagnosis",
+        initialFinalVideoJobId: "fv_1",
+      },
+    );
   });
 
   it("keeps the base workspace path on the 创作审核台", () => {
@@ -39,5 +48,9 @@ describe("resolveAppRoute", () => {
     assert.equal(dashboardPath("ws_123"), "/dashboard/ws_123");
     assert.equal(dashboardPath(undefined, "videos"), "/dashboard?view=videos");
     assert.equal(dashboardPath("ws_123", "videos"), "/dashboard/ws_123?view=videos");
+    assert.equal(
+      dashboardPath("ws_123", "diagnosis", "fv_1"),
+      "/dashboard/ws_123?view=diagnosis&finalVideoJobId=fv_1",
+    );
   });
 });

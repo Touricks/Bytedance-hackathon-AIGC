@@ -35,6 +35,7 @@ function Root() {
       <DataDashboardPage
         workspaceId={route.workspaceId}
         initialView={route.initialView}
+        initialFinalVideoJobId={route.initialFinalVideoJobId}
       />
     );
   }

@@ -223,9 +223,9 @@ describe("generateTextWithArk", () => {
       {
         responseFormat: {
           type: "json_schema",
-          name: "storyboard_v1",
+          name: "storyboard",
           description: "Storyboard output schema",
-          schemaVersion: "ugc-storyboard.v1",
+          schemaVersion: "ugc-storyboard",
           strict: true,
           schema: {
             type: "object",
@@ -243,7 +243,7 @@ describe("generateTextWithArk", () => {
         },
         trace: {
           pipeline: "storyboard",
-          contractVersion: "ugc-storyboard.v1"
+          contractVersion: "ugc-storyboard"
         },
         createClient: () => ({
           chat: {
@@ -263,7 +263,7 @@ describe("generateTextWithArk", () => {
     assert.deepEqual((calls[0] as { response_format: unknown }).response_format, {
       type: "json_schema",
       json_schema: {
-        name: "storyboard_v1",
+        name: "storyboard",
         description: "Storyboard output schema",
         strict: true,
         schema: {
@@ -280,9 +280,9 @@ describe("generateTextWithArk", () => {
       (events[0] as { meta: { responseFormat: unknown } }).meta.responseFormat,
       {
         type: "json_schema",
-        name: "storyboard_v1",
+        name: "storyboard",
         strict: true,
-        schemaVersion: "ugc-storyboard.v1"
+        schemaVersion: "ugc-storyboard"
       }
     );
     assert.equal(JSON.stringify(events).includes("sentinelField"), false);
@@ -418,9 +418,9 @@ describe("generateResponsesTextWithArk", () => {
       {
         responseFormat: {
           type: "json_schema",
-          name: "reference_video_requirements_v1",
+          name: "reference_video_requirements",
           description: "Reference video requirements schema",
-          schemaVersion: "reference-video-requirements.v1",
+          schemaVersion: "reference-video-requirements",
           strict: true,
           schema: {
             type: "object",
@@ -465,7 +465,7 @@ describe("generateResponsesTextWithArk", () => {
         text: {
           format: {
             type: "json_schema",
-            name: "reference_video_requirements_v1",
+            name: "reference_video_requirements",
             description: "Reference video requirements schema",
             strict: true,
             schema: {

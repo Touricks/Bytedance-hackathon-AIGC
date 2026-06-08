@@ -34,7 +34,7 @@ import {
   type StoryboardFormState,
   type StoryboardShotFormState
 } from "../storyboardForm.js";
-import { ProposalPlaceholder } from "./Common.js";
+import { ProposalPlaceholder, ReviewActionDock } from "./Common.js";
 
 export function StoryboardReviewForm({
   artifactId,
@@ -520,7 +520,7 @@ export function StoryboardReviewForm({
         </Collapse>
       </section>
 
-      <div className="storyboard-approve-dock">
+      <ReviewActionDock>
         <button
           type="button"
           className="review-primary"
@@ -533,7 +533,7 @@ export function StoryboardReviewForm({
           <CheckCircle2 size={16} />
           批准生效
         </button>
-      </div>
+      </ReviewActionDock>
     </section>
   );
 }

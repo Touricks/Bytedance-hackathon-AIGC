@@ -1,15 +1,13 @@
 export const GENERATION_QUEUE_NAME = "generation";
 
-export type GenerationJobName = "generate-video";
+export type LegacyGenerationJobName = "generate-video";
 
-export interface GenerateVideoJobPayload {
+export interface LegacyGenerateVideoJobPayload {
   jobId: string;
   scriptId: string;
 }
 
-export const GENERATION_V2_QUEUE_NAME = "generation_v2";
-
-export type GenerationV2JobName =
+export type GenerationJobName =
   | "generate_images"
   | "generate_image_candidate"
   | "generate_videos"
@@ -94,7 +92,7 @@ export interface AdvanceShotImageAutoSelectionJobData {
   traceId: string;
 }
 
-export type GenerationV2JobData =
+export type GenerationJobData =
   | GenerateImagesJobData
   | GenerateImageCandidateJobData
   | GenerateVideosJobData

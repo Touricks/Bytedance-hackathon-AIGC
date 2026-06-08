@@ -1,4 +1,10 @@
-import type { CreativeFactors, Strategy } from "@aigc-video/shared";
+import type {
+  Audience,
+  CreativeFactors,
+  DealType,
+  ProductCategory,
+  Strategy,
+} from "@aigc-video/shared";
 import type {
   ChannelMetric,
   DashboardAnalyticsSnapshot,
@@ -29,13 +35,14 @@ export const channelMetricColor: Record<ChannelMetric, string> = {
   complete: "#F59E0B",
 };
 
-/** KPI card metadata: sparkline color + delta unit (pp for %, none for ROAS). */
+/** KPI card metadata: sparkline color + delta unit (pp for %, none for ROAS/GMV). */
 export const kpiMeta: Record<DashboardMetricTab, { color: string; unit: string }> = {
   ctr: { color: "#3E8BF7", unit: "pp" },
   retain3s: { color: "#16B8A6", unit: "pp" },
   complete: { color: "#F59E0B", unit: "pp" },
   cvr: { color: "#F1556C", unit: "pp" },
   roas: { color: "#6457E8", unit: "" },
+  gmv: { color: "#1FAE6B", unit: "" },
 };
 
 export function metricDisplay(metric: ChannelMetric, value: number) {
@@ -48,9 +55,11 @@ export function matrixMetricDisplay(metric: StrategyMetric, value: number) {
   return `${value.toFixed(2)}%`;
 }
 
-/** KPI big number: ROAS keeps 2 decimals, percentages append %. */
+/** KPI big number: ROAS keeps 2 decimals, GMV uses currency, percentages append %. */
 export function kpiDisplay(key: DashboardMetricTab, value: number) {
-  return key === "roas" ? value.toFixed(2) : `${value}%`;
+  if (key === "roas") return value.toFixed(2);
+  if (key === "gmv") return `¥${fmtNum(value)}`;
+  return `${value}%`;
 }
 
 export interface DeltaView {
@@ -68,6 +77,14 @@ export function formatDelta(value: number, unit = "pp", invert = false): DeltaVi
   const up = rounded >= 0;
   const good = invert ? !up : up;
   return { up, tone: good ? "good" : "bad", text: `${Math.abs(rounded)}${unit}` };
+}
+
+export function formatKpiDelta(key: DashboardMetricTab, value: number): DeltaView {
+  if (key === "gmv") {
+    const delta = formatDelta(value, "");
+    return { ...delta, text: `¥${fmtNum(Math.abs(value))}` };
+  }
+  return formatDelta(value, kpiMeta[key].unit);
 }
 
 export interface SparklineGeometry {
@@ -166,10 +183,30 @@ export function factorLabels(
   snapshot: DashboardAnalyticsSnapshot,
   factors: CreativeFactors,
 ) {
+  const productCategory = snapshot.factorCatalog.productCategories[
+    factors.productCategory as ProductCategory
+  ] ?? {
+    label: "未归类商品类目",
+    description: String(factors.productCategory ?? "unknown"),
+  };
+  const dealType = snapshot.factorCatalog.dealTypes[factors.dealType as DealType] ?? {
+    label: "未归类成交类型",
+    description: String(factors.dealType ?? "unknown"),
+  };
+  const audience = snapshot.factorCatalog.audiences[factors.audience as Audience] ?? {
+    label: "未归类人群",
+    description: String(factors.audience ?? "unknown"),
+  };
+  const strategy = snapshot.factorCatalog.strategies[factors.strategy as Strategy] ?? {
+    label: "未归类推销手法",
+    description: String(factors.strategy ?? "unknown"),
+    flow: "暂无可用链路说明。",
+  };
   return {
-    productType: snapshot.factorCatalog.productTypes[factors.productType],
-    audience: snapshot.factorCatalog.audiences[factors.audience],
-    strategy: snapshot.factorCatalog.strategies[factors.strategy],
+    productCategory,
+    dealType,
+    audience,
+    strategy,
   };
 }
 

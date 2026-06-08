@@ -20,10 +20,10 @@ const sampleMaterial: MaterialIntakeArtifact = {
       description: "主商品素材",
       relevance: "high",
       usable: true,
-      included: true,
-    },
+      included: true
+    }
   ],
-  rejected: [],
+  rejected: []
 };
 
 function materialVm(overrides: Record<string, unknown> = {}) {
@@ -33,32 +33,47 @@ function materialVm(overrides: Record<string, unknown> = {}) {
       material: {
         id: "mat_123",
         isCurrent: false,
-        data: sampleMaterial,
-      },
+        data: sampleMaterial
+      }
     },
     busy: false,
     pending: {},
     actions: {
       runMaterialIntake() {},
       approveMaterialIntakeAndProposeBrief() {},
-      startOneClickFinalVideo() {},
+      startOneClickFinalVideo() {}
     },
     oneClickFinalVideo: null,
-    ...overrides,
+    ...overrides
   } as unknown as WorkbenchViewModel;
 }
 
+function requiredClassBlock(html: string, className: string) {
+  const block = html.match(
+    new RegExp(`<div class="${className}">[\\s\\S]*?<\\/div>`)
+  )?.[0];
+  assert.ok(block, `expected ${className} block to render`);
+  return block;
+}
+
 describe("MaterialIntakeReview", () => {
-  it("renders the manual approval action and the independent one-click action side by side", () => {
+  it("renders the manual approval action in the dock and keeps one-click independent", () => {
     const html = renderToStaticMarkup(
       React.createElement(MaterialIntakeReview, {
         vm: materialVm(),
-        onActionComplete() {},
-      }),
+        onActionComplete() {}
+      })
     );
+
+    const dock = requiredClassBlock(html, "review-action-dock");
+    const secondaryActions = requiredClassBlock(html, "review-secondary-action-row");
 
     assert.match(html, /批准素材解读并生成商品卖点/);
     assert.match(html, /全自动一键成片/);
+    assert.match(dock, /批准素材解读并生成商品卖点/);
+    assert.doesNotMatch(dock, /全自动一键成片/);
+    assert.match(secondaryActions, /全自动一键成片/);
+    assert.doesNotMatch(secondaryActions, /批准素材解读并生成商品卖点/);
     assert.match(html, /material-asset-preview--fit-contain/);
     assert.match(html, /data-preview-fit="contain"/);
   });
@@ -67,7 +82,14 @@ describe("MaterialIntakeReview", () => {
     const html = renderToStaticMarkup(
       React.createElement(MaterialIntakeReview, {
         vm: materialVm({
-          workflow: { shots: [{ id: "shot_1" }, { id: "shot_2" }, { id: "shot_3" }, { id: "shot_4" }] },
+          workflow: {
+            shots: [
+              { id: "shot_1" },
+              { id: "shot_2" },
+              { id: "shot_3" },
+              { id: "shot_4" }
+            ]
+          },
           oneClickFinalVideo: {
             id: "ocv_123",
             status: "WAITING",
@@ -80,11 +102,11 @@ describe("MaterialIntakeReview", () => {
                 }
               }
             },
-            errorMessage: null,
-          },
+            errorMessage: null
+          }
         }),
-        onActionComplete() {},
-      }),
+        onActionComplete() {}
+      })
     );
 
     assert.match(html, /正在一键成片/);
