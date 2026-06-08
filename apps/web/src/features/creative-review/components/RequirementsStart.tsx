@@ -78,7 +78,8 @@ const STRATEGY_OPTIONS: Array<{ value: Strategy; label: string; impact: string }
   { value: "tutorial-value", label: "教程价值", impact: "按误区、步骤、注意点、效果展示和行动引导推进" },
   { value: "authority-proof", label: "权威证明", impact: "按可信来源、核心能力、证据细节和适用场景推进" },
   { value: "emotional-story", label: "情绪故事", impact: "按人物处境、情绪需求、使用过程和改善结果推进" },
-  { value: "curiosity-hook", label: "好奇钩子", impact: "按悬念、揭示、卖点解释、证据和行动引导推进" }
+  { value: "curiosity-hook", label: "好奇钩子", impact: "按悬念、揭示、卖点解释、证据和行动引导推进" },
+  { value: "visual-story", label: "视觉叙事", impact: "产品即画面——以质感开场、材质细节呈现、氛围收尾，适合香氛/摆件/颜值型商品" }
 ];
 
 const FACTOR_GROUPS = [

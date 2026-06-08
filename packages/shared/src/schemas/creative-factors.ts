@@ -19,6 +19,7 @@ export const strategySchema = z.enum([
   "authority-proof",
   "emotional-story",
   "curiosity-hook",
+  "visual-story",
 ]);
 export type Strategy = z.infer<typeof strategySchema>;
 
@@ -359,6 +360,18 @@ const STRATEGY_GUIDANCE = {
       openingPattern: "用反常识问题或悬念画面开场,但马上回到真实卖点。",
       storyArc: ["悬念提出", "答案揭示", "卖点解释", "证据证明", "行动引导"],
       ctaStyle: "用解释后的购买理由转化,避免纯猎奇。",
+    },
+  },
+  "visual-story": {
+    factorGuidance: {
+      openingHook: "用产品本身的视觉质感和场景氛围开场,产品即画面,无需痛点铺垫。",
+      storyStructure: "按质感开场、材质细节呈现、场景氛围收尾推进,以视觉和感官体验为叙事主线。",
+      evidenceAndCta: "用材质细节和场景氛围建立向往感,以留白或极短共鸣句收束。",
+    },
+    scriptInfluence: {
+      openingPattern: "产品在光线里静置开场,voiceover 极短或留白,让画面先说话。",
+      storyArc: ["质感开场", "材质细节", "氛围收束"],
+      ctaStyle: "无旁白留白或极短共鸣句(不超过5字),禁止行动催促语。",
     },
   },
 } satisfies Record<
