@@ -10,9 +10,9 @@ info:
     新的分镜链路由显式创建 shot set 触发。上游变更通过 upstreamChanged 提示表达，
     不代表 stale，也不删除候选或选择。图像/视频选择写入 image_select_artifacts /
     video_select_artifacts，每个 shot 只有一个当前 selected image/video，重复选择用 UPSERT 覆盖。
-    模板路径契约见 docs/core/contracts/openapi.yaml 与 docs/core/contracts/interface.md；
-    根目录 docs/core/openapi.yaml 与 docs/core/interface.md 是现有脚本兼容镜像。
-    架构详述见 docs/core/arc_v3.md，数据模型见 docs/core/erd.md。
+    契约源见 docs/core/contracts/openapi.yaml 与 docs/core/contracts/interface.md。
+    架构源见 docs/core/architecture/* 与 docs/core/product/*；docs/core/archived/*
+    仅为迁移暂存，不作为新实现依赖。
 servers:
   - url: http://localhost:3000
     description: 本地开发（SERVER_PORT 默认 3000）

@@ -1,13 +1,5 @@
 # Docs/Core Architecture Pack
 
-Status: Accepted
-Owner: Product + Architecture
-Last Updated: 2026-06-08
-Applies To: V3 merchant-facing AIGC commerce video generation
-Depends On: `../../CONTEXT.md`, current repository code, archived legacy references
-Blocks: Cross-layer implementation planning and contract-changing work
-Decision State: Accepted with assigned open decisions
-
 ## 1. Purpose
 
 This directory is the architecture source of truth for the AIGC commerce video
@@ -28,11 +20,11 @@ repository. The V3 product loop is:
 ```
 
 The template-aligned files under `product/`, `architecture/`, `contracts/`,
-`testing/`, and `implementation/` are the entry points for implementation
-readiness. `contracts/openapi.yaml` and `contracts/interface.md` are the
-template-aligned contract files. The root `docs/core/openapi.yaml` and
-`docs/core/interface.md` remain compatibility mirrors for existing repo scripts
-and AGENTS guidance, and `archived/` keeps the detailed legacy reference set.
+`testing/`, and `implementation/` are the implementation source of truth.
+`contracts/openapi.yaml` and `contracts/interface.md` are the public contract
+files. `archived/` is migration staging for older core documents; once their
+facts are migrated into the template-aligned files, it may be deleted or ignored
+and must not become a dependency for new work.
 
 ## 2. Reading Order
 
@@ -47,30 +39,24 @@ and AGENTS guidance, and `archived/` keeps the detailed legacy reference set.
 9. `testing/test_strategy_v1.md`
 10. `implementation/slices/v3_review_chain_slice.md`
 
-## 3. Legacy Reference Map
+## 3. Migration Staging
 
 | File | Current role |
 |---|---|
 | `contracts/openapi.yaml` | Template-aligned OpenAPI contract source. |
 | `contracts/interface.md` | Template-aligned detailed REST behavior notes. |
-| `openapi.yaml` | Compatibility mirror consumed by `pnpm contract:frontend-backend`. |
-| `interface.md` | Compatibility mirror for existing repo guidance. |
-| `archived/arc_v3.md` | Detailed V3 target architecture and module graph. |
-| `archived/erd.md` | Detailed persistence model and schema rationale. |
-| `archived/factor_artifact.md` | Creative factor artifact behavior and dashboard tag flow. |
-| `archived/prompt_workflow.md` | Prompt assembly and prompt artifact flow. |
-| `archived/prompt_artifact.md` | Prompt artifact fields and storage contract. |
+| `archived/*` | Temporary holding area for migrated legacy docs; not a source of truth. |
 
 ## 4. Drift Rules
 
 - Code-visible API behavior changes require updates to
-  `contracts/contract_mapping_v1.md`, `contracts/interface.md`,
-  `contracts/openapi.yaml`, and the root compatibility mirrors when applicable.
+  `contracts/contract_mapping_v1.md`, `contracts/interface.md`, and
+  `contracts/openapi.yaml` when applicable.
 - Prompt chain changes require updates to `architecture/domain_v1.md`,
-  `architecture/runtime_flow_v1.md`, `archived/prompt_workflow.md`, and
-  `archived/prompt_artifact.md` when applicable.
+  `architecture/runtime_flow_v1.md`, and `contracts/contract_mapping_v1.md`
+  when applicable.
 - Persistence or job-state changes require updates to
   `architecture/domain_v1.md`, `architecture/runtime_flow_v1.md`, and
-  `archived/erd.md`.
+  `contracts/contract_mapping_v1.md`.
 - Frontend workflow copy must use `CONTEXT.md` business terms, not raw provider
   prompt terminology.

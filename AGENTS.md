@@ -62,9 +62,9 @@ CONTEXT.md         # canonical business language
 ### Source of truth rules
 
 - Before backend, provider, or contract work, read `CONTEXT.md` plus the relevant `docs/core/` files.
-- `docs/core/arc_v3.md` is the target architecture; `docs/core/interface.md` and `docs/core/openapi.yaml` are the API contract; `docs/core/prompt_workflow.md` and `docs/core/prompt_artifact.md` describe prompt assembly and persisted prompt facts.
+- `docs/core/product/` and `docs/core/architecture/` are the target architecture; `docs/core/contracts/interface.md` and `docs/core/contracts/openapi.yaml` are the API contract. `docs/core/archived/` is migration staging only and may be deleted or ignored after facts are migrated.
 - Use `docs/reference/` before changing Ark text/image or Seedance video request/response handling.
-- When API behavior changes, update frontend clients, `docs/core/openapi.yaml`, `docs/core/interface.md` together when applicable.
+- When API behavior changes, update frontend clients, `docs/core/contracts/openapi.yaml`, `docs/core/contracts/interface.md` together when applicable.
 - When fixing issues, check whether `docs/core/` architecture/interface/prompt-chain files need matching updates.
 - Business rules belong in backend services, schemas, shared contracts, and domain docs, not duplicated only in UI.
 

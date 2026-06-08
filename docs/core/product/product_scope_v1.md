@@ -4,7 +4,7 @@ Status: Accepted
 Owner: Product
 Last Updated: 2026-06-08
 Applies To: V3 merchant-facing AIGC commerce video generation
-Depends On: `../../../CONTEXT.md`, `../archived/arc_v3.md`, `../archived/factor_artifact.md`
+Depends On: `../../../CONTEXT.md`, `../architecture/domain_v1.md`, `../contracts/contract_mapping_v1.md`
 Blocks: Domain and runtime architecture
 Decision State: Accepted with assigned open decisions
 

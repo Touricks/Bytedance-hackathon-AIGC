@@ -4,7 +4,7 @@ Status: Accepted
 Owner: Domain/API
 Last Updated: 2026-06-08
 Applies To: V3 core entities, source of truth, lifecycle, and invariants
-Depends On: `../product/product_scope_v1.md`, `../archived/erd.md`, `../archived/prompt_artifact.md`
+Depends On: `../product/product_scope_v1.md`, `runtime_flow_v1.md`, `../contracts/contract_mapping_v1.md`
 Blocks: DB, API, prompt-chain, and frontend workflow implementation
 Decision State: Accepted with assigned open decisions
 
