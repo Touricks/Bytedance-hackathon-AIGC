@@ -14,6 +14,7 @@ import {
   collectWorkspaceMaterialLibraryForWorkspace,
   copySelectedLegacyRootMaterials,
   createWorkspaceTraceLoggerForWorkspace,
+  materialIntakeImageInputsForWorkspace,
   materialIntakeTextPreviewsForWorkspace,
   runtimeMode,
 } from "./workspace.service.js";
@@ -167,6 +168,10 @@ export const materialIntakeV2Service = {
       input.workspaceId,
       scanned,
     );
+    const imageInputs = await materialIntakeImageInputsForWorkspace(
+      input.workspaceId,
+      scanned,
+    );
     const data: MaterialIntakeArtifact =
       runtimeMode() === "real"
         ? (
@@ -181,6 +186,8 @@ export const materialIntakeV2Service = {
                 traceLogger: await createWorkspaceTraceLoggerForWorkspace(
                   workspace,
                 ),
+                imageInputs,
+                includeImageInputs: true,
               },
             )
           ).material
