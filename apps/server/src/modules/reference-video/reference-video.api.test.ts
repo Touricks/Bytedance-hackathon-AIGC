@@ -122,7 +122,8 @@ describe("reference video requirements import API", () => {
     assert.deepEqual(body.data.artifact.data.creativeFactors, {
       productType: "durable-good",
       audience: "youth",
-      strategy: "scenario-demo"
+      strategy: "scenario-demo",
+      visualStyle: "authentic"
     });
     assert.equal(
       body.data.artifact.data.factorGuidance.productType.subjectPresentation,

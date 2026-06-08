@@ -40,6 +40,43 @@ describe("module prompt assembler", () => {
     assert.match(shotPrompt.prompt, /providerPrompt：镜头叙事和语境锚点/);
     assert.match(shotPrompt.prompt, /shotImage：静态关键帧要求/);
     assert.match(shotPrompt.prompt, /shotVideo：动态视频运动要求/);
-    assert.match(shotPrompt.prompt, /不得互相原样复制/);
+    assert.match(shotPrompt.prompt, /禁止把 providerPrompt 原样复制/);
+  });
+
+  it("loads subject creative rules for the four prompt modules", () => {
+    const materialIntake = buildModulePrompt({
+      moduleId: "material-intake",
+      runtimeContext: "已验证素材清单：bag-main.png",
+    });
+    const productBrief = buildModulePrompt({
+      moduleId: "product-brief",
+      runtimeContext: "素材清点：箱包商品",
+    });
+    const storyboard = buildModulePrompt({
+      moduleId: "storyboard",
+      runtimeContext: "商品 brief：通勤包",
+    });
+    const shotprompt = buildModulePrompt({
+      moduleId: "shotprompt",
+      runtimeContext: "已确认分镜：3 个 shots",
+    });
+
+    assert.match(materialIntake.prompt, /role 分类规则/);
+    assert.match(materialIntake.prompt, /spec_text/);
+    assert.match(materialIntake.prompt, /只允许一张素材承担主商品身份/);
+
+    assert.match(productBrief.prompt, /coreSellingPoint 写法规范/);
+    assert.match(productBrief.prompt, /visualStyle 表达指导/);
+
+    assert.match(storyboard.prompt, /strategy 叙事弧规则/);
+    assert.match(storyboard.prompt, /visual-story/);
+    assert.match(storyboard.prompt, /固定总时长 15 秒/);
+    assert.match(storyboard.prompt, /purpose 必须按顺序严格是 hook、proof、cta/);
+    assert.doesNotMatch(storyboard.prompt, /固定 6 个 shots|固定 6 个镜头|12 秒|durationSec \* 8/);
+
+    assert.match(shotprompt.prompt, /providerPrompt 8 要素规则/);
+    assert.match(shotprompt.prompt, /shotImage 规则/);
+    assert.match(shotprompt.prompt, /shotVideo 规则/);
+    assert.match(shotprompt.prompt, /pace 可为 slow、medium 或 fast/);
   });
 });

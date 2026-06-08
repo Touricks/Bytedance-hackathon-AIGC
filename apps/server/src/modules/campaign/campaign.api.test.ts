@@ -132,6 +132,7 @@ describe("campaign publication API", () => {
             productType: "offline-experience-service",
             audience: "child",
             strategy: "scenario-demo",
+            visualStyle: "authentic",
           },
           creativeRequirementTemplate: {
             source: "setup-template",
@@ -170,6 +171,7 @@ describe("campaign publication API", () => {
             productType: string;
             audience: string;
             strategy: string;
+            visualStyle: string;
           };
           creativeRequirementTemplate: {
             source: string;
@@ -188,6 +190,7 @@ describe("campaign publication API", () => {
       productType: "offline-experience-service",
       audience: "child",
       strategy: "scenario-demo",
+      visualStyle: "authentic",
     });
     assert.deepEqual(created.data.creativeTags.creativeRequirementTemplate, {
       source: "setup-template",

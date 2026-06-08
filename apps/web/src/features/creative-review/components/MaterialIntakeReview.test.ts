@@ -59,16 +59,27 @@ describe("MaterialIntakeReview", () => {
 
     assert.match(html, /批准素材解读并生成商品卖点/);
     assert.match(html, /全自动一键成片/);
+    assert.match(html, /material-asset-preview--fit-contain/);
+    assert.match(html, /data-preview-fit="contain"/);
   });
 
   it("renders recoverable one-click progress on the material intake page", () => {
     const html = renderToStaticMarkup(
       React.createElement(MaterialIntakeReview, {
         vm: materialVm({
+          workflow: { shots: [{ id: "shot_1" }, { id: "shot_2" }, { id: "shot_3" }, { id: "shot_4" }] },
           oneClickFinalVideo: {
             id: "ocv_123",
             status: "WAITING",
             currentStage: "video_selection",
+            stageState: {
+              video: {
+                selectedCandidateIdsByShotId: {
+                  shot_1: "candidate_1",
+                  shot_2: "candidate_2"
+                }
+              }
+            },
             errorMessage: null,
           },
         }),
@@ -78,6 +89,10 @@ describe("MaterialIntakeReview", () => {
 
     assert.match(html, /正在一键成片/);
     assert.match(html, /生成并选择分镜视频/);
+    assert.match(html, /role="progressbar"/);
+    assert.match(html, /aria-label="一键成片进度"/);
+    assert.match(html, /aria-valuenow="78"/);
+    assert.match(html, /78%/);
     assert.match(html, /可随时回到对应步骤手动继续/);
   });
 });

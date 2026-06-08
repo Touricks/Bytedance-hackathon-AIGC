@@ -8,7 +8,9 @@ import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.j
 import type { PromptRequirementsData } from "../../../lib/api/client.js";
 import {
   promptRequirementsDataFromForm,
+  requirementFormFromArtifact,
   requirementFormWithCreativeFactors,
+  syncCompiledRequirementFields,
 } from "../requirementsForm.js";
 import { RequirementsStart } from "./RequirementsStart.js";
 
@@ -16,6 +18,7 @@ const DETACHED_FACTORS: CreativeFactors = {
   productType: "consumable-good",
   audience: "toddler",
   strategy: "emotional-story",
+  visualStyle: "authentic",
 };
 
 function requirementsVm(
@@ -118,5 +121,55 @@ describe("RequirementsStart", () => {
 
     assert.doesNotMatch(submitButton, /\sdisabled(=|\s|>)/);
     assert.match(html, /请先上传至少一个商品素材/);
+  });
+
+  it("renders neutral audience and visual-story strategy options with audience guidance hint", () => {
+    const form = requirementFormWithCreativeFactors({
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+      visualStyle: "authentic",
+    });
+    const html = renderRequirements(promptRequirementsDataFromForm(form));
+
+    assert.match(html, /不限定/);
+    assert.match(html, /视觉叙事/);
+    assert.match(html, /如不希望专注特定人群，可删除以下字段/);
+  });
+
+  it("rehydrates saved requirements with deleted audience guidance fields", () => {
+    const form = requirementFormWithCreativeFactors({
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+      visualStyle: "authentic",
+    });
+    const customized = syncCompiledRequirementFields({
+      creativeFactors: form.creativeFactors,
+      scriptInfluence: form.scriptInfluence,
+      factorGuidance: {
+        ...form.factorGuidance,
+        audience: {
+          addressingAndTone: "",
+          benefitFrame: "",
+          sensitivityBoundaries: "",
+        },
+      },
+      creativeRequirementTemplate: form.creativeRequirementTemplate,
+    });
+    const blankAudienceForm = requirementFormFromArtifact(
+      promptRequirementsDataFromForm(customized),
+    );
+
+    assert.deepEqual(blankAudienceForm.creativeFactors, {
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+      visualStyle: "authentic",
+    });
+    assert.equal(blankAudienceForm.factorGuidance.audience.addressingAndTone, "");
+    assert.equal(blankAudienceForm.factorGuidance.audience.benefitFrame, "");
+    assert.equal(blankAudienceForm.factorGuidance.audience.sensitivityBoundaries, "");
+    assert.doesNotMatch(blankAudienceForm.scriptTone, /年轻用户|家长|银发/);
   });
 });

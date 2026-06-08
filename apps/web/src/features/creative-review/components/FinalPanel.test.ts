@@ -24,6 +24,37 @@ function finalVm(overrides: Record<string, unknown> = {}) {
 }
 
 describe("FinalPanel", () => {
+  it("renders one-click final video progress with a determinate progressbar", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(FinalPanel, {
+        vm: finalVm({
+          workflow: {
+            canComposeFinalVideo: true,
+            shots: [
+              { id: "shot_1" },
+              { id: "shot_2" },
+              { id: "shot_3" },
+              { id: "shot_4" }
+            ]
+          },
+          oneClickFinalVideo: {
+            id: "ocv_123",
+            status: "RUNNING",
+            currentStage: "image_selection",
+            stageState: { image: { currentIndex: 1 } },
+            errorMessage: null
+          }
+        })
+      })
+    );
+
+    assert.match(html, /生成并选择分镜图/);
+    assert.match(html, /role="progressbar"/);
+    assert.match(html, /aria-label="一键成片进度"/);
+    assert.match(html, /aria-valuenow="53"/);
+    assert.match(html, /53%/);
+  });
+
   it("renders a naming workflow for importing a completed final video into the dashboard", () => {
     const html = renderToStaticMarkup(
       React.createElement(FinalPanel, {

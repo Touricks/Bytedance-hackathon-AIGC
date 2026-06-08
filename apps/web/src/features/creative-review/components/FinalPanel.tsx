@@ -6,17 +6,7 @@ import { finalVideoDownloadUrl } from "../../../lib/api/finalVideo.js";
 import { navigateToDataDashboard } from "../../../routes/routeState.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import { statusTone } from "../reviewFlow.js";
-
-const oneClickStageLabels: Record<string, string> = {
-  product_brief: "生成商品卖点",
-  storyboard: "生成分镜脚本",
-  shotprompt: "生成分镜生成要求",
-  shot_set: "应用分镜链路",
-  image_selection: "生成并选择分镜图",
-  video_selection: "生成并选择分镜视频",
-  final_compose: "生成成片",
-  completed: "已生成成片",
-};
+import { OneClickProgress } from "./OneClickProgress.js";
 
 export async function importFinalVideoToDashboard(
   input: {
@@ -39,9 +29,7 @@ export async function importFinalVideoToDashboard(
 export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
   const job = vm.finalVideo;
   const oneClickJob = vm.oneClickFinalVideo;
-  const oneClickStage = oneClickJob
-    ? (oneClickStageLabels[oneClickJob.currentStage] ?? oneClickJob.currentStage)
-    : null;
+  const oneClickShotCount = vm.workflow?.shots?.length ?? 0;
   const finalUrl = job?.localUrl ? toAbsoluteAssetUrl(job.localUrl) : null;
   const downloadUrl = finalUrl ? finalVideoDownloadUrl(finalUrl) : null;
   const defaultImportName = job?.id ? `final-video-${job.id}` : "";
@@ -79,17 +67,11 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
         <h1>生成成片</h1>
       </div>
       {oneClickJob ? (
-        <div className="review-one-click-progress">
-          <span className={`review-status review-status--${statusTone(oneClickJob.status)}`}>
-            {oneClickJob.status === "WAITING" ? "RUNNING" : oneClickJob.status}
-          </span>
-          <strong>{oneClickStage}</strong>
-          {oneClickJob.errorMessage ? (
-            <span className="review-error">{oneClickJob.errorMessage}</span>
-          ) : (
-            <span>全自动一键成片任务会在完成后接入这里的成片结果。</span>
-          )}
-        </div>
+        <OneClickProgress
+          job={oneClickJob}
+          shotCount={oneClickShotCount}
+          description="全自动一键成片任务会在完成后接入这里的成片结果。"
+        />
       ) : null}
       <div className="review-panel__actions">
         <button

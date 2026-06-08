@@ -10,6 +10,7 @@ import {
   applyCreativeFactorsToPromptRequirements,
   buildCreativeFactorRequirements,
   compileCreativeRequirementFields,
+  creativeFactorRequirementsDataSchema,
   type FactorGuidance,
   type FactorGuidanceFieldPath,
 } from "../schemas/creative-factors.js";
@@ -66,6 +67,7 @@ describe("creative requirement setup templates", () => {
       const compiled = compileCreativeRequirementFields({
         factorGuidance,
         scriptInfluence: base.scriptInfluence,
+        visualStyle: base.creativeFactors.visualStyle,
       });
       assert.deepEqual(template.values, {
         imageStyle: compiled.image.style,
@@ -220,6 +222,7 @@ describe("creative requirement setup templates", () => {
       productType: "offline-experience-service",
       audience: "child",
       strategy: "scenario-demo",
+      visualStyle: "authentic",
     });
     assert.equal(
       data.factorGuidance.productType.subjectPresentation,
@@ -251,7 +254,7 @@ describe("creative requirement setup templates", () => {
 
     assert.equal(
       compiled.image.style,
-      "真实展示目的地、交通、场地、服务人员和体验者。 保持真实拍摄质感和商品/服务身份可识别。",
+      "真实展示目的地、交通、场地、服务人员和体验者。 保持商品/服务身份可识别。 视觉风格：UGC真实质感，自然光或窗边漫射光，曝光充足偏高，色彩干净通透，非广告棚感。",
     );
     assert.deepEqual(
       compiled.compiledRequirementSourceMap.shotVideoGlobal.map((source) => source.affects),
@@ -274,12 +277,50 @@ describe("creative requirement setup templates", () => {
         },
       },
       scriptInfluence: data.scriptInfluence,
+      visualStyle: data.creativeFactors.visualStyle,
     });
 
     assert.equal(
       compiled.shotVideo.global,
-      "先用用户自己的真实开场想法切入。 按需求场景、功能展示、细节证明和使用结果推进。",
+      "先用用户自己的真实开场想法切入。 按需求场景、功能展示、细节证明和使用结果推进。 运镜质感：镜头固定或轻微手持晃动，动作有物理重量感，无过度运镜，真实UGC节奏。",
     );
+  });
+
+  it("builds neutral requirements when audience is not limited", () => {
+    const data = buildCreativeFactorRequirements({
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+    });
+
+    assert.deepEqual(data.creativeFactors, {
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+      visualStyle: "authentic",
+    });
+    assert.match(
+      data.factorGuidance.audience.addressingAndTone,
+      /面向广泛用户/,
+    );
+    assert.match(String(data.shotVideo.global), /产品本身的视觉质感/);
+    assert.match(String(data.storyboard.rhythm), /质感开场/);
+  });
+
+  it("accepts deleted audience guidance fields without losing the artifact shape", () => {
+    const data = buildCreativeFactorRequirements({
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+    });
+    const parsed = buildCreativeFactorRequirements(data.creativeFactors);
+    parsed.factorGuidance.audience = {
+      addressingAndTone: "",
+      benefitFrame: "",
+      sensitivityBoundaries: "",
+    };
+
+    assert.doesNotThrow(() => creativeFactorRequirementsDataSchema.parse(parsed));
   });
 
   it("routes every editable factor guidance field into its declared compiled fields", () => {
@@ -307,6 +348,7 @@ describe("creative requirement setup templates", () => {
         },
       },
       scriptInfluence: data.scriptInfluence,
+      visualStyle: data.creativeFactors.visualStyle,
     });
     const fields = {
       imageStyle: String(compiled.image.style),

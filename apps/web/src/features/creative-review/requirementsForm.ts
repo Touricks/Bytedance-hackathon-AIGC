@@ -42,7 +42,8 @@ function factorStateFromArtifact(data: PromptRequirementsData | null): FactorSta
   if (parsed.success) {
     const compiled = compileCreativeRequirementFields({
       factorGuidance: parsed.data.factorGuidance,
-      scriptInfluence: parsed.data.scriptInfluence
+      scriptInfluence: parsed.data.scriptInfluence,
+      visualStyle: parsed.data.creativeFactors.visualStyle
     });
     return {
       creativeFactors: parsed.data.creativeFactors,
@@ -89,7 +90,8 @@ export function syncCompiledRequirementFields(
 ): RequirementsFormState {
   const compiled = compileCreativeRequirementFields({
     factorGuidance: state.factorGuidance,
-    scriptInfluence: state.scriptInfluence
+    scriptInfluence: state.scriptInfluence,
+    visualStyle: state.creativeFactors.visualStyle
   });
   return {
     ...state,
@@ -138,7 +140,11 @@ export function requirementFormFromArtifact(
   data: PromptRequirementsData | null
 ): RequirementsFormState {
   const factorState = factorStateFromArtifact(data);
-  const compiled = compileCreativeRequirementFields(factorState);
+  const compiled = compileCreativeRequirementFields({
+    factorGuidance: factorState.factorGuidance,
+    scriptInfluence: factorState.scriptInfluence,
+    visualStyle: factorState.creativeFactors.visualStyle
+  });
   const image = requirementSection(data, "image");
   const script = requirementSection(data, "script");
   const storyboard = requirementSection(data, "storyboard");

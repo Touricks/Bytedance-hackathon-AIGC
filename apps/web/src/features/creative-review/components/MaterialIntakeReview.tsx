@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Ban, CheckCircle2, PackageCheck, Sparkles, Tags } from "lucide-react";
-import type { MaterialIntakeArtifact } from "@aigc-video/shared";
+import {
+  normalizeMaterialIntakePrimaryRole,
+  type MaterialIntakeArtifact
+} from "@aigc-video/shared";
 import { toWorkspaceMaterialUrl } from "../../../lib/api/client.js";
 import { materialAssetFilename } from "../../../lib/materials.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import { MaterialAssetPreview, ProposalPlaceholder } from "./Common.js";
+import { OneClickProgress } from "./OneClickProgress.js";
 
 const materialRoleOptions: Array<MaterialIntakeArtifact["assets"][number]["role"]> = [
   "product_main",
@@ -44,27 +48,16 @@ const materialRelevanceLabels: Record<
   low: "低"
 };
 
-const oneClickStageLabels: Record<string, string> = {
-  product_brief: "生成商品卖点",
-  storyboard: "生成分镜脚本",
-  shotprompt: "生成分镜生成要求",
-  shot_set: "应用分镜链路",
-  image_selection: "生成并选择分镜图",
-  video_selection: "生成并选择分镜视频",
-  final_compose: "生成成片",
-  completed: "已生成成片"
-};
-
 function normalizeMaterialIntakeDraft(
   draft: MaterialIntakeArtifact
 ): MaterialIntakeArtifact {
-  return {
+  return normalizeMaterialIntakePrimaryRole({
     ...draft,
     assets: draft.assets.map((asset) => ({
       ...asset,
       description: asset.description.trim()
     }))
-  };
+  });
 }
 
 export function MaterialIntakeReview({
@@ -109,17 +102,21 @@ export function MaterialIntakeReview({
     ref: string,
     patch: Partial<MaterialIntakeArtifact["assets"][number]>
   ) => {
-    setDraft((current) => ({
-      ...current,
-      assets: current.assets.map((asset) =>
-        asset.ref === ref ? { ...asset, ...patch } : asset
-      ),
-      primaryProductRef:
-        patch.included === false && current.primaryProductRef === ref
-          ? (current.assets.find((asset) => asset.ref !== ref && asset.included)?.ref ??
-            current.primaryProductRef)
-          : current.primaryProductRef
-    }));
+    setDraft((current) =>
+      normalizeMaterialIntakePrimaryRole({
+        ...current,
+        assets: current.assets.map((asset) =>
+          asset.ref === ref ? { ...asset, ...patch } : asset
+        ),
+        primaryProductRef:
+          patch.role === "product_main"
+            ? ref
+            : patch.included === false && current.primaryProductRef === ref
+              ? (current.assets.find((asset) => asset.ref !== ref && asset.included)
+                  ?.ref ?? current.primaryProductRef)
+              : current.primaryProductRef
+      })
+    );
   };
 
   const includedAssets = draft.assets.filter((asset) => asset.included);
@@ -135,15 +132,7 @@ export function MaterialIntakeReview({
     oneClickJob?.status === "PENDING" ||
     oneClickJob?.status === "RUNNING" ||
     oneClickJob?.status === "WAITING";
-  const oneClickStage = oneClickJob
-    ? (oneClickStageLabels[oneClickJob.currentStage] ?? oneClickJob.currentStage)
-    : null;
-  const oneClickTone =
-    oneClickJob?.status === "FAILED"
-      ? "danger"
-      : oneClickJob?.status === "SUCCEEDED"
-        ? "good"
-        : "busy";
+  const oneClickShotCount = vm.workflow?.shots?.length ?? 0;
 
   return (
     <section className="review-panel">
@@ -158,10 +147,12 @@ export function MaterialIntakeReview({
         <select
           value={draft.primaryProductRef}
           onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              primaryProductRef: event.target.value
-            }))
+            setDraft((current) =>
+              normalizeMaterialIntakePrimaryRole({
+                ...current,
+                primaryProductRef: event.target.value
+              })
+            )
           }
         >
           {includedAssets.map((asset) => (
@@ -181,6 +172,7 @@ export function MaterialIntakeReview({
                 src={toWorkspaceMaterialUrl(vm.workspaceId, asset.ref)}
                 filename={filename}
                 className="material-intake-card__preview"
+                fit="contain"
               />
               <div className="material-intake-card__body">
                 <div className="material-intake-card__title">
@@ -326,17 +318,11 @@ export function MaterialIntakeReview({
         </span>
       </div>
       {oneClickJob ? (
-        <div className="review-one-click-progress">
-          <span className={`review-status review-status--${oneClickTone}`}>
-            {oneClickJob.status === "WAITING" ? "RUNNING" : oneClickJob.status}
-          </span>
-          <strong>{oneClickStage}</strong>
-          {oneClickJob.errorMessage ? (
-            <span className="review-error">{oneClickJob.errorMessage}</span>
-          ) : (
-            <span>一键链路会保留已生成的中间产物，可随时回到对应步骤手动继续。</span>
-          )}
-        </div>
+        <OneClickProgress
+          job={oneClickJob}
+          shotCount={oneClickShotCount}
+          description="一键链路会保留已生成的中间产物，可随时回到对应步骤手动继续。"
+        />
       ) : null}
     </section>
   );

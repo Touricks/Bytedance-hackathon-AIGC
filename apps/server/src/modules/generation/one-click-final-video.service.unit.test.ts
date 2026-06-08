@@ -3,6 +3,10 @@ import { describe, it } from "node:test";
 import { oneClickFinalVideoTestHooks } from "./one-click-final-video.service.js";
 
 describe("one-click final video auto-selection rules", () => {
+  it("generates one candidate per auto-selected batch because only the first success is consumed", () => {
+    assert.equal(oneClickFinalVideoTestHooks.oneClickAutoSelectionCandidateCount, 1);
+  });
+
   it("selects the first succeeded image candidate with a stable URL", () => {
     const candidate = oneClickFinalVideoTestHooks.firstSucceededImageCandidate([
       {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Chip from "@mui/material/Chip";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
@@ -6,6 +6,8 @@ import ListItemAvatar from "@mui/material/ListItemAvatar";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import { Clock3, Trash2, Upload } from "lucide-react";
+import { RowsPhotoAlbum, type Photo } from "react-photo-album";
+import Lightbox from "yet-another-react-lightbox";
 import {
   toAbsoluteAssetUrl,
   toWorkspaceMaterialUrl,
@@ -23,6 +25,30 @@ import {
   type ReviewStepId
 } from "../reviewFlow.js";
 import { MaterialAssetPreview } from "./Common.js";
+
+const materialPhotoFallbackSize = { width: 160, height: 90 } as const;
+
+type MaterialLibraryPhoto = Photo & {
+  ref: string;
+  filename: string;
+  description: string | undefined;
+};
+
+function greatestCommonDivisor(a: number, b: number): number {
+  return b === 0 ? a : greatestCommonDivisor(b, a % b);
+}
+
+function materialPhotoRatioLabel(width: number, height: number) {
+  if (width <= 0 || height <= 0) return "16:9";
+  const divisor = greatestCommonDivisor(Math.round(width), Math.round(height));
+  const ratioWidth = Math.round(width / divisor);
+  const ratioHeight = Math.round(height / divisor);
+  if (ratioWidth <= 24 && ratioHeight <= 24) {
+    return `${ratioWidth}:${ratioHeight}`;
+  }
+  if (width === height) return "1:1";
+  return width > height ? "横图" : "竖图";
+}
 
 export function StepRail({
   vm,
@@ -137,12 +163,64 @@ export function RightRail({
   onSelectStep: (step: ReviewStepId) => void;
 }) {
   const assets = vm.materialLibrary?.assets ?? [];
+  const [photoDimensions, setPhotoDimensions] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [deletingRef, setDeletingRef] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const shouldResetAfterDelete = shouldResetFlowAfterMaterialDelete(
     vm.artifacts.promptRequirements
   );
   const activity = deriveCreativeActivity(vm);
+  const photos = useMemo<MaterialLibraryPhoto[]>(
+    () =>
+      assets
+        .filter((asset) => asset.kind === "image")
+        .map((asset) => {
+          const filename = materialAssetFilename(asset.ref);
+          const dimensions = photoDimensions[asset.ref] ?? materialPhotoFallbackSize;
+          return {
+            key: asset.ref,
+            ref: asset.ref,
+            filename,
+            description: asset.description,
+            src: toWorkspaceMaterialUrl(vm.workspaceId, asset.ref),
+            width: dimensions.width,
+            height: dimensions.height,
+            alt: filename,
+            title: filename,
+            label: `放大查看素材 ${filename}`
+          };
+        }),
+    [assets, photoDimensions, vm.workspaceId]
+  );
+  const nonImageAssets = useMemo(
+    () => assets.filter((asset) => asset.kind !== "image"),
+    [assets]
+  );
+  const lightboxSlides = useMemo(
+    () =>
+      photos.map((photo) => ({
+        src: photo.src,
+        alt: photo.alt,
+        width: photo.width,
+        height: photo.height,
+        imageFit: "contain" as const
+      })),
+    [photos]
+  );
+  const activeLightboxIndex =
+    lightboxIndex !== null && lightboxIndex < lightboxSlides.length ? lightboxIndex : 0;
+
+  const rememberPhotoDimensions = (ref: string, width: number, height: number) => {
+    if (width <= 0 || height <= 0) return;
+    setPhotoDimensions((current) => {
+      const previous = current[ref];
+      if (previous?.width === width && previous.height === height) return current;
+      return { ...current, [ref]: { width, height } };
+    });
+  };
 
   const deleteMaterial = async (ref: string) => {
     if (shouldResetAfterDelete && !window.confirm(materialDeleteResetConfirmMessage)) {
@@ -174,7 +252,74 @@ export function RightRail({
           <p className="review-muted">还没有上传素材。</p>
         ) : (
           <div className="review-assets">
-            {assets.map((asset) => {
+            {photos.length > 0 ? (
+              <RowsPhotoAlbum<MaterialLibraryPhoto>
+                photos={photos}
+                spacing={8}
+                padding={0}
+                targetRowHeight={96}
+                rowConstraints={{ minPhotos: 1, maxPhotos: 2, singleRowMaxHeight: 116 }}
+                defaultContainerWidth={276}
+                onClick={({ index }) => setLightboxIndex(index)}
+                render={{
+                  photo: ({ onClick }, { photo, width, height }) => (
+                    <div
+                      key={photo.ref}
+                      className="review-asset review-asset--image"
+                      title={photo.description}
+                      style={{ width }}
+                    >
+                      <button
+                        type="button"
+                        className="review-asset__image-button"
+                        aria-label={photo.label}
+                        onClick={onClick}
+                        style={{ aspectRatio: `${width} / ${height}` }}
+                      >
+                        <img
+                          src={photo.src}
+                          alt={photo.alt}
+                          title={photo.title}
+                          loading="lazy"
+                          decoding="async"
+                          onLoad={(event) => {
+                            const image = event.currentTarget;
+                            rememberPhotoDimensions(
+                              photo.ref,
+                              image.naturalWidth,
+                              image.naturalHeight
+                            );
+                          }}
+                        />
+                        <span className="material-asset-preview__badge">
+                          {materialPhotoRatioLabel(photo.width, photo.height)}
+                        </span>
+                      </button>
+                      <span className="review-asset__name" title={photo.filename}>
+                        {photo.filename}
+                      </span>
+                      <button
+                        type="button"
+                        className="review-secondary"
+                        disabled={deletingRef === photo.ref}
+                        title={
+                          shouldResetAfterDelete
+                            ? `删除 ${photo.filename}，流程将返回模块一:创作要求与上传素材`
+                            : `删除 ${photo.filename}`
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void deleteMaterial(photo.ref);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )
+                }}
+              />
+            ) : null}
+            {nonImageAssets.map((asset) => {
               const filename = materialAssetFilename(asset.ref);
               return (
                 <div key={asset.ref} className="review-asset" title={asset.description}>
@@ -205,6 +350,13 @@ export function RightRail({
             })}
           </div>
         )}
+        <Lightbox
+          open={lightboxIndex !== null && lightboxSlides.length > 0}
+          close={() => setLightboxIndex(null)}
+          index={activeLightboxIndex}
+          slides={lightboxSlides}
+          carousel={{ imageFit: "contain" }}
+        />
         {deleteError ? <p className="review-error">{deleteError}</p> : null}
         {shouldResetAfterDelete ? (
           <p className="review-muted">

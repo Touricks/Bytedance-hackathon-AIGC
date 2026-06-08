@@ -1,11 +1,12 @@
 import { nanoid } from "nanoid";
 import {
   generateMaterialIntakeWithArk,
-  getModulePromptAssemblyMetadata,
+  getModulePromptAssemblyMetadata
 } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
-  type MaterialIntakeArtifact,
+  normalizeMaterialIntakePrimaryRole,
+  type MaterialIntakeArtifact
 } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
@@ -15,7 +16,7 @@ import {
   copySelectedLegacyRootMaterials,
   createWorkspaceTraceLoggerForWorkspace,
   materialIntakeTextPreviewsForWorkspace,
-  runtimeMode,
+  runtimeMode
 } from "./workspace.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
@@ -43,7 +44,7 @@ function jsonbParam(value: unknown) {
 }
 
 function toMaterialIntakeArtifact(
-  row: Record<string, unknown>,
+  row: Record<string, unknown>
 ): MaterialIntakeModuleArtifact {
   return {
     id: String(row.id),
@@ -62,7 +63,7 @@ function toMaterialIntakeArtifact(
         : {},
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
-    approvedAt: row.approved_at ? toIsoString(row.approved_at) : null,
+    approvedAt: row.approved_at ? toIsoString(row.approved_at) : null
   };
 }
 
@@ -75,19 +76,19 @@ async function currentPromptRequirements(workspaceId: string) {
        and is_current = true
      order by approved_at desc, created_at desc, id desc
      limit 1`,
-    [workspaceId],
+    [workspaceId]
   );
   const row = result.rows[0];
   if (!row) {
     throw new HttpError(
       400,
       "NO_CURRENT_APPROVED_ARTIFACT",
-      "Current approved prompt requirements are required",
+      "Current approved prompt requirements are required"
     );
   }
   return {
     id: String(row.id),
-    data: row.data,
+    data: row.data
   };
 }
 
@@ -97,7 +98,7 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
      from material_intake_artifacts
      where workspace_id = $1 and id = $2
      limit 1`,
-    [workspaceId, artifactId],
+    [workspaceId, artifactId]
   );
   const row = result.rows[0];
   if (!row) {
@@ -106,10 +107,7 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
   return toMaterialIntakeArtifact(row);
 }
 
-function promptAssembly(input: {
-  requirementArtifactId: string;
-  data: unknown;
-}) {
+function promptAssembly(input: { requirementArtifactId: string; data: unknown }) {
   const metadata = getModulePromptAssemblyMetadata("material-intake");
   return {
     ...metadata,
@@ -117,7 +115,7 @@ function promptAssembly(input: {
     preview:
       typeof input.data === "object" && input.data
         ? Object.keys(input.data).slice(0, 5).join(", ")
-        : "",
+        : ""
   };
 }
 
@@ -133,7 +131,7 @@ function upstreamChange(input: {
   const changed = sourceId !== input.currentPromptRequirementsArtifactId;
   return {
     upstreamChanged: changed,
-    changedSources: changed ? ["promptRequirementsArtifactId"] : [],
+    changedSources: changed ? ["promptRequirementsArtifactId"] : []
   };
 }
 
@@ -149,25 +147,25 @@ export const materialIntakeV2Service = {
     if (binding?.kind === "LOCAL" && binding.localPath) {
       await copySelectedLegacyRootMaterials({
         directory: binding.localPath,
-        selectedMaterialRefs: input.selectedMaterialRefs,
+        selectedMaterialRefs: input.selectedMaterialRefs
       });
     }
     const materialLibrary = await collectWorkspaceMaterialLibraryForWorkspace(
-      input.workspaceId,
+      input.workspaceId
     );
     const selectedLibrary = applySelectedMaterialRefs(
       materialLibrary,
-      input.selectedMaterialRefs,
+      input.selectedMaterialRefs
     );
     const scanned = materialIntakeArtifactSchema.parse({
       ...selectedLibrary,
-      primaryProductRef: selectedLibrary.primaryProductRef ?? "",
+      primaryProductRef: selectedLibrary.primaryProductRef ?? ""
     });
     const textPreviews = await materialIntakeTextPreviewsForWorkspace(
       input.workspaceId,
-      scanned,
+      scanned
     );
-    const data: MaterialIntakeArtifact =
+    const data: MaterialIntakeArtifact = normalizeMaterialIntakePrimaryRole(
       runtimeMode() === "real"
         ? (
             await generateMaterialIntakeWithArk(
@@ -175,18 +173,17 @@ export const materialIntakeV2Service = {
                 initialPrompt: input.userDirection,
                 scanned,
                 textPreviews,
-                creativeRequirements: requirements.data,
+                creativeRequirements: requirements.data
               },
               {
-                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
-                  workspace,
-                ),
-              },
+                traceLogger: await createWorkspaceTraceLoggerForWorkspace(workspace)
+              }
             )
           ).material
-        : scanned;
+        : scanned
+    );
     const sourceFingerprint = {
-      promptRequirementsArtifactId: requirements.id,
+      promptRequirementsArtifactId: requirements.id
     };
     const result = await db.db2.pool().query(
       `insert into material_intake_artifacts
@@ -201,38 +198,40 @@ export const materialIntakeV2Service = {
         jsonbParam(
           promptAssembly({
             requirementArtifactId: requirements.id,
-            data,
-          }),
-        ),
-      ],
+            data
+          })
+        )
+      ]
     );
     return toMaterialIntakeArtifact(result.rows[0]);
   },
 
-  async approve(input: {
-    workspaceId: string;
-    artifactId?: string;
-    data?: unknown;
-  }) {
+  async approve(input: { workspaceId: string; artifactId?: string; data?: unknown }) {
     await db.getWorkspace(input.workspaceId);
     if (!input.artifactId && input.data === undefined) {
-      throw new HttpError(400, "ARTIFACT_DATA_REQUIRED", "artifactId or data is required");
+      throw new HttpError(
+        400,
+        "ARTIFACT_DATA_REQUIRED",
+        "artifactId or data is required"
+      );
     }
 
     const requirements = await currentPromptRequirements(input.workspaceId);
     const source = input.artifactId
       ? await getArtifactForWorkspace(input.workspaceId, input.artifactId)
       : null;
-    const data = materialIntakeArtifactSchema.parse(input.data ?? source?.data);
+    const data = normalizeMaterialIntakePrimaryRole(
+      materialIntakeArtifactSchema.parse(input.data ?? source?.data)
+    );
     const sourceFingerprint = source?.sourceFingerprint ?? {
-      promptRequirementsArtifactId: requirements.id,
+      promptRequirementsArtifactId: requirements.id
     };
     const assembly =
       source?.promptAssembly && Object.keys(source.promptAssembly).length > 0
         ? source.promptAssembly
         : promptAssembly({
             requirementArtifactId: requirements.id,
-            data,
+            data
           });
 
     const client = await db.db2.pool().connect();
@@ -245,7 +244,7 @@ export const materialIntakeV2Service = {
          where workspace_id = $1
            and status = 'approved'
            and is_current = true`,
-        [input.workspaceId],
+        [input.workspaceId]
       );
       const result = await client.query(
         `insert into material_intake_artifacts
@@ -257,8 +256,8 @@ export const materialIntakeV2Service = {
           input.workspaceId,
           jsonbParam(data),
           jsonbParam(sourceFingerprint),
-          jsonbParam(assembly),
-        ],
+          jsonbParam(assembly)
+        ]
       );
       await client.query(
         `update creative_workspace
@@ -266,7 +265,7 @@ export const materialIntakeV2Service = {
              updated_at = now(),
              last_seen_at = now()
          where id = $1`,
-        [input.workspaceId],
+        [input.workspaceId]
       );
       await client.query("commit");
       return toMaterialIntakeArtifact(result.rows[0]);
@@ -294,7 +293,7 @@ export const materialIntakeV2Service = {
          where workspace_id = $1 and status = 'proposed'
          order by created_at desc, id desc
          limit 1`,
-        [workspaceId],
+        [workspaceId]
       ),
       db.db2.pool().query(
         `select *
@@ -302,8 +301,8 @@ export const materialIntakeV2Service = {
          where workspace_id = $1 and status = 'approved' and is_current = true
          order by approved_at desc, created_at desc, id desc
          limit 1`,
-        [workspaceId],
-      ),
+        [workspaceId]
+      )
     ]);
     const proposed = proposedResult.rows[0]
       ? toMaterialIntakeArtifact(proposedResult.rows[0])
@@ -318,8 +317,8 @@ export const materialIntakeV2Service = {
       current,
       upstream: upstreamChange({
         artifact: current,
-        currentPromptRequirementsArtifactId: requirementsId,
-      }),
+        currentPromptRequirementsArtifactId: requirementsId
+      })
     };
-  },
+  }
 };

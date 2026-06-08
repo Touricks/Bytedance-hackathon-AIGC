@@ -51,6 +51,49 @@ describe("formatCreativeRequirementsForModule", () => {
     assert.match(text, /受众称谓与语气：面向家长/);
   });
 
+  it("formats neutral audience requirements as not limited to a specific group", () => {
+    const neutral = buildCreativeFactorRequirements({
+      productType: "durable-good",
+      audience: "general",
+      strategy: "visual-story",
+    });
+
+    assert.match(
+      formatCreativeRequirementsForModule(neutral, "material-intake") ?? "",
+      /目标人群：不限定特定人群/,
+    );
+    assert.match(
+      formatCreativeRequirementsForModule(neutral, "product-brief") ?? "",
+      /受众称谓：不限定特定人群/,
+    );
+    assert.match(
+      formatCreativeRequirementsForModule(neutral, "shotprompt") ?? "",
+      /受众称谓与语气：不限定特定人群/,
+    );
+  });
+
+  it("treats deleted audience guidance fields as neutral targeting", () => {
+    const neutral = buildCreativeFactorRequirements({
+      productType: "durable-good",
+      audience: "youth",
+      strategy: "scenario-demo",
+    });
+    neutral.factorGuidance.audience = {
+      addressingAndTone: "",
+      benefitFrame: "",
+      sensitivityBoundaries: "",
+    };
+
+    assert.match(
+      formatCreativeRequirementsForModule(neutral, "product-brief") ?? "",
+      /不限定特定人群/,
+    );
+    assert.doesNotMatch(
+      formatCreativeRequirementsForModule(neutral, "shotprompt") ?? "",
+      /年轻用户/,
+    );
+  });
+
   it("falls back to legacy requirements only for shotprompt", () => {
     const legacy = {
       image: { style: "真实商品摄影" },

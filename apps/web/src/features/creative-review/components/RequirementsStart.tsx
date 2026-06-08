@@ -65,6 +65,7 @@ const PRODUCT_TYPE_OPTIONS: Array<{ value: ProductType; label: string; impact: s
   ];
 
 const AUDIENCE_OPTIONS: Array<{ value: Audience; label: string; impact: string }> = [
+  { value: "general", label: "不限定", impact: "不按特定人群定向，聚焦商品/服务本身的通用价值" },
   { value: "toddler", label: "幼儿", impact: "向新手家长建立安全和安心感" },
   { value: "child", label: "儿童", impact: "向家长强调安全、省心、陪伴和真实体验" },
   { value: "youth", label: "青年", impact: "语气直接，突出效率、颜值、实用和即时体验" },
@@ -106,6 +107,11 @@ const STRATEGY_OPTIONS: Array<{ value: Strategy; label: string; impact: string }
     value: "curiosity-hook",
     label: "好奇钩子",
     impact: "按悬念、揭示、卖点解释、证据和行动引导推进"
+  },
+  {
+    value: "visual-story",
+    label: "视觉叙事",
+    impact: "产品即画面——以质感开场、材质细节呈现、氛围收尾，适合香氛/摆件/颜值型商品"
   }
 ];
 
@@ -113,6 +119,7 @@ const FACTOR_GROUPS = [
   {
     key: "productType",
     title: "商品/服务类型影响",
+    hint: undefined,
     fields: [
       ["subjectPresentation", "主体呈现"],
       ["sceneAndDelivery", "场景与交付"],
@@ -122,6 +129,7 @@ const FACTOR_GROUPS = [
   {
     key: "audience",
     title: "适用人群影响",
+    hint: "如不希望专注特定人群，可删除以下字段",
     fields: [
       ["addressingAndTone", "称谓与语气"],
       ["benefitFrame", "利益表达"],
@@ -131,6 +139,7 @@ const FACTOR_GROUPS = [
   {
     key: "strategy",
     title: "推销手法影响",
+    hint: undefined,
     fields: [
       ["openingHook", "开场方式"],
       ["storyStructure", "故事结构"],
@@ -662,26 +671,31 @@ export function RequirementsStart({
                   <span>{group.title}</span>
                 </Button>
                 <Collapse in={factorOpen[group.key]} timeout="auto" unmountOnExit>
-                  <div className="creative-factor-group__fields">
-                    {group.fields.map(([fieldKey, label]) => {
-                      const path = guidancePath(group.key, fieldKey);
-                      const affects = FACTOR_GUIDANCE_FIELD_AFFECTS[path].affects;
-                      return (
-                        <label key={fieldKey}>
-                          <div className="creative-factor-field__title">
-                            <span>{label}</span>
-                            <small>影响 {affectsText(affects)}</small>
-                          </div>
-                          <textarea
-                            rows={3}
-                            value={guidance[fieldKey] ?? ""}
-                            onChange={(event) =>
-                              updateGuidance(group.key, fieldKey, event.target.value)
-                            }
-                          />
-                        </label>
-                      );
-                    })}
+                  <div>
+                    {group.hint ? (
+                      <p className="creative-factor-group__hint">{group.hint}</p>
+                    ) : null}
+                    <div className="creative-factor-group__fields">
+                      {group.fields.map(([fieldKey, label]) => {
+                        const path = guidancePath(group.key, fieldKey);
+                        const affects = FACTOR_GUIDANCE_FIELD_AFFECTS[path].affects;
+                        return (
+                          <label key={fieldKey}>
+                            <div className="creative-factor-field__title">
+                              <span>{label}</span>
+                              <small>影响 {affectsText(affects)}</small>
+                            </div>
+                            <textarea
+                              rows={3}
+                              value={guidance[fieldKey] ?? ""}
+                              onChange={(event) =>
+                                updateGuidance(group.key, fieldKey, event.target.value)
+                              }
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 </Collapse>
               </section>

@@ -24,6 +24,7 @@ const importedVideo: DashboardVideoArtifact = {
     productType: "offline-experience-service",
     audience: "child",
     strategy: "scenario-demo",
+    visualStyle: "authentic",
   },
   metadata: {},
   importedAt: "2026-06-06T08:00:00.000Z",

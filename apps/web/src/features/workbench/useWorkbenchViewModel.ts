@@ -60,6 +60,7 @@ import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "./useFinalVideo.js";
 import {
   isActiveOneClickStatus,
+  oneClickPollingInterval,
   resolveOneClickFinalVideoState,
 } from "./oneClickState.js";
 import { roundPollingInterval } from "./roundPolling.js";
@@ -263,9 +264,10 @@ export function useWorkbenchViewModel(workspaceId: string) {
     queryKey: ["one-click-final-videos", workspaceId],
     queryFn: () => listOneClickFinalVideos(workspaceId),
     refetchInterval: (query) =>
-      query.state.data?.data.some((job) => isActiveOneClickStatus(job.status))
-        ? 3_000
-        : 15_000,
+      oneClickPollingInterval({
+        statusActiveJob: workspaceStatus.data?.activeOneClickFinalVideo,
+        jobs: query.state.data?.data ?? [],
+      }),
   });
 
   const shotImageAutoSelectionJobs = useQuery({

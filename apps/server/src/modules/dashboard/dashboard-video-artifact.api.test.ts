@@ -75,6 +75,7 @@ describe("dashboard video artifact API", () => {
       productType: "offline-experience-service",
       audience: "child",
       strategy: "scenario-demo",
+      visualStyle: "authentic",
     };
     const finalFilePath = path.join(directory, ".daireel", localPath);
     await mkdir(path.dirname(finalFilePath), { recursive: true });

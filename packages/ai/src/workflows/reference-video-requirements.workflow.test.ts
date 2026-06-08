@@ -54,7 +54,8 @@ describe("analyzeReferenceVideoRequirements", () => {
     assert.deepEqual(result.creativeFactorsRecommendation.recommendedFactors, {
       productType: "offline-experience-service",
       audience: "youth",
-      strategy: "review-comparison"
+      strategy: "review-comparison",
+      visualStyle: "authentic"
     });
     assert.deepEqual(
       (calls[0] as { text: { format: { type: string; name: string } } }).text.format,

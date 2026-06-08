@@ -196,7 +196,7 @@ export function buildReferenceVideoRequirementsResponseFormat(
                 },
                 audience: {
                   type: "string",
-                  enum: ["toddler", "child", "youth", "senior"]
+                  enum: ["general", "toddler", "child", "youth", "senior"]
                 },
                 strategy: {
                   type: "string",
@@ -207,7 +207,8 @@ export function buildReferenceVideoRequirementsResponseFormat(
                     "tutorial-value",
                     "authority-proof",
                     "emotional-story",
-                    "curiosity-hook"
+                    "curiosity-hook",
+                    "visual-story"
                   ]
                 }
               },

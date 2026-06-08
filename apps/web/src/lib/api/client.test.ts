@@ -568,7 +568,8 @@ describe("api client", () => {
               recommendedFactors: {
                 productType: "durable-good",
                 audience: "youth",
-                strategy: "scenario-demo"
+                strategy: "scenario-demo",
+                visualStyle: "authentic"
               },
               confidence: "medium"
             },
@@ -583,7 +584,8 @@ describe("api client", () => {
                 creativeFactors: {
                   productType: "durable-good",
                   audience: "youth",
-                  strategy: "scenario-demo"
+                  strategy: "scenario-demo",
+                  visualStyle: "authentic"
                 }
               },
               sourceFingerprint: {},
@@ -612,7 +614,8 @@ describe("api client", () => {
     assert.deepEqual(imported.creativeFactorsRecommendation.recommendedFactors, {
       productType: "durable-good",
       audience: "youth",
-      strategy: "scenario-demo"
+      strategy: "scenario-demo",
+      visualStyle: "authentic"
     });
     assert.deepEqual(calls, [
       {
@@ -655,7 +658,8 @@ describe("api client", () => {
               recommendedFactors: {
                 productType: "durable-good",
                 audience: "youth",
-                strategy: "scenario-demo"
+                strategy: "scenario-demo",
+                visualStyle: "authentic"
               },
               confidence: "medium"
             },
@@ -670,7 +674,8 @@ describe("api client", () => {
                 creativeFactors: {
                   productType: "durable-good",
                   audience: "youth",
-                  strategy: "scenario-demo"
+                  strategy: "scenario-demo",
+                  visualStyle: "authentic"
                 }
               },
               sourceFingerprint: {},

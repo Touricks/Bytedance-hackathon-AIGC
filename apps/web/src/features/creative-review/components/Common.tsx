@@ -15,12 +15,14 @@ export function MaterialAssetPreview({
   kind,
   src,
   filename,
-  className
+  className,
+  fit = "cover"
 }: {
   kind: MaterialIntakeArtifact["assets"][number]["kind"];
   src: string;
   filename: string;
   className: string;
+  fit?: "cover" | "contain";
 }) {
   const [mode, setMode] = useState<MaterialPreviewMode>(() =>
     deriveMaterialPreviewMode({ kind })
@@ -32,8 +34,9 @@ export function MaterialAssetPreview({
 
   return (
     <div
-      className={`material-asset-preview material-asset-preview--${mode} ${className}`}
+      className={`material-asset-preview material-asset-preview--${mode} material-asset-preview--fit-${fit} ${className}`}
       data-preview-mode={mode}
+      data-preview-fit={fit}
     >
       {kind === "image" ? (
         <img

@@ -5,6 +5,8 @@ import { App } from "./routes/App.js";
 import { CreativeReviewDesk } from "./features/creative-review/CreativeReviewDesk.js";
 import { DataDashboardPage } from "./features/data-dashboard/DataDashboardPage.js";
 import { resolveAppRoute } from "./routes/routeState.js";
+import "react-photo-album/rows.css";
+import "yet-another-react-lightbox/styles.css";
 import "./styles.css";
 import "./features/data-dashboard/dataDashboard.css";
 

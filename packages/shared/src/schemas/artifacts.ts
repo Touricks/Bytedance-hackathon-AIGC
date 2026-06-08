@@ -1,11 +1,6 @@
 import { z } from "zod";
 
-export const artifactStatusSchema = z.enum([
-  "proposed",
-  "approved",
-  "stale",
-  "failed",
-]);
+export const artifactStatusSchema = z.enum(["proposed", "approved", "stale", "failed"]);
 
 export const materialAssetSchema = z.object({
   ref: z.string().min(1),
@@ -21,24 +16,24 @@ export const materialAssetSchema = z.object({
     "demo_video",
     "spec_text",
     "reference",
-    "other",
+    "other"
   ]),
   description: z.string().trim().min(1),
   relevance: z.enum(["high", "medium", "low"]),
   usable: z.boolean(),
-  included: z.boolean(),
+  included: z.boolean()
 });
 
 export const rejectedMaterialAssetSchema = z.object({
   ref: z.string().min(1),
-  reason: z.string().min(1),
+  reason: z.string().min(1)
 });
 
 export const materialIntakeArtifactSchema = z.object({
   scannedAt: z.string().min(1),
   primaryProductRef: z.string().min(1),
   assets: z.array(materialAssetSchema),
-  rejected: z.array(rejectedMaterialAssetSchema),
+  rejected: z.array(rejectedMaterialAssetSchema)
 });
 
 export const productBriefArtifactSchema = z.object({
@@ -49,13 +44,13 @@ export const productBriefArtifactSchema = z.object({
     assets: z.array(
       z.object({
         ref: z.string().min(1),
-        useAs: z.enum(["primary", "support"]),
-      }),
-    ),
+        useAs: z.enum(["primary", "support"])
+      })
+    )
   }),
   audience: z.object({
     who: z.string().min(1),
-    painOrDesire: z.string().min(1),
+    painOrDesire: z.string().min(1)
   }),
   coreSellingPoint: z.string().min(1),
   proof: z.array(z.string().min(1)),
@@ -64,7 +59,7 @@ export const productBriefArtifactSchema = z.object({
   brandTone: z.string().min(1),
   bannedExpressions: z.array(z.string()),
   landingInfo: z.string().nullable(),
-  assumptions: z.array(z.string()),
+  assumptions: z.array(z.string())
 });
 
 export const storyboardShotArtifactSchema = z.object({
@@ -75,14 +70,14 @@ export const storyboardShotArtifactSchema = z.object({
   visualDirection: z.string().min(1),
   productAssetRef: z.string().min(1),
   voiceover: z.string().min(1),
-  transition: z.string().min(1),
+  transition: z.string().min(1)
 });
 
 export const storyboardArtifactSchema = z.object({
   narrative: z.string().min(1),
   totalDurationSec: z.number().int().positive(),
   shots: z.array(storyboardShotArtifactSchema).min(1),
-  assumptions: z.array(z.string()),
+  assumptions: z.array(z.string())
 });
 
 export const shotPromptShotArtifactSchema = z.object({
@@ -93,21 +88,21 @@ export const shotPromptShotArtifactSchema = z.object({
   referenceAssetRefs: z.array(z.string().min(1)),
   voiceover: z.string().min(1),
   shotImage: z.record(z.unknown()).optional(),
-  shotVideo: z.record(z.unknown()).optional(),
+  shotVideo: z.record(z.unknown()).optional()
 });
 
 export const shotPromptVoiceProfileSchema = z.object({
   gender: z.enum(["female", "male"]),
   tone: z.string().min(1),
   pitch: z.enum(["low", "medium", "high"]),
-  pace: z.enum(["slow", "medium", "fast"]),
+  pace: z.enum(["slow", "medium", "fast"])
 });
 
 export const DEFAULT_SHOT_PROMPT_VOICE_PROFILE = {
   gender: "female",
   tone: "自信、友好、可信",
   pitch: "medium",
-  pace: "medium",
+  pace: "medium"
 } as const satisfies z.infer<typeof shotPromptVoiceProfileSchema>;
 
 export const shotPromptArtifactSchema = z.object({
@@ -122,11 +117,9 @@ export const shotPromptArtifactSchema = z.object({
     source: z.literal("shots.voiceover").default("shots.voiceover"),
     voiceover: z.string(),
     audioAssetRef: z.string().min(1).optional(),
-    voiceProfile: shotPromptVoiceProfileSchema.default(
-      DEFAULT_SHOT_PROMPT_VOICE_PROFILE,
-    ),
+    voiceProfile: shotPromptVoiceProfileSchema.default(DEFAULT_SHOT_PROMPT_VOICE_PROFILE)
   }),
-  assumptions: z.array(z.string()),
+  assumptions: z.array(z.string())
 });
 
 export const feedbackRouteArtifactSchema = z.object({
@@ -136,19 +129,43 @@ export const feedbackRouteArtifactSchema = z.object({
   reason: z.string().min(1),
   revisionInstruction: z.string().min(1),
   confidence: z.enum(["high", "medium", "low"]),
-  routedAt: z.string().min(1),
+  routedAt: z.string().min(1)
 });
 
 export type ArtifactStatus = z.infer<typeof artifactStatusSchema>;
 export type MaterialAsset = z.infer<typeof materialAssetSchema>;
-export type MaterialIntakeArtifact = z.infer<
-  typeof materialIntakeArtifactSchema
->;
+export type MaterialIntakeArtifact = z.infer<typeof materialIntakeArtifactSchema>;
 export type ProductBriefArtifact = z.infer<typeof productBriefArtifactSchema>;
 export type StoryboardArtifact = z.infer<typeof storyboardArtifactSchema>;
 export type ShotPromptVoiceProfile = z.infer<typeof shotPromptVoiceProfileSchema>;
 export type ShotPromptArtifact = z.infer<typeof shotPromptArtifactSchema>;
 export type FeedbackRouteArtifact = z.infer<typeof feedbackRouteArtifactSchema>;
+
+function nonPrimaryRoleForKind(kind: MaterialAsset["kind"]): MaterialAsset["role"] {
+  if (kind === "image") return "product_detail";
+  if (kind === "video") return "demo_video";
+  return "spec_text";
+}
+
+export function normalizeMaterialIntakePrimaryRole(
+  material: MaterialIntakeArtifact
+): MaterialIntakeArtifact {
+  return materialIntakeArtifactSchema.parse({
+    ...material,
+    assets: material.assets.map((asset) => {
+      if (asset.ref === material.primaryProductRef) {
+        return { ...asset, role: "product_main" };
+      }
+      if (asset.role !== "product_main") {
+        return asset;
+      }
+      return {
+        ...asset,
+        role: nonPrimaryRoleForKind(asset.kind)
+      };
+    })
+  });
+}
 
 function isRecord(value: unknown) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -157,22 +174,22 @@ function isRecord(value: unknown) {
 export function assertShotPromptMatchesStoryboard(
   shotPrompt: ShotPromptArtifact,
   storyboard: StoryboardArtifact,
-  options: { requireShotLayers?: boolean } = {},
+  options: { requireShotLayers?: boolean } = {}
 ) {
   const expectedIndexes = storyboard.shots.map((shot) => shot.index);
   const actualIndexes = shotPrompt.shots.map((shot) => shot.index);
   if (actualIndexes.length !== expectedIndexes.length) {
     throw new Error(
-      `Shotprompt provider output does not match storyboard shot count: expected ${expectedIndexes.length}, got ${actualIndexes.length}`,
+      `Shotprompt provider output does not match storyboard shot count: expected ${expectedIndexes.length}, got ${actualIndexes.length}`
     );
   }
 
   const mismatchedIndex = actualIndexes.findIndex(
-    (index, position) => index !== expectedIndexes[position],
+    (index, position) => index !== expectedIndexes[position]
   );
   if (mismatchedIndex >= 0) {
     throw new Error(
-      `Shotprompt provider output index mismatch at position ${mismatchedIndex}: expected ${expectedIndexes[mismatchedIndex]}, got ${actualIndexes[mismatchedIndex]}`,
+      `Shotprompt provider output index mismatch at position ${mismatchedIndex}: expected ${expectedIndexes[mismatchedIndex]}, got ${actualIndexes[mismatchedIndex]}`
     );
   }
 
@@ -182,7 +199,7 @@ export function assertShotPromptMatchesStoryboard(
     });
     if (missingLayer) {
       throw new Error(
-        `Shotprompt provider output missing shotImage/shotVideo for shot index ${missingLayer.index}`,
+        `Shotprompt provider output missing shotImage/shotVideo for shot index ${missingLayer.index}`
       );
     }
   }

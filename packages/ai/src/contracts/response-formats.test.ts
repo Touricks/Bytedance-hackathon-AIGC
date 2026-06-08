@@ -48,6 +48,7 @@ describe("buildReferenceVideoRequirementsResponseFormat", () => {
       "offline-experience-service"
     ]);
     assert.deepEqual(factorProperties.audience.enum, [
+      "general",
       "toddler",
       "child",
       "youth",
@@ -60,7 +61,8 @@ describe("buildReferenceVideoRequirementsResponseFormat", () => {
       "tutorial-value",
       "authority-proof",
       "emotional-story",
-      "curiosity-hook"
+      "curiosity-hook",
+      "visual-story"
     ]);
   });
 });

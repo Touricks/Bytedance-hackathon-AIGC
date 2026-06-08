@@ -17,6 +17,8 @@ import { generationService } from "./generation.service.js";
 type OneClickStatus = "PENDING" | "RUNNING" | "WAITING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 type AspectRatio = "9:16" | "16:9" | "1:1";
 
+const ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT = 1;
+
 type StageState = {
   image?: {
     currentIndex?: number;
@@ -506,6 +508,7 @@ export const oneClickFinalVideoService = {
             const proposed = await shotWorkflowService.proposeImagePrompt({
               workspaceId: job.workspaceId,
               shotId: shot.id,
+              candidateCount: ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT,
             });
             batchId = proposed.batch.id;
             imageState.batchIdsByShotId = {
@@ -590,6 +593,7 @@ export const oneClickFinalVideoService = {
               const proposed = await shotWorkflowService.proposeVideoScript({
                 workspaceId: job.workspaceId,
                 shotId: shot.id,
+                candidateCount: ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT,
               });
               videoState.batchIdsByShotId = {
                 ...videoState.batchIdsByShotId,
@@ -756,5 +760,6 @@ export const oneClickFinalVideoService = {
 export const oneClickFinalVideoTestHooks = {
   firstSucceededImageCandidate,
   firstSucceededVideoCandidate,
+  oneClickAutoSelectionCandidateCount: ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT,
   shouldKeepWaitingForBatch,
 };

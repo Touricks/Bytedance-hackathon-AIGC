@@ -14,6 +14,7 @@ import {
   type FactorGuidance,
   type FactorGuidanceFieldPath,
   type ProductType,
+  type VisualStyle,
 } from "../schemas/creative-factors.js";
 
 export const creativeRequirementTemplateValuesSchema = z.object({
@@ -101,11 +102,15 @@ export type CreativeRequirementTemplate = z.infer<
   typeof creativeRequirementTemplateSchema
 >;
 
+type CreativeFactorsInput = Omit<CreativeFactors, "visualStyle"> & {
+  visualStyle?: VisualStyle;
+};
+
 type TemplateSeed = {
   id: string;
   name: string;
   summary: string;
-  creativeFactors: CreativeFactors;
+  creativeFactors: CreativeFactorsInput;
   factorGuidanceOverrides?: {
     productType?: Partial<FactorGuidance["productType"]>;
     audience?: Partial<FactorGuidance["audience"]>;
@@ -168,10 +173,14 @@ function stringifyRequirementValue(value: unknown) {
 }
 
 export function creativeRequirementValuesFromFactors(
-  creativeFactors: CreativeFactors,
+  creativeFactors: CreativeFactorsInput,
 ): CreativeRequirementTemplateValues {
   const data = buildCreativeFactorRequirements(creativeFactors);
-  const compiled = compileCreativeRequirementFields(data);
+  const compiled = compileCreativeRequirementFields({
+    factorGuidance: data.factorGuidance,
+    scriptInfluence: data.scriptInfluence,
+    visualStyle: data.creativeFactors.visualStyle,
+  });
   return creativeRequirementValuesSchemaFromCompiled(compiled);
 }
 
@@ -218,6 +227,7 @@ function createTemplate(seed: TemplateSeed): CreativeRequirementTemplate {
   const compiled = compileCreativeRequirementFields({
     factorGuidance,
     scriptInfluence: data.scriptInfluence,
+    visualStyle: data.creativeFactors.visualStyle,
   });
   return creativeRequirementTemplateSchema.parse({
     id: seed.id,

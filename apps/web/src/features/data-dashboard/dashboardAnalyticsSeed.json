@@ -58,7 +58,8 @@
       "creativeFactors": {
         "productType": "consumable-good",
         "audience": "youth",
-        "strategy": "scenario-demo"
+        "strategy": "scenario-demo",
+        "visualStyle": "authentic"
       },
       "template": {
         "name": "数码家居·青年",
@@ -76,7 +77,8 @@
       "creativeFactors": {
         "productType": "consumable-good",
         "audience": "youth",
-        "strategy": "curiosity-hook"
+        "strategy": "curiosity-hook",
+        "visualStyle": "authentic"
       },
       "template": {
         "name": "自定义",
@@ -94,7 +96,8 @@
       "creativeFactors": {
         "productType": "consumable-good",
         "audience": "youth",
-        "strategy": "emotional-story"
+        "strategy": "emotional-story",
+        "visualStyle": "authentic"
       },
       "template": {
         "name": "银发滋补·老年",
@@ -122,6 +125,10 @@
       }
     },
     "audiences": {
+      "general": {
+        "label": "不限定",
+        "description": "不按特定人群定向，聚焦商品/服务本身的通用价值。"
+      },
       "toddler": {
         "label": "幼儿",
         "description": "新手家长决策，强调安全、成分透明和照护省心。"
@@ -174,6 +181,11 @@
         "label": "好奇钩子",
         "description": "先制造悬念，再揭示卖点和证据。",
         "flow": "悬念提出 -> 答案揭示 -> 卖点解释 -> 证据证明 -> 行动引导。"
+      },
+      "visual-story": {
+        "label": "视觉叙事",
+        "description": "以产品视觉质感和场景氛围建立转化动机。",
+        "flow": "质感开场 -> 材质细节 -> 氛围收束。"
       }
     }
   },
