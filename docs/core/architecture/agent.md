@@ -40,7 +40,7 @@ The central assembler is `packages/ai/src/prompts/module-prompt-assembler.ts`. P
 
 - `subject.md` is the business creative prompt and can change creative strategy.
 - `contract.md` is the engineering contract and changes only with input/output/provider constraints.
-- `prompt_assembly` records template ids, hashes, assembler version, and preview for workspace modules.
+- `prompt_assembly` records the module id and an assembly preview for workspace modules.
 - Full assembled prompts and provider request/response summaries are trace facts, not merchant-facing UI content.
 - Image prompts must not include video movement, duration, voiceover, or subtitle requirements.
 - Video prompts must use selected image frames and must not render voiceover text as on-screen captions.

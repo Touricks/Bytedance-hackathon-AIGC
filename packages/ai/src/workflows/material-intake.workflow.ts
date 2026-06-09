@@ -11,8 +11,8 @@ import {
 } from "../prompts/material-intake.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
 import {
-  generateTextWithArk,
-  type ArkTextProviderOptions
+  generateResponsesTextWithArk,
+  type ArkResponsesTextProviderOptions
 } from "../providers/ark-text.provider.js";
 import {
   isRealProviderMode,
@@ -22,12 +22,20 @@ import {
 } from "../providers/provider-config.js";
 import { buildMaterialIntakeResponseFormat } from "../contracts/response-formats.js";
 import { createImageTraceMeta, type FileTraceLogger } from "../trace/trace-log.js";
+import { buildArkUserRequest, buildMultimodalContent } from "./shared/ark-input.js";
 
 export interface MaterialIntakeImageInput {
   ref: string;
   url: string;
   mode: "data_url" | "url" | "provider_asset";
   detail?: "low" | "high";
+}
+
+export interface MaterialIntakeVideoInput {
+  ref: string;
+  url: string;
+  mode: "data_url" | "url" | "provider_asset";
+  fps?: number;
 }
 
 export interface GenerateMaterialIntakeInput {
@@ -48,8 +56,9 @@ export interface MaterialIntakeTrace {
 export interface GenerateMaterialIntakeOptions {
   env?: ProviderEnv;
   imageInputs?: MaterialIntakeImageInput[];
+  videoInputs?: MaterialIntakeVideoInput[];
   includeImageInputs?: boolean;
-  createClient?: ArkTextProviderOptions["createClient"];
+  createClient?: ArkResponsesTextProviderOptions["createClient"];
   traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
@@ -66,23 +75,6 @@ const materialIntakeTagsSchema = z.object({
   tags: z.array(materialTagSchema)
 });
 
-function buildContent(prompt: string, imageInputs: MaterialIntakeImageInput[] = []) {
-  if (imageInputs.length === 0) {
-    return prompt;
-  }
-
-  return [
-    { type: "text" as const, text: prompt },
-    ...imageInputs.map((imageInput) => ({
-      type: "image_url" as const,
-      image_url: {
-        url: imageInput.url,
-        detail: imageInput.detail ?? "high"
-      }
-    }))
-  ];
-}
-
 function imageTraceMeta(imageInputs: MaterialIntakeImageInput[] = []) {
   return imageInputs.map((imageInput) => ({
     ref: imageInput.ref,
@@ -91,6 +83,14 @@ function imageTraceMeta(imageInputs: MaterialIntakeImageInput[] = []) {
       referenceMode: imageInput.mode,
       detail: imageInput.detail
     })
+  }));
+}
+
+function videoTraceMeta(videoInputs: MaterialIntakeVideoInput[] = []) {
+  return videoInputs.map((videoInput) => ({
+    ref: videoInput.ref,
+    referenceMode: videoInput.mode,
+    fps: videoInput.fps ?? 0.5
   }));
 }
 
@@ -153,8 +153,16 @@ export async function generateMaterialIntakeWithArk(
   const env = options.env ?? process.env;
   const prompt = buildMaterialIntakePrompt(input);
   const imageInputs = options.includeImageInputs ? (options.imageInputs ?? []) : [];
-  const content = buildContent(prompt, imageInputs);
+  const videoInputs = options.includeImageInputs ? (options.videoInputs ?? []) : [];
+  const content = buildMultimodalContent({
+    text: prompt,
+    images: imageInputs,
+    videos: videoInputs
+  });
   const imageReferenceMode = imageInputs[0]?.mode ?? "none";
+  const videoReferenceMode = videoInputs[0]?.mode ?? "none";
+  const imagesMeta = imageTraceMeta(imageInputs);
+  const videosMeta = videoTraceMeta(videoInputs);
   const responseFormat = buildMaterialIntakeResponseFormat(contract.activeVersion);
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
@@ -173,7 +181,9 @@ export async function generateMaterialIntakeWithArk(
         parsedOutputStatus: "not_attempted",
         error: message,
         imageReferenceMode,
-        images: imageTraceMeta(imageInputs)
+        images: imagesMeta,
+        videoReferenceMode,
+        videos: videosMeta
       }
     });
     if (isRealProviderMode(env)) {
@@ -196,12 +206,14 @@ export async function generateMaterialIntakeWithArk(
       content,
       imageReferenceMode,
       parsedOutputStatus: "not_parsed",
-      images: imageTraceMeta(imageInputs)
+      images: imagesMeta,
+      videoReferenceMode,
+      videos: videosMeta
     }
   });
 
   const rawOutput = (
-    await generateTextWithArk({ prompt, content }, config, {
+    await generateResponsesTextWithArk(buildArkUserRequest(content), config, {
       traceLogger: options.traceLogger,
       createClient: options.createClient,
       responseFormat,
@@ -211,11 +223,11 @@ export async function generateMaterialIntakeWithArk(
         contractVersion: contract.activeVersion,
         meta: {
           promptVersion: MATERIAL_INTAKE_PROMPT_VERSION,
-          contractId: contract.id,
-          contractVersion: contract.activeVersion,
           imageReferenceMode,
           parsedOutputStatus: "not_parsed",
-          images: imageTraceMeta(imageInputs)
+          images: imagesMeta,
+          videoReferenceMode,
+          videos: videosMeta
         }
       }
     })

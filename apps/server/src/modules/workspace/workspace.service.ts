@@ -735,6 +735,28 @@ export async function materialImagesForWorkspace(
   );
 }
 
+export async function materialVideosForWorkspace(
+  workspaceId: string,
+  material: MaterialIntakeArtifact,
+) {
+  const videoAssets = material.assets.filter(
+    (asset) => asset.kind === "video" && asset.included,
+  );
+  const adapter = await getWorkspaceStorageAdapter(workspaceId);
+
+  return Promise.all(
+    videoAssets.map(async (asset) => {
+      const bytes = await adapter.readObject(`materials/${asset.ref}`);
+      return {
+        ref: asset.ref,
+        url: `data:${asset.mime};base64,${bytes.toString("base64")}`,
+        mode: "data_url" as const,
+        fps: 0.5,
+      };
+    }),
+  );
+}
+
 export async function materialIntakeTextPreviews(
   localPath: string,
   material: MaterialIntakeArtifact,

@@ -20,11 +20,7 @@ function artifact(moduleId: string, data: unknown) {
     isCurrent: true,
     data,
     sourceFingerprint: {},
-    promptAssembly: {
-      moduleId,
-      subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64),
-    },
+    promptAssembly: { moduleId },
     createdAt: now,
     updatedAt: now,
     approvedAt: now,

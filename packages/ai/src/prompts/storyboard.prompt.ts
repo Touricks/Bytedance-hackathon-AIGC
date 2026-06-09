@@ -119,7 +119,7 @@ export function buildStoryboardPrompt(input: BuildStoryboardPromptInput) {
     ]
       .filter((item): item is string => Boolean(item))
       .join("\n"),
-  }).prompt;
+  });
 }
 
 export function buildStoryboardVoiceoverRewritePrompt(
@@ -150,5 +150,5 @@ export function buildStoryboardVoiceoverRewritePrompt(
     ]
       .filter((item): item is string => Boolean(item))
       .join("\n"),
-  }).prompt;
+  });
 }

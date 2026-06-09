@@ -1,8 +1,5 @@
 import { nanoid } from "nanoid";
-import {
-  generateProductBriefWithArk,
-  getModulePromptAssemblyMetadata,
-} from "@aigc-video/ai";
+import { generateProductBriefWithArk } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
   productBriefArtifactSchema,
@@ -132,9 +129,8 @@ function promptAssembly(input: {
   baseProductBriefArtifactId?: string | null;
   rewriteKind?: "merchant_direction";
 }) {
-  const metadata = getModulePromptAssemblyMetadata("product-brief");
   return {
-    ...metadata,
+    moduleId: "product-brief",
     requirementArtifactId: input.requirementArtifactId,
     userDirection: input.userDirection ?? null,
     baseProductBriefArtifactId: input.baseProductBriefArtifactId ?? null,

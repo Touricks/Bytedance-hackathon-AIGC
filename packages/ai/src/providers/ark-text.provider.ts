@@ -7,26 +7,6 @@ import {
   type TracePipeline
 } from "../trace/trace-log.js";
 
-export interface TextContentPart {
-  type: "text";
-  text: string;
-}
-
-export interface ImageContentPart {
-  type: "image_url";
-  image_url: {
-    url: string;
-    detail?: "low" | "high";
-  };
-}
-
-export type TextProviderContent = string | Array<TextContentPart | ImageContentPart>;
-
-export interface ArkTextProviderRequest {
-  prompt: string;
-  content: TextProviderContent;
-}
-
 export interface ArkTextProviderResult {
   provider: TextProviderConfig["provider"];
   model: string;
@@ -42,19 +22,13 @@ export interface ArkJsonSchemaResponseFormat {
   schemaVersion?: string;
 }
 
-interface ChatCompletionResponse {
-  choices: Array<{
-    message: {
-      content?: string | null;
-    };
-  }>;
-}
-
 interface ResponsesCreateResponse {
   status?: "completed" | "failed" | "in_progress" | "incomplete" | string;
   output_text?: string | null;
   output?: Array<{
+    type?: string;
     content?: Array<{
+      type?: string;
       text?: string;
     }>;
   }>;
@@ -63,24 +37,19 @@ interface ResponsesCreateResponse {
   } | null;
 }
 
-export interface OpenAICompatibleTextClient {
-  chat: {
-    completions: {
-      create(request: unknown): Promise<ChatCompletionResponse>;
-    };
-  };
-}
-
 export interface OpenAICompatibleResponsesClient {
   responses: {
     create(request: unknown): Promise<ResponsesCreateResponse>;
   };
 }
 
-export interface ArkTextProviderOptions {
-  createClient?: (config: TextProviderConfig) => OpenAICompatibleTextClient;
+export interface ArkResponsesTextProviderRequest {
+  input: unknown;
   temperature?: number;
-  topP?: number;
+}
+
+export interface ArkResponsesTextProviderOptions {
+  createClient?: (config: TextProviderConfig) => OpenAICompatibleResponsesClient;
   responseFormat?: ArkJsonSchemaResponseFormat;
   traceLogger?: Pick<FileTraceLogger, "append">;
   trace?: {
@@ -92,25 +61,6 @@ export interface ArkTextProviderOptions {
   clock?: () => number;
 }
 
-export interface ArkResponsesTextProviderRequest {
-  input: unknown;
-  temperature?: number;
-}
-
-export interface ArkResponsesTextProviderOptions {
-  createClient?: (config: TextProviderConfig) => OpenAICompatibleResponsesClient;
-  responseFormat?: ArkJsonSchemaResponseFormat;
-}
-
-function createOpenAICompatibleClient(
-  config: TextProviderConfig
-): OpenAICompatibleTextClient {
-  return new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL
-  });
-}
-
 function createOpenAICompatibleResponsesClient(
   config: TextProviderConfig
 ): OpenAICompatibleResponsesClient {
@@ -118,21 +68,6 @@ function createOpenAICompatibleResponsesClient(
     apiKey: config.apiKey,
     baseURL: config.baseURL
   }) as unknown as OpenAICompatibleResponsesClient;
-}
-
-function toArkResponseFormat(responseFormat?: ArkJsonSchemaResponseFormat) {
-  if (!responseFormat) {
-    return undefined;
-  }
-  return {
-    type: responseFormat.type,
-    json_schema: {
-      name: responseFormat.name,
-      ...(responseFormat.description ? { description: responseFormat.description } : {}),
-      strict: responseFormat.strict ?? true,
-      schema: responseFormat.schema
-    }
-  };
 }
 
 function toArkResponsesText(responseFormat?: ArkJsonSchemaResponseFormat) {
@@ -164,12 +99,41 @@ function responseFormatTraceSummary(responseFormat?: ArkJsonSchemaResponseFormat
   };
 }
 
-async function generateTextWithArkInner(
-  request: ArkTextProviderRequest,
+function responseText(response: ResponsesCreateResponse) {
+  // The Ark text endpoint is a reasoning model: the response carries a `reasoning`
+  // output item alongside the assistant `message`. Read the structured JSON directly
+  // from the message item and never from reasoning/tool items. The top-level
+  // `output_text` "May be null" (see docs/reference/response/POST.md), so it is only a
+  // fallback for short-output responses.
+  const output = Array.isArray(response.output) ? response.output : [];
+  for (const item of output) {
+    if (item.type && item.type !== "message") continue;
+    const content = Array.isArray(item.content) ? item.content : [];
+    const text = content.map((part) => part.text ?? "").join("");
+    if (text) return text;
+  }
+  if (typeof response.output_text === "string" && response.output_text.length > 0) {
+    return response.output_text;
+  }
+  return "";
+}
+
+function assertCompletedResponse(response: ResponsesCreateResponse) {
+  if (!response.status || response.status === "completed") {
+    return;
+  }
+  const message = response.error?.message ?? "No error message";
+  throw new Error(`Responses API returned status ${response.status}: ${message}`);
+}
+
+async function generateResponsesTextWithArkInner(
+  request: ArkResponsesTextProviderRequest,
   config: TextProviderConfig,
-  options: ArkTextProviderOptions = {}
+  options: ArkResponsesTextProviderOptions = {}
 ): Promise<ArkTextProviderResult> {
-  const client = (options.createClient ?? createOpenAICompatibleClient)(config);
+  const client = (options.createClient ?? createOpenAICompatibleResponsesClient)(
+    config
+  );
   const clock = options.clock ?? Date.now;
   const startedAt = clock();
   await options.traceLogger?.append({
@@ -191,15 +155,14 @@ async function generateTextWithArkInner(
       ...options.trace?.meta
     }
   });
-  let response: ChatCompletionResponse;
+  let response: ResponsesCreateResponse;
   try {
-    response = await client.chat.completions.create({
+    response = await client.responses.create({
       model: config.model,
-      messages: [{ role: "user", content: request.content }],
-      temperature: options.temperature ?? 0.7,
-      top_p: options.topP ?? 0.9,
+      input: request.input,
+      temperature: request.temperature ?? 0.2,
       ...(options.responseFormat
-        ? { response_format: toArkResponseFormat(options.responseFormat) }
+        ? { text: toArkResponsesText(options.responseFormat) }
         : {})
     });
   } catch (error) {
@@ -227,8 +190,8 @@ async function generateTextWithArkInner(
     });
     throw error;
   }
-
-  const output = response.choices[0]?.message.content ?? "";
+  assertCompletedResponse(response);
+  const output = responseText(response);
   await options.traceLogger?.append({
     kind: "provider.response_received",
     pipeline: options.trace?.pipeline ?? "creative_blueprint",
@@ -248,65 +211,10 @@ async function generateTextWithArkInner(
       output
     }
   });
-
   return {
     provider: config.provider,
     model: config.model,
     output
-  };
-}
-
-export async function generateTextWithArk(
-  request: ArkTextProviderRequest,
-  config: TextProviderConfig,
-  options: ArkTextProviderOptions = {}
-): Promise<ArkTextProviderResult> {
-  return runWithProviderSlot("text", () =>
-    generateTextWithArkInner(request, config, options)
-  );
-}
-
-function responseText(response: ResponsesCreateResponse) {
-  if (typeof response.output_text === "string") return response.output_text;
-  const output = Array.isArray(response.output) ? response.output : [];
-  for (const item of output) {
-    const content = Array.isArray(item.content) ? item.content : [];
-    for (const part of content) {
-      if (typeof part.text === "string") return part.text;
-    }
-  }
-  return "";
-}
-
-function assertCompletedResponse(response: ResponsesCreateResponse) {
-  if (!response.status || response.status === "completed") {
-    return;
-  }
-  const message = response.error?.message ?? "No error message";
-  throw new Error(`Responses API returned status ${response.status}: ${message}`);
-}
-
-async function generateResponsesTextWithArkInner(
-  request: ArkResponsesTextProviderRequest,
-  config: TextProviderConfig,
-  options: ArkResponsesTextProviderOptions = {}
-): Promise<ArkTextProviderResult> {
-  const client = (options.createClient ?? createOpenAICompatibleResponsesClient)(
-    config
-  );
-  const response = await client.responses.create({
-    model: config.model,
-    input: request.input,
-    temperature: request.temperature ?? 0.2,
-    ...(options.responseFormat
-      ? { text: toArkResponsesText(options.responseFormat) }
-      : {})
-  });
-  assertCompletedResponse(response);
-  return {
-    provider: config.provider,
-    model: config.model,
-    output: responseText(response)
   };
 }
 

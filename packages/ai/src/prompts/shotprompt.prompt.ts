@@ -103,5 +103,5 @@ export function buildShotPromptPrompt(input: BuildShotPromptPromptInput) {
     ]
       .filter((item): item is string => Boolean(item))
       .join("\n"),
-  }).prompt;
+  });
 }

@@ -29,7 +29,7 @@ describe("pipeline contract registry", () => {
     assert.deepEqual(
       registry.steps.map((step) => [step.id, step.activeVersion]),
       [
-        ["material_intake", "material-intake"],
+        ["material_intake", "material-intake.2026-06-09"],
         ["product_brief", "product-brief"],
         ["storyboard", "ugc-storyboard"],
         ["shotprompt", "video-shotprompt"]

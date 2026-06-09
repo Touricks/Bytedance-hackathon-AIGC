@@ -1,0 +1,260 @@
+{
+  "workspace": { "id": "ws_mock_dashboard", "name": "Mock Dashboard" },
+  "videos": [
+    {
+      "key": "cup-visual-a",
+      "name": "大容量吸管杯视觉大片",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "impulse-hit",
+        "audience": "youth",
+        "strategy": "visual-story"
+      },
+      "publications": [
+        {
+          "key": "douyin-momo",
+          "platform": "douyin",
+          "accountName": "好物Momo",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-visual-momo",
+          "publishedAt": "2026-05-18T00:00:00.000Z",
+          "days": 14,
+          "finalTotals": {
+            "impressions": 180000,
+            "clicks": 5400,
+            "conversions": 310,
+            "spendCents": 520000,
+            "gmvCents": 3016000
+          }
+        },
+        {
+          "key": "xhs-nuan",
+          "platform": "xiaohongshu",
+          "accountName": "暖暖家居记",
+          "publishUrl": "https://www.xiaohongshu.com/explore/mock-cup-visual-nuan",
+          "publishedAt": "2026-05-20T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 165000,
+            "clicks": 4900,
+            "conversions": 290,
+            "spendCents": 480000,
+            "gmvCents": 2832000
+          }
+        }
+      ]
+    },
+    {
+      "key": "cup-visual-b",
+      "name": "渐变保温杯氛围短片",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "impulse-hit",
+        "audience": "youth",
+        "strategy": "visual-story"
+      },
+      "publications": [
+        {
+          "key": "douyin-keke",
+          "platform": "douyin",
+          "accountName": "可可的杯子柜",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-visual-keke",
+          "publishedAt": "2026-05-22T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 190000,
+            "clicks": 5600,
+            "conversions": 320,
+            "spendCents": 560000,
+            "gmvCents": 3136000
+          }
+        },
+        {
+          "key": "xhs-lulu",
+          "platform": "xiaohongshu",
+          "accountName": "露露好物间",
+          "publishUrl": "https://www.xiaohongshu.com/explore/mock-cup-visual-lulu",
+          "publishedAt": "2026-05-24T00:00:00.000Z",
+          "days": 10,
+          "finalTotals": {
+            "impressions": 150000,
+            "clicks": 4300,
+            "conversions": 265,
+            "spendCents": 440000,
+            "gmvCents": 2616000
+          }
+        }
+      ]
+    },
+    {
+      "key": "cup-curiosity-a",
+      "name": "倒过来也不漏的水杯",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "impulse-hit",
+        "audience": "general",
+        "strategy": "curiosity-hook"
+      },
+      "publications": [
+        {
+          "key": "douyin-dabai",
+          "platform": "douyin",
+          "accountName": "大白测好物",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-curiosity-dabai",
+          "publishedAt": "2026-05-17T00:00:00.000Z",
+          "days": 14,
+          "finalTotals": {
+            "impressions": 620000,
+            "clicks": 16000,
+            "conversions": 870,
+            "spendCents": 2000000,
+            "gmvCents": 8400000
+          }
+        },
+        {
+          "key": "douyin-xiaoz",
+          "platform": "douyin",
+          "accountName": "小Z的厨房角",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-curiosity-xiaoz",
+          "publishedAt": "2026-05-19T00:00:00.000Z",
+          "days": 13,
+          "finalTotals": {
+            "impressions": 560000,
+            "clicks": 14500,
+            "conversions": 780,
+            "spendCents": 1800000,
+            "gmvCents": 7500000
+          }
+        }
+      ]
+    },
+    {
+      "key": "cup-curiosity-b",
+      "name": "这个杯盖藏了三个机关",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "impulse-hit",
+        "audience": "general",
+        "strategy": "curiosity-hook"
+      },
+      "publications": [
+        {
+          "key": "douyin-laofan",
+          "platform": "douyin",
+          "accountName": "老樊开箱",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-curiosity-laofan",
+          "publishedAt": "2026-05-21T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 590000,
+            "clicks": 15200,
+            "conversions": 820,
+            "spendCents": 1900000,
+            "gmvCents": 7900000
+          }
+        },
+        {
+          "key": "xhs-tiantian",
+          "platform": "xiaohongshu",
+          "accountName": "甜甜的生活提案",
+          "publishUrl": "https://www.xiaohongshu.com/explore/mock-cup-curiosity-tiantian",
+          "publishedAt": "2026-05-23T00:00:00.000Z",
+          "days": 11,
+          "finalTotals": {
+            "impressions": 480000,
+            "clicks": 12300,
+            "conversions": 650,
+            "spendCents": 1500000,
+            "gmvCents": 6200000
+          }
+        }
+      ]
+    },
+    {
+      "key": "cup-pain",
+      "name": "上班族喝水难题保温杯",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "impulse-hit",
+        "audience": "youth",
+        "strategy": "pain-solution"
+      },
+      "publications": [
+        {
+          "key": "douyin-anan",
+          "platform": "douyin",
+          "accountName": "安安职场日记",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-pain-anan",
+          "publishedAt": "2026-05-19T00:00:00.000Z",
+          "days": 13,
+          "finalTotals": {
+            "impressions": 230000,
+            "clicks": 5100,
+            "conversions": 210,
+            "spendCents": 700000,
+            "gmvCents": 1400000
+          }
+        },
+        {
+          "key": "xhs-qiqi",
+          "platform": "xiaohongshu",
+          "accountName": "琪琪的通勤包",
+          "publishUrl": "https://www.xiaohongshu.com/explore/mock-cup-pain-qiqi",
+          "publishedAt": "2026-05-21T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 200000,
+            "clicks": 4400,
+            "conversions": 180,
+            "spendCents": 600000,
+            "gmvCents": 1200000
+          }
+        }
+      ]
+    },
+    {
+      "key": "cup-scenario",
+      "name": "爸妈泡茶专用养生杯",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "impulse-hit",
+        "audience": "senior",
+        "strategy": "scenario-demo"
+      },
+      "publications": [
+        {
+          "key": "douyin-wangyi",
+          "platform": "douyin",
+          "accountName": "王姨的厨房",
+          "publishUrl": "https://www.douyin.com/video/mock-cup-scenario-wangyi",
+          "publishedAt": "2026-05-25T00:00:00.000Z",
+          "days": 10,
+          "finalTotals": {
+            "impressions": 160000,
+            "clicks": 2900,
+            "conversions": 95,
+            "spendCents": 500000,
+            "gmvCents": 600000
+          }
+        }
+      ]
+    }
+  ]
+}

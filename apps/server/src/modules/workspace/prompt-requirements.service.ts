@@ -1,5 +1,4 @@
 import { nanoid } from "nanoid";
-import { getModulePromptAssemblyMetadata } from "@aigc-video/ai";
 import { creativeFactorRequirementsDataSchema } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
@@ -53,9 +52,8 @@ function jsonbParam(value: unknown) {
 }
 
 function defaultPromptAssembly(data: unknown) {
-  const metadata = getModulePromptAssemblyMetadata("prompt-requirements");
   return {
-    ...metadata,
+    moduleId: "prompt-requirements",
     preview:
       typeof data === "object" && data
         ? Object.keys(data).slice(0, 5).join(", ")

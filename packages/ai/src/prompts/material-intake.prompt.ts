@@ -2,7 +2,7 @@ import type { MaterialIntakeArtifact } from "@aigc-video/shared";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake";
+export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake.2026-06-09";
 
 export interface BuildMaterialIntakePromptInput {
   initialPrompt?: string;
@@ -127,5 +127,5 @@ export function buildMaterialIntakePrompt(input: BuildMaterialIntakePromptInput)
     ]
       .filter((item): item is string => Boolean(item))
       .join("\n"),
-  }).prompt;
+  });
 }

@@ -34,12 +34,7 @@ function moduleArtifact(moduleId: string, data: unknown, status = "proposed") {
     isCurrent: status === "approved",
     data,
     sourceFingerprint: {},
-    promptAssembly: {
-      moduleId,
-      assemblerVersion: "module-prompt-assembler",
-      subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64)
-    },
+    promptAssembly: { moduleId },
     createdAt: "2026-05-25T00:00:00.000Z",
     updatedAt: "2026-05-25T00:00:00.000Z",
     approvedAt: status === "approved" ? "2026-05-25T00:00:00.000Z" : null

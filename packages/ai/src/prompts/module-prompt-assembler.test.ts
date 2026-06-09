@@ -1,34 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  buildModulePrompt,
-  getModulePromptAssemblyMetadata,
-} from "./module-prompt-assembler.js";
+import { buildModulePrompt } from "./module-prompt-assembler.js";
 
 describe("module prompt assembler", () => {
   it("assembles subject content separately from the schema contract", () => {
-    const result = buildModulePrompt({
+    const prompt = buildModulePrompt({
       moduleId: "storyboard",
       runtimeContext: "已确认素材清单：display_1.png",
     });
 
-    assert.match(result.prompt, /## Subject Prompt/);
-    assert.match(result.prompt, /## Runtime Context/);
-    assert.match(result.prompt, /## Schema Contract/);
-    assert.match(result.prompt, /已确认素材清单：display_1\.png/);
-    assert.equal(result.metadata.subjectTemplateId, "storyboard/subject.md");
-    assert.equal(result.metadata.contractTemplateId, "storyboard/contract.md");
-    assert.notEqual(result.metadata.subjectHash, result.metadata.contractHash);
-  });
-
-  it("exposes stable prompt assembly metadata without runtime context", () => {
-    const metadata = getModulePromptAssemblyMetadata("shotprompt");
-
-    assert.equal(metadata.moduleId, "shotprompt");
-    assert.equal(metadata.subjectTemplateId, "shotprompt/subject.md");
-    assert.equal(metadata.contractTemplateId, "shotprompt/contract.md");
-    assert.match(metadata.subjectHash, /^[a-f0-9]{64}$/);
-    assert.match(metadata.contractHash, /^[a-f0-9]{64}$/);
+    assert.match(prompt, /## Subject Prompt/);
+    assert.match(prompt, /## Runtime Context/);
+    assert.match(prompt, /## Schema Contract/);
+    assert.match(prompt, /已确认素材清单：display_1\.png/);
   });
 
   it("documents providerPrompt shotImage and shotVideo as separate shotprompt layers", () => {
@@ -37,10 +21,10 @@ describe("module prompt assembler", () => {
       runtimeContext: "已确认分镜：商品开场",
     });
 
-    assert.match(shotPrompt.prompt, /providerPrompt：镜头叙事和语境锚点/);
-    assert.match(shotPrompt.prompt, /shotImage：静态关键帧要求/);
-    assert.match(shotPrompt.prompt, /shotVideo：动态视频运动要求/);
-    assert.match(shotPrompt.prompt, /禁止把 providerPrompt 原样复制/);
+    assert.match(shotPrompt, /providerPrompt：镜头叙事和语境锚点/);
+    assert.match(shotPrompt, /shotImage：静态关键帧要求/);
+    assert.match(shotPrompt, /shotVideo：动态视频运动要求/);
+    assert.match(shotPrompt, /禁止把 providerPrompt 原样复制/);
   });
 
   it("loads subject creative rules for the four prompt modules", () => {
@@ -61,22 +45,22 @@ describe("module prompt assembler", () => {
       runtimeContext: "已确认分镜：3 个 shots",
     });
 
-    assert.match(materialIntake.prompt, /role 分类规则/);
-    assert.match(materialIntake.prompt, /spec_text/);
-    assert.match(materialIntake.prompt, /只允许一张素材承担主商品身份/);
+    assert.match(materialIntake, /role 分类规则/);
+    assert.match(materialIntake, /spec_text/);
+    assert.match(materialIntake, /只允许一张素材承担主商品身份/);
 
-    assert.match(productBrief.prompt, /coreSellingPoint 写法规范/);
-    assert.match(productBrief.prompt, /visualStyle 表达指导/);
+    assert.match(productBrief, /coreSellingPoint 写法规范/);
+    assert.match(productBrief, /visualStyle 表达指导/);
 
-    assert.match(storyboard.prompt, /strategy 叙事弧规则/);
-    assert.match(storyboard.prompt, /visual-story/);
-    assert.match(storyboard.prompt, /固定总时长 15 秒/);
-    assert.match(storyboard.prompt, /purpose 必须按顺序严格是 hook、proof、cta/);
-    assert.doesNotMatch(storyboard.prompt, /固定 6 个 shots|固定 6 个镜头|12 秒|durationSec \* 8/);
+    assert.match(storyboard, /strategy 叙事弧规则/);
+    assert.match(storyboard, /visual-story/);
+    assert.match(storyboard, /固定总时长 15 秒/);
+    assert.match(storyboard, /purpose 必须按顺序严格是 hook、proof、cta/);
+    assert.doesNotMatch(storyboard, /固定 6 个 shots|固定 6 个镜头|12 秒|durationSec \* 8/);
 
-    assert.match(shotprompt.prompt, /providerPrompt 8 要素规则/);
-    assert.match(shotprompt.prompt, /shotImage 规则/);
-    assert.match(shotprompt.prompt, /shotVideo 规则/);
-    assert.match(shotprompt.prompt, /pace 可为 slow、medium 或 fast/);
+    assert.match(shotprompt, /providerPrompt 8 要素规则/);
+    assert.match(shotprompt, /shotImage 规则/);
+    assert.match(shotprompt, /shotVideo 规则/);
+    assert.match(shotprompt, /pace 可为 slow、medium 或 fast/);
   });
 });

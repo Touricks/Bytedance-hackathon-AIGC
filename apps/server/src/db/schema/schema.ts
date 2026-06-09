@@ -219,8 +219,6 @@ create table if not exists script (
   version integer not null,
   narrative text not null,
   visual_style text not null,
-  frozen boolean not null default false,
-  frozen_at timestamptz,
   raw_json jsonb not null,
   created_at timestamptz not null default now()
 );
@@ -357,8 +355,6 @@ create table if not exists image_select_artifacts (
   shot_id text not null unique references storyboard_shots(id) on delete cascade,
   image_candidate_id text not null references image_candidates(id),
   image_generation_batch_id text not null references image_generation_batches(id),
-  selected_by text,
-  selected_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -437,8 +433,6 @@ create table if not exists video_select_artifacts (
   shot_id text not null unique references storyboard_shots(id) on delete cascade,
   video_candidate_id text not null references video_candidates(id),
   video_generation_batch_id text not null references video_generation_batches(id),
-  selected_by text,
-  selected_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

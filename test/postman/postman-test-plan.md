@@ -123,7 +123,7 @@ node scripts/verify-provider-video.mjs --image-url <url> --json
 
 - propose 只返回 `status=proposed`，不改变 current。
 - approve 返回 `status=approved` 且 `isCurrent=true`。
-- 响应包含 `promptAssembly.subjectTemplateId`、`promptAssembly.contractTemplateId`、`subjectHash` 与 `contractHash`。
+- 响应包含 `promptAssembly.moduleId`。
 - 下游模块响应的 `sourceFingerprint` 指向当前上游 artifact。
 
 ### 5. Shot Set Apply
@@ -208,7 +208,6 @@ trace 中不应出现：
 
 - `provider.failed`
 - `batch.failed`
-- 缺失 `subjectTemplateId` 或 `contractTemplateId` 的 agent event
 
 ---
 
@@ -257,10 +256,7 @@ const json = pm.response.json();
 const artifact = json.data?.artifact || json.data;
 pm.expect(artifact.status).to.eql("approved");
 pm.expect(artifact.isCurrent).to.eql(true);
-pm.expect(artifact.promptAssembly.subjectTemplateId).to.be.a("string");
-pm.expect(artifact.promptAssembly.contractTemplateId).to.be.a("string");
-pm.expect(artifact.promptAssembly.subjectHash).to.match(/^[a-f0-9]{64}$/);
-pm.expect(artifact.promptAssembly.contractHash).to.match(/^[a-f0-9]{64}$/);
+pm.expect(artifact.promptAssembly.moduleId).to.be.a("string");
 ```
 
 shot requirement 断言：

@@ -1,8 +1,5 @@
 import { nanoid } from "nanoid";
-import {
-  generateMaterialIntakeWithArk,
-  getModulePromptAssemblyMetadata
-} from "@aigc-video/ai";
+import { generateMaterialIntakeWithArk } from "@aigc-video/ai";
 import {
   materialIntakeArtifactSchema,
   normalizeMaterialIntakePrimaryRole,
@@ -16,6 +13,7 @@ import {
   copySelectedLegacyRootMaterials,
   createWorkspaceTraceLoggerForWorkspace,
   materialImagesForWorkspace,
+  materialVideosForWorkspace,
   materialIntakeTextPreviewsForWorkspace,
   runtimeMode
 } from "./workspace.service.js";
@@ -109,9 +107,8 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
 }
 
 function promptAssembly(input: { requirementArtifactId: string; data: unknown }) {
-  const metadata = getModulePromptAssemblyMetadata("material-intake");
   return {
-    ...metadata,
+    moduleId: "material-intake",
     requirementArtifactId: input.requirementArtifactId,
     preview:
       typeof input.data === "object" && input.data
@@ -170,6 +167,10 @@ export const materialIntakeService = {
       runtimeMode() === "real"
         ? await materialImagesForWorkspace(input.workspaceId, scanned)
         : [];
+    const videoInputs =
+      runtimeMode() === "real"
+        ? await materialVideosForWorkspace(input.workspaceId, scanned)
+        : [];
     const data: MaterialIntakeArtifact = normalizeMaterialIntakePrimaryRole(
       runtimeMode() === "real"
         ? (
@@ -183,6 +184,7 @@ export const materialIntakeService = {
               {
                 traceLogger: await createWorkspaceTraceLoggerForWorkspace(workspace),
                 imageInputs,
+                videoInputs,
                 includeImageInputs: true
               }
             )

@@ -75,11 +75,7 @@ function moduleArtifact(moduleId, data, status = "approved") {
     },
     promptAssembly: {
       moduleId,
-      assemblerVersion: "contract-check",
-      subjectTemplateId: `${moduleId}/subject.md`,
-      contractTemplateId: `${moduleId}/contract.md`,
-      subjectHash: "sha256:subject",
-      contractHash: "sha256:contract",
+      preview: "",
     },
     createdAt: now,
     updatedAt: now,

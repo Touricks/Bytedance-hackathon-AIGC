@@ -1,7 +1,6 @@
 import { nanoid } from "nanoid";
 import {
   generateStoryboardWithArk,
-  getModulePromptAssemblyMetadata,
   rewriteStoryboardVoiceoversWithArk,
 } from "@aigc-video/ai";
 import {
@@ -189,9 +188,8 @@ function promptAssembly(input: {
   requirementArtifactId: string;
   data: unknown;
 }) {
-  const metadata = getModulePromptAssemblyMetadata("storyboard");
   return {
-    ...metadata,
+    moduleId: "storyboard",
     requirementArtifactId: input.requirementArtifactId,
     preview:
       typeof input.data === "object" && input.data

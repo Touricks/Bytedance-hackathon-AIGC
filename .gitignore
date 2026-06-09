@@ -21,8 +21,9 @@ apps/web/playwright-report/
 .agent/
 .agents/
 .husky/
-
+.playwright-mcp/
 # Keep most design docs locally only; some test/core specs are shared.
 docs/*
 !docs/core/
 !docs/core/**
+

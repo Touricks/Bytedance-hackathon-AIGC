@@ -56,8 +56,6 @@ export interface Script {
   version: number;
   narrative: string;
   visualStyle: string;
-  frozen: boolean;
-  frozenAt?: string;
   rawJson: unknown;
   createdAt: string;
 }

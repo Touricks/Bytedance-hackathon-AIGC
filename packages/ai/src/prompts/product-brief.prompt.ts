@@ -194,7 +194,7 @@ export function buildProductBriefPrompt(input: BuildProductBriefPromptInput) {
     ]
       .filter((item): item is string => Boolean(item))
       .join("\n"),
-  }).prompt;
+  });
 }
 
 export function buildProductBriefRepairPrompt(rawOutput: string) {

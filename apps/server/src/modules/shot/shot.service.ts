@@ -1245,8 +1245,7 @@ export const shotWorkflowService = {
     await db.db2.upsertSelectedImage({
       shotId: args.shotId,
       imageCandidateId: args.imageCandidateId,
-      imageGenerationBatchId: candidate.batchId,
-      selectedBy: args.selectedBy ?? "user"
+      imageGenerationBatchId: candidate.batchId
     });
     await db.db2.updateShot(args.shotId, {
       status: "IMAGE_SELECTED",
@@ -1681,8 +1680,7 @@ export const shotWorkflowService = {
     await db.db2.upsertSelectedVideo({
       shotId: args.shotId,
       videoCandidateId: args.videoCandidateId,
-      videoGenerationBatchId: candidate.batchId,
-      selectedBy: args.selectedBy ?? "user"
+      videoGenerationBatchId: candidate.batchId
     });
     await db.db2.updateShot(args.shotId, {
       status: "VIDEO_SELECTED",

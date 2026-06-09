@@ -49,14 +49,14 @@ erDiagram
   image_prompt_artifacts ||--o{ image_generation_batches : generates
   image_generation_batches ||--o{ image_candidates : candidates
   storyboard_shots ||--o| image_select_artifacts : selected_image
-  image_candidates ||--o{ image_select_artifacts : selected_by
+  image_candidates ||--o{ image_select_artifacts : selection
 
   storyboard_shots ||--o{ video_script_artifacts : versions
   image_candidates ||--o{ video_script_artifacts : frame_source
   video_script_artifacts ||--o{ video_generation_batches : generates
   video_generation_batches ||--o{ video_candidates : candidates
   storyboard_shots ||--o| video_select_artifacts : selected_video
-  video_candidates ||--o{ video_select_artifacts : selected_by
+  video_candidates ||--o{ video_select_artifacts : selection
 
   shot_sets ||--o{ final_video_jobs : source
   final_video_jobs ||..o{ dashboard_video_artifacts : "trace (soft ref)"

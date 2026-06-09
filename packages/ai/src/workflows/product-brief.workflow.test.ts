@@ -70,41 +70,32 @@ describe("product-brief workflow", () => {
           detail: "high"
         },
         createClient: () => ({
-          chat: {
-            completions: {
-              create: async (request) => {
-                calls.push(request);
-                return {
-                  choices: [
-                    {
-                      message: {
-                        content: JSON.stringify({
-                          product: {
-                            name: "城市街景产品",
-                            category: "旅行风格商品",
-                            keyFacts: ["材质真实", "适合旅行风格内容"],
-                            assets: [
-                              { ref: "DSC04135.JPG", useAs: "primary" }
-                            ]
-                          },
-                          audience: {
-                            who: "喜欢城市旅行内容的电商用户",
-                            painOrDesire: "希望商品内容真实可信"
-                          },
-                          coreSellingPoint: "真实街景氛围强化商品质感",
-                          proof: ["已上传主商品素材图。"],
-                          offer: null,
-                          platform: "抖音",
-                          brandTone: "真实直接",
-                          bannedExpressions: [],
-                          landingInfo: null,
-                          assumptions: []
-                        })
-                      }
-                    }
-                  ]
-                };
-              }
+          responses: {
+            create: async (request) => {
+              calls.push(request);
+              return {
+                status: "completed",
+                output_text: JSON.stringify({
+                  product: {
+                    name: "城市街景产品",
+                    category: "旅行风格商品",
+                    keyFacts: ["材质真实", "适合旅行风格内容"],
+                    assets: [{ ref: "DSC04135.JPG", useAs: "primary" }]
+                  },
+                  audience: {
+                    who: "喜欢城市旅行内容的电商用户",
+                    painOrDesire: "希望商品内容真实可信"
+                  },
+                  coreSellingPoint: "真实街景氛围强化商品质感",
+                  proof: ["已上传主商品素材图。"],
+                  offer: null,
+                  platform: "抖音",
+                  brandTone: "真实直接",
+                  bannedExpressions: [],
+                  landingInfo: null,
+                  assumptions: []
+                })
+              };
             }
           }
         }),
@@ -117,15 +108,13 @@ describe("product-brief workflow", () => {
     );
 
     const request = calls[0] as {
-      messages: Array<{ content: unknown }>;
-      response_format?: unknown;
+      input: Array<{ content: Array<{ type: string }> }>;
+      text?: unknown;
     };
-    assert.equal(typeof request.messages[0]?.content, "string");
-    assert.doesNotMatch(
-      request.messages[0]?.content as string,
-      /data:image\/jpeg;base64/
-    );
-    assert.ok(request.response_format);
+    const parts = request.input[0]?.content ?? [];
+    assert.equal(parts[0]?.type, "input_text");
+    assert.equal(parts.some((part) => part.type === "input_image"), false);
+    assert.ok(request.text);
     assert.equal(result.trace.imageReferenceMode, "none");
     assert.equal(result.productBrief.product.name, "城市街景产品");
 
@@ -151,23 +140,16 @@ describe("product-brief workflow", () => {
           ARK_BASE_URL: "https://ark.example/api/v3"
         },
         createClient: () => ({
-          chat: {
-            completions: {
-              create: async (request) => {
-                calls.push(request);
-                return {
-                  choices: [
-                    {
-                      message: {
-                        content: JSON.stringify({
-                          ...draft,
-                          coreSellingPoint: "更适合送礼的年轻化家居装饰卖点"
-                        })
-                      }
-                    }
-                  ]
-                };
-              }
+          responses: {
+            create: async (request) => {
+              calls.push(request);
+              return {
+                status: "completed",
+                output_text: JSON.stringify({
+                  ...draft,
+                  coreSellingPoint: "更适合送礼的年轻化家居装饰卖点"
+                })
+              };
             }
           }
         })
@@ -175,9 +157,9 @@ describe("product-brief workflow", () => {
     );
 
     const request = calls[0] as {
-      messages: Array<{ content: unknown }>;
+      input: Array<{ content: Array<{ type: string; text?: string }> }>;
     };
-    const content = String(request.messages[0]?.content);
+    const content = String(request.input[0]?.content[0]?.text);
     assert.match(content, /本次任务模式：调整商品卖点/);
     assert.match(content, /用户方向是本轮最高优先级/);
     assert.match(content, /不得原样返回当前草稿中的旧商品主体/);

@@ -11,7 +11,7 @@ import {
   SHOTPROMPT_PROMPT_VERSION
 } from "../prompts/shotprompt.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
-import { generateTextWithArk } from "../providers/ark-text.provider.js";
+import { generateResponsesTextWithArk } from "../providers/ark-text.provider.js";
 import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
@@ -20,6 +20,7 @@ import {
 } from "../providers/provider-config.js";
 import { buildShotPromptResponseFormat } from "../contracts/response-formats.js";
 import type { FileTraceLogger } from "../trace/trace-log.js";
+import { buildArkUserRequest } from "./shared/ark-input.js";
 
 export interface GenerateShotPromptInput {
   brief: ProductBriefArtifact;
@@ -103,25 +104,19 @@ export async function generateShotPromptWithArk(
     }
   });
   const rawOutput = (
-    await generateTextWithArk(
-      { prompt, content: prompt },
-      config,
-      {
-        traceLogger: options.traceLogger,
-        responseFormat,
-        trace: {
-          pipeline: "shotprompt",
-          contractId: contract.id,
-          contractVersion: contract.activeVersion,
-          meta: {
-            promptVersion: SHOTPROMPT_PROMPT_VERSION,
-            contractId: contract.id,
-            contractVersion: contract.activeVersion,
-            parsedOutputStatus: "not_parsed"
-          }
+    await generateResponsesTextWithArk(buildArkUserRequest(prompt), config, {
+      traceLogger: options.traceLogger,
+      responseFormat,
+      trace: {
+        pipeline: "shotprompt",
+        contractId: contract.id,
+        contractVersion: contract.activeVersion,
+        meta: {
+          promptVersion: SHOTPROMPT_PROMPT_VERSION,
+          parsedOutputStatus: "not_parsed"
         }
       }
-    )
+    })
   ).output;
   let shotPrompt: ShotPromptArtifact;
   try {

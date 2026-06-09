@@ -11,7 +11,7 @@ import {
   STORYBOARD_PROMPT_VERSION
 } from "../prompts/storyboard.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
-import { generateTextWithArk } from "../providers/ark-text.provider.js";
+import { generateResponsesTextWithArk } from "../providers/ark-text.provider.js";
 import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
@@ -23,6 +23,7 @@ import {
   buildStoryboardVoiceoverRewriteResponseFormat
 } from "../contracts/response-formats.js";
 import type { FileTraceLogger } from "../trace/trace-log.js";
+import { buildArkUserRequest } from "./shared/ark-input.js";
 
 export interface GenerateStoryboardInput {
   brief: ProductBriefArtifact;
@@ -264,25 +265,19 @@ export async function generateStoryboardWithArk(
     }
   });
   const rawOutput = (
-    await generateTextWithArk(
-      { prompt, content: prompt },
-      config,
-      {
-        traceLogger: options.traceLogger,
-        responseFormat,
-        trace: {
-          pipeline: "storyboard",
-          contractId: contract.id,
-          contractVersion: contract.activeVersion,
-          meta: {
-            promptVersion: STORYBOARD_PROMPT_VERSION,
-            contractId: contract.id,
-            contractVersion: contract.activeVersion,
-            parsedOutputStatus: "not_parsed"
-          }
+    await generateResponsesTextWithArk(buildArkUserRequest(prompt), config, {
+      traceLogger: options.traceLogger,
+      responseFormat,
+      trace: {
+        pipeline: "storyboard",
+        contractId: contract.id,
+        contractVersion: contract.activeVersion,
+        meta: {
+          promptVersion: STORYBOARD_PROMPT_VERSION,
+          parsedOutputStatus: "not_parsed"
         }
       }
-    )
+    })
   ).output;
   let storyboard: StoryboardArtifact;
   let parsedOutputStatus: StoryboardTrace["parsedOutputStatus"] = "valid";
@@ -419,26 +414,20 @@ export async function rewriteStoryboardVoiceoversWithArk(
   });
 
   const rawOutput = (
-    await generateTextWithArk(
-      { prompt, content: prompt },
-      config,
-      {
-        traceLogger: options.traceLogger,
-        responseFormat,
-        trace: {
-          pipeline: "storyboard",
-          contractId: contract.id,
-          contractVersion: contract.activeVersion,
-          meta: {
-            promptVersion: STORYBOARD_PROMPT_VERSION,
-            contractId: contract.id,
-            contractVersion: contract.activeVersion,
-            parsedOutputStatus: "not_parsed",
-            rewriteKind: "voiceover"
-          }
+    await generateResponsesTextWithArk(buildArkUserRequest(prompt), config, {
+      traceLogger: options.traceLogger,
+      responseFormat,
+      trace: {
+        pipeline: "storyboard",
+        contractId: contract.id,
+        contractVersion: contract.activeVersion,
+        meta: {
+          promptVersion: STORYBOARD_PROMPT_VERSION,
+          parsedOutputStatus: "not_parsed",
+          rewriteKind: "voiceover"
         }
       }
-    )
+    })
   ).output;
 
   const storyboard = parseVoiceoverRewrite(rawOutput, input);

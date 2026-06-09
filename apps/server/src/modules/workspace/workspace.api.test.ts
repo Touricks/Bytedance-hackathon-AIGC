@@ -130,9 +130,6 @@ function assertPromptAssembly(value: unknown, moduleId: string) {
   assert.ok(value && typeof value === "object", "expected promptAssembly object");
   const assembly = value as Record<string, unknown>;
   assert.equal(assembly.moduleId, moduleId);
-  assert.equal(assembly.assemblerVersion, "module-prompt-assembler");
-  assert.match(String(assembly.subjectHash), /^[a-f0-9]{64}$/);
-  assert.match(String(assembly.contractHash), /^[a-f0-9]{64}$/);
 }
 
 function multipartFilePayload(input: {
@@ -171,32 +168,27 @@ async function startArkProductBriefServer() {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                product: {
-                  name: "城市地标旅行素材",
-                  category: "旅游服务",
-                  keyFacts: ["洛杉矶城市道路实拍", "Route 66 地标"],
-                  assets: [{ ref: "product.png", useAs: "primary" }],
-                },
-                audience: {
-                  who: "计划城市旅行的用户",
-                  painOrDesire: "想快速了解城市地标体验",
-                },
-                coreSellingPoint: "用真实城市街景展示洛杉矶旅行氛围",
-                proof: ["主图展示城市道路、车辆、棕榈树和 Route 66 标识"],
-                offer: null,
-                platform: "抖音",
-                brandTone: "真实直接",
-                bannedExpressions: [],
-                landingInfo: null,
-                assumptions: [],
-              }),
-            },
+        status: "completed",
+        output_text: JSON.stringify({
+          product: {
+            name: "城市地标旅行素材",
+            category: "旅游服务",
+            keyFacts: ["洛杉矶城市道路实拍", "Route 66 地标"],
+            assets: [{ ref: "product.png", useAs: "primary" }],
           },
-        ],
+          audience: {
+            who: "计划城市旅行的用户",
+            painOrDesire: "想快速了解城市地标体验",
+          },
+          coreSellingPoint: "用真实城市街景展示洛杉矶旅行氛围",
+          proof: ["主图展示城市道路、车辆、棕榈树和 Route 66 标识"],
+          offer: null,
+          platform: "抖音",
+          brandTone: "真实直接",
+          bannedExpressions: [],
+          landingInfo: null,
+          assumptions: [],
+        }),
       }),
     );
   });
@@ -227,24 +219,19 @@ async function startArkMaterialIntakeServer() {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                primaryProductRef: "product.png",
-                tags: [
-                  {
-                    ref: "product.png",
-                    role: "product_main",
-                    description: "白色透明背景的商品主图，展示产品整体外观",
-                    relevance: "high",
-                    included: true,
-                  },
-                ],
-              }),
+        status: "completed",
+        output_text: JSON.stringify({
+          primaryProductRef: "product.png",
+          tags: [
+            {
+              ref: "product.png",
+              role: "product_main",
+              description: "白色透明背景的商品主图，展示产品整体外观",
+              relevance: "high",
+              included: true,
             },
-          },
-        ],
+          ],
+        }),
       }),
     );
   });
@@ -881,13 +868,13 @@ describe("workspace API", () => {
       );
 
       const request = arkText.requests[0] as {
-        messages?: Array<{ content?: unknown }>;
+        input?: Array<{ content?: unknown }>;
       };
-      const content = request.messages?.[0]?.content;
-      assert.ok(Array.isArray(content), "expected multimodal chat content");
-      assert.equal(content[0]?.type, "text");
-      assert.equal(content[1]?.type, "image_url");
-      assert.match(content[1]?.image_url?.url ?? "", /^data:image\/png;base64,/);
+      const content = request.input?.[0]?.content;
+      assert.ok(Array.isArray(content), "expected multimodal responses content");
+      assert.equal(content[0]?.type, "input_text");
+      assert.equal(content[1]?.type, "input_image");
+      assert.match(content[1]?.image_url ?? "", /^data:image\/png;base64,/);
     } finally {
       await arkText.close();
     }
@@ -949,13 +936,83 @@ describe("workspace API", () => {
       );
 
       const request = arkText.requests[0] as {
-        messages?: Array<{ content?: unknown }>;
+        input?: Array<{ content?: unknown }>;
       };
-      const content = request.messages?.[0]?.content;
-      assert.ok(Array.isArray(content), "expected multimodal chat content");
-      assert.equal(content[0]?.type, "text");
-      assert.equal(content[1]?.type, "image_url");
-      assert.match(content[1]?.image_url?.url ?? "", /^data:image\/png;base64,/);
+      const content = request.input?.[0]?.content;
+      assert.ok(Array.isArray(content), "expected multimodal responses content");
+      assert.equal(content[0]?.type, "input_text");
+      assert.equal(content[1]?.type, "input_image");
+      assert.match(content[1]?.image_url ?? "", /^data:image\/png;base64,/);
+    } finally {
+      await arkText.close();
+    }
+  });
+
+  it("passes included video materials to real material-intake provider calls", async () => {
+    const arkText = await startArkMaterialIntakeServer();
+    try {
+      await withEnv(
+        {
+          MODEL_MODE: "real",
+          TEXT_API_KEY: "test-key",
+          TEXT_BASE_URL: arkText.url,
+          TEXT_ENDPOINT_ID: "ark-material-intake",
+          ARK_API_KEY: "test-key",
+          ARK_BASE_URL: arkText.url,
+          ARK_TEXT_ENDPOINT_ID: "ark-material-intake",
+        },
+        async () => {
+          const { workspaceId } = await createBoundWorkspace(app);
+          const imageUpload = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/materials`,
+            payload: {
+              filename: "product.png",
+              dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+            },
+          });
+          assert.equal(imageUpload.statusCode, 200, imageUpload.body);
+          const videoUpload = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/materials`,
+            payload: {
+              filename: "demo.mp4",
+              dataBase64: Buffer.from("fake mp4 bytes").toString("base64"),
+            },
+          });
+          assert.equal(videoUpload.statusCode, 200, videoUpload.body);
+
+          const requirementsPropose = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+            payload: { data: testPromptRequirementsData() },
+          });
+          assert.equal(requirementsPropose.statusCode, 200, requirementsPropose.body);
+          const requirementsApprove = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+            payload: { artifactId: requirementsPropose.json().data.id },
+          });
+          assert.equal(requirementsApprove.statusCode, 200, requirementsApprove.body);
+
+          const materialPropose = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/material-intake/propose`,
+            payload: {},
+          });
+          assert.equal(materialPropose.statusCode, 200, materialPropose.body);
+        },
+      );
+
+      const request = arkText.requests[0] as {
+        input?: Array<{ content?: Array<{ type?: string; video_url?: string; fps?: number }> }>;
+      };
+      const content = request.input?.[0]?.content;
+      assert.ok(Array.isArray(content), "expected multimodal responses content");
+      const video = content.find((part) => part.type === "input_video");
+      assert.ok(video, "expected an input_video part for the included demo video");
+      assert.match(video.video_url ?? "", /^data:video\/mp4;base64,/);
+      assert.equal(video.fps, 0.5);
     } finally {
       await arkText.close();
     }

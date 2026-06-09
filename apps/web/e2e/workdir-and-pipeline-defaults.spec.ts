@@ -57,11 +57,7 @@ async function mockCreativeReviewApi(
     isCurrent: true,
     data,
     sourceFingerprint: {},
-    promptAssembly: {
-      moduleId,
-      subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64)
-    },
+    promptAssembly: { moduleId },
     createdAt: now,
     updatedAt: now,
     approvedAt: now
@@ -548,11 +544,7 @@ async function mockReviewStartApi(page: Page) {
     isCurrent: status === "approved",
     data,
     sourceFingerprint: {},
-    promptAssembly: {
-      moduleId,
-      subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64)
-    },
+    promptAssembly: { moduleId },
     createdAt: now,
     updatedAt: now,
     approvedAt: status === "approved" ? now : null
@@ -799,11 +791,7 @@ async function mockLayeredReviewApi(
     isCurrent: status === "approved",
     data,
     sourceFingerprint: {},
-    promptAssembly: {
-      moduleId,
-      subjectHash: "a".repeat(64),
-      contractHash: "b".repeat(64)
-    },
+    promptAssembly: { moduleId },
     createdAt: now,
     updatedAt: now,
     approvedAt: status === "approved" ? now : null

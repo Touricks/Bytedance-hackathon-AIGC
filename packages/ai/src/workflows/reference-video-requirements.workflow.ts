@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { creativeFactorsSchema } from "@aigc-video/shared";
+import { DEFAULT_CREATIVE_FACTORS, creativeFactorsSchema } from "@aigc-video/shared";
 import {
   isRealProviderMode,
   resolveArkTextProviderConfig,
@@ -10,6 +10,7 @@ import {
   type ArkResponsesTextProviderOptions
 } from "../providers/ark-text.provider.js";
 import { buildReferenceVideoRequirementsResponseFormat } from "../contracts/response-formats.js";
+import { buildArkUserRequest, buildMultimodalContent } from "./shared/ark-input.js";
 
 export const referenceVideoRequirementsAnalysisSchema = z.object({
   summary: z.string().min(1),
@@ -122,37 +123,14 @@ async function analyzeWithProvider(
         `参考文本（${textInput.filename}）：\n${textInput.text.slice(0, 4000)}`
     )
   ];
-  const content: Array<Record<string, unknown>> = [
-    {
-      type: "input_text",
-      text: textParts.join("\n")
-    }
-  ];
-  if (input.videoUrl) {
-    content.push({
-      type: "input_video",
-      video_url: input.videoUrl,
-      fps: 0.5
-    });
-  }
-  for (const imageInput of imageInputs) {
-    content.push({
-      type: "input_image",
-      image_url: imageInput.url,
-      detail: imageInput.detail ?? "high"
-    });
-  }
+  const content = buildMultimodalContent({
+    text: textParts.join("\n"),
+    images: imageInputs,
+    videos: input.videoUrl ? [{ url: input.videoUrl }] : []
+  });
 
   const response = await generateResponsesTextWithArk(
-    {
-      input: [
-        {
-          role: "user",
-          content
-        }
-      ],
-      temperature: 0.2
-    },
+    buildArkUserRequest(content, 0.2),
     config,
     {
       createClient: options.createClient,
@@ -180,7 +158,7 @@ function deterministicReferenceVideoRequirements(
       recommendedFactors: {
         productCategory: "consumer-electronics",
         dealType: "search-standard",
-        audience: "youth",
+        audience: DEFAULT_CREATIVE_FACTORS.audience,
         strategy: "review-comparison"
       },
       confidence: "medium",

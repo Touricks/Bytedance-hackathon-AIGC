@@ -94,13 +94,8 @@ async function startArkJsonServer(responseContent: unknown) {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify(responseContent),
-            },
-          },
-        ],
+        status: "completed",
+        output_text: JSON.stringify(responseContent),
       }),
     );
   });

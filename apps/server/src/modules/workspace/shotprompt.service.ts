@@ -1,8 +1,5 @@
 import { nanoid } from "nanoid";
-import {
-  generateShotPromptWithArk,
-  getModulePromptAssemblyMetadata,
-} from "@aigc-video/ai";
+import { generateShotPromptWithArk } from "@aigc-video/ai";
 import {
   assertShotPromptMatchesStoryboard,
   compileShotPrompt as compileShotPromptArtifact,
@@ -216,9 +213,8 @@ function promptAssembly(input: {
   requirementArtifactId: string;
   data: unknown;
 }) {
-  const metadata = getModulePromptAssemblyMetadata("shotprompt");
   return {
-    ...metadata,
+    moduleId: "shotprompt",
     requirementArtifactId: input.requirementArtifactId,
     preview:
       typeof input.data === "object" && input.data

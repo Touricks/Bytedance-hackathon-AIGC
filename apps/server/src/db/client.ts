@@ -1,4 +1,4 @@
-import { Pool, type PoolClient } from "pg";
+import { Pool } from "pg";
 import { nanoid } from "nanoid";
 import type {
   Asset,
@@ -272,7 +272,6 @@ export interface Db2Adapter {
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId: string;
-    selectedBy?: string | null;
   }): Promise<void>;
   getSelectedImage(
     shotId: string
@@ -309,7 +308,6 @@ export interface Db2Adapter {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId: string;
-    selectedBy?: string | null;
   }): Promise<void>;
   getSelectedVideo(
     shotId: string
@@ -468,8 +466,6 @@ function toScript(row: Record<string, unknown>): Script {
     version: Number(row.version),
     narrative: String(row.narrative),
     visualStyle: String(row.visual_style),
-    frozen: Boolean(row.frozen),
-    frozenAt: row.frozen_at ? toIsoString(row.frozen_at) : undefined,
     rawJson: row.raw_json,
     createdAt: toIsoString(row.created_at)
   };
@@ -1361,13 +1357,12 @@ class PostgresDb2Adapter implements Db2Adapter {
     shotId: string;
     imageCandidateId: string;
     imageGenerationBatchId: string;
-    selectedBy?: string | null;
   }): Promise<void> {
     const result = await this._pool.query(
       `insert into image_select_artifacts
          (id, workspace_id, shot_set_id, shot_id, image_candidate_id,
-          image_generation_batch_id, selected_by)
-       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4, $5
+          image_generation_batch_id)
+       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4
        from storyboard_shots s
        where s.id = $2
          and s.shot_set_id is not null
@@ -1376,16 +1371,13 @@ class PostgresDb2Adapter implements Db2Adapter {
            image_generation_batch_id = excluded.image_generation_batch_id,
            workspace_id = excluded.workspace_id,
            shot_set_id = excluded.shot_set_id,
-           selected_by = excluded.selected_by,
-           selected_at = now(),
            updated_at = now()
        returning id`,
       [
         "sel_img_" + nanoid(10),
         input.shotId,
         input.imageCandidateId,
-        input.imageGenerationBatchId,
-        input.selectedBy ?? null
+        input.imageGenerationBatchId
       ]
     );
     if (result.rowCount !== 1) {
@@ -1654,13 +1646,12 @@ class PostgresDb2Adapter implements Db2Adapter {
     shotId: string;
     videoCandidateId: string;
     videoGenerationBatchId: string;
-    selectedBy?: string | null;
   }): Promise<void> {
     const result = await this._pool.query(
       `insert into video_select_artifacts
          (id, workspace_id, shot_set_id, shot_id, video_candidate_id,
-          video_generation_batch_id, selected_by)
-       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4, $5
+          video_generation_batch_id)
+       select $1, s.workspace_id, s.shot_set_id, s.id, $3, $4
        from storyboard_shots s
        where s.id = $2
          and s.shot_set_id is not null
@@ -1669,16 +1660,13 @@ class PostgresDb2Adapter implements Db2Adapter {
            video_generation_batch_id = excluded.video_generation_batch_id,
            workspace_id = excluded.workspace_id,
            shot_set_id = excluded.shot_set_id,
-           selected_by = excluded.selected_by,
-           selected_at = now(),
            updated_at = now()
        returning id`,
       [
         "sel_vid_" + nanoid(10),
         input.shotId,
         input.videoCandidateId,
-        input.videoGenerationBatchId,
-        input.selectedBy ?? null
+        input.videoGenerationBatchId
       ]
     );
     if (result.rowCount !== 1) {

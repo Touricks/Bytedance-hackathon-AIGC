@@ -55,7 +55,7 @@ const scannedWithTwoImages = {
 };
 
 describe("material-intake workflow", () => {
-  it("keeps the Ark request text-only by default when image inputs are available", async () => {
+  it("omits image/video parts by default when includeImageInputs is not set", async () => {
     const calls: unknown[] = [];
     const events: TraceEventInput[] = [];
 
@@ -80,31 +80,24 @@ describe("material-intake workflow", () => {
           }
         ],
         createClient: () => ({
-          chat: {
-            completions: {
-              create: async (request) => {
-                calls.push(request);
-                return {
-                  choices: [
+          responses: {
+            create: async (request) => {
+              calls.push(request);
+              return {
+                status: "completed",
+                output_text: JSON.stringify({
+                  primaryProductRef: "DSC04135.JPG",
+                  tags: [
                     {
-                      message: {
-                        content: JSON.stringify({
-                          primaryProductRef: "DSC04135.JPG",
-                          tags: [
-                            {
-                              ref: "DSC04135.JPG",
-                              role: "product_main",
-                              description: "街景中的主商品素材",
-                              relevance: "high",
-                              included: true
-                            }
-                          ]
-                        })
-                      }
+                      ref: "DSC04135.JPG",
+                      role: "product_main",
+                      description: "街景中的主商品素材",
+                      relevance: "high",
+                      included: true
                     }
                   ]
-                };
-              }
+                })
+              };
             }
           }
         }),
@@ -117,15 +110,14 @@ describe("material-intake workflow", () => {
     );
 
     const request = calls[0] as {
-      messages: Array<{ content: unknown }>;
-      response_format?: unknown;
+      input: Array<{ content: Array<{ type: string }> }>;
+      text?: unknown;
     };
-    assert.equal(typeof request.messages[0]?.content, "string");
-    assert.doesNotMatch(
-      request.messages[0]?.content as string,
-      /data:image\/jpeg;base64/
-    );
-    assert.ok(request.response_format);
+    const parts = request.input[0]?.content ?? [];
+    assert.equal(parts[0]?.type, "input_text");
+    assert.equal(parts.some((part) => part.type === "input_image"), false);
+    assert.equal(parts.some((part) => part.type === "input_video"), false);
+    assert.ok(request.text);
     assert.equal(result.trace.imageReferenceMode, "none");
     assert.equal(result.material.assets[0]?.description, "街景中的主商品素材");
 
@@ -134,6 +126,86 @@ describe("material-intake workflow", () => {
     );
     assert.equal(prepared?.meta?.imageReferenceMode, "none");
     assert.deepEqual(prepared?.meta?.images, []);
+    assert.deepEqual(prepared?.meta?.videos, []);
+  });
+
+  it("sends input_image and input_video parts when includeImageInputs is set", async () => {
+    const calls: unknown[] = [];
+    const events: TraceEventInput[] = [];
+
+    await generateMaterialIntakeWithArk(
+      { initialPrompt: "识别商品与演示视频", scanned },
+      {
+        env: {
+          MODEL_MODE: "real",
+          ARK_API_KEY: "test-key",
+          ARK_TEXT_ENDPOINT_ID: "ark-material-intake",
+          ARK_BASE_URL: "https://ark.example/api/v3"
+        },
+        includeImageInputs: true,
+        imageInputs: [
+          {
+            ref: "DSC04135.JPG",
+            url: "data:image/jpeg;base64,dGVzdA==",
+            mode: "data_url",
+            detail: "high"
+          }
+        ],
+        videoInputs: [
+          {
+            ref: "demo.mp4",
+            url: "data:video/mp4;base64,dmlk",
+            mode: "data_url",
+            fps: 0.5
+          }
+        ],
+        createClient: () => ({
+          responses: {
+            create: async (request) => {
+              calls.push(request);
+              return {
+                status: "completed",
+                output_text: JSON.stringify({
+                  primaryProductRef: "DSC04135.JPG",
+                  tags: [
+                    {
+                      ref: "DSC04135.JPG",
+                      role: "product_main",
+                      description: "主商品",
+                      relevance: "high",
+                      included: true
+                    }
+                  ]
+                })
+              };
+            }
+          }
+        }),
+        traceLogger: {
+          append: async (event) => {
+            events.push(event);
+          }
+        }
+      }
+    );
+
+    const request = calls[0] as {
+      input: Array<{ content: Array<{ type: string; fps?: number }> }>;
+    };
+    const parts = request.input[0]?.content ?? [];
+    assert.ok(parts.some((part) => part.type === "input_image"));
+    const video = parts.find((part) => part.type === "input_video");
+    assert.ok(video);
+    assert.equal(video?.fps, 0.5);
+
+    const prepared = events.find(
+      (event) => event.kind === "material_intake.request_prepared"
+    );
+    assert.equal(prepared?.meta?.videoReferenceMode, "data_url");
+    assert.equal(
+      (prepared?.meta?.videos as Array<{ ref: string }>)?.[0]?.ref,
+      "demo.mp4"
+    );
   });
 
   it("normalizes duplicate model product_main tags to the single primary material", async () => {
@@ -150,36 +222,29 @@ describe("material-intake workflow", () => {
           ARK_BASE_URL: "https://ark.example/api/v3"
         },
         createClient: () => ({
-          chat: {
-            completions: {
-              create: async () => ({
-                choices: [
+          responses: {
+            create: async () => ({
+              status: "completed",
+              output_text: JSON.stringify({
+                primaryProductRef: "hero.jpg",
+                tags: [
                   {
-                    message: {
-                      content: JSON.stringify({
-                        primaryProductRef: "hero.jpg",
-                        tags: [
-                          {
-                            ref: "hero.jpg",
-                            role: "product_main",
-                            description: "主商品整体展示",
-                            relevance: "high",
-                            included: true
-                          },
-                          {
-                            ref: "detail.jpg",
-                            role: "product_main",
-                            description: "商品细节也被模型误标为主商品",
-                            relevance: "high",
-                            included: true
-                          }
-                        ]
-                      })
-                    }
+                    ref: "hero.jpg",
+                    role: "product_main",
+                    description: "主商品整体展示",
+                    relevance: "high",
+                    included: true
+                  },
+                  {
+                    ref: "detail.jpg",
+                    role: "product_main",
+                    description: "商品细节也被模型误标为主商品",
+                    relevance: "high",
+                    included: true
                   }
                 ]
               })
-            }
+            })
           }
         })
       }

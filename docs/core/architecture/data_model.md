@@ -31,7 +31,7 @@ Each workspace module artifact table stores:
 | `isCurrent` | True only for current approved artifact. |
 | `data` | Module-specific structured artifact. |
 | `sourceFingerprint` | Upstream artifact ids read when this artifact was created. |
-| `promptAssembly` | Prompt template/assembler metadata and preview. |
+| `promptAssembly` | Prompt module id and assembly preview. |
 | `createdAt/updatedAt/approvedAt` | Lifecycle timestamps. |
 
 ### `prompt_requirements_artifacts.data`

@@ -10,8 +10,8 @@ import {
 } from "../prompts/product-brief.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
 import {
-  generateTextWithArk,
-  type ArkTextProviderOptions,
+  generateResponsesTextWithArk,
+  type ArkResponsesTextProviderOptions,
 } from "../providers/ark-text.provider.js";
 import {
   isRealProviderMode,
@@ -24,6 +24,7 @@ import {
   createImageTraceMeta,
   type FileTraceLogger,
 } from "../trace/trace-log.js";
+import { buildArkUserRequest, buildMultimodalContent } from "./shared/ark-input.js";
 
 export interface ProductBriefImageInput {
   url: string;
@@ -55,29 +56,12 @@ export interface GenerateProductBriefOptions {
   env?: ProviderEnv;
   imageInput?: ProductBriefImageInput;
   includeImageInput?: boolean;
-  createClient?: ArkTextProviderOptions["createClient"];
+  createClient?: ArkResponsesTextProviderOptions["createClient"];
   traceLogger?: Pick<FileTraceLogger, "append">;
 }
 
 function parseProductBrief(rawOutput: string): ProductBriefArtifact {
   return productBriefArtifactSchema.parse(JSON.parse(rawOutput));
-}
-
-function buildContent(prompt: string, imageInput?: ProductBriefImageInput) {
-  if (!imageInput) {
-    return prompt;
-  }
-
-  return [
-    { type: "text" as const, text: prompt },
-    {
-      type: "image_url" as const,
-      image_url: {
-        url: imageInput.url,
-        detail: imageInput.detail ?? "high",
-      },
-    },
-  ];
 }
 
 function imageTraceMeta(imageInput?: ProductBriefImageInput) {
@@ -98,8 +82,12 @@ export async function generateProductBriefWithArk(
   const env = options.env ?? process.env;
   const prompt = buildProductBriefPrompt(input);
   const imageInput = options.includeImageInput ? options.imageInput : undefined;
-  const content = buildContent(prompt, imageInput);
+  const content = buildMultimodalContent({
+    text: prompt,
+    images: imageInput ? [imageInput] : [],
+  });
   const imageReferenceMode = imageInput?.mode ?? "none";
+  const imageMeta = imageTraceMeta(imageInput);
   const responseFormat = buildProductBriefResponseFormat(contract.activeVersion);
   const config = resolveArkTextProviderConfig(env);
   if (!config) {
@@ -118,7 +106,7 @@ export async function generateProductBriefWithArk(
         parsedOutputStatus: "not_attempted",
         error: message,
         imageReferenceMode,
-        image: imageTraceMeta(imageInput),
+        image: imageMeta,
       },
     });
     if (isRealProviderMode(env)) {
@@ -141,36 +129,27 @@ export async function generateProductBriefWithArk(
       content,
       imageReferenceMode,
       parsedOutputStatus: "not_parsed",
-      image: imageTraceMeta(imageInput),
+      image: imageMeta,
     },
   });
 
   const rawOutput = (
-    await generateTextWithArk(
-      {
-        prompt,
-        content,
-      },
-      config,
-      {
-        traceLogger: options.traceLogger,
-        createClient: options.createClient,
-        responseFormat,
-        trace: {
-          pipeline: "product_brief",
-          contractId: contract.id,
-          contractVersion: contract.activeVersion,
-          meta: {
-            promptVersion: PRODUCT_BRIEF_PROMPT_VERSION,
-            contractId: contract.id,
-            contractVersion: contract.activeVersion,
-            imageReferenceMode,
-            parsedOutputStatus: "not_parsed",
-            image: imageTraceMeta(imageInput),
-          },
+    await generateResponsesTextWithArk(buildArkUserRequest(content), config, {
+      traceLogger: options.traceLogger,
+      createClient: options.createClient,
+      responseFormat,
+      trace: {
+        pipeline: "product_brief",
+        contractId: contract.id,
+        contractVersion: contract.activeVersion,
+        meta: {
+          promptVersion: PRODUCT_BRIEF_PROMPT_VERSION,
+          imageReferenceMode,
+          parsedOutputStatus: "not_parsed",
+          image: imageMeta,
         },
       },
-    )
+    })
   ).output;
 
   try {
@@ -220,29 +199,20 @@ export async function generateProductBriefWithArk(
     });
     const repairPrompt = buildProductBriefRepairPrompt(rawOutput);
     const repairedOutput = (
-      await generateTextWithArk(
-        {
-          prompt: repairPrompt,
-          content: repairPrompt,
-        },
-        config,
-        {
-          traceLogger: options.traceLogger,
-          createClient: options.createClient,
-          responseFormat,
-          trace: {
-            pipeline: "product_brief",
-            contractId: contract.id,
-            contractVersion: contract.activeVersion,
-            meta: {
-              promptVersion: PRODUCT_BRIEF_PROMPT_VERSION,
-              contractId: contract.id,
-              contractVersion: contract.activeVersion,
-              parsedOutputStatus: "repairing",
-            },
+      await generateResponsesTextWithArk(buildArkUserRequest(repairPrompt), config, {
+        traceLogger: options.traceLogger,
+        createClient: options.createClient,
+        responseFormat,
+        trace: {
+          pipeline: "product_brief",
+          contractId: contract.id,
+          contractVersion: contract.activeVersion,
+          meta: {
+            promptVersion: PRODUCT_BRIEF_PROMPT_VERSION,
+            parsedOutputStatus: "repairing",
           },
         },
-      )
+      })
     ).output;
     let productBrief: ProductBriefArtifact;
     try {
