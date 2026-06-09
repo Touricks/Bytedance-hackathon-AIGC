@@ -18,6 +18,7 @@ import {
 } from "../../../lib/api/client.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import {
+  areCreativeFactorsComplete,
   requirementFormFromArtifact,
   requirementFormWithGuidanceField,
   requirementFormWithCreativeFactors,
@@ -69,10 +70,13 @@ export function RequirementsStart({
     ReferenceVideoRequirementsImportResult["creativeFactorsRecommendation"] | null
   >(null);
   const [guidanceOpen, setGuidanceOpen] = useState(true);
+  const [globalRequirementsOpen, setGlobalRequirementsOpen] = useState(false);
 
   useEffect(() => {
     setForm(initialForm);
   }, [initialForm]);
+
+  const factorsReady = areCreativeFactorsComplete(form.creativeFactors);
 
   const updateCreativeFactor = <
     K extends "productCategory" | "dealType" | "audience" | "strategy"
@@ -80,9 +84,15 @@ export function RequirementsStart({
     key: K,
     value: CreativeFactors[K]
   ) => {
-    setForm((current) =>
-      requirementFormWithCreativeFactors({ ...current.creativeFactors, [key]: value })
-    );
+    setForm((current) => {
+      const nextFactors = { ...current.creativeFactors, [key]: value };
+      return areCreativeFactorsComplete(nextFactors)
+        ? requirementFormWithCreativeFactors(nextFactors)
+        : {
+            ...current,
+            creativeFactors: nextFactors
+          };
+    });
   };
 
   const updateGuidanceField = (
@@ -277,33 +287,39 @@ export function RequirementsStart({
           {guidanceOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           <span>细分字段</span>
         </Button>
-        <Collapse in={guidanceOpen} timeout="auto" unmountOnExit>
-          <div className="creative-factor-groups">
-            {guidanceGroups(form.factorGuidance).map((group) => (
-              <section className="creative-factor-group" key={group.title}>
-                <strong className="creative-factor-group__title">{group.title}</strong>
-                <div className="creative-factor-group__fields">
-                  {group.rows.map((row) => (
-                    <label key={row.sourcePath}>
-                      <div className="creative-factor-field__title">
-                        <span className="creative-factor-field__label">
-                          {row.label}
-                        </span>
-                      </div>
-                      <textarea
-                        rows={2}
-                        value={packText(row.values)}
-                        onChange={(event) =>
-                          updateGuidanceField(row.sourcePath, event.target.value)
-                        }
-                      />
-                    </label>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </Collapse>
+        {factorsReady ? (
+          <Collapse in={guidanceOpen} timeout="auto" unmountOnExit>
+            <div className="creative-factor-groups">
+              {guidanceGroups(form.factorGuidance).map((group) => (
+                <section className="creative-factor-group" key={group.title}>
+                  <strong className="creative-factor-group__title">{group.title}</strong>
+                  <div className="creative-factor-group__fields">
+                    {group.rows.map((row) => (
+                      <label key={row.sourcePath}>
+                        <div className="creative-factor-field__title">
+                          <span className="creative-factor-field__label">
+                            {row.label}
+                          </span>
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={packText(row.values)}
+                          onChange={(event) =>
+                            updateGuidanceField(row.sourcePath, event.target.value)
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </Collapse>
+        ) : (
+          <p className="creative-factor-panel__empty">
+            请先选择完整的商品一级类目、商品成交类型、适用人群和推销手法。选择完成后，系统会自动填入默认细分字段；这些细分字段可不改，直接沿用默认值。
+          </p>
+        )}
       </section>
       <section className="global-prompt-panel">
         <div className="global-prompt-panel__header">
@@ -311,28 +327,50 @@ export function RequirementsStart({
             <span>全局创作要求</span>
             <small>（只读）</small>
           </div>
+          <Button
+            className="creative-factor-group__toggle"
+            aria-expanded={globalRequirementsOpen}
+            disabled={!factorsReady}
+            onClick={() => setGlobalRequirementsOpen((open) => !open)}
+            size="small"
+            variant="text"
+          >
+            {globalRequirementsOpen ? (
+              <ChevronDown size={16} />
+            ) : (
+              <ChevronRight size={16} />
+            )}
+            <span>{globalRequirementsOpen ? "收起" : "展开查看"}</span>
+          </Button>
         </div>
-        <div className="review-form-grid">
-          {COMPILED_REQUIREMENT_FIELDS.map((field) => (
-            <label
-              className={
-                "wide" in field && field.wide ? "review-form-grid__wide" : undefined
-              }
-              key={field.key}
-            >
-              <div className="compiled-field-title">
-                <span>{field.label}</span>
-                <small>
-                  {sourceSummary(form.compiledRequirementSourceMap[field.sourceMapKey])}
-                </small>
-                <SourceChips
-                  sources={form.compiledRequirementSourceMap[field.sourceMapKey]}
-                />
-              </div>
-              <textarea rows={3} value={form[field.key]} readOnly />
-            </label>
-          ))}
-        </div>
+        {factorsReady ? null : (
+          <p className="creative-factor-panel__empty">
+            完整选择创作因子后，这里会汇总生成图像、脚本、分镜图和分镜视频使用的全局要求。
+          </p>
+        )}
+        <Collapse in={globalRequirementsOpen && factorsReady} timeout="auto" unmountOnExit>
+          <div className="review-form-grid">
+            {COMPILED_REQUIREMENT_FIELDS.map((field) => (
+              <label
+                className={
+                  "wide" in field && field.wide ? "review-form-grid__wide" : undefined
+                }
+                key={field.key}
+              >
+                <div className="compiled-field-title">
+                  <span>{field.label}</span>
+                  <small>
+                    {sourceSummary(form.compiledRequirementSourceMap[field.sourceMapKey])}
+                  </small>
+                  <SourceChips
+                    sources={form.compiledRequirementSourceMap[field.sourceMapKey]}
+                  />
+                </div>
+                <textarea rows={3} value={form[field.key]} readOnly />
+              </label>
+            ))}
+          </div>
+        </Collapse>
       </section>
       <ReviewActionDock>
         <button
@@ -340,6 +378,12 @@ export function RequirementsStart({
           className="review-primary"
           disabled={vm.busy || uploading}
           onClick={() => {
+            if (!areCreativeFactorsComplete(form.creativeFactors)) {
+              setUploadMessage(
+                "请先选择商品一级类目、商品成交类型、适用人群和推销手法，再提交创作要求。"
+              );
+              return;
+            }
             if (assets.length === 0) {
               setUploadMessage("请先上传至少一个商品素材，再提交创作要求。");
               return;

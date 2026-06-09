@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   BarChart3,
   Clock3,
+  Eye,
+  EyeOff,
   Film,
   FolderOpen,
   Link2,
+  LogIn,
+  PackageOpen,
   Plus,
   RotateCcw,
   Search,
   Settings,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import {
@@ -196,7 +201,126 @@ function WorkspaceCard({
   );
 }
 
+function LoginPage({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState("demo@daireel.studio");
+  const [password, setPassword] = useState("daireel-2026");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onLogin();
+  };
+
+  return (
+    <div className="login-shell on-light">
+      <main className="login-page" aria-label="DaiReel Studio 登录">
+        <section className="login-hero" aria-labelledby="login-title">
+          <div className="home-logo login-logo" aria-label="DaiReel Studio">
+            <span>
+              <Film size={16} />
+            </span>
+            <strong>DaiReel Studio</strong>
+            <em>AIGC</em>
+          </div>
+          <p className="login-kicker">一键成片 · 分镜可控 · 投后诊断</p>
+          <h1 id="login-title">
+            电商带货视频，
+            <br />
+            从素材到成片 9 步搞定
+          </h1>
+          <p className="login-copy">
+            面向 TikTok Shop、Reels、Shorts 的 AIGC 创作工作台。商品卖点提取、
+            分镜规划、图生视频、A/B 诊断，全部由 AI 协同人工审核完成。
+          </p>
+          <div className="login-preview" aria-hidden="true">
+            <div className="login-preview__bar">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="login-preview__grid">
+              <div>
+                <strong>9</strong>
+                <span>创作步骤</span>
+              </div>
+              <div>
+                <strong>1</strong>
+                <span>一键成片</span>
+              </div>
+              <div>
+                <strong>AI</strong>
+                <span>诊断助手</span>
+              </div>
+            </div>
+            <ol>
+              <li>素材解读</li>
+              <li>商品卖点</li>
+              <li>分镜视频</li>
+            </ol>
+          </div>
+        </section>
+
+        <section className="login-card card" aria-label="登录">
+          <div>
+            <span className="eyebrow">Workspace Login</span>
+            <h2>欢迎回到 DaiReel</h2>
+            <p>使用 Demo 账号进入商家创作工作区。</p>
+          </div>
+          <form className="login-form" onSubmit={submit}>
+            <label>
+              工作邮箱
+              <input
+                className="field"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@brand.com"
+              />
+            </label>
+            <label>
+              密码
+              <span className="login-password">
+                <input
+                  className="field"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="请输入密码"
+                />
+                <button
+                  type="button"
+                  className="login-eye"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </span>
+            </label>
+            <label className="login-check">
+              <input type="checkbox" defaultChecked />
+              保持登录 30 天
+            </label>
+            <button type="submit" className="btn btn--primary btn--lg login-submit">
+              <LogIn size={17} />
+              登录
+            </button>
+          </form>
+          <button type="button" className="btn btn--quiet btn--lg login-demo" onClick={onLogin}>
+            <ShieldCheck size={17} />
+            直接进入 Demo 工作区
+          </button>
+        </section>
+      </main>
+    </div>
+  );
+}
+
 export function App() {
+  const [authenticated, setAuthenticated] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("daireel-demo-auth") === "true";
+  });
   const [workspaces, setWorkspaces] = useState<CreativeWorkspace[]>([]);
   const [discovered, setDiscovered] = useState<DiscoveredWorkspace[]>([]);
   const [loading, setLoading] = useState(false);
@@ -263,8 +387,15 @@ export function App() {
   };
 
   useEffect(() => {
-    void refresh();
-  }, []);
+    if (authenticated) void refresh();
+  }, [authenticated]);
+
+  const enterApp = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("daireel-demo-auth", "true");
+    }
+    setAuthenticated(true);
+  };
 
   const onChooseDirectory = async () => {
     setError(null);
@@ -328,15 +459,29 @@ export function App() {
     }
   };
 
+  if (!authenticated) {
+    return <LoginPage onLogin={enterApp} />;
+  }
+
   return (
     <div className="workspaces-landing on-light">
       <header className="home-topbar">
-        <div className="home-logo" aria-label="Daireel">
+        <div className="home-logo" aria-label="DaiReel Studio">
           <span>
             <Film size={15} />
           </span>
-          <strong>Daireel</strong>
+          <strong>DaiReel Studio</strong>
         </div>
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm home-topbar__library"
+          disabled
+          title="素材库功能规划中"
+          aria-label="素材库功能规划中"
+        >
+          <PackageOpen size={14} />
+          素材库
+        </button>
         <button
           type="button"
           className="btn btn--quiet btn--sm home-topbar__dashboard"

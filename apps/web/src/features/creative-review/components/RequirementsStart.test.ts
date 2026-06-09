@@ -9,6 +9,7 @@ import {
 import type { PromptRequirementsData } from "../../../lib/api/client.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import {
+  areCreativeFactorsComplete,
   promptRequirementsDataFromForm,
   requirementFormFromArtifact,
   requirementFormWithCreativeFactors
@@ -74,6 +75,19 @@ function reviewActionDockMarkup(html: string) {
 }
 
 describe("RequirementsStart", () => {
+  it("starts new workspaces with empty creative factors that must be selected", () => {
+    const form = requirementFormFromArtifact(null);
+
+    assert.deepEqual(form.creativeFactors, {
+      productCategory: "",
+      dealType: "",
+      audience: "",
+      strategy: ""
+    });
+    assert.equal(areCreativeFactorsComplete(form.creativeFactors), false);
+    assert.throws(() => promptRequirementsDataFromForm(form), /CREATIVE_FACTORS_REQUIRED/);
+  });
+
   it("does not render the preset module or legacy preset status", () => {
     const data = {
       ...buildCreativeFactorRequirements(SAMPLE_FACTORS),
@@ -128,10 +142,11 @@ describe("RequirementsStart", () => {
     assert.doesNotMatch(html, /fnv1a:/);
     assert.match(html, /全局创作要求/);
     assert.match(html, /只读/);
+    assert.match(html, /展开查看/);
     assert.doesNotMatch(html, /必见视觉要素[\s\S]*?<textarea rows="2" readonly/);
     assert.doesNotMatch(html, /证据阈值/);
     assert.doesNotMatch(html, /影响 图像风格/);
-    assert.match(html, /由 4 个细分字段编译/);
+    assert.doesNotMatch(html, /由 4 个细分字段编译/);
     assert.doesNotMatch(html, /图像风格（只读）/);
     assert.doesNotMatch(
       html,

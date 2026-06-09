@@ -89,4 +89,6 @@
 
 面向产品和业务协作时，优先使用 [CONTEXT.md](./CONTEXT.md) 中的领域语言。
 
+答辩 / 复评材料可参考 [DaiReel Studio 项目材料说明](./docs/product_submission_material.md)。
+
 项目维护资料放在 [docs/core/](./docs/core/)；日常使用创作审核台时无需阅读这些文档。

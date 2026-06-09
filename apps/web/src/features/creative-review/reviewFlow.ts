@@ -29,6 +29,13 @@ export interface CreativeActivity {
   action: { label: string; stepId: ReviewStepId } | null;
 }
 
+export interface CreativeActivityProgress {
+  label: string;
+  detail: string;
+  tone: ReviewTone;
+  percent: number | null;
+}
+
 export const materialDeleteResetConfirmMessage =
   "当前素材库已被下游消费，删除该素材将返回模块一";
 
@@ -138,8 +145,112 @@ function oneClickStageLabel(vm: WorkbenchViewModel) {
   return stage ? (oneClickStageLabels[stage] ?? stage) : "准备一键成片";
 }
 
+function hasActiveOneClickFinalVideo(vm: WorkbenchViewModel) {
+  return (
+    Boolean(vm.pending?.oneClickFinalVideo) ||
+    ["PENDING", "RUNNING", "WAITING"].includes(vm.oneClickFinalVideo?.status ?? "")
+  );
+}
+
 function activeShotSetUpstreamChanged(vm: WorkbenchViewModel) {
   return Boolean(vm.workspaceStatus?.activeShotSet?.upstream?.upstreamChanged);
+}
+
+function boundedPercent(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function shotSelectionProgress(
+  selectedCount: number,
+  totalCount: number,
+  start: number,
+  range: number
+) {
+  if (totalCount < 1) return null;
+  return boundedPercent(start + (selectedCount / totalCount) * range);
+}
+
+export function deriveCreativeActivityProgress(
+  vm: WorkbenchViewModel
+): CreativeActivityProgress | null {
+  if (hasActiveOneClickFinalVideo(vm)) return null;
+
+  if (vm.pending?.materialIntake) {
+    return {
+      label: "素材解读",
+      detail: "正在调用模型识别素材内容",
+      tone: "busy",
+      percent: null,
+    };
+  }
+  if (vm.pending?.productBrief) {
+    return {
+      label: "商品卖点",
+      detail: "正在基于素材解读生成卖点草稿",
+      tone: "busy",
+      percent: null,
+    };
+  }
+  if (vm.pending?.storyboard) {
+    return {
+      label: "分镜脚本",
+      detail: "正在生成镜头顺序和节奏",
+      tone: "busy",
+      percent: null,
+    };
+  }
+  if (vm.pending?.shotPrompt) {
+    return {
+      label: "分镜生成要求",
+      detail: "正在生成图像、视频和口播约束",
+      tone: "busy",
+      percent: null,
+    };
+  }
+  if (vm.pending?.applyShotSet) {
+    return {
+      label: "应用分镜",
+      detail: "正在创建当前分镜链路实例",
+      tone: "busy",
+      percent: null,
+    };
+  }
+  if (hasImageActivity(vm)) {
+    const totalCount = vm.shots.length;
+    const selectedCount = vm.shots.filter((shot) => shot.selectedImageId).length;
+    return {
+      label: "分镜图",
+      detail:
+        totalCount > 0
+          ? `已选择 ${selectedCount}/${totalCount} 个分镜图`
+          : "正在生成分镜图候选",
+      tone: selectionProgressTone(selectedCount, totalCount),
+      percent: shotSelectionProgress(selectedCount, totalCount, 35, 50),
+    };
+  }
+  if (hasVideoActivity(vm)) {
+    const totalCount = vm.shots.length;
+    const selectedCount = vm.shots.filter((shot) => shot.selectedVideoId).length;
+    return {
+      label: "分镜视频",
+      detail:
+        totalCount > 0
+          ? `已选择 ${selectedCount}/${totalCount} 个分镜视频`
+          : "正在生成分镜视频候选",
+      tone: selectionProgressTone(selectedCount, totalCount),
+      percent: shotSelectionProgress(selectedCount, totalCount, 55, 40),
+    };
+  }
+  if (vm.pending?.finalVideo || finalVideoActiveStatuses.has(vm.finalVideo?.status ?? "")) {
+    return {
+      label: "生成成片",
+      detail: "正在拼接已选分镜视频",
+      tone: "busy",
+      percent: null,
+    };
+  }
+
+  return null;
 }
 
 function deriveProcessingStep(vm: WorkbenchViewModel): ReviewStepId | null {

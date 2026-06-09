@@ -1,6 +1,5 @@
 import {
   DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP,
-  DEFAULT_CREATIVE_FACTORS,
   buildCreativeFactorRequirements,
   compileCreativeRequirementFields,
   creativeFactorRequirementsDataSchema,
@@ -11,10 +10,54 @@ import {
 } from "@aigc-video/shared";
 import type { PromptRequirementsData } from "../../lib/api/client.js";
 
+export type DraftCreativeFactors = {
+  [K in keyof CreativeFactors]: CreativeFactors[K] | "";
+};
+
 function stringifyRequirementValue(value: unknown, fallback: string) {
   if (Array.isArray(value)) return value.join("；");
   return typeof value === "string" && value.trim() ? value : fallback;
 }
+
+const EMPTY_CREATIVE_FACTORS: DraftCreativeFactors = {
+  productCategory: "",
+  dealType: "",
+  audience: "",
+  strategy: ""
+};
+
+const EMPTY_FACTOR_GUIDANCE: FactorGuidance = {
+  productCategory: {
+    requiredVisualElements: [],
+    proofObligation: [],
+    validUsageScenes: [],
+    aestheticBaseline: [],
+    authenticityComplianceBoundary: [],
+    categoryRiskAvoidance: []
+  },
+  dealType: {
+    purchaseTask: [],
+    decisionInfoDimensions: [],
+    proofTypes: [],
+    conversionFriction: [],
+    offerCommitmentStrategy: [],
+    funnelPacing: []
+  },
+  audience: {
+    addresseeRole: [],
+    languageStyle: [],
+    benefitPriority: [],
+    representationAndPov: [],
+    readabilityPacing: [],
+    sensitiveExpressionBoundary: []
+  },
+  strategy: {
+    hookMechanism: [],
+    narrativeStructure: [],
+    evidenceOrganization: [],
+    shotEditingGrammar: []
+  }
+};
 
 type FactorState = {
   creativeFactors: CreativeFactors;
@@ -25,7 +68,15 @@ type FactorState = {
   compiledRequirementsHash: string;
 };
 
-function factorStateFromArtifact(data: PromptRequirementsData | null): FactorState {
+export function areCreativeFactorsComplete(
+  factors: DraftCreativeFactors
+): factors is CreativeFactors {
+  return Boolean(
+    factors.productCategory && factors.dealType && factors.audience && factors.strategy
+  );
+}
+
+function factorStateFromArtifact(data: PromptRequirementsData | null): FactorState | null {
   const parsed = creativeFactorRequirementsDataSchema.safeParse(data);
   if (parsed.success) {
     return {
@@ -37,20 +88,11 @@ function factorStateFromArtifact(data: PromptRequirementsData | null): FactorSta
       compiledRequirementsHash: parsed.data.compiledRequirementsHash
     };
   }
-  const defaults = buildCreativeFactorRequirements(DEFAULT_CREATIVE_FACTORS);
-  return {
-    creativeFactors: defaults.creativeFactors,
-    factorGuidance: defaults.factorGuidance,
-    compiledRequirementSourceMap:
-      defaults.compiledRequirementSourceMap ?? DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP,
-    factorPromptVersion: defaults.factorPromptVersion,
-    factorComboKey: defaults.factorComboKey,
-    compiledRequirementsHash: defaults.compiledRequirementsHash
-  };
+  return null;
 }
 
 export type RequirementsFormState = {
-  creativeFactors: CreativeFactors;
+  creativeFactors: DraftCreativeFactors;
   factorGuidance: FactorGuidance;
   compiledRequirementSourceMap: CompiledRequirementSourceMap;
   factorPromptVersion: string;
@@ -65,8 +107,26 @@ export type RequirementsFormState = {
   shotVideoGlobal: string;
 };
 
+function emptyRequirementFormState(): RequirementsFormState {
+  return {
+    creativeFactors: { ...EMPTY_CREATIVE_FACTORS },
+    factorGuidance: EMPTY_FACTOR_GUIDANCE,
+    compiledRequirementSourceMap: DEFAULT_COMPILED_REQUIREMENT_SOURCE_MAP,
+    factorPromptVersion: "",
+    factorComboKey: "",
+    compiledRequirementsHash: "",
+    imageStyle: "",
+    imageComposition: "",
+    imageAvoid: "",
+    scriptTone: "",
+    storyboardRhythm: "",
+    shotImageGlobal: "",
+    shotVideoGlobal: ""
+  };
+}
+
 export function syncCompiledRequirementFields(
-  state: Pick<RequirementsFormState, "creativeFactors" | "factorGuidance">
+  state: { creativeFactors: CreativeFactors; factorGuidance: FactorGuidance }
 ): RequirementsFormState {
   const compiled = compileCreativeRequirementFields({
     creativeFactors: state.creativeFactors,
@@ -103,6 +163,7 @@ export function requirementFormFromArtifact(
   data: PromptRequirementsData | null
 ): RequirementsFormState {
   const factorState = factorStateFromArtifact(data);
+  if (!factorState) return emptyRequirementFormState();
   return syncCompiledRequirementFields(factorState);
 }
 
@@ -128,6 +189,12 @@ export function requirementFormWithGuidanceField(
       [field]: values
     }
   } as FactorGuidance;
+  if (!areCreativeFactorsComplete(state.creativeFactors)) {
+    return {
+      ...state,
+      factorGuidance
+    };
+  }
   return syncCompiledRequirementFields({
     creativeFactors: state.creativeFactors,
     factorGuidance
@@ -137,6 +204,9 @@ export function requirementFormWithGuidanceField(
 export function promptRequirementsDataFromForm(
   state: RequirementsFormState
 ): PromptRequirementsData {
+  if (!areCreativeFactorsComplete(state.creativeFactors)) {
+    throw new Error("CREATIVE_FACTORS_REQUIRED");
+  }
   const compiled = compileCreativeRequirementFields({
     creativeFactors: state.creativeFactors,
     factorGuidance: state.factorGuidance

@@ -6,6 +6,7 @@ import {
   creativeFactorRequirementsDataSchema,
 } from "@aigc-video/shared";
 import {
+  areCreativeFactorsComplete,
   promptRequirementsDataFromForm,
   requirementFormFromArtifact,
   syncCompiledRequirementFields,
@@ -39,6 +40,7 @@ describe("reference video requirements import mapping", () => {
       creativeFactors: canonical.creativeFactors,
       factorGuidance: canonical.factorGuidance,
     });
+    assert.ok(areCreativeFactorsComplete(form.creativeFactors));
     const edited = syncCompiledRequirementFields({
       creativeFactors: form.creativeFactors,
       factorGuidance: {
@@ -71,6 +73,12 @@ describe("reference video requirements import mapping", () => {
       },
     } as never);
 
-    assert.deepEqual(form.creativeFactors, DEFAULT_CREATIVE_FACTORS);
+    assert.equal(areCreativeFactorsComplete(form.creativeFactors), false);
+    assert.deepEqual(form.creativeFactors, {
+      productCategory: "",
+      dealType: "",
+      audience: "",
+      strategy: "",
+    });
   });
 });

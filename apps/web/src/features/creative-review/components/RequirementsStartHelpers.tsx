@@ -1,5 +1,4 @@
 import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import {
@@ -162,20 +161,29 @@ export function FactorSelect<TValue extends string>({
   onChange,
 }: {
   label: string;
-  value: TValue;
+  value: TValue | "";
   options: Array<{ value: TValue; label: string }>;
   onChange: (value: TValue) => void;
 }) {
-  const labelId = `creative-factor-${label}`;
+  const selectedLabel = options.find((option) => option.value === value)?.label;
   return (
     <FormControl className="creative-factor-select-card" size="small" variant="outlined">
-      <InputLabel id={labelId}>{label}</InputLabel>
-      <Select<TValue>
-        labelId={labelId}
-        label={label}
+      <Select<string>
+        aria-label={label}
+        displayEmpty
         value={value}
-        onChange={(event: SelectChangeEvent<TValue>) => onChange(event.target.value as TValue)}
+        onChange={(event: SelectChangeEvent<string>) => {
+          if (event.target.value) onChange(event.target.value as TValue);
+        }}
+        renderValue={() => (
+          <span className={value ? undefined : "creative-factor-select-card__placeholder"}>
+            {selectedLabel ?? label}
+          </span>
+        )}
       >
+        <MenuItem value="">
+          <em>请选择</em>
+        </MenuItem>
         {options.map((option) => (
           <MenuItem key={option.value} value={option.value}>
             {option.label}

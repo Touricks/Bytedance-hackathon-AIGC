@@ -19,6 +19,7 @@ import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.j
 import {
   canOpenReviewStep,
   deriveCreativeActivity,
+  deriveCreativeActivityProgress,
   deriveReviewStepIndicators,
   materialDeleteResetConfirmMessage,
   shouldResetFlowAfterMaterialDelete,
@@ -173,6 +174,7 @@ export function RightRail({
     vm.artifacts.promptRequirements
   );
   const activity = deriveCreativeActivity(vm);
+  const activityProgress = deriveCreativeActivityProgress(vm);
   const photos = useMemo<MaterialLibraryPhoto[]>(
     () =>
       assets
@@ -375,6 +377,44 @@ export function RightRail({
         >
           <strong>{activity.title}</strong>
           <p>{activity.message}</p>
+          {activityProgress ? (
+            <div className="review-activity-progress">
+              <div className="review-activity-progress__meta">
+                <span>{activityProgress.label}</span>
+                <strong>
+                  {activityProgress.percent === null
+                    ? "进行中"
+                    : `${activityProgress.percent}%`}
+                </strong>
+              </div>
+              <div
+                className={`review-activity-progress__bar ${
+                  activityProgress.percent === null
+                    ? "review-activity-progress__bar--indeterminate"
+                    : ""
+                }`}
+                role="progressbar"
+                aria-label={`${activityProgress.label}进度`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={
+                  activityProgress.percent === null ? undefined : activityProgress.percent
+                }
+              >
+                <span
+                  className={`review-activity-progress__fill review-activity-progress__fill--${activityProgress.tone}`}
+                  style={
+                    activityProgress.percent === null
+                      ? undefined
+                      : { width: `${activityProgress.percent}%` }
+                  }
+                />
+              </div>
+              <p className="review-activity-progress__detail">
+                {activityProgress.detail}
+              </p>
+            </div>
+          ) : null}
           {activity.action ? (
             <button
               type="button"

@@ -282,25 +282,6 @@ export function MaterialIntakeReview({
           </div>
         </div>
       ) : null}
-      <div className="review-secondary-action-row">
-        <button
-          type="button"
-          className="review-primary review-primary--one-click"
-          disabled={vm.busy || !canApprove}
-          onClick={() => {
-            vm.actions.startOneClickFinalVideo(normalizeMaterialIntakeDraft(draft));
-            onActionComplete();
-          }}
-        >
-          <Sparkles size={16} />
-          {oneClickActive ? "正在一键成片..." : "全自动一键成片"}
-        </button>
-        <span className="review-action-note">
-          {hasBlankDescriptions
-            ? "每个素材都需要填写解读说明。"
-            : "素材标签只描述素材角色，不会修改上传文件本身。"}
-        </span>
-      </div>
       {oneClickJob ? (
         <OneClickProgress
           job={oneClickJob}
@@ -323,8 +304,25 @@ export function MaterialIntakeReview({
           <CheckCircle2 size={16} />
           {vm.pending?.productBrief
             ? "正在生成商品卖点..."
-            : "批准素材解读并生成商品卖点"}
+            : "进行下一步：生成商品卖点"}
         </button>
+        <button
+          type="button"
+          className="review-primary review-primary--one-click"
+          disabled={vm.busy || !canApprove}
+          onClick={() => {
+            vm.actions.startOneClickFinalVideo(normalizeMaterialIntakeDraft(draft));
+            onActionComplete();
+          }}
+        >
+          <Sparkles size={16} />
+          {oneClickActive ? "正在一键成片..." : "直接一键成片"}
+        </button>
+        <span className="review-action-note">
+          {hasBlankDescriptions
+            ? "每个素材都需要填写解读说明。"
+            : "素材标签只描述素材角色，不会修改上传文件本身。"}
+        </span>
       </ReviewActionDock>
     </section>
   );

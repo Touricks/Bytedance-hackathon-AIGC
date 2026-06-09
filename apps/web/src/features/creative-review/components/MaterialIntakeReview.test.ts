@@ -57,7 +57,7 @@ function requiredClassBlock(html: string, className: string) {
 }
 
 describe("MaterialIntakeReview", () => {
-  it("renders the manual approval action in the dock and keeps one-click independent", () => {
+  it("renders manual next-step and one-click actions together in the dock", () => {
     const html = renderToStaticMarkup(
       React.createElement(MaterialIntakeReview, {
         vm: materialVm(),
@@ -66,14 +66,12 @@ describe("MaterialIntakeReview", () => {
     );
 
     const dock = requiredClassBlock(html, "review-action-dock");
-    const secondaryActions = requiredClassBlock(html, "review-secondary-action-row");
 
-    assert.match(html, /批准素材解读并生成商品卖点/);
-    assert.match(html, /全自动一键成片/);
-    assert.match(dock, /批准素材解读并生成商品卖点/);
-    assert.doesNotMatch(dock, /全自动一键成片/);
-    assert.match(secondaryActions, /全自动一键成片/);
-    assert.doesNotMatch(secondaryActions, /批准素材解读并生成商品卖点/);
+    assert.match(html, /进行下一步：生成商品卖点/);
+    assert.match(html, /直接一键成片/);
+    assert.match(dock, /进行下一步：生成商品卖点/);
+    assert.match(dock, /直接一键成片/);
+    assert.doesNotMatch(html, /review-secondary-action-row/);
     assert.match(html, /material-asset-preview--fit-contain/);
     assert.match(html, /data-preview-fit="contain"/);
   });

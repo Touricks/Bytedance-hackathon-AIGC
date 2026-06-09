@@ -25,8 +25,8 @@ function stepRailVm() {
   } as unknown as WorkbenchViewModel;
 }
 
-function rightRailVm() {
-  return {
+function rightRailVm(overrides: Record<string, unknown> = {}) {
+  const base = {
     workspaceId: "workspace_123",
     materialLibrary: {
       scannedAt: "2026-06-04T00:00:00.000Z",
@@ -74,7 +74,8 @@ function rightRailVm() {
     actions: {
       async refresh() {},
     },
-  } as unknown as WorkbenchViewModel;
+  };
+  return { ...base, ...overrides } as unknown as WorkbenchViewModel;
 }
 
 describe("ReviewRails", () => {
@@ -107,5 +108,46 @@ describe("ReviewRails", () => {
     assert.match(html, /删除 product.png/);
     assert.match(html, /manual.pdf/);
     assert.match(html, /删除 manual.pdf/);
+  });
+
+  it("shows right-rail progress only for regular background work", () => {
+    const idleHtml = renderToStaticMarkup(
+      React.createElement(RightRail, {
+        vm: rightRailVm(),
+        onReturnToRequirements() {},
+        onSelectStep() {},
+      }),
+    );
+    assert.doesNotMatch(idleHtml, /review-activity-progress/);
+
+    const materialHtml = renderToStaticMarkup(
+      React.createElement(RightRail, {
+        vm: rightRailVm({ pending: { materialIntake: true } }),
+        onReturnToRequirements() {},
+        onSelectStep() {},
+      }),
+    );
+    assert.match(materialHtml, /review-activity-progress/);
+    assert.match(materialHtml, /aria-label="素材解读进度"/);
+    assert.match(materialHtml, /正在调用模型识别素材内容/);
+
+    const oneClickHtml = renderToStaticMarkup(
+      React.createElement(RightRail, {
+        vm: rightRailVm({
+          pending: { oneClickFinalVideo: true },
+          oneClickFinalVideo: {
+            id: "ocv_1",
+            status: "RUNNING",
+            currentStage: "storyboard",
+            stageState: {},
+            errorMessage: null,
+          },
+        }),
+        onReturnToRequirements() {},
+        onSelectStep() {},
+      }),
+    );
+    assert.match(oneClickHtml, /一键成片进行中/);
+    assert.doesNotMatch(oneClickHtml, /review-activity-progress/);
   });
 });
