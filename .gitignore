@@ -22,8 +22,16 @@ apps/web/playwright-report/
 .agents/
 .husky/
 .playwright-mcp/
+.daireel/
+# Agent instruction/context files are local-only; not needed to install or run.
+CLAUDE.md
+AGENTS.md
+CONTEXT.md
+# Postman regression assets are local-only.
+test/postman/
 # Keep most design docs locally only; some test/core specs are shared.
 docs/*
 !docs/core/
 !docs/core/**
+docs/core/prd_safe.pdf
 
