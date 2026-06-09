@@ -68,6 +68,38 @@ components:
       in: header
       required: true
       schema: { type: string, minLength: 1 }
+    ProductCategory:
+      name: productCategory
+      in: path
+      required: true
+      description: 商品一级类目. One of the CreativeFactors.productCategory enum values.
+      schema:
+        $ref: "#/components/schemas/CreativeFactors/properties/productCategory"
+    DealType:
+      name: dealType
+      in: path
+      required: true
+      description: 商品成交类型. One of the CreativeFactors.dealType enum values.
+      schema:
+        $ref: "#/components/schemas/CreativeFactors/properties/dealType"
+    RoasWeight:
+      name: roasWeight
+      in: query
+      required: false
+      description: Weight on the ROAS axis of the composite score (0..1). Default 0.6.
+      schema: { type: number, minimum: 0, maximum: 1 }
+    GmvWeight:
+      name: gmvWeight
+      in: query
+      required: false
+      description: Weight on the GMV axis of the composite score (0..1). Default 0.4.
+      schema: { type: number, minimum: 0, maximum: 1 }
+    PriorStrength:
+      name: priorStrength
+      in: query
+      required: false
+      description: Empirical-Bayes shrinkage pseudo-count toward the group baseline (0..50). Default 2.
+      schema: { type: number, minimum: 0, maximum: 50 }
 
   responses:
     Ok:
@@ -928,6 +960,41 @@ paths:
         - $ref: "#/components/parameters/ArtifactId"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+
+  /api/dashboard/recommendations:
+    get:
+      tags: [Dashboard]
+      summary: 投放策略推荐
+      description: >
+        For every (商品一级类目 productCategory × 商品成交类型 dealType) group that
+        has dashboard videos with external-KOL metrics, recommends the best
+        适用人群 (audience) and 推销手法 (strategy) by a composite of average ROAS
+        (Σgmv/Σspend) and per-video GMV. Read-only; aggregates across all
+        workspaces. Returns `RecommendationResult` (schemaVersion `recommendation.v1`).
+      parameters:
+        - $ref: "#/components/parameters/RoasWeight"
+        - $ref: "#/components/parameters/GmvWeight"
+        - $ref: "#/components/parameters/PriorStrength"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/dashboard/recommendations/{productCategory}/{dealType}:
+    get:
+      tags: [Dashboard]
+      summary: 单分组投放策略推荐
+      description: >
+        Recommendation for a single (商品一级类目 × 商品成交类型) group. Responds
+        `{ data: GroupRecommendation, meta }`; 404 when the group has no data.
+      parameters:
+        - $ref: "#/components/parameters/ProductCategory"
+        - $ref: "#/components/parameters/DealType"
+        - $ref: "#/components/parameters/RoasWeight"
+        - $ref: "#/components/parameters/GmvWeight"
+        - $ref: "#/components/parameters/PriorStrength"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /api/workspaces/{workspaceId}/campaign-publications:
     get:

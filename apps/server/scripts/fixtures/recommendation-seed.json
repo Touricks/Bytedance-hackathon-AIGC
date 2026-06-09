@@ -1,0 +1,224 @@
+{
+  "workspace": { "id": "ws_mock_dashboard", "name": "Mock Dashboard" },
+  "videos": [
+    {
+      "key": "beauty-youth-scenario",
+      "name": "夏季补水面膜·场景演示",
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "seeding-nonstandard",
+        "audience": "youth",
+        "strategy": "scenario-demo"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "美妆Ava", "publishedAt": "2026-05-20T00:00:00.000Z", "days": 14, "finalTotals": { "impressions": 248000, "clicks": 6200, "conversions": 372, "spendCents": 820000, "gmvCents": 4460000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "种草Lily", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 96000, "clicks": 3100, "conversions": 210, "spendCents": 410000, "gmvCents": 2380000 } },
+        { "key": "dy2", "platform": "douyin", "accountName": "护肤日记", "publishedAt": "2026-05-24T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 162000, "clicks": 4500, "conversions": 286, "spendCents": 600000, "gmvCents": 3180000 } }
+      ]
+    },
+    {
+      "key": "beauty-youth-emotional",
+      "name": "夏季补水面膜·情绪故事",
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "seeding-nonstandard",
+        "audience": "youth",
+        "strategy": "emotional-story"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "夜聊小屋", "publishedAt": "2026-05-19T00:00:00.000Z", "days": 13, "finalTotals": { "impressions": 140000, "clicks": 3200, "conversions": 168, "spendCents": 500000, "gmvCents": 1900000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "情绪研究所", "publishedAt": "2026-05-21T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 88000, "clicks": 2100, "conversions": 104, "spendCents": 300000, "gmvCents": 1170000 } }
+      ]
+    },
+    {
+      "key": "beauty-general-pain",
+      "name": "夏季补水面膜·痛点解决",
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "seeding-nonstandard",
+        "audience": "general",
+        "strategy": "pain-solution"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "干皮自救", "publishedAt": "2026-05-18T00:00:00.000Z", "days": 14, "finalTotals": { "impressions": 132000, "clicks": 2900, "conversions": 150, "spendCents": 450000, "gmvCents": 1350000 } },
+        { "key": "ks", "platform": "kuaishou", "accountName": "成分党老王", "publishedAt": "2026-05-20T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 110000, "clicks": 2400, "conversions": 126, "spendCents": 380000, "gmvCents": 1140000 } }
+      ]
+    },
+
+    {
+      "key": "elec-general-review",
+      "name": "降噪耳机·测评对比",
+      "creativeFactors": {
+        "productCategory": "consumer-electronics",
+        "dealType": "search-standard",
+        "audience": "general",
+        "strategy": "review-comparison"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "数码Kim", "publishedAt": "2026-05-25T00:00:00.000Z", "days": 10, "finalTotals": { "impressions": 412000, "clicks": 9100, "conversions": 540, "spendCents": 1350000, "gmvCents": 9720000 } },
+        { "key": "bili", "platform": "bilibili", "accountName": "耳机实验室", "publishedAt": "2026-05-23T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 286000, "clicks": 6400, "conversions": 372, "spendCents": 900000, "gmvCents": 6120000 } },
+        { "key": "dy2", "platform": "douyin", "accountName": "横评君", "publishedAt": "2026-05-27T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 210000, "clicks": 5000, "conversions": 308, "spendCents": 700000, "gmvCents": 5180000 } }
+      ]
+    },
+    {
+      "key": "elec-general-tutorial",
+      "name": "降噪耳机·教程价值",
+      "creativeFactors": {
+        "productCategory": "consumer-electronics",
+        "dealType": "search-standard",
+        "audience": "general",
+        "strategy": "tutorial-value"
+      },
+      "publications": [
+        { "key": "bili", "platform": "bilibili", "accountName": "玩机教程", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 180000, "clicks": 4200, "conversions": 230, "spendCents": 600000, "gmvCents": 3000000 } },
+        { "key": "dy", "platform": "douyin", "accountName": "三分钟懂数码", "publishedAt": "2026-05-24T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 240000, "clicks": 5300, "conversions": 300, "spendCents": 800000, "gmvCents": 3920000 } }
+      ]
+    },
+    {
+      "key": "elec-youth-authority",
+      "name": "降噪耳机·权威证明",
+      "creativeFactors": {
+        "productCategory": "consumer-electronics",
+        "dealType": "search-standard",
+        "audience": "youth",
+        "strategy": "authority-proof"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "声学博士", "publishedAt": "2026-05-21T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 150000, "clicks": 3300, "conversions": 168, "spendCents": 500000, "gmvCents": 2100000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "实验室小赵", "publishedAt": "2026-05-23T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 92000, "clicks": 2100, "conversions": 108, "spendCents": 300000, "gmvCents": 1290000 } }
+      ]
+    },
+
+    {
+      "key": "food-general-curiosity",
+      "name": "爆款气泡水·好奇钩子",
+      "creativeFactors": {
+        "productCategory": "food-beverage",
+        "dealType": "impulse-hit",
+        "audience": "general",
+        "strategy": "curiosity-hook"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "吃货实验室", "publishedAt": "2026-05-26T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 520000, "clicks": 13000, "conversions": 910, "spendCents": 1200000, "gmvCents": 5400000 } },
+        { "key": "ks", "platform": "kuaishou", "accountName": "解馋日记", "publishedAt": "2026-05-25T00:00:00.000Z", "days": 10, "finalTotals": { "impressions": 460000, "clicks": 11000, "conversions": 760, "spendCents": 1000000, "gmvCents": 4300000 } },
+        { "key": "dy2", "platform": "douyin", "accountName": "深夜放毒", "publishedAt": "2026-05-27T00:00:00.000Z", "days": 8, "finalTotals": { "impressions": 388000, "clicks": 9800, "conversions": 690, "spendCents": 900000, "gmvCents": 4230000 } }
+      ]
+    },
+    {
+      "key": "food-general-visual",
+      "name": "爆款气泡水·视觉叙事",
+      "creativeFactors": {
+        "productCategory": "food-beverage",
+        "dealType": "impulse-hit",
+        "audience": "general",
+        "strategy": "visual-story"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "一帧之味", "publishedAt": "2026-05-24T00:00:00.000Z", "days": 10, "finalTotals": { "impressions": 300000, "clicks": 6600, "conversions": 380, "spendCents": 700000, "gmvCents": 2520000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "夏日色卡", "publishedAt": "2026-05-26T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 168000, "clicks": 3900, "conversions": 222, "spendCents": 500000, "gmvCents": 1850000 } }
+      ]
+    },
+    {
+      "key": "food-youth-scenario",
+      "name": "爆款气泡水·场景演示",
+      "creativeFactors": {
+        "productCategory": "food-beverage",
+        "dealType": "impulse-hit",
+        "audience": "youth",
+        "strategy": "scenario-demo"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "办公室快乐水", "publishedAt": "2026-05-23T00:00:00.000Z", "days": 10, "finalTotals": { "impressions": 220000, "clicks": 5000, "conversions": 280, "spendCents": 600000, "gmvCents": 1920000 } },
+        { "key": "ks", "platform": "kuaishou", "accountName": "宿舍囤货", "publishedAt": "2026-05-25T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 150000, "clicks": 3400, "conversions": 190, "spendCents": 450000, "gmvCents": 1440000 } }
+      ]
+    },
+
+    {
+      "key": "baby-toddler-tutorial",
+      "name": "婴儿洗衣液·教程价值",
+      "creativeFactors": {
+        "productCategory": "mom-baby-pet",
+        "dealType": "repeat-consumable",
+        "audience": "toddler",
+        "strategy": "tutorial-value"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "新手妈妈日记", "publishedAt": "2026-05-20T00:00:00.000Z", "days": 13, "finalTotals": { "impressions": 168000, "clicks": 4000, "conversions": 300, "spendCents": 700000, "gmvCents": 4200000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "育儿好物", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 120000, "clicks": 2900, "conversions": 218, "spendCents": 500000, "gmvCents": 3050000 } },
+        { "key": "dy2", "platform": "douyin", "accountName": "宝妈囤货笔记", "publishedAt": "2026-05-24T00:00:00.000Z", "days": 10, "finalTotals": { "impressions": 96000, "clicks": 2300, "conversions": 165, "spendCents": 400000, "gmvCents": 2320000 } }
+      ]
+    },
+    {
+      "key": "baby-toddler-pain",
+      "name": "婴儿洗衣液·痛点解决",
+      "creativeFactors": {
+        "productCategory": "mom-baby-pet",
+        "dealType": "repeat-consumable",
+        "audience": "toddler",
+        "strategy": "pain-solution"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "敏感肌宝宝", "publishedAt": "2026-05-19T00:00:00.000Z", "days": 13, "finalTotals": { "impressions": 130000, "clicks": 3000, "conversions": 200, "spendCents": 500000, "gmvCents": 2200000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "成分妈妈", "publishedAt": "2026-05-21T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 92000, "clicks": 2200, "conversions": 142, "spendCents": 350000, "gmvCents": 1575000 } }
+      ]
+    },
+    {
+      "key": "baby-general-authority",
+      "name": "婴儿洗衣液·权威证明",
+      "creativeFactors": {
+        "productCategory": "mom-baby-pet",
+        "dealType": "repeat-consumable",
+        "audience": "general",
+        "strategy": "authority-proof"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "检测报告", "publishedAt": "2026-05-18T00:00:00.000Z", "days": 13, "finalTotals": { "impressions": 118000, "clicks": 2600, "conversions": 160, "spendCents": 450000, "gmvCents": 1755000 } },
+        { "key": "ks", "platform": "kuaishou", "accountName": "母婴质检", "publishedAt": "2026-05-20T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 80000, "clicks": 1800, "conversions": 110, "spendCents": 300000, "gmvCents": 1140000 } }
+      ]
+    },
+
+    {
+      "key": "fashion-general-visual",
+      "name": "轻奢真皮托特包·视觉叙事",
+      "creativeFactors": {
+        "productCategory": "fashion-accessories",
+        "dealType": "premium-brand",
+        "audience": "general",
+        "strategy": "visual-story"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "都市穿搭志", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 360000, "clicks": 7200, "conversions": 300, "spendCents": 1500000, "gmvCents": 4800000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "包包图鉴", "publishedAt": "2026-05-24T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 240000, "clicks": 5000, "conversions": 246, "spendCents": 1200000, "gmvCents": 3960000 } },
+        { "key": "bili", "platform": "bilibili", "accountName": "质感生活", "publishedAt": "2026-05-26T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 150000, "clicks": 3200, "conversions": 168, "spendCents": 900000, "gmvCents": 2790000 } }
+      ]
+    },
+    {
+      "key": "fashion-senior-authority",
+      "name": "轻奢真皮托特包·权威证明",
+      "creativeFactors": {
+        "productCategory": "fashion-accessories",
+        "dealType": "premium-brand",
+        "audience": "senior",
+        "strategy": "authority-proof"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "匠心制包", "publishedAt": "2026-05-21T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 90000, "clicks": 1900, "conversions": 120, "spendCents": 300000, "gmvCents": 1500000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "真皮鉴别", "publishedAt": "2026-05-23T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 60000, "clicks": 1300, "conversions": 82, "spendCents": 200000, "gmvCents": 1020000 } }
+      ]
+    },
+    {
+      "key": "fashion-general-emotional",
+      "name": "轻奢真皮托特包·情绪故事",
+      "creativeFactors": {
+        "productCategory": "fashion-accessories",
+        "dealType": "premium-brand",
+        "audience": "general",
+        "strategy": "emotional-story"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "犒赏自己", "publishedAt": "2026-05-20T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 160000, "clicks": 3400, "conversions": 176, "spendCents": 600000, "gmvCents": 2280000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "通勤仪式感", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 104000, "clicks": 2300, "conversions": 120, "spendCents": 400000, "gmvCents": 1560000 } }
+      ]
+    }
+  ]
+}

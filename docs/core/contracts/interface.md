@@ -100,6 +100,8 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 | POST/GET | `/api/workspaces/:workspaceId/dashboard/videos` | Import or list workspace dashboard video artifacts; repeated imports of the same `finalVideoJobId` return the existing artifact. |
 | GET | `/api/dashboard/videos` | List global dashboard video artifacts. |
 | GET | `/api/dashboard/videos/:artifactId/file` | Stream dashboard MP4 copy from its internal LOCAL/S3 storage locator. |
+| GET | `/api/dashboard/recommendations` | 投放策略推荐: per `商品一级类目 × 商品成交类型` group, the best `适用人群` + `推销手法` ranked by a composite of average ROAS (`Σgmv/Σspend`) and per-video GMV. Optional `roasWeight`/`gmvWeight`/`priorStrength` query knobs. Read-only across all workspaces. |
+| GET | `/api/dashboard/recommendations/:productCategory/:dealType` | Single-group recommendation (`{ data, meta }`); 400 on invalid factor value, 404 when the group has no data. |
 | POST/GET | `/api/workspaces/:workspaceId/campaign-publications` | Create/list KOL/channel placements (`jobId` validated to the workspace; `platform`, `accountName`, `publishedAt`). |
 | GET | `/api/workspaces/:workspaceId/campaign-publications/:publicationId` | Read a placement with its latest cumulative metrics. |
 | POST | `/api/workspaces/:workspaceId/campaign-publications/:publicationId/metrics` | Append a cumulative metric snapshot (`impressions/clicks/conversions/spendCents/gmvCents`); `ctr/cvr/roas` derived at read time. |

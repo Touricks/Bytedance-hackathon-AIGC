@@ -22,6 +22,7 @@ import { registerCampaignController } from "./modules/campaign/campaign.controll
 import {
   registerDashboardVideoArtifactController,
 } from "./modules/dashboard/dashboard-video-artifact.controller.js";
+import { registerRecommendationController } from "./modules/recommendation/recommendation.controller.js";
 import { registerTraceController } from "./modules/trace/trace.routes.js";
 import { registerReferenceVideoController } from "./modules/reference-video/reference-video.controller.js";
 import { registerSetupTemplateController } from "./modules/setup-template/setup-template.controller.js";
@@ -202,6 +203,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerGenerationController(app);
   await registerCampaignController(app);
   await registerDashboardVideoArtifactController(app);
+  await registerRecommendationController(app);
   await registerTraceController(app);
   await registerReferenceVideoController(app);
   await registerSetupTemplateController(app);

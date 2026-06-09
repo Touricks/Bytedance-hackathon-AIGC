@@ -29,6 +29,28 @@ pnpm seed:dashboard -- --fixture <path> --workspace <id>
 
 Flags: `--reset`, `--fixture <path>`, `--workspace <id>`, `--help`. The pure daily-curve generator (`scripts/seed/cumulative-series.ts`) has unit tests: `node --import tsx --test scripts/seed/cumulative-series.test.ts`.
 
+### Recommendation engine data (投放策略推荐)
+
+`apps/server/scripts/fixtures/recommendation-seed.json` is a richer fixture (15 videos / 35 publications across 5 `商品一级类目 × 商品成交类型` groups) that gives the recommendation engine enough signal per group. Seed it into Postgres, then call the API:
+
+```bash
+# from apps/server
+pnpm seed:dashboard -- --reset --fixture scripts/fixtures/recommendation-seed.json
+# GET /api/dashboard/recommendations
+# GET /api/dashboard/recommendations/:productCategory/:dealType?roasWeight=0.3&gmvWeight=0.7
+```
+
+Preview the engine output **without a database** (each publication's `finalTotals` is treated as one record — identical to what the DB repository loads):
+
+```bash
+# from apps/server
+node --import tsx scripts/recommendation-preview.ts            # default weights
+node --import tsx scripts/recommendation-preview.ts --roas 0.3 --gmv 0.7   # scale-first
+node --import tsx scripts/recommendation-preview.ts --json     # full JSON
+```
+
+Engine design + method: `docs/auto_report/report.md`. Pure-engine unit tests: `node --import tsx --test apps/server/src/modules/recommendation/recommendation-engine.test.ts`.
+
 ## Frontend / Backend Contract Check
 
 Run the lightweight contract check before touching backend/frontend API shape:
