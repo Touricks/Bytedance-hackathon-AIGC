@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
 import { ChevronDown, ChevronRight, Upload, Wand2 } from "lucide-react";
@@ -15,10 +15,8 @@ import {
 } from "@aigc-video/shared";
 import {
   importReferenceVideoRequirements,
-  suggestCreativeFactors,
   type PromptRequirementsData,
   type ReferenceVideoRequirementsImportResult,
-  type SuggestCreativeFactorsResult,
   uploadWorkspaceMaterial,
   workspaceMaterialFileRejectionReason
 } from "../../../lib/api/client.js";
@@ -75,30 +73,16 @@ export function RequirementsStart({
     ReferenceVideoRequirementsImportResult["creativeFactorsRecommendation"] | null
   >(null);
   const [guidanceOpen, setGuidanceOpen] = useState(true);
-  const [suggestion, setSuggestion] = useState<SuggestCreativeFactorsResult | null>(null);
-  const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const { result: suggestion, loading: suggestionLoading, error: suggestionError } = vm.factorSuggestion;
 
   useEffect(() => {
     setForm(initialForm);
   }, [initialForm]);
 
-  const prevAssetCountRef = useRef(0);
-  useEffect(() => {
-    const count = assets.length;
-    if (count > 0 && count !== prevAssetCountRef.current && !suggestionLoading) {
-      prevAssetCountRef.current = count;
-      setSuggestionLoading(true);
-      suggestCreativeFactors(vm.workspaceId)
-        .then(setSuggestion)
-        .catch(() => undefined)
-        .finally(() => setSuggestionLoading(false));
-    }
-  }, [assets.length, vm.workspaceId, suggestionLoading]);
-
   const applySuggestion = () => {
     if (!suggestion) return;
     setForm(requirementFormWithCreativeFactors(suggestion.recommendedFactors));
-    setSuggestion(null);
+    vm.factorSuggestion.clear();
   };
 
   const updateCreativeFactor = <
@@ -271,6 +255,16 @@ export function RequirementsStart({
             <Wand2 size={14} />
             <span>AI 正在分析素材，推荐创作因子…</span>
           </div>
+        ) : suggestionError ? (
+          <div className="ai-suggestion ai-suggestion--error">
+            <span className="ai-suggestion__text">{suggestionError}</span>
+            <button type="button" className="ai-suggestion__apply" onClick={vm.factorSuggestion.run}>
+              重试
+            </button>
+            <button type="button" className="ai-suggestion__dismiss" onClick={vm.factorSuggestion.clearError}>
+              ✕
+            </button>
+          </div>
         ) : suggestion ? (
           <div className="ai-suggestion">
             <Wand2 size={14} />
@@ -294,7 +288,7 @@ export function RequirementsStart({
             <button
               type="button"
               className="ai-suggestion__dismiss"
-              onClick={() => setSuggestion(null)}
+              onClick={vm.factorSuggestion.clear}
             >
               ✕
             </button>

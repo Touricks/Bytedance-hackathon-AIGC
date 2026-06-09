@@ -697,11 +697,24 @@ export interface SuggestCreativeFactorsResult {
 export async function suggestCreativeFactors(
   workspaceId: string
 ): Promise<SuggestCreativeFactorsResult> {
-  const response = await postJson<{ data: SuggestCreativeFactorsResult }>(
-    `/api/workspaces/${workspaceId}/creative-factors/suggest`,
-    {}
-  );
-  return response.data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 40000);
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/api/workspaces/${workspaceId}/creative-factors/suggest`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        signal: controller.signal
+      }
+    );
+    if (!response.ok) throw new Error(await readApiErrorMessage(response));
+    const json = (await response.json()) as { data: SuggestCreativeFactorsResult };
+    return json.data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function listCreativeRequirementTemplates(): Promise<CreativeRequirementTemplatesDetail> {

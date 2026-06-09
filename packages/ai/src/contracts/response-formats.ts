@@ -435,3 +435,124 @@ export function buildShotPromptResponseFormat(input: {
     )
   });
 }
+
+export function buildRegenerateShotPromptResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  return responseFormat({
+    name: "video_shotprompt_single",
+    description: "重新生成单个分镜的 Seedance 提示词。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        index: integer,
+        startSec: integer,
+        endSec: positiveInteger,
+        providerPrompt: nonEmptyString,
+        referenceAssetRefs: arrayOf(refSchema(refs)),
+        voiceover: nonEmptyString,
+        shotImage: strictObject(
+          {
+            scene: nonEmptyString,
+            composition: nonEmptyString,
+            lighting: nonEmptyString,
+            productVisibility: nonEmptyString,
+            referenceUsage: nonEmptyString,
+            negative: arrayOf(plainString)
+          },
+          ["scene", "composition", "lighting", "productVisibility", "referenceUsage", "negative"]
+        ),
+        shotVideo: strictObject(
+          {
+            cameraMotion: nonEmptyString,
+            subjectMotion: nonEmptyString,
+            firstFrameIntent: nonEmptyString,
+            lastFrameIntent: nullableString(),
+            durationIntent: nonEmptyString,
+            continuity: nonEmptyString,
+            negative: arrayOf(plainString)
+          },
+          ["cameraMotion", "subjectMotion", "firstFrameIntent", "lastFrameIntent", "durationIntent", "continuity", "negative"]
+        )
+      },
+      ["index", "startSec", "endSec", "providerPrompt", "referenceAssetRefs", "voiceover", "shotImage", "shotVideo"]
+    )
+  });
+}
+
+export function buildViralImitationResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  return responseFormat({
+    name: "ugc_viral_imitation",
+    description: "模仿爆款结构生成可编辑的分镜 artifact。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        narrative: nonEmptyString,
+        totalDurationSec: {
+          type: "integer",
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC]
+        },
+        shots: arrayOf(
+          strictObject(
+            {
+              index: integer,
+              purpose: { type: "string", enum: ["hook", "proof", "cta"] },
+              durationSec: {
+                type: "integer",
+                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC
+              },
+              scene: nonEmptyString,
+              visualDirection: nonEmptyString,
+              productAssetRef: refSchema(refs),
+              voiceover: nonEmptyString,
+              transition: nonEmptyString
+            },
+            ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"]
+          ),
+          { minItems: 3, maxItems: 3 }
+        ),
+        assumptions: arrayOf(plainString),
+        viralTemplateUsed: nonEmptyString,
+        matchReason: nonEmptyString
+      },
+      ["narrative", "totalDurationSec", "shots", "assumptions", "viralTemplateUsed", "matchReason"]
+    )
+  });
+}
+
+export function buildVideoBreakdownResponseFormat(schemaVersion: string): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "video_breakdown",
+    description: "分析参考视频的爆款结构，提取叙事和节奏模式。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        hookTechnique: nonEmptyString,
+        sellingPoints: arrayOf(nonEmptyString, { minItems: 1 }),
+        structure: arrayOf(
+          strictObject(
+            {
+              purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+              description: nonEmptyString,
+              durationSec: positiveInteger
+            },
+            ["purpose", "description", "durationSec"]
+          ),
+          { minItems: 3 }
+        ),
+        emotionalArc: nonEmptyString,
+        copyStyle: nonEmptyString,
+        suggestedCategories: arrayOf(nonEmptyString, { minItems: 1 }),
+        suggestedName: nonEmptyString,
+        whyViral: nonEmptyString
+      },
+      ["hookTechnique", "sellingPoints", "structure", "emotionalArc", "copyStyle", "suggestedCategories", "suggestedName", "whyViral"]
+    )
+  });
+}
