@@ -4,9 +4,10 @@ import { buildCreativeFactorRequirements } from "@aigc-video/shared";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 
 const requirements = buildCreativeFactorRequirements({
-  productType: "offline-experience-service",
-  audience: "child",
-  strategy: "scenario-demo",
+  productCategory: "consumer-electronics",
+  dealType: "search-standard",
+  audience: "youth",
+  strategy: "review-comparison",
 });
 
 describe("formatCreativeRequirementsForModule", () => {
@@ -15,10 +16,10 @@ describe("formatCreativeRequirementsForModule", () => {
 
     assert.ok(text);
     assert.match(text, /素材解读视图/);
-    assert.match(text, /真实展示目的地、交通、场地、服务人员和体验者/);
-    assert.match(text, /虚假场地/);
-    assert.equal(text.includes("分镜结构："), false);
-    assert.equal(text.includes("CTA 风格："), false);
+    assert.match(text, /【商品一级类目】/);
+    assert.match(text, /设备本体/);
+    assert.match(text, /桌面办公/);
+    assert.equal(text.includes("叙事结构："), false);
   });
 
   it("projects product brief context around proof and benefit boundaries", () => {
@@ -26,29 +27,35 @@ describe("formatCreativeRequirementsForModule", () => {
 
     assert.ok(text);
     assert.match(text, /商品卖点视图/);
-    assert.match(text, /线下体验服务不是可直接开箱的商品/);
-    assert.match(text, /利益优先级：安全、省心、陪伴、成长体验/);
-    assert.equal(text.includes("开场方式："), false);
+    assert.match(text, /【商品成交类型】/);
+    assert.match(text, /用户已有明确需求/);
+    assert.match(text, /规格维度/);
+    assert.match(text, /不做收入羞辱/);
+    assert.equal(text.includes("开场机制："), false);
   });
 
-  it("projects storyboard context around structure and CTA", () => {
+  it("projects storyboard context around structure and evidence order", () => {
     const text = formatCreativeRequirementsForModule(requirements, "storyboard");
 
     assert.ok(text);
     assert.match(text, /分镜生成视图/);
-    assert.match(text, /开场方式：用真实使用场景或操作瞬间开场/);
-    assert.match(text, /CTA 风格：引导了解或下单/);
-    assert.equal(text.includes("证明对象："), false);
+    assert.match(text, /【推销手法】/);
+    assert.match(text, /review-comparison/);
+    assert.match(text, /对比标准/);
+    assert.equal(text.includes("决策信息维度："), false);
   });
 
-  it("keeps legacy seven fields for shotprompt and adds structured influence", () => {
+  it("groups shotprompt guidance by source and maps channels without attribution metadata", () => {
     const text = formatCreativeRequirementsForModule(requirements, "shotprompt");
 
     assert.ok(text);
     assert.match(text, /已批准创作要求（导演约束）/);
-    assert.match(text, /- 图像风格：/);
-    assert.match(text, /结构化剧本影响/);
-    assert.match(text, /受众称谓与语气：面向家长/);
+    assert.match(text, /【商品一级类目】/);
+    assert.match(text, /通道映射：/);
+    assert.match(text, /图像风格←/);
+    assert.equal(text.includes("结构化归因信息"), false);
+    assert.equal(text.includes("factorPromptVersion"), false);
+    assert.equal(text.includes("compiledRequirementsHash"), false);
   });
 
   it("falls back to legacy requirements only for shotprompt", () => {

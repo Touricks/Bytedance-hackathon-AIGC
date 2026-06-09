@@ -19,7 +19,7 @@ import { shotSetService } from "../workspace/shot-set.service.js";
 import {
   compareSourceFingerprint,
   type UpstreamDrift
-} from "../workspace/upstream-drift-v2.service.js";
+} from "../workspace/upstream-drift.service.js";
 import {
   assembleShotImagePrompt,
   assembleShotVideoScript,

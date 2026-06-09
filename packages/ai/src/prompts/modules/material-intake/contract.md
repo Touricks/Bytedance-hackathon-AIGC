@@ -5,4 +5,5 @@ tags[] 每项必须包含 ref、role、description、relevance、included。
 字段值中的自然语言内容（如 tags[].description）必须使用简体中文构建；ref、role enum、schema key 仍用英文。
 description 必须是有信息量的非空说明，去除首尾空格后不能为空。
 ref 只能来自已验证素材清单。
+primaryProductRef 必须对应唯一主商品素材；tags[] 中最多一项 role 可以是 product_main，且必须与 primaryProductRef 相同。其他商品角度、商品细节或辅助图应使用 product_detail/reference/packaging 等更具体角色，不要重复标为 product_main。
 role 使用素材事实，不要把不可用素材纳入生成。

@@ -6,11 +6,12 @@ describe("setupTemplateService", () => {
   it("validates setup templates at startup", () => {
     const templates = validateCreativeRequirementTemplatesForStartup();
 
-    assert.equal(templates.length, 9);
-    assert.equal(templates[0]?.id, "consumable-youth-seeding");
-    assert.equal(templates[0]?.productType, "consumable-good");
-    assert.deepEqual(templates[0]?.audiences, ["youth"]);
-    assert.equal(templates[0]?.strategy, "pain-solution");
+    assert.equal(templates.length, 5);
+    assert.equal(templates[0]?.id, "consumer-electronics-search-youth-review");
+    assert.equal(templates[0]?.creativeFactors.productCategory, "consumer-electronics");
+    assert.equal(templates[0]?.creativeFactors.dealType, "search-standard");
+    assert.equal(templates[0]?.creativeFactors.audience, "youth");
+    assert.equal(templates[0]?.creativeFactors.strategy, "review-comparison");
   });
 
   it("fails fast when setup template content is invalid", () => {
@@ -21,7 +22,7 @@ describe("setupTemplateService", () => {
             id: "broken",
             name: "Broken",
             summary: "Missing values",
-            values: {},
+            version: "factor-preset.test",
           },
         ]),
       /Required/,

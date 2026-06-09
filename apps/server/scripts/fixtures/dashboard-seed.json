@@ -1,0 +1,80 @@
+{
+  "workspace": { "id": "ws_mock_dashboard", "name": "Mock Dashboard" },
+  "videos": [
+    {
+      "key": "summer-mask",
+      "name": "夏季补水面膜种草",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "seeding-nonstandard",
+        "audience": "youth",
+        "strategy": "scenario-demo"
+      },
+      "publications": [
+        {
+          "key": "douyin-ava",
+          "platform": "douyin",
+          "accountName": "美妆Ava",
+          "publishUrl": "https://www.douyin.com/video/mock-summer-mask-ava",
+          "publishedAt": "2026-05-20T00:00:00.000Z",
+          "days": 14,
+          "finalTotals": {
+            "impressions": 248000,
+            "clicks": 6200,
+            "conversions": 372,
+            "spendCents": 820000,
+            "gmvCents": 4460000
+          }
+        },
+        {
+          "key": "xhs-lily",
+          "platform": "xiaohongshu",
+          "accountName": "种草Lily",
+          "publishUrl": "https://www.xiaohongshu.com/explore/mock-summer-mask-lily",
+          "publishedAt": "2026-05-22T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 96000,
+            "clicks": 3100,
+            "conversions": 210,
+            "spendCents": 410000,
+            "gmvCents": 2380000
+          }
+        }
+      ]
+    },
+    {
+      "key": "earbuds-launch",
+      "name": "降噪耳机首发评测",
+      "durationSec": 15,
+      "width": 1080,
+      "height": 1920,
+      "creativeFactors": {
+        "productCategory": "consumer-electronics",
+        "dealType": "search-standard",
+        "audience": "general",
+        "strategy": "review-comparison"
+      },
+      "publications": [
+        {
+          "key": "douyin-techkim",
+          "platform": "douyin",
+          "accountName": "数码Kim",
+          "publishUrl": "https://www.douyin.com/video/mock-earbuds-techkim",
+          "publishedAt": "2026-05-25T00:00:00.000Z",
+          "days": 10,
+          "finalTotals": {
+            "impressions": 412000,
+            "clicks": 9100,
+            "conversions": 540,
+            "spendCents": 1350000,
+            "gmvCents": 9720000
+          }
+        }
+      ]
+    }
+  ]
+}

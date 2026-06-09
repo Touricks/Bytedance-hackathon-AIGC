@@ -1,16 +1,11 @@
 import net from "node:net";
 import { analyzeReferenceVideoRequirements } from "@aigc-video/ai";
-import { applyCreativeFactorsToPromptRequirements } from "@aigc-video/shared";
+import { DEFAULT_CREATIVE_FACTORS, buildCreativeFactorRequirements } from "@aigc-video/shared";
 import { HttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { promptRequirementsService } from "../workspace/prompt-requirements.service.js";
 
-const supportedVideoExtensions = new Set([
-  ".mp4",
-  ".mov",
-  ".m4v",
-  ".webm",
-]);
+const supportedVideoExtensions = new Set([".mp4", ".mov", ".m4v", ".webm"]);
 
 export const maxReferenceVideoBytes = 50 * 1024 * 1024;
 
@@ -80,7 +75,7 @@ function parseDownloadUrl(rawUrl: string) {
     throw new HttpError(
       400,
       "INVALID_REFERENCE_VIDEO_URL",
-      "Reference video URL must be a valid http(s) URL.",
+      "Reference video URL must be a valid http(s) URL."
     );
   }
 
@@ -88,14 +83,14 @@ function parseDownloadUrl(rawUrl: string) {
     throw new HttpError(
       400,
       "INVALID_REFERENCE_VIDEO_URL",
-      "Reference video URL must use http or https.",
+      "Reference video URL must use http or https."
     );
   }
   if (isBlockedHostname(parsed.hostname)) {
     throw new HttpError(
       400,
       "INVALID_REFERENCE_VIDEO_URL",
-      "Reference video URL host is not allowed.",
+      "Reference video URL host is not allowed."
     );
   }
   return parsed;
@@ -110,13 +105,13 @@ async function ensureImportAllowed(workspaceId: string) {
        and status = 'approved'
        and is_current = true
      limit 1`,
-    [workspaceId],
+    [workspaceId]
   );
   if (result.rows[0]) {
     throw new HttpError(
       409,
       "REQUIREMENTS_ALREADY_APPROVED",
-      "Creative requirements are already approved; reference video import is only available before step 1 is submitted.",
+      "Creative requirements are already approved; reference video import is only available before step 1 is submitted."
     );
   }
 }
@@ -126,14 +121,14 @@ function assertReferenceVideoFile(input: ReferenceVideoFileInput) {
     throw new HttpError(
       400,
       "REFERENCE_VIDEO_TOO_LARGE",
-      "Reference video exceeds the import size limit.",
+      "Reference video exceeds the import size limit."
     );
   }
   if (!isSupportedVideo(input)) {
     throw new HttpError(
       400,
       "UNSUPPORTED_REFERENCE_VIDEO_TYPE",
-      "Reference video must be a supported video file.",
+      "Reference video must be a supported video file."
     );
   }
 }
@@ -155,14 +150,13 @@ function contentType(response: Response) {
 
 async function createProposedRequirementsFromReferenceVideo(
   workspaceId: string,
-  analyzed: Awaited<ReturnType<typeof analyzeReferenceVideoRequirements>>,
+  analyzed: Awaited<ReturnType<typeof analyzeReferenceVideoRequirements>>
 ) {
-  const recommendedFactors =
-    analyzed.creativeFactorsRecommendation.recommendedFactors;
-  const data = applyCreativeFactorsToPromptRequirements(
-    analyzed.draft,
-    recommendedFactors,
-  );
+  const recommendedFactors = analyzed.creativeFactorsRecommendation.recommendedFactors;
+  const data = buildCreativeFactorRequirements({
+    ...DEFAULT_CREATIVE_FACTORS,
+    ...recommendedFactors,
+  });
   return promptRequirementsService.propose(workspaceId, data);
 }
 
@@ -183,7 +177,7 @@ async function readVideoResponseBytes(response: Response) {
       throw new HttpError(
         400,
         "REFERENCE_VIDEO_TOO_LARGE",
-        "Reference video exceeds the import size limit.",
+        "Reference video exceeds the import size limit."
       );
     }
     chunks.push(chunk);
@@ -198,7 +192,7 @@ async function downloadDirectVideo(url: string) {
     throw new HttpError(
       400,
       "REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD",
-      "The URL does not point to a directly downloadable video file. Please upload a video file.",
+      "The URL does not point to a directly downloadable video file. Please upload a video file."
     );
   }
 
@@ -207,7 +201,7 @@ async function downloadDirectVideo(url: string) {
     throw new HttpError(
       400,
       "REFERENCE_VIDEO_TOO_LARGE",
-      "Reference video exceeds the import size limit.",
+      "Reference video exceeds the import size limit."
     );
   }
 
@@ -216,14 +210,14 @@ async function downloadDirectVideo(url: string) {
     throw new HttpError(
       400,
       "REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD",
-      "The URL does not point to a directly downloadable video file. Please upload a video file.",
+      "The URL does not point to a directly downloadable video file. Please upload a video file."
     );
   }
 
   const bytes = await readVideoResponseBytes(response);
   return {
     bytes,
-    contentType: type || "video/mp4",
+    contentType: type || "video/mp4"
   };
 }
 
@@ -235,11 +229,11 @@ export const referenceVideoService = {
       filename: input.filename,
       contentType: input.contentType,
       sizeBytes: input.bytes.byteLength,
-      videoUrl: toVideoDataUrl(input.contentType, input.bytes),
+      videoUrl: toVideoDataUrl(input.contentType, input.bytes)
     });
     const artifact = await createProposedRequirementsFromReferenceVideo(
       workspaceId,
-      analyzed,
+      analyzed
     );
 
     return {
@@ -247,10 +241,10 @@ export const referenceVideoService = {
         type: "file" as const,
         filename: input.filename,
         contentType: input.contentType,
-        sizeBytes: input.bytes.byteLength,
+        sizeBytes: input.bytes.byteLength
       },
       ...analyzed,
-      artifact,
+      artifact
     };
   },
 
@@ -261,11 +255,11 @@ export const referenceVideoService = {
       filename: new URL(input.url).pathname.split("/").pop() || undefined,
       contentType: downloaded.contentType,
       sizeBytes: downloaded.bytes.byteLength,
-      videoUrl: toVideoDataUrl(downloaded.contentType, downloaded.bytes),
+      videoUrl: toVideoDataUrl(downloaded.contentType, downloaded.bytes)
     });
     const artifact = await createProposedRequirementsFromReferenceVideo(
       workspaceId,
-      analyzed,
+      analyzed
     );
 
     return {
@@ -274,10 +268,10 @@ export const referenceVideoService = {
         url: input.url,
         downloaded: true,
         contentType: downloaded.contentType,
-        sizeBytes: downloaded.bytes.byteLength,
+        sizeBytes: downloaded.bytes.byteLength
       },
       ...analyzed,
-      artifact,
+      artifact
     };
-  },
+  }
 };

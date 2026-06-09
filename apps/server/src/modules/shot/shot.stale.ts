@@ -9,10 +9,10 @@ export const staleRules = {
     );
   },
   async onImageSelectionChanged(_shotId: string, _client: PoolClient) {
-    // V2 selection is an explicit current choice and does not invalidate candidates.
+    // current selection is an explicit current choice and does not invalidate candidates.
   },
   async onVideoScriptReplaced(_shotId: string, _client: PoolClient) {
-    // V2 keeps current selections until the user explicitly chooses a replacement.
+    // The current flow keeps current selections until the user explicitly chooses a replacement.
   },
 };
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import {
   deleteObject,
+  deleteObjectsUnderPrefix,
   getObjectBuffer,
   getObjectStream,
   headObject,
@@ -178,7 +179,16 @@ export class S3WorkspaceStorageAdapter implements WorkspaceStorageAdapter {
   }
 
   async deletePrefix(prefix: string) {
-    const objects = await this.listObjects(prefix);
-    await Promise.all(objects.map((item) => this.deleteObject(item.relativePath)));
+    const normalizedPrefix = prefix
+      ? normalizeWorkspaceRelativePath(prefix)
+      : "";
+    const keyPrefix = normalizedPrefix
+      ? joinObjectKey(this.prefix, normalizedPrefix)
+      : `${this.prefix.replace(/\/+$/g, "")}/`;
+    await deleteObjectsUnderPrefix({
+      client: this.client,
+      bucket: this.bucket,
+      prefix: keyPrefix,
+    });
   }
 }

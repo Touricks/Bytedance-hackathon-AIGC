@@ -1,6 +1,14 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +45,7 @@ function usage() {
     "Usage:",
     "  node scripts/reset-dev-session.mjs --yes",
     "  pnpm reset:dev -- --yes",
+    "  pnpm dev:reset -- --yes",
     "",
     "Stops dev listeners, clears Postgres + Redis queues, then starts pnpm dev.",
     "",
@@ -115,7 +124,7 @@ function isInsideRepo(filePath) {
 
 function repoDevProcessPids() {
   const devCommandPattern =
-    /(pnpm( run)? dev(-latest)?\b|turbo dev\b|tsx\/dist\/cli\.mjs watch src\/main\.ts|vite\.js --host 0\.0\.0\.0)/;
+    /(pnpm( run)? dev(-latest)?(\s|$)|turbo dev\b|tsx\/dist\/cli\.mjs watch src\/main\.ts|vite\.js --host 0\.0\.0\.0)/;
   return processRows()
     .filter((row) => devCommandPattern.test(row.command))
     .filter((row) => isInsideRepo(processCwd(row.pid)))
@@ -164,7 +173,53 @@ function stopPortListeners(ports) {
     return;
   }
   console.log(`Stopping dev process(es): ${pids.join(", ")}`);
-  run("kill", pids);
+  for (const pid of pids) {
+    spawnSync("kill", [pid], { cwd: repoRoot, stdio: "ignore", env: process.env });
+  }
+}
+
+function safeRealPath(filePath) {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function isImmediateChild(parentPath, childPath) {
+  const relativePath = path.relative(parentPath, childPath);
+  return Boolean(relativePath) && !relativePath.startsWith("..") && !path.isAbsolute(relativePath) && !relativePath.includes(path.sep);
+}
+
+export function campaignTempWorkspaceDirs(tempRoot = os.tmpdir()) {
+  const rootRealPath = safeRealPath(tempRoot);
+  if (!rootRealPath) return [];
+  return readdirSync(rootRealPath)
+    .filter((name) => name.startsWith("daireel-campaign-"))
+    .map((name) => path.join(rootRealPath, name))
+    .filter((candidatePath) => {
+      const stat = lstatSync(candidatePath, { throwIfNoEntry: false });
+      if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) return false;
+      const candidateRealPath = safeRealPath(candidatePath);
+      return Boolean(
+        candidateRealPath &&
+          isImmediateChild(rootRealPath, candidateRealPath) &&
+          path.basename(candidateRealPath).startsWith("daireel-campaign-"),
+      );
+    });
+}
+
+export function cleanupCampaignTempWorkspaces(tempRoot = os.tmpdir()) {
+  const dirs = campaignTempWorkspaceDirs(tempRoot);
+  if (dirs.length === 0) {
+    console.log("No campaign temp workspace directories found.");
+    return;
+  }
+  console.log(`Removing campaign temp workspace director${dirs.length === 1 ? "y" : "ies"}:`);
+  for (const dir of dirs) {
+    console.log(`  ${dir}`);
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function startDev() {
@@ -196,14 +251,17 @@ function main() {
   const webPort = process.env.WEB_PORT || "5173";
 
   stopPortListeners([serverPort, webPort]);
+  cleanupCampaignTempWorkspaces();
   run("node", ["scripts/clear-postgres.mjs", "--yes"]);
   run("node", ["scripts/clear-redis.mjs", "--yes"]);
   if (!args.noDev) startDev();
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }

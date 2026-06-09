@@ -7,7 +7,7 @@ import type { RuntimePromptView } from "./material-intake.prompt.js";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard.v1";
+export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard";
 
 export interface BuildStoryboardPromptInput {
   brief: ProductBriefArtifact;

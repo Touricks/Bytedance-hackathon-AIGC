@@ -1,15 +1,15 @@
--- v2 enums (created if missing)
+-- current enums (created if missing)
 do $$ begin create type shot_status as enum (
   'DRAFT','IMAGE_PROMPT_PROPOSING','IMAGE_PROMPT_READY','IMAGE_PROMPT_EDITED',
   'IMAGE_GENERATING','IMAGE_CANDIDATES_READY','IMAGE_SELECTED',
   'VIDEO_SCRIPT_PROPOSING','VIDEO_SCRIPT_READY','VIDEO_SCRIPT_EDITED',
   'VIDEO_GENERATING','VIDEO_CANDIDATES_READY','VIDEO_SELECTED','FAILED'
 ); exception when duplicate_object then null; end $$;
-do $$ begin create type artifact_status_v2 as enum ('DRAFT','ACTIVE','APPROVED','STALE','ARCHIVED'); exception when duplicate_object then null; end $$;
+do $$ begin create type artifact_status as enum ('DRAFT','ACTIVE','APPROVED','STALE','ARCHIVED'); exception when duplicate_object then null; end $$;
 do $$ begin create type batch_status as enum ('PENDING','RUNNING','SUCCEEDED','PARTIAL','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type candidate_status as enum ('PENDING','RUNNING','PERSISTING','SUCCEEDED','FAILED','REJECTED'); exception when duplicate_object then null; end $$;
 alter type candidate_status add value if not exists 'PERSISTING';
-do $$ begin create type job_status_v2 as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','RETRYING','CANCELLED'); exception when duplicate_object then null; end $$;
+do $$ begin create type job_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','RETRYING','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type final_video_status as enum ('PENDING','RUNNING','SUCCEEDED','FAILED','CANCELLED'); exception when duplicate_object then null; end $$;
 do $$ begin create type workspace_storage_kind as enum ('LOCAL','S3'); exception when duplicate_object then null; end $$;
 do $$ begin create type workspace_storage_status as enum ('ACTIVE','ARCHIVED'); exception when duplicate_object then null; end $$;
@@ -229,7 +229,7 @@ drop table if exists workspace_video_archive cascade;
 drop table if exists storyboard_shot cascade;
 drop table if exists generation_job cascade;
 
--- v2 tables
+-- current tables
 create table if not exists storyboard_shots (
   id text primary key,
   workspace_id text not null references creative_workspace(id),
@@ -290,7 +290,7 @@ create table if not exists image_prompt_artifacts (
   id text primary key,
   shot_id text not null references storyboard_shots(id) on delete cascade,
   version int not null,
-  status artifact_status_v2 not null default 'ACTIVE',
+  status artifact_status not null default 'ACTIVE',
   prompt_text text not null,
   negative_prompt text,
   reference_asset_ids text[] not null default '{}',
@@ -368,7 +368,7 @@ create table if not exists video_script_artifacts (
   id text primary key,
   shot_id text not null references storyboard_shots(id) on delete cascade,
   version int not null,
-  status artifact_status_v2 not null default 'ACTIVE',
+  status artifact_status not null default 'ACTIVE',
   duration_sec int not null,
   script_json jsonb not null,
   provider_prompt text not null,
@@ -449,7 +449,7 @@ create table if not exists generation_jobs (
   workspace_id text not null references creative_workspace(id),
   shot_id text references storyboard_shots(id) on delete set null,
   job_type text not null,
-  status job_status_v2 not null default 'PENDING',
+  status job_status not null default 'PENDING',
   queue_name text not null,
   queue_job_id text,
   related_batch_type text,
@@ -505,6 +505,51 @@ create table if not exists final_video_jobs (
 alter table if exists final_video_jobs
   add column if not exists shot_set_id text references shot_sets(id) on delete set null;
 
+create table if not exists dashboard_video_artifacts (
+  id text primary key,
+  workspace_id text,
+  final_video_job_id text,
+  name text not null,
+  local_url text not null,
+  duration_sec int,
+  width int,
+  height int,
+  creative_factors jsonb not null,
+  storage_kind text not null default 'LOCAL',
+  storage_bucket text,
+  video_object_key text,
+  metadata_object_key text,
+  imported_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+drop index if exists idx_dashboard_video_artifacts_factor_combo;
+alter table if exists dashboard_video_artifacts
+  add column if not exists storage_kind text not null default 'LOCAL',
+  add column if not exists storage_bucket text,
+  add column if not exists video_object_key text,
+  add column if not exists metadata_object_key text,
+  drop column if exists factor_combo_key,
+  drop column if exists compiled_requirements_hash,
+  drop column if exists attribution_eligible,
+  drop column if exists creative_tags,
+  drop column if exists creative_tags_schema_version,
+  drop column if exists factor_prompt_version,
+  drop column if exists prompt_requirements_artifact_id,
+  drop column if exists shot_prompt_artifact_id,
+  drop column if exists metadata;
+create index if not exists idx_dashboard_video_artifacts_workspace
+  on dashboard_video_artifacts(workspace_id, imported_at desc, created_at desc);
+-- Dashboard is a decoupled published-video registry: workspace_id / final_video_job_id
+-- are soft text references (no FK, no cascade) so artifacts survive workspace deletion.
+alter table if exists dashboard_video_artifacts
+  drop constraint if exists dashboard_video_artifacts_workspace_id_fkey,
+  drop constraint if exists dashboard_video_artifacts_final_video_job_id_fkey,
+  alter column workspace_id drop not null;
+create unique index if not exists idx_dashboard_video_artifacts_job
+  on dashboard_video_artifacts(final_video_job_id)
+  where final_video_job_id is not null;
+
 create table if not exists one_click_final_video_jobs (
   id text primary key,
   workspace_id text not null references creative_workspace(id) on delete cascade,
@@ -556,36 +601,37 @@ create unique index if not exists idx_shot_image_auto_selection_active_workspace
 create index if not exists idx_shot_image_auto_selection_workspace_created
   on shot_image_auto_selection_jobs(workspace_id, created_at desc);
 
-create table if not exists campaign_publications (
+-- 发布记录 / 投放数据: external KOL placement of a final video and its
+-- cumulative metric snapshots. Replaces the retired campaign_* tables.
+drop table if exists campaign_publication_metrics cascade;
+drop table if exists campaign_publications cascade;
+
+create table if not exists external_kol_publications (
   id text primary key,
   workspace_id text not null references creative_workspace(id) on delete cascade,
-  final_video_job_id text references final_video_jobs(id) on delete set null,
+  job_id text references final_video_jobs(id) on delete set null,
   platform text not null,
-  channel_name text not null,
-  kol_name text,
+  account_name text not null,
   publish_url text,
-  status text not null default 'planned',
-  notes text,
-  creative_tags jsonb not null default '{}'::jsonb,
+  published_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-alter table if exists campaign_publications
-  add column if not exists creative_tags jsonb not null default '{}'::jsonb;
-create index if not exists idx_campaign_publications_workspace
-  on campaign_publications(workspace_id, created_at desc);
+create index if not exists idx_external_kol_publications_workspace
+  on external_kol_publications(workspace_id, created_at desc);
+create index if not exists idx_external_kol_publications_job
+  on external_kol_publications(job_id);
 
-create table if not exists campaign_publication_metrics (
+create table if not exists external_kol_metrics (
   id text primary key,
-  publication_id text not null references campaign_publications(id) on delete cascade,
+  publication_id text not null references external_kol_publications(id) on delete cascade,
   impressions int not null default 0,
   clicks int not null default 0,
   conversions int not null default 0,
   spend_cents int not null default 0,
-  captured_at timestamptz not null default now(),
-  source text not null default 'manual',
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  gmv_cents int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
-create index if not exists idx_campaign_metrics_publication
-  on campaign_publication_metrics(publication_id, captured_at desc);
+create index if not exists idx_external_kol_metrics_publication
+  on external_kol_metrics(publication_id, created_at desc);

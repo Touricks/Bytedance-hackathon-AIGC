@@ -1,0 +1,808 @@
+{
+  "schemaVersion": "dashboard-analytics-seed",
+  "fieldGuide": {
+    "purpose": "完整分析诊断样例数据。当前后端尚不能提供 CTR、3 秒留存、完播率、CVR、ROAS、GMV 和漏斗指标，因此这些指标由此 JSON 作为统一数据入口承载；导入数据面板的视频 metadata 来自后端 dashboard video artifact API。",
+    "sections": {
+      "meta": "看板更新时间、指标来源提示和由样例数据承载的指标 key。",
+      "user": "当前版本只假设 1 位用户，不设置管理员或团队角色。",
+      "videos": "分析诊断样例视频，每条视频携带 creativeFactors 与模板快照。",
+      "factorCatalog": "来自 factor artifact 的商品成交类型、适用人群、推销手法展示说明。",
+      "filters": "设计稿顶部筛选条的默认选择与选项。",
+      "kpis": "CTR、3 秒留存、完播率、CVR、ROAS 等样例 KPI 卡片。",
+      "funnel": "曝光到下单的转化漏斗样例数据。",
+      "channels": "同一视频在多个平台/KOL 渠道的样例效果。",
+      "strategyMatrix": "推销手法 × 渠道的效果矩阵。",
+      "diagnosis": "右侧诊断建议卡片。",
+      "strategyRecommendation": "推荐替换推销手法、推荐模板与原因。",
+      "assistantPresets": "创作助手快捷问题和回答。"
+    },
+    "metricFields": {
+      "ctr": "点击率，百分比。",
+      "retain3s": "3 秒留存率，百分比。",
+      "complete": "完播率，百分比。",
+      "cvr": "购买转化率，百分比。",
+      "roas": "广告投入产出比。",
+      "gmv": "成交金额，单位为元。",
+      "funnel": "从曝光到下单的阶段转化。"
+    },
+    "videoFields": {
+      "id": "前端样例视频 ID。",
+      "name": "看板展示名称。",
+      "filename": "视频文件名。",
+      "model": "生成模型或来源。",
+      "duration": "视频时长展示值。",
+      "publishedAt": "样例发布时间。",
+      "audienceText": "样例目标受众描述。",
+      "creativeFactors": "生成该视频时的数据看板归因组合：商品一级类目、商品成交类型、适用人群、推销手法。",
+      "template": "创作要求预设快照。"
+    }
+  },
+  "meta": {
+    "updatedLabel": "数据更新于 5 分钟前",
+    "metricSourceNote": "当前版本暂不从后端计算 CTR、3 秒留存、完播率、CVR、ROAS、GMV 与漏斗；看板使用完整样例指标承载诊断体验，视频列表 metadata 来自导入的数据面板 artifact。",
+    "syntheticMetricKeys": [
+      "ctr",
+      "retain3s",
+      "complete",
+      "cvr",
+      "roas",
+      "gmv",
+      "funnel"
+    ]
+  },
+  "user": {
+    "id": "single-user",
+    "displayName": "当前用户"
+  },
+  "videos": [
+    {
+      "id": "primary-offer",
+      "name": "UGC_洁面_限时优惠_30s",
+      "filename": "UGC_洁面_限时优惠_30s.mp4",
+      "model": "Seedance",
+      "duration": "30s",
+      "publishedAt": "2025-05-21",
+      "audienceText": "美国女性 25-44",
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "repeat-consumable",
+        "audience": "youth",
+        "strategy": "scenario-demo"
+      },
+      "template": {
+        "name": "数码家居·青年",
+        "status": "detached"
+      }
+    },
+    {
+      "id": "current-narration",
+      "name": "口播_洁面_立即购买_15s",
+      "filename": "口播_洁面_立即购买_15s.mp4",
+      "model": "Seedance",
+      "duration": "15s",
+      "publishedAt": "2025-05-12",
+      "audienceText": "美国女性 25-44",
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "repeat-consumable",
+        "audience": "youth",
+        "strategy": "curiosity-hook"
+      },
+      "template": {
+        "name": "自定义",
+        "status": "none"
+      }
+    },
+    {
+      "id": "story-emotion",
+      "name": "剧情_洁面_情绪故事_45s",
+      "filename": "剧情_洁面_情绪故事_45s.mp4",
+      "model": "Nano Banana",
+      "duration": "45s",
+      "publishedAt": "2025-05-05",
+      "audienceText": "美国女性 25-44",
+      "creativeFactors": {
+        "productCategory": "beauty-personal-care",
+        "dealType": "repeat-consumable",
+        "audience": "youth",
+        "strategy": "emotional-story"
+      },
+      "template": {
+        "name": "银发滋补·老年",
+        "status": "detached"
+      }
+    }
+  ],
+  "factorCatalog": {
+    "productCategories": {
+      "beauty-personal-care": {
+        "label": "美妆个护",
+        "description": "强调质地、使用过程与真实上脸/上手效果，克制前后对比。"
+      },
+      "fashion-accessories": {
+        "label": "服饰鞋包",
+        "description": "突出版型、面料、上身效果与搭配场景。"
+      },
+      "food-beverage": {
+        "label": "食品饮料",
+        "description": "放大口感、质地与食欲感，强调真实入口或分享。"
+      },
+      "home-living": {
+        "label": "家居家装",
+        "description": "在真实空间展示摆放、材质与使用前后的改善。"
+      },
+      "consumer-electronics": {
+        "label": "3C数码",
+        "description": "干净理性地呈现接口、性能与使用前后效率变化。"
+      },
+      "mom-baby-pet": {
+        "label": "母婴宠物",
+        "description": "以照护者视角展示安全、舒适与照护省心。"
+      },
+      "sports-outdoors": {
+        "label": "运动户外",
+        "description": "突出支撑、防护与正确使用方式，强调动作安全。"
+      },
+      "jewelry-collectibles": {
+        "label": "珠宝文玩",
+        "description": "用微距质感、工艺细节与佩戴/把玩效果建立信任。"
+      },
+      "books-education": {
+        "label": "图书教育",
+        "description": "展示内页、结构与学习路径，强调可理解可坚持。"
+      },
+      "automotive": {
+        "label": "汽车用品",
+        "description": "在车内外展示安装、适配与使用前后体验，强调安全。"
+      }
+    },
+    "dealTypes": {
+      "search-standard": {
+        "label": "搜索型标品",
+        "description": "用户带着明确需求比较参数、适配、价格和可信证明。"
+      },
+      "seeding-nonstandard": {
+        "label": "种草型非标品",
+        "description": "先建立想象空间和风格偏好，再补足适用场景与信任。"
+      },
+      "impulse-hit": {
+        "label": "冲动消费型爆款",
+        "description": "用高密度视觉钩子、即时利益和低决策成本推动下单。"
+      },
+      "repeat-consumable": {
+        "label": "复购型消耗品",
+        "description": "强调日常使用、稳定体验、用量、补货和复购理由。"
+      },
+      "premium-brand": {
+        "label": "品牌型高客单",
+        "description": "用品牌信任、材质工艺、服务保障和长期价值降低顾虑。"
+      }
+    },
+    "audiences": {
+      "general": {
+        "label": "不限定",
+        "description": "不按特定人群定向，聚焦商品/服务本身的通用价值。"
+      },
+      "toddler": {
+        "label": "幼儿",
+        "description": "新手家长决策，强调安全、成分透明和照护省心。"
+      },
+      "child": {
+        "label": "儿童",
+        "description": "家长决策，强调安全、省心、陪伴和孩子真实体验。"
+      },
+      "youth": {
+        "label": "青年",
+        "description": "语气直接、有体验感，强调效率、颜值、实用和即时体验。"
+      },
+      "senior": {
+        "label": "老年",
+        "description": "语气温和稳重，强调安心、品质、便利和心意。"
+      }
+    },
+    "strategies": {
+      "pain-solution": {
+        "label": "痛点解决",
+        "description": "围绕明确痛点建立转化动机。",
+        "flow": "痛点出现 -> 原因解释 -> 解决方式 -> 证据证明 -> 行动引导。"
+      },
+      "scenario-demo": {
+        "label": "场景演示",
+        "description": "用真实场景证明商品或服务的使用价值。",
+        "flow": "场景进入 -> 过程演示 -> 关键卖点 -> 结果证明 -> 行动引导。"
+      },
+      "review-comparison": {
+        "label": "测评对比",
+        "description": "通过标准、过程和结果对比建立信任。",
+        "flow": "测评标准 -> 使用过程 -> 对比结果 -> 适用建议 -> 行动引导。"
+      },
+      "tutorial-value": {
+        "label": "教程价值",
+        "description": "通过可学习的方法步骤带出商品价值。",
+        "flow": "问题/误区 -> 方法步骤 -> 效果展示 -> 行动引导。"
+      },
+      "authority-proof": {
+        "label": "权威证明",
+        "description": "用可信来源和证据细节证明核心能力。",
+        "flow": "可信来源 -> 核心能力 -> 证据细节 -> 适用场景 -> 行动引导。"
+      },
+      "emotional-story": {
+        "label": "情绪故事",
+        "description": "用人物处境和改善结果建立情绪连接。",
+        "flow": "人物处境 -> 情绪需求 -> 使用/服务过程 -> 改善结果 -> 行动引导。"
+      },
+      "curiosity-hook": {
+        "label": "好奇钩子",
+        "description": "先制造悬念，再揭示卖点和证据。",
+        "flow": "悬念提出 -> 答案揭示 -> 卖点解释 -> 证据证明 -> 行动引导。"
+      },
+      "visual-story": {
+        "label": "视觉叙事",
+        "description": "以产品视觉质感和场景氛围建立转化动机。",
+        "flow": "质感开场 -> 材质细节 -> 氛围收束。"
+      }
+    }
+  },
+  "filters": {
+    "selectedVideoId": "primary-offer",
+    "selectedPlatform": "TikTok Shop · 美国",
+    "selectedChannelId": "home",
+    "selectedRange": "近 30 天",
+    "selectedGoal": "转化",
+    "platforms": [
+      "TikTok Shop · 美国",
+      "TikTok Shop · 英国",
+      "Instagram Reels",
+      "YouTube Shorts"
+    ],
+    "ranges": [
+      "近 7 天",
+      "近 30 天",
+      "近 90 天",
+      "自定义"
+    ],
+    "goals": [
+      "转化",
+      "曝光",
+      "加购"
+    ]
+  },
+  "kpis": [
+    {
+      "key": "ctr",
+      "label": "点击率 CTR",
+      "value": 2.96,
+      "displayValue": "2.96%",
+      "deltaDisplay": "-0.46pp",
+      "benchmarkLabel": "较同类优秀",
+      "sparkline": [
+        2.8,
+        2.95,
+        2.84,
+        2.92,
+        2.93,
+        2.91,
+        2.72,
+        3,
+        3.02,
+        2.91,
+        2.87,
+        3.09,
+        3.1,
+        2.79,
+        3.18
+      ]
+    },
+    {
+      "key": "retain3s",
+      "label": "3秒留存",
+      "value": 71.2,
+      "displayValue": "71.2%",
+      "deltaDisplay": "-7.2pp",
+      "benchmarkLabel": "较同类优秀",
+      "sparkline": [
+        70.1,
+        72.8,
+        71.4,
+        68.5,
+        69.8,
+        70.9,
+        68.1,
+        67.8,
+        71.9,
+        73.1,
+        69.4,
+        70.2,
+        76.2,
+        71.1,
+        73.4
+      ]
+    },
+    {
+      "key": "complete",
+      "label": "完播率",
+      "value": 34.6,
+      "displayValue": "34.6%",
+      "deltaDisplay": "-6.6pp",
+      "benchmarkLabel": "较同类优秀",
+      "sparkline": [
+        31.6,
+        34.8,
+        32.4,
+        33.6,
+        36.2,
+        38.1,
+        35.4,
+        32.1,
+        37.9,
+        34.2,
+        32.8,
+        34.9,
+        35.7,
+        35.5,
+        33.8
+      ]
+    },
+    {
+      "key": "cvr",
+      "label": "购买转化率 CVR",
+      "value": 2.07,
+      "displayValue": "2.07%",
+      "deltaDisplay": "-0.51pp",
+      "benchmarkLabel": "较同类优秀",
+      "sparkline": [
+        1.9,
+        2.02,
+        1.93,
+        1.85,
+        2.08,
+        1.98,
+        1.9,
+        2.01,
+        2.12,
+        1.88,
+        1.97,
+        2.19,
+        2.18,
+        2.09,
+        2.02
+      ]
+    },
+    {
+      "key": "roas",
+      "label": "ROAS",
+      "value": 3.62,
+      "displayValue": "3.62",
+      "deltaDisplay": "-1.23",
+      "benchmarkLabel": "较同类优秀",
+      "sparkline": [
+        3.2,
+        3.62,
+        3.52,
+        3.45,
+        3.4,
+        3.88,
+        3.58,
+        3.29,
+        3.51,
+        3.42,
+        3.32,
+        3.76,
+        3.72,
+        3.49,
+        3.86
+      ]
+    },
+    {
+      "key": "gmv",
+      "label": "GMV",
+      "value": 94000,
+      "displayValue": "¥9.4万",
+      "deltaDisplay": "-¥3.4万",
+      "benchmarkLabel": "较同类优秀",
+      "sparkline": [
+        89000,
+        94000,
+        91000,
+        93000,
+        90000,
+        98000,
+        95000,
+        87000,
+        92000,
+        96000,
+        91000,
+        99000,
+        97000,
+        93000,
+        101000
+      ]
+    }
+  ],
+  "funnel": [
+    {
+      "key": "impressions",
+      "label": "曝光",
+      "value": 45231684,
+      "displayValue": "4523万",
+      "totalRate": 100,
+      "stepRate": null
+    },
+    {
+      "key": "clicks",
+      "label": "点击",
+      "value": 1338289,
+      "displayValue": "134万",
+      "totalRate": 2.96,
+      "stepRate": 2.96
+    },
+    {
+      "key": "productPage",
+      "label": "到商品页",
+      "value": 812743,
+      "displayValue": "81.3万",
+      "totalRate": 1.8,
+      "stepRate": 60.7
+    },
+    {
+      "key": "cartAdds",
+      "label": "加购",
+      "value": 308429,
+      "displayValue": "30.8万",
+      "totalRate": 0.68,
+      "stepRate": 37.9
+    },
+    {
+      "key": "orders",
+      "label": "下单",
+      "value": 93516,
+      "displayValue": "9.4万",
+      "totalRate": 0.21,
+      "stepRate": 30.3
+    }
+  ],
+  "channels": [
+    {
+      "id": "mia",
+      "name": "@Fanshi",
+      "platform": "TikTok Shop · 美国",
+      "tier": "腰部达人",
+      "isBest": true,
+      "metrics": {
+        "ctr": 3.42,
+        "retain3s": 78.4,
+        "complete": 41.2,
+        "cvr": 2.58,
+        "roas": 4.85,
+        "gmv": 128000
+      }
+    },
+    {
+      "id": "home",
+      "name": "@Xuanyi",
+      "platform": "TikTok Shop · 美国",
+      "tier": "头部达人",
+      "isBest": false,
+      "metrics": {
+        "ctr": 2.96,
+        "retain3s": 71.2,
+        "complete": 34.6,
+        "cvr": 2.07,
+        "roas": 3.62,
+        "gmv": 94000
+      }
+    },
+    {
+      "id": "glow",
+      "name": "@Zihan",
+      "platform": "Instagram Reels",
+      "tier": "腰部达人",
+      "isBest": false,
+      "metrics": {
+        "ctr": 2.41,
+        "retain3s": 64.8,
+        "complete": 30.1,
+        "cvr": 1.74,
+        "roas": 2.96,
+        "gmv": 51000
+      }
+    },
+    {
+      "id": "tidy",
+      "name": "@Master",
+      "platform": "TikTok Shop · 英国",
+      "tier": "尾部达人",
+      "isBest": false,
+      "metrics": {
+        "ctr": 2.08,
+        "retain3s": 58.3,
+        "complete": 26.4,
+        "cvr": 1.52,
+        "roas": 2.41,
+        "gmv": 33000
+      }
+    },
+    {
+      "id": "organic",
+      "name": "自然流量 / 商城",
+      "platform": "TikTok Shop · 美国",
+      "tier": "非达人",
+      "isBest": false,
+      "metrics": {
+        "ctr": 1.82,
+        "retain3s": 55.1,
+        "complete": 24,
+        "cvr": 1.38,
+        "roas": 2.18,
+        "gmv": 27000
+      }
+    }
+  ],
+  "strategyMatrix": {
+    "metricTabs": [
+      "roas",
+      "cvr",
+      "ctr"
+    ],
+    "selectedMetric": "roas",
+    "rows": [
+      {
+        "strategy": "pain-solution",
+        "samples": 18,
+        "isRecommended": true,
+        "metricsByChannel": {
+          "mia": {
+            "roas": 5.4,
+            "cvr": 3.1,
+            "ctr": 3.9
+          },
+          "home": {
+            "roas": 4.6,
+            "cvr": 2.7,
+            "ctr": 3.4
+          },
+          "glow": {
+            "roas": 3.8,
+            "cvr": 2.1,
+            "ctr": 2.8
+          },
+          "tidy": {
+            "roas": 3,
+            "cvr": 1.7,
+            "ctr": 2.3
+          },
+          "organic": {
+            "roas": 2.6,
+            "cvr": 1.5,
+            "ctr": 2
+          }
+        }
+      },
+      {
+        "strategy": "review-comparison",
+        "samples": 9,
+        "metricsByChannel": {
+          "mia": {
+            "roas": 4.2,
+            "cvr": 2.5,
+            "ctr": 3.1
+          },
+          "home": {
+            "roas": 3.9,
+            "cvr": 2.3,
+            "ctr": 2.9
+          },
+          "glow": {
+            "roas": 3.3,
+            "cvr": 1.9,
+            "ctr": 2.5
+          },
+          "tidy": {
+            "roas": 2.7,
+            "cvr": 1.6,
+            "ctr": 2.1
+          },
+          "organic": {
+            "roas": 2.3,
+            "cvr": 1.4,
+            "ctr": 1.8
+          }
+        }
+      },
+      {
+        "strategy": "scenario-demo",
+        "samples": 12,
+        "isCurrent": true,
+        "metricsByChannel": {
+          "mia": {
+            "roas": 4.85,
+            "cvr": 2.58,
+            "ctr": 3.42
+          },
+          "home": {
+            "roas": 3.62,
+            "cvr": 2.07,
+            "ctr": 2.96
+          },
+          "glow": {
+            "roas": 2.96,
+            "cvr": 1.74,
+            "ctr": 2.41
+          },
+          "tidy": {
+            "roas": 2.41,
+            "cvr": 1.52,
+            "ctr": 2.08
+          },
+          "organic": {
+            "roas": 2.18,
+            "cvr": 1.38,
+            "ctr": 1.82
+          }
+        }
+      },
+      {
+        "strategy": "emotional-story",
+        "samples": 6,
+        "metricsByChannel": {
+          "mia": {
+            "roas": 3.6,
+            "cvr": 2.3,
+            "ctr": 2.9
+          },
+          "home": {
+            "roas": 3.1,
+            "cvr": 2,
+            "ctr": 2.6
+          },
+          "glow": {
+            "roas": 3.4,
+            "cvr": 2.1,
+            "ctr": 2.8
+          },
+          "tidy": {
+            "roas": 2.5,
+            "cvr": 1.6,
+            "ctr": 2.2
+          },
+          "organic": {
+            "roas": 2.1,
+            "cvr": 1.4,
+            "ctr": 1.9
+          }
+        }
+      },
+      {
+        "strategy": "curiosity-hook",
+        "samples": 7,
+        "metricsByChannel": {
+          "mia": {
+            "roas": 3.9,
+            "cvr": 2,
+            "ctr": 4.3
+          },
+          "home": {
+            "roas": 3,
+            "cvr": 1.7,
+            "ctr": 3.6
+          },
+          "glow": {
+            "roas": 4.1,
+            "cvr": 2.2,
+            "ctr": 4.5
+          },
+          "tidy": {
+            "roas": 2.4,
+            "cvr": 1.4,
+            "ctr": 2.9
+          },
+          "organic": {
+            "roas": 1.9,
+            "cvr": 1.2,
+            "ctr": 2.4
+          }
+        }
+      }
+    ]
+  },
+  "diagnosis": [
+    {
+      "level": "high",
+      "metric": "推销手法",
+      "tag": "主因",
+      "title": "当前「场景演示」在主力渠道 ROAS 偏低",
+      "body": "该视频用「场景演示」手法，在 @Xuanyi 渠道 ROAS 仅 3.62。样例聚合数据中，「痛点解决」在同一渠道平均 ROAS 4.60。",
+      "lift": "换痛点解决预估 ROAS +27%"
+    },
+    {
+      "level": "high",
+      "metric": "手法 × 渠道",
+      "tag": "最优组合",
+      "title": "「痛点解决 × @Fanshi」是全矩阵最优",
+      "body": "「痛点解决」在腰部生活达人 @Fanshi 渠道 ROAS 高达 5.40，是矩阵中的最高格。"
+    },
+    {
+      "level": "medium",
+      "metric": "渠道适配",
+      "tag": "注意",
+      "title": "「好奇钩子」在 Instagram Reels CTR 最高但转化弱",
+      "body": "「好奇钩子」在 Instagram Reels 上 CTR 达 4.5%（全矩阵最高），但 CVR 仅 2.2%、ROAS 4.10。它适合做拉新曝光，目标为转化时不建议作为主力手法。"
+    },
+    {
+      "level": "medium",
+      "metric": "可调杠杆",
+      "tag": "保持",
+      "title": "同一商品 × 人群下，推销手法是最高杠杆",
+      "body": "商品（可消耗商品）与人群（青年）固定时，仅更换推销手法即可带来 20%+ 的 ROAS 差异。相比换渠道或调预算，调整推销手法是当前性价比最高的可控因子。"
+    }
+  ],
+  "strategyRecommendation": {
+    "currentStrategy": "scenario-demo",
+    "suggestedStrategy": "pain-solution",
+    "suggestedTemplateName": "快消种草·青年",
+    "lift": "+27%",
+    "reasons": [
+      "当前渠道 @Xuanyi：痛点解决平均 ROAS 4.60，高于场景演示 3.62。",
+      "痛点开场强化 3 秒留存，缓解当前完播率偏低的问题。",
+      "可消耗商品 + 青年人群下，痛点解决是矩阵中 ROAS 最高的推销手法。"
+    ],
+    "rankForCurrentChannel": [
+      {
+        "strategy": "pain-solution",
+        "roas": 4.6,
+        "isBest": true
+      },
+      {
+        "strategy": "review-comparison",
+        "roas": 3.9
+      },
+      {
+        "strategy": "scenario-demo",
+        "roas": 3.62,
+        "isCurrent": true
+      },
+      {
+        "strategy": "emotional-story",
+        "roas": 3.1
+      },
+      {
+        "strategy": "curiosity-hook",
+        "roas": 3
+      }
+    ]
+  },
+  "assistantPresets": [
+    {
+      "question": "这条视频该换什么推销手法？",
+      "answer": "这条视频当前用的是「场景演示」。同样是「可消耗商品 + 青年」，「痛点解决」在当前渠道平均 ROAS 更高。",
+      "chips": [
+        "哪种推销手法 ROAS 最高？",
+        "看推销手法×渠道矩阵"
+      ]
+    },
+    {
+      "question": "哪种推销手法 ROAS 最高？",
+      "answer": "最高单格是「痛点解决 × @Fanshi = 5.40」。",
+      "chips": [
+        "痛点解决在哪个渠道最好？",
+        "这条视频该换什么推销手法？"
+      ]
+    },
+    {
+      "question": "痛点解决在哪个渠道最好？",
+      "answer": "「痛点解决」跨渠道 ROAS：@Fanshi 5.40（最佳）、@Xuanyi 4.60、@Zihan 3.80、@Master 3.00、自然流量 2.60。建议优先在 @Fanshi 这类腰部生活方式达人渠道分发。",
+      "chips": [
+        "看推销手法×渠道矩阵",
+        "这条视频该换什么推销手法？"
+      ]
+    },
+    {
+      "question": "好奇钩子适合用在哪？",
+      "answer": "「好奇钩子」高点击、弱转化：Instagram Reels CTR 4.5%（全矩阵最高），但 CVR 仅 2.2%。适合拉新/曝光目标；目标是转化时，建议改用痛点解决或测评对比。",
+      "chips": [
+        "哪种推销手法 ROAS 最高？",
+        "看推销手法×渠道矩阵"
+      ]
+    }
+  ]
+}

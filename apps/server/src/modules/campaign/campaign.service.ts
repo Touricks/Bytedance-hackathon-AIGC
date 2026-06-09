@@ -13,31 +13,29 @@ export interface CampaignMetrics {
   clicks: number;
   conversions: number;
   spendCents: number;
+  gmvCents: number;
   ctr: number | null;
-  capturedAt: string;
-  source: string;
-  metadata: unknown;
+  cvr: number | null;
+  roas: number | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+function ratio(numerator: number, denominator: number): number | null {
+  return denominator > 0 ? numerator / denominator : null;
 }
 
 export interface CampaignPublication {
   id: string;
   workspaceId: string;
-  finalVideoJobId: string | null;
+  jobId: string | null;
   platform: string;
-  channelName: string;
-  kolName: string | null;
+  accountName: string;
   publishUrl: string | null;
-  status: "planned" | "published" | "failed" | "archived";
-  notes: string | null;
-  creativeTags: unknown;
+  publishedAt: string;
   latestMetrics: CampaignMetrics | null;
   createdAt: string;
   updatedAt: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function iso(value: Date | string) {
@@ -47,18 +45,22 @@ function iso(value: Date | string) {
 function toMetrics(row: Record<string, unknown>): CampaignMetrics {
   const impressions = Number(row.impressions);
   const clicks = Number(row.clicks);
+  const conversions = Number(row.conversions);
+  const spendCents = Number(row.spend_cents);
+  const gmvCents = Number(row.gmv_cents);
   return {
     id: String(row.id),
     publicationId: String(row.publication_id),
     impressions,
     clicks,
-    conversions: Number(row.conversions),
-    spendCents: Number(row.spend_cents),
-    ctr: impressions > 0 ? clicks / impressions : null,
-    capturedAt: iso(row.captured_at as Date | string),
-    source: String(row.source),
-    metadata: row.metadata,
+    conversions,
+    spendCents,
+    gmvCents,
+    ctr: ratio(clicks, impressions),
+    cvr: ratio(conversions, clicks),
+    roas: ratio(gmvCents, spendCents),
     createdAt: iso(row.created_at as Date | string),
+    updatedAt: iso(row.updated_at as Date | string),
   };
 }
 
@@ -66,14 +68,11 @@ function toPublication(row: Record<string, unknown>): CampaignPublication {
   return {
     id: String(row.id),
     workspaceId: String(row.workspace_id),
-    finalVideoJobId: (row.final_video_job_id as string | null) ?? null,
+    jobId: (row.job_id as string | null) ?? null,
     platform: String(row.platform),
-    channelName: String(row.channel_name),
-    kolName: (row.kol_name as string | null) ?? null,
+    accountName: String(row.account_name),
     publishUrl: (row.publish_url as string | null) ?? null,
-    status: row.status as CampaignPublication["status"],
-    notes: (row.notes as string | null) ?? null,
-    creativeTags: row.creative_tags ?? {},
+    publishedAt: iso(row.published_at as Date | string),
     latestMetrics: row.metrics_id
       ? toMetrics({
           id: row.metrics_id,
@@ -82,10 +81,9 @@ function toPublication(row: Record<string, unknown>): CampaignPublication {
           clicks: row.metrics_clicks,
           conversions: row.metrics_conversions,
           spend_cents: row.metrics_spend_cents,
-          captured_at: row.metrics_captured_at,
-          source: row.metrics_source,
-          metadata: row.metrics_metadata,
+          gmv_cents: row.metrics_gmv_cents,
           created_at: row.metrics_created_at,
+          updated_at: row.metrics_updated_at,
         })
       : null,
     createdAt: iso(row.created_at as Date | string),
@@ -93,28 +91,17 @@ function toPublication(row: Record<string, unknown>): CampaignPublication {
   };
 }
 
-async function ensureFinalVideoInWorkspace(
-  workspaceId: string,
-  finalVideoJobId?: string,
-) {
-  if (!finalVideoJobId) return null;
-  const job = await db.db2.getFinalVideoJob(finalVideoJobId);
+async function ensureFinalVideoInWorkspace(workspaceId: string, jobId?: string) {
+  if (!jobId) return null;
+  const job = await db.db2.getFinalVideoJob(jobId);
   if (job.workspaceId !== workspaceId) {
     throw new HttpError(
       400,
       "FINAL_VIDEO_WORKSPACE_MISMATCH",
-      "finalVideoJobId does not belong to workspace",
+      "jobId does not belong to workspace",
     );
   }
   return job;
-}
-
-function creativeTagsFromFinalVideoJob(
-  job: Awaited<ReturnType<typeof ensureFinalVideoInWorkspace>>,
-) {
-  if (!job || !isRecord(job.compiledManifest)) return {};
-  const tags = job.compiledManifest.creativeTags;
-  return isRecord(tags) ? tags : {};
 }
 
 const publicationSelect = `
@@ -124,16 +111,15 @@ const publicationSelect = `
     m.clicks as metrics_clicks,
     m.conversions as metrics_conversions,
     m.spend_cents as metrics_spend_cents,
-    m.captured_at as metrics_captured_at,
-    m.source as metrics_source,
-    m.metadata as metrics_metadata,
-    m.created_at as metrics_created_at
-  from campaign_publications p
+    m.gmv_cents as metrics_gmv_cents,
+    m.created_at as metrics_created_at,
+    m.updated_at as metrics_updated_at
+  from external_kol_publications p
   left join lateral (
     select *
-    from campaign_publication_metrics
+    from external_kol_metrics
     where publication_id = p.id
-    order by captured_at desc, created_at desc
+    order by created_at desc
     limit 1
   ) m on true
 `;
@@ -144,28 +130,22 @@ export const campaignService = {
     input: CreateCampaignPublicationRequest,
   ) {
     await db.getWorkspace(workspaceId);
-    const finalVideoJob = await ensureFinalVideoInWorkspace(
-      workspaceId,
-      input.finalVideoJobId,
-    );
+    await ensureFinalVideoInWorkspace(workspaceId, input.jobId);
     const pool = db.db2.pool();
     const id = nanoid();
     await pool.query(
-      `insert into campaign_publications
-        (id, workspace_id, final_video_job_id, platform, channel_name, kol_name,
-         publish_url, status, notes, creative_tags)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `insert into external_kol_publications
+        (id, workspace_id, job_id, platform, account_name, publish_url,
+         published_at)
+       values ($1,$2,$3,$4,$5,$6,coalesce($7::timestamptz, now()))`,
       [
         id,
         workspaceId,
-        input.finalVideoJobId ?? null,
+        input.jobId ?? null,
         input.platform,
-        input.channelName,
-        input.kolName ?? null,
+        input.accountName,
         input.publishUrl ?? null,
-        input.status,
-        input.notes ?? null,
-        JSON.stringify(creativeTagsFromFinalVideoJob(finalVideoJob)),
+        input.publishedAt ?? null,
       ],
     );
     return { data: await this.getPublicationData(workspaceId, id) };
@@ -194,10 +174,10 @@ export const campaignService = {
   ) {
     await this.getPublicationData(workspaceId, publicationId);
     const result = await db.db2.pool().query(
-      `insert into campaign_publication_metrics
+      `insert into external_kol_metrics
         (id, publication_id, impressions, clicks, conversions, spend_cents,
-         captured_at, source, metadata)
-       values ($1,$2,$3,$4,$5,$6,coalesce($7::timestamptz, now()),$8,$9)
+         gmv_cents)
+       values ($1,$2,$3,$4,$5,$6,$7)
        returning *`,
       [
         nanoid(),
@@ -206,9 +186,7 @@ export const campaignService = {
         input.clicks,
         input.conversions,
         input.spendCents,
-        input.capturedAt ?? null,
-        input.source,
-        JSON.stringify(input.metadata),
+        input.gmvCents,
       ],
     );
     return { data: toMetrics(result.rows[0]) };

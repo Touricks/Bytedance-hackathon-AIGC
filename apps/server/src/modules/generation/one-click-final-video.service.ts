@@ -1,21 +1,23 @@
 import { nanoid } from "nanoid";
 import type { MaterialIntakeArtifact } from "@aigc-video/shared";
-import { GENERATION_V2_QUEUE_NAME } from "@aigc-video/shared";
+import { GENERATION_QUEUE_NAME } from "@aigc-video/shared";
 import { HttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
-import { enqueueGenerationV2 } from "../job/job.queue.js";
+import { enqueueGeneration } from "../job/job.queue.js";
 import { shotWorkflowService } from "../shot/shot.service.js";
-import { materialIntakeV2Service } from "../workspace/material-intake-v2.service.js";
-import { productBriefV2Service } from "../workspace/product-brief-v2.service.js";
+import { materialIntakeService } from "../workspace/material-intake.service.js";
+import { productBriefService } from "../workspace/product-brief.service.js";
 import { shotSetService } from "../workspace/shot-set.service.js";
-import { shotPromptV2Service } from "../workspace/shotprompt-v2.service.js";
-import { storyboardV2Service } from "../workspace/storyboard-v2.service.js";
+import { shotPromptService } from "../workspace/shotprompt.service.js";
+import { storyboardService } from "../workspace/storyboard.service.js";
 import { traceService } from "../trace/trace.service.js";
 import { generationService } from "./generation.service.js";
 
 type OneClickStatus = "PENDING" | "RUNNING" | "WAITING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 type AspectRatio = "9:16" | "16:9" | "1:1";
+
+const ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT = 1;
 
 type StageState = {
   image?: {
@@ -208,7 +210,7 @@ async function enqueueAdvance(input: {
   traceId: string;
   delayMs?: number;
 }) {
-  const queueJobId = await enqueueGenerationV2(
+  const queueJobId = await enqueueGeneration(
     {
       kind: "advance_one_click_final_video",
       jobId: input.generationJobId,
@@ -311,7 +313,7 @@ export const oneClickFinalVideoService = {
       );
     }
 
-    const material = await materialIntakeV2Service.approve({
+    const material = await materialIntakeService.approve({
       workspaceId: input.workspaceId,
       data: input.materialIntake.data,
     });
@@ -343,7 +345,7 @@ export const oneClickFinalVideoService = {
       shotId: null,
       jobType: "advance_one_click_final_video",
       status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
+      queueName: GENERATION_QUEUE_NAME,
       queueJobId: null,
       relatedBatchType: "one_click_final_video_job",
       relatedBatchId: job.id,
@@ -404,8 +406,8 @@ export const oneClickFinalVideoService = {
       for (let guard = 0; guard < 20; guard += 1) {
         const state = job.stageState;
         if (job.currentStage === "product_brief") {
-          const proposed = await productBriefV2Service.propose({ workspaceId: job.workspaceId });
-          const approved = await productBriefV2Service.approve({
+          const proposed = await productBriefService.propose({ workspaceId: job.workspaceId });
+          const approved = await productBriefService.approve({
             workspaceId: job.workspaceId,
             artifactId: proposed.id,
           });
@@ -421,8 +423,8 @@ export const oneClickFinalVideoService = {
         }
 
         if (job.currentStage === "storyboard") {
-          const proposed = await storyboardV2Service.propose({ workspaceId: job.workspaceId });
-          const approved = await storyboardV2Service.approve({
+          const proposed = await storyboardService.propose({ workspaceId: job.workspaceId });
+          const approved = await storyboardService.approve({
             workspaceId: job.workspaceId,
             artifactId: proposed.id,
           });
@@ -438,11 +440,11 @@ export const oneClickFinalVideoService = {
         }
 
         if (job.currentStage === "shotprompt") {
-          const proposed = await shotPromptV2Service.propose({
+          const proposed = await shotPromptService.propose({
             workspaceId: job.workspaceId,
             aspectRatio: job.outputAspectRatio,
           });
-          const approved = await shotPromptV2Service.approve({
+          const approved = await shotPromptService.approve({
             workspaceId: job.workspaceId,
             artifactId: proposed.id,
           });
@@ -506,6 +508,7 @@ export const oneClickFinalVideoService = {
             const proposed = await shotWorkflowService.proposeImagePrompt({
               workspaceId: job.workspaceId,
               shotId: shot.id,
+              candidateCount: ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT,
             });
             batchId = proposed.batch.id;
             imageState.batchIdsByShotId = {
@@ -590,6 +593,7 @@ export const oneClickFinalVideoService = {
               const proposed = await shotWorkflowService.proposeVideoScript({
                 workspaceId: job.workspaceId,
                 shotId: shot.id,
+                candidateCount: ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT,
               });
               videoState.batchIdsByShotId = {
                 ...videoState.batchIdsByShotId,
@@ -756,5 +760,6 @@ export const oneClickFinalVideoService = {
 export const oneClickFinalVideoTestHooks = {
   firstSucceededImageCandidate,
   firstSucceededVideoCandidate,
+  oneClickAutoSelectionCandidateCount: ONE_CLICK_AUTO_SELECTION_CANDIDATE_COUNT,
   shouldKeepWaitingForBatch,
 };

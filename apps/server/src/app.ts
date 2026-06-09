@@ -19,6 +19,9 @@ import { getWorkspaceStorageAdapter } from "./modules/workspace/storage/workspac
 import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
 import { registerCampaignController } from "./modules/campaign/campaign.controller.js";
+import {
+  registerDashboardVideoArtifactController,
+} from "./modules/dashboard/dashboard-video-artifact.controller.js";
 import { registerTraceController } from "./modules/trace/trace.routes.js";
 import { registerReferenceVideoController } from "./modules/reference-video/reference-video.controller.js";
 import { registerSetupTemplateController } from "./modules/setup-template/setup-template.controller.js";
@@ -198,6 +201,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerShotController(app);
   await registerGenerationController(app);
   await registerCampaignController(app);
+  await registerDashboardVideoArtifactController(app);
   await registerTraceController(app);
   await registerReferenceVideoController(app);
   await registerSetupTemplateController(app);

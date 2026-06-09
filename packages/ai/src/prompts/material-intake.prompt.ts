@@ -2,7 +2,7 @@ import type { MaterialIntakeArtifact } from "@aigc-video/shared";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake.v1";
+export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake";
 
 export interface BuildMaterialIntakePromptInput {
   initialPrompt?: string;

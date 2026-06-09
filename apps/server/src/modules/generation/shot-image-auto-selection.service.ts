@@ -1,9 +1,9 @@
 import { nanoid } from "nanoid";
-import { GENERATION_V2_QUEUE_NAME } from "@aigc-video/shared";
+import { GENERATION_QUEUE_NAME } from "@aigc-video/shared";
 import { HttpError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
-import { enqueueGenerationV2 } from "../job/job.queue.js";
+import { enqueueGeneration } from "../job/job.queue.js";
 import { shotWorkflowService } from "../shot/shot.service.js";
 import { shotSetService } from "../workspace/shot-set.service.js";
 import { traceService } from "../trace/trace.service.js";
@@ -177,7 +177,7 @@ async function enqueueAdvance(input: {
   traceId: string;
   delayMs?: number;
 }) {
-  const queueJobId = await enqueueGenerationV2(
+  const queueJobId = await enqueueGeneration(
     {
       kind: "advance_shot_image_auto_selection",
       jobId: input.generationJobId,
@@ -313,7 +313,7 @@ export const shotImageAutoSelectionService = {
       shotId: null,
       jobType: "advance_shot_image_auto_selection",
       status: "PENDING",
-      queueName: GENERATION_V2_QUEUE_NAME,
+      queueName: GENERATION_QUEUE_NAME,
       queueJobId: null,
       relatedBatchType: "shot_image_auto_selection_job",
       relatedBatchId: job.id,

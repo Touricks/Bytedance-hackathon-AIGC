@@ -10,9 +10,9 @@ import {
 import type { PoolClient } from "pg";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
-import { compareSourceFingerprint } from "./upstream-drift-v2.service.js";
+import { compareSourceFingerprint } from "./upstream-drift.service.js";
 
-interface ShotPromptShotV2 {
+interface ShotPromptShot {
   index?: number;
   startSec?: number;
   endSec?: number;
@@ -23,8 +23,8 @@ interface ShotPromptShotV2 {
   shotVideo?: unknown;
 }
 
-interface ShotPromptDataV2 {
-  shots?: ShotPromptShotV2[];
+interface ShotPromptData {
+  shots?: ShotPromptShot[];
 }
 
 function toIsoString(value: unknown): string {
@@ -123,7 +123,7 @@ async function getCurrentApprovedShotPrompt(
   return {
     id: String(row.id),
     workspaceId: String(row.workspace_id),
-    data: row.data as ShotPromptDataV2,
+    data: row.data as ShotPromptData,
     sourceFingerprint:
       row.source_fingerprint && typeof row.source_fingerprint === "object"
         ? row.source_fingerprint
@@ -165,7 +165,7 @@ async function getCurrentApprovedStoryboard(workspaceId: string) {
   return storyboardArtifactSchema.parse(row.data);
 }
 
-function assertShotPromptShots(data: ShotPromptDataV2): ShotPromptShotV2[] {
+function assertShotPromptShots(data: ShotPromptData): ShotPromptShot[] {
   if (!Array.isArray(data.shots) || data.shots.length === 0) {
     throw new HttpError(400, "INVALID_SHOTPROMPT", "Shotprompt must contain shots");
   }

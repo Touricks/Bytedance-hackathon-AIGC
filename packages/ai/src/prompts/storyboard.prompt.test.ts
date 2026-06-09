@@ -54,6 +54,7 @@ describe("buildStoryboardPrompt", () => {
     assert.match(prompt, /productAssetRef.*非空 ref/);
     assert.match(prompt, /已确认素材清单/);
     assert.match(prompt, /display_1\.png/);
+    assert.doesNotMatch(prompt, /固定 6 个 shots|固定 6 个镜头|12 秒|durationSec \* 8/);
     assert.doesNotMatch(prompt, /\bRole:/);
     assert.doesNotMatch(prompt, /approved material manifest/i);
   });

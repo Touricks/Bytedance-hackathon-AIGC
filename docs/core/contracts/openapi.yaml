@@ -1,0 +1,978 @@
+openapi: 3.1.0
+info:
+  title: AIGC Commerce Video API
+  version: 3.0.0
+  description: >
+    Current V3 frontend/backend contract for the merchant-facing AIGC commerce
+    video generation workspace. Workspace modules use propose -> approve.
+    Downstream reads approved/current artifacts only. Upstream changes are
+    warnings, not automatic deletion or invalidation.
+servers:
+  - url: http://localhost:3000
+    description: Local Fastify API
+tags:
+  - name: Platform
+  - name: Workspace
+  - name: ModuleArtifacts
+  - name: ShotSet
+  - name: Shot
+  - name: Generation
+  - name: Dashboard
+  - name: Campaign
+  - name: Trace
+
+components:
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema: { type: string }
+    ShotId:
+      name: shotId
+      in: path
+      required: true
+      schema: { type: string }
+    FinalVideoJobId:
+      name: finalVideoJobId
+      in: path
+      required: true
+      schema: { type: string }
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string }
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema: { type: string }
+    PublicationId:
+      name: publicationId
+      in: path
+      required: true
+      schema: { type: string }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string }
+    Wildcard:
+      name: wildcard
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1 }
+
+  responses:
+    Ok:
+      description: Successful response.
+      content:
+        application/json:
+          schema: {}
+    Error:
+      description: Business error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    File:
+      description: Binary file stream.
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+        video/mp4:
+          schema:
+            type: string
+            format: binary
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: {}
+    AspectRatio:
+      type: string
+      enum: ["9:16", "16:9", "1:1"]
+      default: "9:16"
+    ArtifactStatus:
+      type: string
+      enum: [proposed, approved, archived, failed]
+    UpstreamDrift:
+      type: object
+      required: [upstreamChanged, changedSources]
+      properties:
+        upstreamChanged: { type: boolean }
+        changedSources:
+          type: array
+          items: { type: string }
+    CreativeFactors:
+      type: object
+      required: [productCategory, dealType, audience, strategy]
+      properties:
+        productCategory:
+          type: string
+          enum:
+            - beauty-personal-care
+            - fashion-accessories
+            - food-beverage
+            - home-living
+            - consumer-electronics
+            - mom-baby-pet
+            - sports-outdoors
+            - jewelry-collectibles
+            - books-education
+            - automotive
+        dealType:
+          type: string
+          enum:
+            - search-standard
+            - seeding-nonstandard
+            - impulse-hit
+            - repeat-consumable
+            - premium-brand
+        audience:
+          type: string
+          enum: [general, toddler, child, youth, senior]
+        strategy:
+          type: string
+          enum:
+            - pain-solution
+            - scenario-demo
+            - review-comparison
+            - tutorial-value
+            - authority-proof
+            - emotional-story
+            - curiosity-hook
+            - visual-story
+    PromptRequirementsData:
+      type: object
+      additionalProperties: true
+      properties:
+        image: { type: object, additionalProperties: true }
+        script: { type: object, additionalProperties: true }
+        storyboard: { type: object, additionalProperties: true }
+        shotImage: { type: object, additionalProperties: true }
+        shotVideo: { type: object, additionalProperties: true }
+        creativeFactors:
+          $ref: "#/components/schemas/CreativeFactors"
+        factorGuidance: { type: object, additionalProperties: true }
+        compiledRequirementSourceMap: { type: object, additionalProperties: true }
+        factorPromptVersion: { type: string }
+        factorComboKey: { type: string }
+        compiledRequirementsHash: { type: string }
+        attributionEligible: { type: boolean }
+    ReferenceVideoImportResult:
+      type: object
+      required: [source, analysis, creativeFactorsRecommendation, artifact]
+      properties:
+        source:
+          oneOf:
+            - type: object
+              required: [type, url, downloaded, contentType, sizeBytes]
+              properties:
+                type: { const: url }
+                url: { type: string }
+                downloaded: { type: boolean }
+                contentType: { type: string }
+                sizeBytes: { type: integer }
+            - type: object
+              required: [type, filename, contentType, sizeBytes]
+              properties:
+                type: { const: file }
+                filename: { type: string }
+                contentType: { type: string }
+                sizeBytes: { type: integer }
+        analysis:
+          type: object
+          required: [summary, confidence]
+          properties:
+            summary: { type: string }
+            confidence: { type: string, enum: [low, medium, high] }
+            detectedBeats:
+              type: array
+              items: { type: string }
+            risks:
+              type: array
+              items: { type: string }
+        creativeFactorsRecommendation:
+          type: object
+          required: [recommendedFactors, confidence]
+          properties:
+            recommendedFactors:
+              $ref: "#/components/schemas/CreativeFactors"
+            confidence: { type: string, enum: [low, medium, high] }
+            reasons:
+              type: array
+              items: { type: string }
+        artifact:
+          $ref: "#/components/schemas/ModuleArtifact"
+    ModuleArtifact:
+      type: object
+      required: [id, workspaceId, moduleId, status, isCurrent, data, createdAt]
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        moduleId:
+          type: string
+          enum: [prompt-requirements, material-intake, product-brief, storyboard, shotprompt]
+        status:
+          $ref: "#/components/schemas/ArtifactStatus"
+        isCurrent: { type: boolean }
+        data: {}
+        sourceFingerprint: { type: object, additionalProperties: true }
+        promptAssembly: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        approvedAt:
+          anyOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+    ModuleState:
+      type: object
+      required: [moduleId, proposed, current]
+      properties:
+        moduleId: { type: string }
+        proposed:
+          anyOf:
+            - $ref: "#/components/schemas/ModuleArtifact"
+            - type: "null"
+        current:
+          anyOf:
+            - $ref: "#/components/schemas/ModuleArtifact"
+            - type: "null"
+        upstream:
+          $ref: "#/components/schemas/UpstreamDrift"
+    ModuleStateEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ModuleState"
+    DataEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: {}
+    FinalVideoCreateRequest:
+      type: object
+      properties:
+        outputAspectRatio:
+          $ref: "#/components/schemas/AspectRatio"
+    CandidateCountRequest:
+      type: object
+      properties:
+        candidateCount:
+          type: integer
+          minimum: 1
+
+paths:
+  /api/health:
+    get:
+      tags: [Platform]
+      responses:
+        "200":
+          description: Reference video import result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ReferenceVideoImportResult"
+  /api/config/limits:
+    get:
+      tags: [Platform]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/pipeline/contracts:
+    get:
+      tags: [Platform]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/setup-templates/creative-requirements:
+    get:
+      tags: [Platform]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/test-runs/{runId}:
+    delete:
+      tags: [Platform]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/materials:
+    post:
+      tags: [Workspace]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageUrl]
+              properties:
+                imageUrl: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/materials/product-image:
+    post:
+      tags: [Workspace]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, contentType, dataBase64]
+              properties:
+                filename: { type: string }
+                contentType: { type: string }
+                dataBase64: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces:
+    get:
+      tags: [Workspace]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [Workspace]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/directory/select:
+    post:
+      tags: [Workspace]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/init:
+    post:
+      tags: [Workspace]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [directory]
+              properties:
+                directory: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}:
+    delete:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/directory:
+    get:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/storage:
+    get:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/storage/bind:
+    post:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [kind, localPath]
+                  properties:
+                    kind: { const: local }
+                    localPath: { type: string }
+                - type: object
+                  required: [kind, bucket, prefix]
+                  properties:
+                    kind: { const: s3 }
+                    bucket: { type: string }
+                    prefix: { type: string }
+                    region: { type: string }
+                    endpoint: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/status:
+    get:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/materials:
+    post:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, dataBase64]
+              properties:
+                filename: { type: string }
+                dataBase64: { type: string }
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/materials/{wildcard}:
+    get:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Wildcard"
+      responses:
+        "200": { $ref: "#/components/responses/File" }
+    delete:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Wildcard"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/videos/{wildcard}:
+    get:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Wildcard"
+      responses:
+        "200": { $ref: "#/components/responses/File" }
+
+  /api/workspaces/{workspaceId}/prompt-requirements:
+    get:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/prompt-requirements/propose:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/PromptRequirementsData"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/prompt-requirements/approve:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                artifactId: { type: string }
+                data: {}
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/material-intake:
+    get:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/material-intake/propose:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/material-intake/approve:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/product-brief:
+    get:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/product-brief/propose:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/product-brief/approve:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/storyboard:
+    get:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/storyboard/propose:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/storyboard/voiceover/propose:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/storyboard/approve:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shotprompt:
+    get:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shotprompt/propose:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aspectRatio:
+                  $ref: "#/components/schemas/AspectRatio"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shotprompt/approve:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/reference-video/import:
+    post:
+      tags: [ModuleArtifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source:
+                  type: object
+                  required: [type, url]
+                  properties:
+                    type: { const: url }
+                    url: { type: string }
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/shot-sets:
+    get:
+      tags: [ShotSet]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [ShotSet]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shotPromptArtifactId: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots:
+    get:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shot-workflow-status:
+    get:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shots/{shotId}:
+    get:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/ShotId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shots/{shotId}/asset-refs:
+    get:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/ShotId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    patch:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/ShotId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refs]
+              properties:
+                refs:
+                  type: array
+                  items:
+                    type: object
+                    required: [assetId, role]
+                    properties:
+                      assetId: { type: string }
+                      role:
+                        type: string
+                        enum: [product_identity, reference_style, reference_scene, first_frame_hint, other]
+                      weight: { type: number }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/propose:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateCountRequest"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-prompts/regenerate:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shots/{shotId}/image-prompts:
+    get:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/ShotId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-rounds:
+    get:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-candidates/select:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-scripts/propose:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-scripts/regenerate:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shots/{shotId}/video-scripts:
+    get:
+      tags: [Shot]
+      parameters: [{ $ref: "#/components/parameters/ShotId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-rounds:
+    get:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-candidates/select:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shots/{shotId}/retry:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/ShotId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [what]
+              properties:
+                what:
+                  type: string
+                  enum: [image_batch, video_batch]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/shot-image-auto-selections:
+    get:
+      tags: [Generation]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [Generation]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateCountRequest"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shot-image-auto-selections/{jobId}:
+    get:
+      tags: [Generation]
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/one-click-final-videos:
+    get:
+      tags: [Generation]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [Generation]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [materialIntake]
+              properties:
+                materialIntake:
+                  type: object
+                  required: [data]
+                  properties:
+                    data: {}
+                outputAspectRatio:
+                  $ref: "#/components/schemas/AspectRatio"
+                autoSelectionStrategy:
+                  const: first_success
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/one-click-final-videos/{jobId}:
+    get:
+      tags: [Generation]
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/final-videos:
+    get:
+      tags: [Generation]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [Generation]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalVideoCreateRequest"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/final-videos/{finalVideoJobId}:
+    get:
+      tags: [Generation]
+      parameters: [{ $ref: "#/components/parameters/FinalVideoJobId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/final-videos/{finalVideoJobId}/file:
+    get:
+      tags: [Generation]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/FinalVideoJobId"
+      responses:
+        "200": { $ref: "#/components/responses/File" }
+
+  /api/dashboard/videos:
+    get:
+      tags: [Dashboard]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/dashboard/videos/{artifactId}/file:
+    get:
+      tags: [Dashboard]
+      description: Streams the dashboard MP4 through the API proxy. The backing object may be LOCAL or S3-compatible storage.
+      parameters: [{ $ref: "#/components/parameters/ArtifactId" }]
+      responses:
+        "200": { $ref: "#/components/responses/File" }
+  /api/workspaces/{workspaceId}/dashboard/videos:
+    get:
+      tags: [Dashboard]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [Dashboard]
+      description: Imports a completed final video into the dashboard. Repeating the same finalVideoJobId returns the existing dashboard artifact; S3-backed workspaces store copies under dashboard/{finalVideoJobId}/.
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [finalVideoJobId, name]
+              properties:
+                finalVideoJobId: { type: string }
+                name: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/dashboard/videos/{artifactId}:
+    get:
+      tags: [Dashboard]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ArtifactId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/campaign-publications:
+    get:
+      tags: [Campaign]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    post:
+      tags: [Campaign]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/campaign-publications/{publicationId}:
+    get:
+      tags: [Campaign]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/campaign-publications/{publicationId}/metrics:
+    post:
+      tags: [Campaign]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PublicationId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{workspaceId}/traces:
+    get:
+      tags: [Trace]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/shots/{shotId}/traces:
+    get:
+      tags: [Trace]
+      parameters: [{ $ref: "#/components/parameters/ShotId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/scripts/{jobId}:
+    get:
+      tags: [Platform]
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }

@@ -99,7 +99,7 @@ describe("buildShotPromptPrompt", () => {
     assert.ok(aspectRatioIndex > inputIndex);
     assert.match(prompt, /- 图像风格：高端商业产品摄影/);
     assert.match(prompt, /- 图像构图：主体稳定居中/);
-    assert.match(prompt, /- 图像避免项：文字贴片，商品变形/);
+    assert.match(prompt, /- 图像避免项：文字贴片；商品变形/);
     assert.match(prompt, /- 剧本语气：克制、专业/);
     assert.match(prompt, /- 分镜节奏：慢速展示细节/);
     assert.match(prompt, /- 分镜图全局要求：统一高端光线/);

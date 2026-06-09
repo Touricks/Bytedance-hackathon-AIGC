@@ -4,6 +4,7 @@ import { ApplyShotSetPanel } from "./ApplyShotSetPanel.js";
 import { FinalPanel } from "./FinalPanel.js";
 import { ImageSelectionPanel } from "./ImageSelectionPanel.js";
 import { MaterialIntakeReview } from "./MaterialIntakeReview.js";
+import { OneClickFinalVideoProgressPanel } from "./OneClickFinalVideoProgressPanel.js";
 import { ProductBriefReview } from "./ProductBriefReview.js";
 import { RequirementsStart } from "./RequirementsStart.js";
 import { ShotPromptReview } from "./ShotPromptReview.js";
@@ -25,6 +26,10 @@ export function MainPanel({
   onAutoSelectShot: (shotId: string) => void;
   onImageSelectionConfirmed: () => void;
 }) {
+  if (active !== "requirements" && vm.pending?.oneClickFinalVideo) {
+    return <OneClickFinalVideoProgressPanel vm={vm} />;
+  }
+
   switch (active) {
     case "requirements":
       return <RequirementsStart vm={vm} onActionComplete={onActionComplete} />;

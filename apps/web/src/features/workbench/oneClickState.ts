@@ -10,6 +10,17 @@ export function isActiveOneClickStatus(
   return ACTIVE_ONE_CLICK_STATUSES.has(status);
 }
 
+export function oneClickPollingInterval(input: {
+  statusActiveJob: OneClickFinalVideoJob | null | undefined;
+  jobs: OneClickFinalVideoJob[];
+}) {
+  return (input.statusActiveJob &&
+    isActiveOneClickStatus(input.statusActiveJob.status)) ||
+    input.jobs.some((job) => isActiveOneClickStatus(job.status))
+    ? 5_000
+    : 15_000;
+}
+
 export function resolveOneClickFinalVideoState(input: {
   statusActiveJob: OneClickFinalVideoJob | null | undefined;
   jobs: OneClickFinalVideoJob[];
