@@ -21,6 +21,12 @@ export type StrategyMetric = "roas" | "cvr" | "ctr";
 
 export type DashboardView = "diagnosis" | "videos";
 
+/** Weighting posture for the live 投放策略推荐: 效率优先 (ROAS) vs 规模优先 (GMV). */
+export type WeightMode = "roas" | "gmv";
+
+/** Metric shown on the live 适用人群 × 推销手法 effect matrix. */
+export type ComboMatrixMetric = "roas" | "gmv" | "score";
+
 export interface FactorOption {
   label: string;
   description: string;

@@ -94,7 +94,7 @@ export function buildMaterialIntakePromptView(
           id: "output_contract",
           label: "输出契约",
           body:
-            "返回包含 primaryProductRef 和 tags 的严格 JSON。不要生成商品 brief、开场钩子、分镜或视频生成提示词。"
+            "返回包含 primaryProductRef 和 tags 的严格 JSON。product_main/product_detail 的 description 要尽量详细（颜色、材质、形状、尺寸感知、五金、背法、内部结构等可见细节）。不要生成商品 brief、开场钩子、分镜或视频生成提示词。"
         }
       ]
     },

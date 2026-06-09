@@ -46,6 +46,31 @@ describe("four-factor creative requirement compiler", () => {
     }
   });
 
+  it("accepts 不限定 (general) on every creative factor and compiles guidance", () => {
+    const generalFactors = creativeFactorsSchema.parse({
+      productCategory: "general",
+      dealType: "general",
+      audience: "general",
+      strategy: "general",
+    });
+    assert.deepEqual(generalFactors, {
+      productCategory: "general",
+      dealType: "general",
+      audience: "general",
+      strategy: "general",
+    });
+
+    const requirements = buildCreativeFactorRequirements(generalFactors);
+    assert.equal(requirements.factorComboKey, "general__general__general__general");
+    assert.ok(requirements.factorGuidance.productCategory.requiredVisualElements.length > 0);
+    assert.ok(requirements.factorGuidance.dealType.purchaseTask.length > 0);
+    assert.ok(requirements.factorGuidance.strategy.hookMechanism.length > 0);
+    assert.equal(DEFAULT_CREATIVE_FACTORS.productCategory, "general");
+    assert.equal(DEFAULT_CREATIVE_FACTORS.dealType, "general");
+    assert.equal(DEFAULT_CREATIVE_FACTORS.audience, "general");
+    assert.equal(DEFAULT_CREATIVE_FACTORS.strategy, "general");
+  });
+
   it("rejects old three-factor productType payloads", () => {
     assert.throws(
       () =>

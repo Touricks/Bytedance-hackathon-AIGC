@@ -131,6 +131,12 @@ export interface ReferenceVideoRequirementsImportResult {
         filename: string;
         contentType: string;
         sizeBytes: number;
+      }
+    | {
+        type: "files";
+        count: number;
+        filenames: string[];
+        totalBytes: number;
       };
   analysis: {
     summary: string;
@@ -656,7 +662,10 @@ export async function approveWorkspacePromptRequirements(input: {
 
 export async function importReferenceVideoRequirements(input: {
   workspaceId: string;
-  source: { type: "url"; url: string } | { type: "file"; file: File };
+  source:
+    | { type: "url"; url: string }
+    | { type: "file"; file: File }
+    | { type: "files"; files: File[] };
 }): Promise<ReferenceVideoRequirementsImportResult> {
   const endpoint = `/api/workspaces/${input.workspaceId}/reference-video/import`;
   if (input.source.type === "url") {
@@ -672,7 +681,13 @@ export async function importReferenceVideoRequirements(input: {
   }
 
   const body = new FormData();
-  body.set("file", input.source.file);
+  if (input.source.type === "files") {
+    for (const file of input.source.files) {
+      body.append("file", file);
+    }
+  } else {
+    body.set("file", input.source.file);
+  }
   const response = await fetch(`${apiBaseUrl}${endpoint}`, {
     method: "POST",
     body

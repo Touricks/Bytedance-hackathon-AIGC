@@ -12,6 +12,7 @@ import { registerMaterialController } from "./modules/material/material.controll
 import { registerPipelineController } from "./modules/pipeline/pipeline.controller.js";
 import { registerScriptController } from "./modules/script/script.controller.js";
 import { registerWorkspaceController } from "./modules/workspace/workspace.controller.js";
+import { maxReferenceFileCount } from "./modules/reference-video/reference-video.service.js";
 import {
   maxWorkspaceMaterialBytes,
 } from "./modules/workspace/workspace.service.js";
@@ -66,7 +67,9 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await app.register(multipart, {
     limits: {
       fileSize: maxWorkspaceMaterialBytes + 1,
-      files: 1
+      // Reference import accepts multiple image/text files; the reference-video
+      // service enforces the real per-import cap with a clean 400.
+      files: maxReferenceFileCount + 1
     }
   });
 

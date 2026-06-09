@@ -219,6 +219,50 @@
         { "key": "dy", "platform": "douyin", "accountName": "犒赏自己", "publishedAt": "2026-05-20T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 160000, "clicks": 3400, "conversions": 176, "spendCents": 600000, "gmvCents": 2280000 } },
         { "key": "xhs", "platform": "xiaohongshu", "accountName": "通勤仪式感", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 104000, "clicks": 2300, "conversions": 120, "spendCents": 400000, "gmvCents": 1560000 } }
       ]
+    },
+
+    {
+      "key": "sports-youth-review",
+      "name": "智能跳绳·测评对比",
+      "creativeFactors": {
+        "productCategory": "sports-outdoors",
+        "dealType": "search-standard",
+        "audience": "youth",
+        "strategy": "review-comparison"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "健身科普菌", "publishedAt": "2026-05-24T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 320000, "clicks": 7600, "conversions": 470, "spendCents": 900000, "gmvCents": 6300000 } },
+        { "key": "bili", "platform": "bilibili", "accountName": "器材实验室", "publishedAt": "2026-05-22T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 198000, "clicks": 4600, "conversions": 286, "spendCents": 600000, "gmvCents": 4020000 } },
+        { "key": "dy2", "platform": "douyin", "accountName": "横评一下", "publishedAt": "2026-05-26T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 156000, "clicks": 3700, "conversions": 232, "spendCents": 500000, "gmvCents": 3450000 } }
+      ]
+    },
+    {
+      "key": "sports-youth-tutorial",
+      "name": "智能跳绳·教程价值",
+      "creativeFactors": {
+        "productCategory": "sports-outdoors",
+        "dealType": "search-standard",
+        "audience": "youth",
+        "strategy": "tutorial-value"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "三分钟燃脂", "publishedAt": "2026-05-23T00:00:00.000Z", "days": 11, "finalTotals": { "impressions": 210000, "clicks": 4800, "conversions": 270, "spendCents": 650000, "gmvCents": 3380000 } },
+        { "key": "xhs", "platform": "xiaohongshu", "accountName": "居家训练", "publishedAt": "2026-05-25T00:00:00.000Z", "days": 9, "finalTotals": { "impressions": 132000, "clicks": 3000, "conversions": 170, "spendCents": 420000, "gmvCents": 2100000 } }
+      ]
+    },
+    {
+      "key": "sports-general-pain",
+      "name": "智能跳绳·痛点解决",
+      "creativeFactors": {
+        "productCategory": "sports-outdoors",
+        "dealType": "search-standard",
+        "audience": "general",
+        "strategy": "pain-solution"
+      },
+      "publications": [
+        { "key": "dy", "platform": "douyin", "accountName": "久坐自救", "publishedAt": "2026-05-21T00:00:00.000Z", "days": 12, "finalTotals": { "impressions": 168000, "clicks": 3500, "conversions": 188, "spendCents": 560000, "gmvCents": 2240000 } },
+        { "key": "ks", "platform": "kuaishou", "accountName": "减脂日记", "publishedAt": "2026-05-23T00:00:00.000Z", "days": 10, "finalTotals": { "impressions": 120000, "clicks": 2500, "conversions": 132, "spendCents": 400000, "gmvCents": 1520000 } }
+      ]
     }
   ]
 }

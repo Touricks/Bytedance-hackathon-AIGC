@@ -8,6 +8,7 @@ export const DASHBOARD_VIDEO_METADATA_SCHEMA_VERSION = "dashboard-video-metadata
 export const LEGACY_CREATIVE_TAGS_SCHEMA_VERSION = "creative-tags.v2";
 
 export const productCategorySchema = z.enum([
+  "general",
   "beauty-personal-care",
   "fashion-accessories",
   "food-beverage",
@@ -22,6 +23,7 @@ export const productCategorySchema = z.enum([
 export type ProductCategory = z.infer<typeof productCategorySchema>;
 
 export const dealTypeSchema = z.enum([
+  "general",
   "search-standard",
   "seeding-nonstandard",
   "impulse-hit",
@@ -40,6 +42,7 @@ export const audienceSchema = z.enum([
 export type Audience = z.infer<typeof audienceSchema>;
 
 export const strategySchema = z.enum([
+  "general",
   "pain-solution",
   "scenario-demo",
   "review-comparison",
@@ -62,6 +65,7 @@ export const creativeFactorsSchema = z
 export type CreativeFactors = z.infer<typeof creativeFactorsSchema>;
 
 export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
+  general: "不限定",
   "beauty-personal-care": "美妆个护",
   "fashion-accessories": "服饰鞋包",
   "food-beverage": "食品饮料",
@@ -75,6 +79,7 @@ export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
 };
 
 export const DEAL_TYPE_LABELS: Record<DealType, string> = {
+  general: "不限定",
   "search-standard": "搜索型标品",
   "seeding-nonstandard": "种草型非标品",
   "impulse-hit": "冲动消费型爆款",
@@ -91,6 +96,7 @@ export const AUDIENCE_LABELS: Record<Audience, string> = {
 };
 
 export const STRATEGY_LABELS: Record<Strategy, string> = {
+  general: "不限定",
   "pain-solution": "痛点解决",
   "scenario-demo": "场景演示",
   "review-comparison": "测评对比",
@@ -333,10 +339,10 @@ export const dashboardVideoMetadataSchema = z
 export type DashboardVideoMetadata = z.infer<typeof dashboardVideoMetadataSchema>;
 
 export const DEFAULT_CREATIVE_FACTORS = {
-  productCategory: "consumer-electronics",
-  dealType: "search-standard",
-  audience: "youth",
-  strategy: "review-comparison",
+  productCategory: "general",
+  dealType: "general",
+  audience: "general",
+  strategy: "general",
 } as const satisfies CreativeFactors;
 
 function list(value: string) {
@@ -344,6 +350,14 @@ function list(value: string) {
 }
 
 export const PRODUCT_CATEGORY_GUIDANCE = {
+  general: {
+    requiredVisualElements: list("产品主体清晰展示；核心外观或包装；手持、使用或佩戴动作；关键功能或细节特写；尺寸或比例参照；自然光或干净背景"),
+    proofObligation: list("展示产品真实使用过程与核心卖点；用可见结果或细节证明价值；避免无法验证的夸张演示"),
+    validUsageScenes: list("商品最常见的真实使用场景；居家；办公；户外；移动；通用日常场景择一展开"),
+    aestheticBaseline: list("干净、真实、明亮；主体清晰可辨；避免过度滤镜和塑料感；保留材质与细节真实"),
+    authenticityComplianceBoundary: list("不伪造认证、资质或权威背书；不做绝对化或医疗化承诺；不虚构成分、参数或功效；不制造焦虑"),
+    categoryRiskAvoidance: list("避免危险、违规或不卫生操作；避免只拍氛围不露商品；避免误导性前后对比；避免遮挡关键信息"),
+  },
   "beauty-personal-care": {
     requiredVisualElements: list("产品包装；质地、膏体、液体、粉体或工具；使用部位或使用动作；色泽、肤感或清洁状态；自然光或清晰局部特写"),
     proofObligation: list("展示涂抹、上妆、清洁、护理或使用过程；展示质地延展性、服帖度、清爽感、颜色表现或使用后状态；前后状态必须克制真实"),
@@ -427,6 +441,14 @@ export const PRODUCT_CATEGORY_GUIDANCE = {
 } as const satisfies Record<ProductCategory, ProductCategoryGuidancePack>;
 
 export const DEAL_TYPE_GUIDANCE = {
+  general: {
+    purchaseTask: ["购买动机未限定，需同时兼顾“已有明确需求”和“被场景或兴趣激发”两类路径"],
+    decisionInfoDimensions: list("核心卖点；价值与价格感知；质量与可信度；使用门槛；评价口碑；售后保障"),
+    proofTypes: list("真实使用演示；关键细节特写；结果或前后变化；轻量口碑或对比"),
+    conversionFriction: list("怕不适合自己；怕质量或效果不达预期；怕买错；怕售后麻烦"),
+    offerCommitmentStrategy: list("强调低风险尝试、查看详情、保障与适配确认；CTA 中性不强压"),
+    funnelPacing: list("前段建立兴趣或抛出选择问题；中段集中展示 2-3 个核心证据；结尾给清晰但不强迫的行动建议"),
+  },
   "search-standard": {
     purchaseTask: ["用户已有明确需求，正在寻找可靠、适配、性价比合适的选择"],
     decisionInfoDimensions: list("规格维度；适配范围；价格价值感；质量稳定性；评价口碑；售后保障；使用门槛"),
@@ -513,6 +535,12 @@ export const AUDIENCE_GUIDANCE = {
 } as const satisfies Record<Audience, AudienceGuidancePack>;
 
 export const STRATEGY_GUIDANCE = {
+  general: {
+    hookMechanism: ["用与商品强相关的真实结果、场景或问题开场；3 秒内让用户明白这是什么、对自己有什么用"],
+    narrativeStructure: ["吸引注意 → 展示核心卖点 → 用证据支撑 → 收益总结 → 行动引导"],
+    evidenceOrganization: ["以真实使用过程与可见结果为主要证据；卖点与证据一一对应；避免无法验证的主张"],
+    shotEditingGrammar: list("中景动作加近景细节；关键信息字幕清楚；节奏稳健；结尾 CTA 可读；避免商品被氛围淹没"),
+  },
   "pain-solution": {
     hookMechanism: ["用具体、可感知的日常痛点开场，避免泛泛而谈"],
     narrativeStructure: ["痛点场景 → 痛点原因 → 使用方式 → 结果缓解 → 行动引导"],

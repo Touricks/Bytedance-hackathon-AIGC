@@ -2,12 +2,21 @@ import net from "node:net";
 import { analyzeReferenceVideoRequirements } from "@aigc-video/ai";
 import { DEFAULT_CREATIVE_FACTORS, buildCreativeFactorRequirements } from "@aigc-video/shared";
 import { HttpError } from "../../common/errors.js";
+import {
+  assertImageDimensionsWithinPolicy,
+  assertValidRasterImageBytes
+} from "../../common/image-validation.js";
 import { db } from "../../db/client.js";
 import { promptRequirementsService } from "../workspace/prompt-requirements.service.js";
 
 const supportedVideoExtensions = new Set([".mp4", ".mov", ".m4v", ".webm"]);
+const supportedReferenceTextTypes = new Set(["text/plain", "text/markdown"]);
+const supportedReferenceTextExtensions = new Set([".txt", ".md"]);
 
 export const maxReferenceVideoBytes = 50 * 1024 * 1024;
+export const maxReferenceImageBytes = 10 * 1024 * 1024;
+export const maxReferenceFileCount = 6;
+const maxReferenceTextChars = 4000;
 
 export interface ReferenceVideoFileInput {
   filename: string;
@@ -31,6 +40,17 @@ function isSupportedVideo(input: { filename?: string; contentType: string }) {
   return input.filename
     ? supportedVideoExtensions.has(extensionOf(input.filename))
     : false;
+}
+
+function isImageFile(input: { filename: string; contentType: string }) {
+  return input.contentType.toLowerCase().startsWith("image/");
+}
+
+function isReferenceTextFile(input: { filename: string; contentType: string }) {
+  if (supportedReferenceTextTypes.has(input.contentType.toLowerCase())) {
+    return true;
+  }
+  return supportedReferenceTextExtensions.has(extensionOf(input.filename));
 }
 
 function isPrivateIpv4(address: string) {
@@ -242,6 +262,90 @@ export const referenceVideoService = {
         filename: input.filename,
         contentType: input.contentType,
         sizeBytes: input.bytes.byteLength
+      },
+      ...analyzed,
+      artifact
+    };
+  },
+
+  async importReferenceFiles(
+    workspaceId: string,
+    files: ReferenceVideoFileInput[]
+  ) {
+    await ensureImportAllowed(workspaceId);
+    if (files.length === 0) {
+      throw new HttpError(
+        400,
+        "REFERENCE_FILES_REQUIRED",
+        "At least one reference image or text file is required."
+      );
+    }
+    if (files.length > maxReferenceFileCount) {
+      throw new HttpError(
+        400,
+        "TOO_MANY_REFERENCE_FILES",
+        `Reference import accepts at most ${maxReferenceFileCount} files.`
+      );
+    }
+
+    const imageInputs: Array<{ url: string; detail: "high" }> = [];
+    const textInputs: Array<{ filename: string; text: string }> = [];
+    for (const file of files) {
+      if (isImageFile(file)) {
+        if (file.bytes.byteLength > maxReferenceImageBytes) {
+          throw new HttpError(
+            400,
+            "REFERENCE_IMAGE_TOO_LARGE",
+            "Reference image exceeds the import size limit."
+          );
+        }
+        let mime: string;
+        try {
+          mime = assertValidRasterImageBytes(file.bytes, file.contentType);
+        } catch {
+          throw new HttpError(
+            400,
+            "UNSUPPORTED_REFERENCE_FILE_TYPE",
+            `Reference image "${file.filename}" is not a supported image file.`
+          );
+        }
+        assertImageDimensionsWithinPolicy(file.bytes, mime, undefined, file.filename);
+        imageInputs.push({
+          url: `data:${mime};base64,${file.bytes.toString("base64")}`,
+          detail: "high"
+        });
+      } else if (isReferenceTextFile(file)) {
+        textInputs.push({
+          filename: file.filename,
+          text: file.bytes.toString("utf8").slice(0, maxReferenceTextChars)
+        });
+      } else {
+        throw new HttpError(
+          400,
+          "UNSUPPORTED_REFERENCE_FILE_TYPE",
+          `Reference file "${file.filename}" must be an image or .txt/.md text file.`
+        );
+      }
+    }
+
+    const totalBytes = files.reduce((sum, file) => sum + file.bytes.byteLength, 0);
+    const analyzed = await analyzeReferenceVideoRequirements({
+      filename: files[0]?.filename,
+      sizeBytes: totalBytes,
+      imageInputs,
+      textInputs
+    });
+    const artifact = await createProposedRequirementsFromReferenceVideo(
+      workspaceId,
+      analyzed
+    );
+
+    return {
+      source: {
+        type: "files" as const,
+        count: files.length,
+        filenames: files.map((file) => file.filename),
+        totalBytes
       },
       ...analyzed,
       artifact

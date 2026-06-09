@@ -9,7 +9,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Settings,
   Trash2,
 } from "lucide-react";
 import {
@@ -339,12 +338,12 @@ export function App() {
         </div>
         <button
           type="button"
-          className="btn btn--quiet btn--sm home-topbar__dashboard"
+          className="btn btn--primary btn--lg home-topbar__dashboard"
           onClick={() => navigateToDataDashboard()}
           title="进入数据面板"
           aria-label="进入数据面板"
         >
-          <BarChart3 size={14} />
+          <BarChart3 size={16} />
           进入数据面板
         </button>
         <div className="home-topbar__search">
@@ -357,10 +356,6 @@ export function App() {
             aria-label="搜索工作区"
           />
         </div>
-        <button type="button" className="btn btn--quiet btn--sm">
-          <Settings size={14} />
-          设置
-        </button>
       </header>
 
       <main>

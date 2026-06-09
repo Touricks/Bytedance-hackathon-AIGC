@@ -31,7 +31,7 @@ Flags: `--reset`, `--fixture <path>`, `--workspace <id>`, `--help`. The pure dai
 
 ### Recommendation engine data (投放策略推荐)
 
-`apps/server/scripts/fixtures/recommendation-seed.json` is a richer fixture (15 videos / 35 publications across 5 `商品一级类目 × 商品成交类型` groups) that gives the recommendation engine enough signal per group. Seed it into Postgres, then call the API:
+`apps/server/scripts/fixtures/recommendation-seed.json` is a richer fixture (18 videos / 42 publications across 6 `商品一级类目 × 商品成交类型` groups) that gives the recommendation engine enough signal per group. Seed it into Postgres, then call the API:
 
 ```bash
 # from apps/server

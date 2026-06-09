@@ -216,6 +216,54 @@ async function startArkProductBriefServer() {
   };
 }
 
+async function startArkMaterialIntakeServer() {
+  const requests: unknown[] = [];
+  const server: Server = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                primaryProductRef: "product.png",
+                tags: [
+                  {
+                    ref: "product.png",
+                    role: "product_main",
+                    description: "白色透明背景的商品主图，展示产品整体外观",
+                    relevance: "high",
+                    included: true,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  assert(address && typeof address === "object");
+  return {
+    requests,
+    url: `http://127.0.0.1:${address.port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  };
+}
+
 async function withEnv<T>(
   patch: Record<string, string | undefined>,
   run: () => Promise<T>,
@@ -829,6 +877,74 @@ describe("workspace API", () => {
             payload: {},
           });
           assert.equal(briefPropose.statusCode, 200, briefPropose.body);
+        },
+      );
+
+      const request = arkText.requests[0] as {
+        messages?: Array<{ content?: unknown }>;
+      };
+      const content = request.messages?.[0]?.content;
+      assert.ok(Array.isArray(content), "expected multimodal chat content");
+      assert.equal(content[0]?.type, "text");
+      assert.equal(content[1]?.type, "image_url");
+      assert.match(content[1]?.image_url?.url ?? "", /^data:image\/png;base64,/);
+    } finally {
+      await arkText.close();
+    }
+  });
+
+  it("passes material images to real material-intake provider calls", async () => {
+    const arkText = await startArkMaterialIntakeServer();
+    try {
+      await withEnv(
+        {
+          MODEL_MODE: "real",
+          TEXT_API_KEY: "test-key",
+          TEXT_BASE_URL: arkText.url,
+          TEXT_ENDPOINT_ID: "ark-material-intake",
+          ARK_API_KEY: "test-key",
+          ARK_BASE_URL: arkText.url,
+          ARK_TEXT_ENDPOINT_ID: "ark-material-intake",
+        },
+        async () => {
+          const { workspaceId } = await createBoundWorkspace(app);
+          const uploadResponse = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/materials`,
+            payload: {
+              filename: "product.png",
+              dataBase64: Buffer.from(transparentPngBytes).toString("base64"),
+            },
+          });
+          assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+
+          const requirementsPropose = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/prompt-requirements/propose`,
+            payload: { data: testPromptRequirementsData() },
+          });
+          assert.equal(
+            requirementsPropose.statusCode,
+            200,
+            requirementsPropose.body,
+          );
+          const requirementsApprove = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
+            payload: { artifactId: requirementsPropose.json().data.id },
+          });
+          assert.equal(
+            requirementsApprove.statusCode,
+            200,
+            requirementsApprove.body,
+          );
+
+          const materialPropose = await app.inject({
+            method: "POST",
+            url: `/api/workspaces/${workspaceId}/material-intake/propose`,
+            payload: {},
+          });
+          assert.equal(materialPropose.statusCode, 200, materialPropose.body);
         },
       );
 

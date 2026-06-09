@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  DEFAULT_CREATIVE_FACTORS,
   buildCreativeFactorRequirements,
   type CreativeFactors
 } from "@aigc-video/shared";
@@ -14,6 +15,7 @@ import {
   requirementFormWithCreativeFactors
 } from "../requirementsForm.js";
 import { RequirementsStart } from "./RequirementsStart.js";
+import { FactorSelect } from "./RequirementsStartHelpers.js";
 
 const SAMPLE_FACTORS: CreativeFactors = {
   productCategory: "consumer-electronics",
@@ -158,6 +160,62 @@ describe("RequirementsStart", () => {
     assert.match(
       html,
       /class="creative-factor-field__label"[\s\S]*购买任务/
+    );
+  });
+
+  it("defaults all four factors to 不限定 with no 推荐 badge before any reference import", () => {
+    const data = buildCreativeFactorRequirements(
+      DEFAULT_CREATIVE_FACTORS
+    ) as PromptRequirementsData;
+    const html = renderRequirements(data);
+
+    // soft nudge, no hard gate
+    assert.match(html, /class="creative-factor-panel__hint"/);
+    assert.match(html, /可直接提交/);
+    assert.match(html, /导入参考素材后将给出推荐因子/);
+    assert.doesNotMatch(submitButtonMarkup(html), /\sdisabled(=|\s|>)/);
+
+    // all four dimensions default to 不限定
+    assert.equal(DEFAULT_CREATIVE_FACTORS.productCategory, "general");
+    assert.equal(DEFAULT_CREATIVE_FACTORS.dealType, "general");
+    assert.equal(DEFAULT_CREATIVE_FACTORS.audience, "general");
+    assert.equal(DEFAULT_CREATIVE_FACTORS.strategy, "general");
+    assert.match(html, /不限定/);
+
+    // without a reference-import recommendation, no factor carries the 推荐 badge
+    const badges = html.match(/class="creative-factor-recommended"/g) ?? [];
+    assert.equal(badges.length, 0);
+  });
+
+  it("shows the 推荐 badge only when a factor value matches the imported recommendation", () => {
+    const factorSelectHtml = (value: string, recommended?: string) =>
+      renderToStaticMarkup(
+        React.createElement(FactorSelect<string>, {
+          label: "适用人群",
+          value,
+          options: [
+            { value: "general", label: "不限定" },
+            { value: "youth", label: "青年" }
+          ],
+          onChange() {},
+          recommended
+        })
+      );
+
+    // value matches the imported recommendation -> badge shown
+    assert.match(
+      factorSelectHtml("youth", "youth"),
+      /class="creative-factor-recommended"/
+    );
+    // value changed away from the recommendation -> badge dropped
+    assert.doesNotMatch(
+      factorSelectHtml("general", "youth"),
+      /class="creative-factor-recommended"/
+    );
+    // no imported recommendation at all -> badge never shown
+    assert.doesNotMatch(
+      factorSelectHtml("youth", undefined),
+      /class="creative-factor-recommended"/
     );
   });
 

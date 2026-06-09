@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { buildCreativeFactorRequirements } from "@aigc-video/shared";
 import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
+import { transparentPngBytes } from "../../test/image-fixtures.js";
 
 function multipartFilePayload(input: {
   fieldName: string;
@@ -11,18 +12,36 @@ function multipartFilePayload(input: {
   contentType: string;
   bytes: Buffer;
 }) {
+  return multipartFilesPayload([input]);
+}
+
+function multipartFilesPayload(
+  files: Array<{
+    fieldName: string;
+    filename: string;
+    contentType: string;
+    bytes: Buffer;
+  }>
+) {
   const boundary = `----reference-video-test-${Date.now()}`;
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="${input.fieldName}"; filename="${input.filename}"\r\n` +
-      `Content-Type: ${input.contentType}\r\n\r\n`
-  );
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const segments: Buffer[] = [];
+  for (const file of files) {
+    segments.push(
+      Buffer.from(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.filename}"\r\n` +
+          `Content-Type: ${file.contentType}\r\n\r\n`
+      ),
+      file.bytes,
+      Buffer.from("\r\n")
+    );
+  }
+  segments.push(Buffer.from(`--${boundary}--\r\n`));
   return {
     headers: {
       "content-type": `multipart/form-data; boundary=${boundary}`
     },
-    payload: Buffer.concat([head, input.bytes, tail])
+    payload: Buffer.concat(segments)
   };
 }
 
@@ -117,7 +136,7 @@ describe("reference video requirements import API", () => {
     assert.deepEqual(body.data.artifact.data.creativeFactors, {
       productCategory: "consumer-electronics",
       dealType: "search-standard",
-      audience: "youth",
+      audience: "general",
       strategy: "review-comparison"
     });
     assert.equal(
@@ -143,6 +162,74 @@ describe("reference video requirements import API", () => {
     });
     assert.equal(state.statusCode, 200, state.body);
     assert.equal(state.json().data.proposed.id, body.data.artifact.id);
+  });
+
+  it("recommends creative factors from uploaded images and text files without storing materials", async () => {
+    const workspace = await createWorkspace(app);
+    const multipart = multipartFilesPayload([
+      {
+        fieldName: "file",
+        filename: "product.png",
+        contentType: "image/png",
+        bytes: transparentPngBytes
+      },
+      {
+        fieldName: "file",
+        filename: "卖点.md",
+        contentType: "text/markdown",
+        bytes: Buffer.from("核心卖点：长续航与快充，主打通勤人群。")
+      }
+    ]);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspace.id}/reference-video/import`,
+      headers: multipart.headers,
+      payload: multipart.payload
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.equal(body.data.source.type, "files");
+    assert.equal(body.data.source.count, 2);
+    assert.ok(body.data.source.filenames.includes("product.png"));
+    assert.ok(body.data.source.filenames.includes("卖点.md"));
+    assert.equal("draft" in body.data, false);
+    assert.equal(body.data.artifact.moduleId, "prompt-requirements");
+    assert.equal(body.data.artifact.status, "proposed");
+    assert.equal(body.data.artifact.isCurrent, false);
+    assert.ok(
+      Array.isArray(
+        body.data.creativeFactorsRecommendation.recommendedFactors
+          ? [body.data.creativeFactorsRecommendation.recommendedFactors]
+          : null
+      )
+    );
+    assert.equal(await artifactCount(workspace.id), 1);
+    assert.equal(await assetCount(workspace.id), 0);
+  });
+
+  it("rejects an unsupported reference file type", async () => {
+    const workspace = await createWorkspace(app);
+    const multipart = multipartFilesPayload([
+      {
+        fieldName: "file",
+        filename: "spec.pdf",
+        contentType: "application/pdf",
+        bytes: Buffer.from("%PDF-1.4 fake")
+      }
+    ]);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspace.id}/reference-video/import`,
+      headers: multipart.headers,
+      payload: multipart.payload
+    });
+
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().code, "UNSUPPORTED_REFERENCE_FILE_TYPE");
+    assert.equal(await artifactCount(workspace.id), 0);
   });
 
   it("rejects reference video import after prompt requirements are approved", async () => {

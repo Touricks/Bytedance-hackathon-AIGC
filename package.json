@@ -8,6 +8,8 @@
     "dev:mock": "MODEL_MODE=mock turbo dev",
     "dev:real": "MODEL_MODE=real turbo dev",
     "build": "turbo build",
+    "clean": "rm -rf .turbo && pnpm -r exec rm -rf dist .turbo",
+    "clean:dist": "pnpm -r exec rm -rf dist",
     "db:clear": "node scripts/clear-postgres.mjs",
     "redis:clear": "node scripts/clear-redis.mjs",
     "reset:dev": "node scripts/reset-dev-session.mjs",

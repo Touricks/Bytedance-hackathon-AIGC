@@ -74,21 +74,16 @@ describe("DataDashboardPage", () => {
     );
   });
 
-  it("renders the strategy matrix with factor artifact explanations", () => {
+  it("renders the live 适用人群 × 推销手法 effect matrix card", () => {
+    // SSR runs no effects, so the engine fetch never resolves: the live combo
+    // matrix shows its no-data placeholder. The static 推销手法 × 渠道 heatmap is
+    // gone. (The rendered grid is covered in DashboardComboMatrix.test.ts.)
     const html = renderDashboardWithSelectedVideo();
 
-    assert.match(html, /推销手法 × 量化渠道/);
-    assert.match(html, /场景演示/);
-    assert.match(html, /痛点解决/);
-    assert.match(html, /最优组合/);
-    assert.match(
-      html,
-      /场景进入 -&gt; 过程演示 -&gt; 关键卖点 -&gt; 结果证明 -&gt; 行动引导。/,
-    );
-    assert.match(
-      html,
-      /痛点出现 -&gt; 原因解释 -&gt; 解决方式 -&gt; 证据证明 -&gt; 行动引导。/,
-    );
+    assert.match(html, /适用人群 × 推销手法 · 效果矩阵/);
+    assert.match(html, /分组暂无足够投放数据/);
+    // The static 推销手法 \ 渠道 heatmap corner is gone.
+    assert.doesNotMatch(html, /推销手法 \\ 渠道/);
   });
 
   it("renders the diagnosis advisor and the floating creative assistant", () => {
@@ -101,10 +96,34 @@ describe("DataDashboardPage", () => {
     assert.match(html, /母婴宠物/);
     assert.match(html, /种草型非标品/);
     assert.match(html, /儿童/);
-    assert.match(html, /可调杠杆/);
+    // "可调杠杆" (prototype-only lever framing + its seed diagnosis card) is removed.
+    assert.doesNotMatch(html, /可调杠杆/);
     assert.match(html, /创作助手/);
     assert.match(html, /这条视频该换什么推销手法？/);
     assert.match(html, /哪种推销手法 ROAS 最高？/);
+  });
+
+  it("marks engine surfaces 基于推荐引擎 and frontend-seed surfaces 演示功能", () => {
+    const html = renderDashboardWithSelectedVideo();
+
+    // Engine outputs (matrix + 策略推荐) are emphasized as 基于推荐引擎.
+    assert.match(html, /基于推荐引擎/);
+    // Frontend-seed panels are explicitly flagged 演示功能.
+    assert.match(html, /演示功能/);
+    // The 基于推荐引擎 (real) marker leads the matrix card; the 演示功能 marker tags
+    // the demo KPI caption — both present in the same render.
+    assert.match(html, /核心指标/);
+  });
+
+  it("renders the live 策略推荐 panel with its weight toggle and empty placeholder", () => {
+    // SSR runs no effects, so the engine fetch never resolves: the live panel
+    // renders its weight toggle plus the no-data placeholder without throwing.
+    const html = renderDashboardWithSelectedVideo();
+
+    assert.match(html, /策略推荐/);
+    assert.match(html, /效率优先/);
+    assert.match(html, /规模优先/);
+    assert.match(html, /分组暂无足够投放数据/);
   });
 
   it("renders imported dashboard video metadata in the video list", () => {

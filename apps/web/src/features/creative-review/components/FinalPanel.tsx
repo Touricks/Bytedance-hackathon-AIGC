@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Download, Play, UploadCloud } from "lucide-react";
+import { BarChart3, Download, Play, UploadCloud } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
 import {
   importDashboardVideoArtifact,
@@ -56,27 +56,32 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
     setImportMessage(null);
   }, [defaultImportName]);
 
-  async function handleImportDashboard(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!job?.id || !finalUrl || !importName.trim()) return;
+  async function openDashboard(name: string) {
+    if (!job?.id || !finalUrl) return;
     setImportMessage(null);
     setIsImporting(true);
     try {
       const result = await importFinalVideoToDashboard({
         workspaceId: vm.workspaceId,
         finalVideoJobId: job.id,
-        name: importName.trim(),
+        name,
       });
       setImportMessage(
         result.status === "already-exists"
           ? "该成片已在数据面板，正在打开对应诊断看板"
-          : "已导入数据面板",
+          : "已导入数据面板，正在打开诊断看板",
       );
     } catch (error) {
-      setImportMessage(error instanceof Error ? error.message : "导入数据面板失败");
+      setImportMessage(error instanceof Error ? error.message : "打开数据面板失败");
     } finally {
       setIsImporting(false);
     }
+  }
+
+  async function handleImportDashboard(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!importName.trim()) return;
+    await openDashboard(importName.trim());
   }
 
   return (
@@ -104,6 +109,20 @@ export function FinalPanel({ vm }: { vm: WorkbenchViewModel }) {
         >
           <Play size={16} />
           {vm.pending?.finalVideo ? "正在生成成片..." : "生成成片"}
+        </button>
+        <button
+          type="button"
+          className="review-secondary"
+          disabled={!finalUrl || isImporting}
+          title={
+            finalUrl
+              ? "导入成片并打开诊断数据面板"
+              : "成片生成完成后即可进入数据面板"
+          }
+          onClick={() => void openDashboard(importName.trim() || defaultImportName)}
+        >
+          <BarChart3 size={16} />
+          分析诊断
         </button>
       </div>
       {job ? (

@@ -58,7 +58,7 @@ export function RequirementsStart({
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [referenceUrl, setReferenceUrl] = useState("");
-  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
   const [referenceImporting, setReferenceImporting] = useState(false);
   const [referenceMessage, setReferenceMessage] = useState<string | null>(null);
   const [referenceError, setReferenceError] = useState<string | null>(null);
@@ -120,19 +120,28 @@ export function RequirementsStart({
 
   const importReferenceVideo = async () => {
     const trimmedUrl = referenceUrl.trim();
-    if (!referenceFile && !trimmedUrl) {
-      setReferenceError("请上传参考视频，或粘贴可直接下载的视频链接。");
+    if (referenceFiles.length === 0 && !trimmedUrl) {
+      setReferenceError(
+        "请上传参考视频或商品素材（图片 / 文本），或粘贴可直接下载的视频链接。"
+      );
       return;
     }
+    const onlyVideo =
+      referenceFiles.length === 1 &&
+      (referenceFiles[0]!.type.startsWith("video/") ||
+        /\.(mp4|mov|m4v|webm)$/i.test(referenceFiles[0]!.name));
     setReferenceImporting(true);
     setReferenceError(null);
     setReferenceMessage(null);
     try {
       const imported = await importReferenceVideoRequirements({
         workspaceId: vm.workspaceId,
-        source: referenceFile
-          ? { type: "file", file: referenceFile }
-          : { type: "url", url: trimmedUrl }
+        source:
+          referenceFiles.length > 0
+            ? onlyVideo
+              ? { type: "file", file: referenceFiles[0]! }
+              : { type: "files", files: referenceFiles }
+            : { type: "url", url: trimmedUrl }
       });
       setForm(requirementFormFromArtifact(imported.artifact.data));
       setReferenceAnalysis(imported.analysis);
@@ -155,27 +164,32 @@ export function RequirementsStart({
         <div className="reference-video-import">
           <div className="reference-video-import__main">
             <label>
-              参考视频导入
+              参考素材导入（视频 / 商品图 / 文本）
               <textarea
                 rows={2}
                 value={referenceUrl}
                 onChange={(event) => setReferenceUrl(event.target.value)}
-                placeholder="粘贴可直接下载的视频链接，或上传参考视频"
+                placeholder="粘贴可直接下载的视频链接，或上传参考视频、商品图片、.txt/.md 文本"
               />
             </label>
             <div className="reference-video-import__actions">
               <label className="review-secondary reference-video-import__upload">
-                上传参考视频
+                上传参考文件
                 <input
                   type="file"
-                  accept="video/*"
+                  accept="video/*,image/*,.txt,.md"
+                  multiple
                   hidden
                   onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
+                    const files = Array.from(event.target.files ?? []);
                     event.currentTarget.value = "";
-                    setReferenceFile(file);
+                    setReferenceFiles(files);
                     setReferenceError(null);
-                    setReferenceMessage(file ? `已选择 ${file.name}` : null);
+                    setReferenceMessage(
+                      files.length > 0
+                        ? `已选择 ${files.map((file) => file.name).join("、")}`
+                        : null
+                    );
                   }}
                 />
               </label>
@@ -239,11 +253,15 @@ export function RequirementsStart({
             <span>全局创作因子</span>
           </div>
         </div>
+        <p className="creative-factor-panel__hint">
+          默认均为“不限定”，可直接提交；导入参考素材后将给出推荐因子，按商品微调后成片更聚焦。
+        </p>
         <div className="creative-factor-selects">
           <FactorSelect
             label="商品一级类目"
             value={form.creativeFactors.productCategory}
             options={PRODUCT_CATEGORY_OPTIONS}
+            recommended={referenceRecommendation?.recommendedFactors.productCategory}
             onChange={(value) =>
               updateCreativeFactor("productCategory", value as ProductCategory)
             }
@@ -252,18 +270,21 @@ export function RequirementsStart({
             label="商品成交类型"
             value={form.creativeFactors.dealType}
             options={DEAL_TYPE_OPTIONS}
+            recommended={referenceRecommendation?.recommendedFactors.dealType}
             onChange={(value) => updateCreativeFactor("dealType", value as DealType)}
           />
           <FactorSelect
             label="适用人群"
             value={form.creativeFactors.audience}
             options={AUDIENCE_OPTIONS}
+            recommended={referenceRecommendation?.recommendedFactors.audience}
             onChange={(value) => updateCreativeFactor("audience", value as Audience)}
           />
           <FactorSelect
             label="推销手法"
             value={form.creativeFactors.strategy}
             options={STRATEGY_OPTIONS}
+            recommended={referenceRecommendation?.recommendedFactors.strategy}
             onChange={(value) => updateCreativeFactor("strategy", value as Strategy)}
           />
         </div>

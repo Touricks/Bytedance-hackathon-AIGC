@@ -1,11 +1,9 @@
 import { Pool, type PoolClient } from "pg";
 import { nanoid } from "nanoid";
 import type {
-  ArtifactStatus,
   Asset,
   CreativeWorkspace,
   GenerationJob,
-  Product,
   Script,
   StoryboardShot
 } from "@aigc-video/shared";
@@ -13,51 +11,13 @@ import { config } from "../common/config.js";
 import { NotFoundError } from "../common/errors.js";
 import { schemaSql } from "./schema/schema.js";
 
-type CreateProductInput = Omit<Product, "id" | "createdAt">;
 type CreateAssetInput = Omit<Asset, "id" | "createdAt">;
-type CreateJobInput = Pick<GenerationJob, "productId" | "payload"> &
-  Partial<Pick<GenerationJob, "scriptId">>;
-type CreateScriptInput = Omit<Script, "id" | "createdAt"> & Partial<Pick<Script, "id">>;
-type CreateShotInput = Omit<StoryboardShot, "id" | "scriptId">;
 type CreateWorkspaceInput = Omit<
   CreativeWorkspace,
   "createdAt" | "updatedAt" | "lastSeenAt" | "localPath"
 > & { localPath?: string | null };
 type UpdateWorkspaceInput = Partial<
   Pick<CreativeWorkspace, "currentScriptId" | "currentJobId" | "status" | "traceFile">
->;
-export interface WorkspaceArtifact {
-  id: string;
-  workspaceId: string;
-  scriptId: string;
-  type: string;
-  status: ArtifactStatus;
-  data: unknown;
-  createdAt: string;
-  updatedAt: string;
-  approvedAt?: string;
-}
-type UpsertWorkspaceArtifactInput = Pick<
-  WorkspaceArtifact,
-  "workspaceId" | "scriptId" | "type" | "status" | "data"
->;
-export interface WorkspaceVideoArchiveRecord {
-  id: string;
-  workspaceId: string;
-  scriptId: string;
-  jobId: string;
-  provider: string;
-  promptView: unknown;
-  finalAssetId: string;
-  localPath: string;
-  localUrl: string;
-  providerUrl: string;
-  archivedAt: string;
-  createdAt: string;
-}
-type CreateWorkspaceVideoArchiveInput = Omit<
-  WorkspaceVideoArchiveRecord,
-  "id" | "createdAt"
 >;
 
 // ─── Current row types ───────────────────────────────────────────────────────
@@ -415,51 +375,15 @@ interface DbAdapter {
     workspaceId: string,
     patch: UpdateWorkspaceInput
   ): Promise<CreativeWorkspace>;
-  upsertWorkspaceArtifact(
-    input: UpsertWorkspaceArtifactInput
-  ): Promise<WorkspaceArtifact>;
-  getWorkspaceArtifact(
-    workspaceId: string,
-    artifactType: string
-  ): Promise<WorkspaceArtifact>;
-  createWorkspaceVideoArchive(
-    input: CreateWorkspaceVideoArchiveInput
-  ): Promise<WorkspaceVideoArchiveRecord>;
-  getWorkspaceVideoArchiveByJob(
-    jobId: string
-  ): Promise<WorkspaceVideoArchiveRecord | null>;
-  createProduct(input: CreateProductInput): Promise<Product>;
-  getProduct(productId: string): Promise<Product>;
-  updateProduct(productId: string, patch: Partial<Product>): Promise<Product>;
   createAsset(input: CreateAssetInput): Promise<Asset>;
   getAsset(assetId: string): Promise<Asset>;
-  findProductImageAssetByUrl(url: string): Promise<Asset | null>;
-  createJob(input: CreateJobInput): Promise<GenerationJob>;
   getJob(jobId: string): Promise<GenerationJob>;
-  updateJob(jobId: string, patch: Partial<GenerationJob>): Promise<GenerationJob>;
-  createScript(input: CreateScriptInput): Promise<Script>;
   getScript(scriptId: string): Promise<Script>;
-  updateScript(scriptId: string, patch: Partial<Script>): Promise<Script>;
-  freezeScript(scriptId: string): Promise<Script>;
   listShots(scriptId: string): Promise<StoryboardShot[]>;
-  createShots(scriptId: string, shots: CreateShotInput[]): Promise<StoryboardShot[]>;
-  replaceShots(scriptId: string, shots: CreateShotInput[]): Promise<StoryboardShot[]>;
 }
 
 function toIsoString(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value);
-}
-
-function toProduct(row: Record<string, unknown>): Product {
-  return {
-    id: String(row.id),
-    title: String(row.title),
-    sellingPoints: String(row.selling_points),
-    audience: String(row.audience),
-    mainImageAssetId:
-      typeof row.main_image_asset_id === "string" ? row.main_image_asset_id : undefined,
-    createdAt: toIsoString(row.created_at)
-  };
 }
 
 function toAsset(row: Record<string, unknown>): Asset {
@@ -531,39 +455,6 @@ function toWorkspaceStorageBinding(
       row.metadata && typeof row.metadata === "object" ? row.metadata : {},
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
-  };
-}
-
-function toWorkspaceArtifact(row: Record<string, unknown>): WorkspaceArtifact {
-  return {
-    id: String(row.id),
-    workspaceId: String(row.workspace_id),
-    scriptId: String(row.script_id),
-    type: String(row.artifact_type),
-    status: row.status as ArtifactStatus,
-    data: row.data,
-    createdAt: toIsoString(row.created_at),
-    updatedAt: toIsoString(row.updated_at),
-    approvedAt: row.approved_at ? toIsoString(row.approved_at) : undefined
-  };
-}
-
-function toWorkspaceVideoArchive(
-  row: Record<string, unknown>
-): WorkspaceVideoArchiveRecord {
-  return {
-    id: String(row.id),
-    workspaceId: String(row.workspace_id),
-    scriptId: String(row.script_id),
-    jobId: String(row.job_id),
-    provider: String(row.provider),
-    promptView: row.prompt_view,
-    finalAssetId: String(row.final_asset_id),
-    localPath: String(row.local_path),
-    localUrl: String(row.local_url),
-    providerUrl: String(row.provider_url),
-    archivedAt: toIsoString(row.archived_at),
-    createdAt: toIsoString(row.created_at)
   };
 }
 
@@ -855,139 +746,6 @@ class PostgresDbAdapter implements DbAdapter {
     return firstRow(result.rows, "CreativeWorkspace", toWorkspace);
   }
 
-  async upsertWorkspaceArtifact(
-    input: UpsertWorkspaceArtifactInput
-  ): Promise<WorkspaceArtifact> {
-    const result = await this.getPool().query(
-      `insert into workspace_artifact
-         (id, workspace_id, script_id, artifact_type, status, data, approved_at)
-       values ($1, $2, $3, $4, $5, $6, case when $5 = 'approved' then now() else null end)
-       on conflict (workspace_id, artifact_type) do update
-       set script_id = excluded.script_id,
-           status = excluded.status,
-           data = excluded.data,
-           approved_at = case
-             when excluded.status = 'approved' then coalesce(workspace_artifact.approved_at, now())
-             else null
-           end,
-           updated_at = now()
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        input.scriptId,
-        input.type,
-        input.status,
-        jsonbParam(input.data)
-      ]
-    );
-    return firstRow(result.rows, "WorkspaceArtifact", toWorkspaceArtifact);
-  }
-
-  async getWorkspaceArtifact(
-    workspaceId: string,
-    artifactType: string
-  ): Promise<WorkspaceArtifact> {
-    const result = await this.getPool().query(
-      `select *
-       from workspace_artifact
-       where workspace_id = $1 and artifact_type = $2`,
-      [workspaceId, artifactType]
-    );
-    return firstRow(result.rows, "WorkspaceArtifact", toWorkspaceArtifact);
-  }
-
-  async createWorkspaceVideoArchive(
-    input: CreateWorkspaceVideoArchiveInput
-  ): Promise<WorkspaceVideoArchiveRecord> {
-    const result = await this.getPool().query(
-      `insert into workspace_video_archive
-         (id, workspace_id, script_id, job_id, provider, prompt_view, final_asset_id, local_path, local_url, provider_url, archived_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       on conflict (job_id) do update
-       set provider = excluded.provider,
-           prompt_view = excluded.prompt_view,
-           final_asset_id = excluded.final_asset_id,
-           local_path = excluded.local_path,
-           local_url = excluded.local_url,
-           provider_url = excluded.provider_url,
-           archived_at = excluded.archived_at
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        input.scriptId,
-        input.jobId,
-        input.provider,
-        jsonbParam(input.promptView),
-        input.finalAssetId,
-        input.localPath,
-        input.localUrl,
-        input.providerUrl,
-        input.archivedAt
-      ]
-    );
-    return firstRow(result.rows, "WorkspaceVideoArchive", toWorkspaceVideoArchive);
-  }
-
-  async getWorkspaceVideoArchiveByJob(
-    jobId: string
-  ): Promise<WorkspaceVideoArchiveRecord | null> {
-    const result = await this.getPool().query(
-      `select *
-       from workspace_video_archive
-       where job_id = $1`,
-      [jobId]
-    );
-    const row = result.rows[0];
-    return row ? toWorkspaceVideoArchive(row) : null;
-  }
-
-  async createProduct(input: CreateProductInput): Promise<Product> {
-    const result = await this.getPool().query(
-      `insert into product (id, title, selling_points, audience, main_image_asset_id)
-       values ($1, $2, $3, $4, $5)
-       returning *`,
-      [
-        nanoid(),
-        input.title,
-        input.sellingPoints,
-        input.audience,
-        input.mainImageAssetId ?? null
-      ]
-    );
-    return firstRow(result.rows, "Product", toProduct);
-  }
-
-  async getProduct(productId: string): Promise<Product> {
-    const result = await this.getPool().query("select * from product where id = $1", [
-      productId
-    ]);
-    return firstRow(result.rows, "Product", toProduct);
-  }
-
-  async updateProduct(productId: string, patch: Partial<Product>): Promise<Product> {
-    const product = await this.getProduct(productId);
-    const next = { ...product, ...patch };
-    const result = await this.getPool().query(
-      `update product
-       set title = $2,
-           selling_points = $3,
-           audience = $4,
-           main_image_asset_id = $5
-       where id = $1
-       returning *`,
-      [
-        productId,
-        next.title,
-        next.sellingPoints,
-        next.audience,
-        next.mainImageAssetId ?? null
-      ]
-    );
-    return firstRow(result.rows, "Product", toProduct);
-  }
-
   async createAsset(input: CreateAssetInput): Promise<Asset> {
     const result = await this.getPool().query(
       `insert into asset (id, type, url, source, metadata)
@@ -1005,34 +763,6 @@ class PostgresDbAdapter implements DbAdapter {
     return firstRow(result.rows, "Asset", toAsset);
   }
 
-  async findProductImageAssetByUrl(url: string): Promise<Asset | null> {
-    const result = await this.getPool().query(
-      `select *
-       from asset
-       where type = 'product_image' and url = $1
-       order by created_at desc
-       limit 1`,
-      [url]
-    );
-    const row = result.rows[0];
-    return row ? toAsset(row) : null;
-  }
-
-  async createJob(input: CreateJobInput): Promise<GenerationJob> {
-    if (input.scriptId) {
-      await this.freezeScript(input.scriptId);
-    }
-
-    const result = await this.getPool().query(
-      `insert into generation_job
-         (id, product_id, script_id, status, stage, progress, payload, trace)
-       values ($1, $2, $3, 'queued', 'queued', 0, $4, '[]'::jsonb)
-       returning *`,
-      [nanoid(), input.productId, input.scriptId ?? null, jsonbParam(input.payload)]
-    );
-    return firstRow(result.rows, "GenerationJob", toGenerationJob);
-  }
-
   async getJob(jobId: string): Promise<GenerationJob> {
     const result = await this.getPool().query(
       "select * from generation_job where id = $1",
@@ -1041,115 +771,10 @@ class PostgresDbAdapter implements DbAdapter {
     return firstRow(result.rows, "GenerationJob", toGenerationJob);
   }
 
-  async updateJob(jobId: string, patch: Partial<GenerationJob>): Promise<GenerationJob> {
-    const job = await this.getJob(jobId);
-    const next = { ...job, ...patch };
-    const result = await this.getPool().query(
-      `update generation_job
-       set status = $2,
-           stage = $3,
-           progress = $4,
-           payload = $5,
-           trace = $6,
-           error_message = $7,
-           final_asset_id = $8,
-           script_id = $9,
-           updated_at = now()
-       where id = $1
-       returning *`,
-      [
-        jobId,
-        next.status,
-        next.stage,
-        next.progress,
-        jsonbParam(next.payload),
-        jsonbParam(next.trace),
-        next.errorMessage ?? null,
-        next.finalAssetId ?? null,
-        next.scriptId ?? null
-      ]
-    );
-    return firstRow(result.rows, "GenerationJob", toGenerationJob);
-  }
-
-  async createScript(input: CreateScriptInput): Promise<Script> {
-    const result = await this.getPool().query(
-      `insert into script
-         (id, product_id, job_id, parent_script_id, version, narrative, visual_style, frozen, frozen_at, raw_json)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       returning *`,
-      [
-        input.id ?? nanoid(),
-        input.productId,
-        input.jobId ?? null,
-        input.parentScriptId ?? null,
-        input.version,
-        input.narrative,
-        input.visualStyle,
-        input.frozen ?? false,
-        input.frozenAt ?? null,
-        jsonbParam(input.rawJson)
-      ]
-    );
-    return firstRow(result.rows, "Script", toScript);
-  }
-
   async getScript(scriptId: string): Promise<Script> {
     const result = await this.getPool().query("select * from script where id = $1", [
       scriptId
     ]);
-    return firstRow(result.rows, "Script", toScript);
-  }
-
-  async updateScript(scriptId: string, patch: Partial<Script>): Promise<Script> {
-    const script = await this.getScript(scriptId);
-    const next = {
-      ...script,
-      ...patch,
-      id: script.id,
-      productId: script.productId,
-      version: script.version,
-      createdAt: script.createdAt
-    };
-    const result = await this.getPool().query(
-      `update script
-       set job_id = $2,
-           parent_script_id = $3,
-           narrative = $4,
-           visual_style = $5,
-           frozen = $6,
-           frozen_at = $7,
-           raw_json = $8
-       where id = $1
-       returning *`,
-      [
-        scriptId,
-        next.jobId ?? null,
-        next.parentScriptId ?? null,
-        next.narrative,
-        next.visualStyle,
-        next.frozen,
-        next.frozenAt ?? null,
-        jsonbParam(next.rawJson)
-      ]
-    );
-    return firstRow(result.rows, "Script", toScript);
-  }
-
-  async freezeScript(scriptId: string): Promise<Script> {
-    const script = await this.getScript(scriptId);
-    if (script.frozen) {
-      return script;
-    }
-
-    const result = await this.getPool().query(
-      `update script
-       set frozen = true,
-           frozen_at = now()
-       where id = $1
-       returning *`,
-      [scriptId]
-    );
     return firstRow(result.rows, "Script", toScript);
   }
 
@@ -1161,73 +786,6 @@ class PostgresDbAdapter implements DbAdapter {
     return result.rows.map(toStoryboardShot);
   }
 
-  async createShots(
-    scriptId: string,
-    shots: CreateShotInput[]
-  ): Promise<StoryboardShot[]> {
-    const client = await this.getPool().connect();
-    try {
-      await client.query("begin");
-      const created = await this.insertShots(client, scriptId, shots);
-      await client.query("commit");
-      return created;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async replaceShots(
-    scriptId: string,
-    shots: CreateShotInput[]
-  ): Promise<StoryboardShot[]> {
-    const client = await this.getPool().connect();
-    try {
-      await client.query("begin");
-      await client.query("delete from storyboard_shot where script_id = $1", [scriptId]);
-      const created = await this.insertShots(client, scriptId, shots);
-      await client.query("commit");
-      return created;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  private async insertShots(
-    client: PoolClient,
-    scriptId: string,
-    shots: CreateShotInput[]
-  ): Promise<StoryboardShot[]> {
-    const created: StoryboardShot[] = [];
-    for (const shot of shots) {
-      const result = await client.query(
-        `insert into storyboard_shot
-           (id, script_id, shot_index, duration_sec, purpose, visual_prompt, camera_motion, voiceover, subtitle, media_asset_id, status)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         returning *`,
-        [
-          nanoid(),
-          scriptId,
-          shot.index,
-          shot.durationSec,
-          shot.purpose ?? null,
-          shot.visualPrompt,
-          shot.cameraMotion,
-          shot.voiceover,
-          shot.subtitle,
-          shot.mediaAssetId ?? null,
-          shot.status
-        ]
-      );
-      created.push(firstRow(result.rows, "StoryboardShot", toStoryboardShot));
-    }
-    return created;
-  }
 }
 
 // ─── Current row mappers ─────────────────────────────────────────────────────
@@ -2422,27 +1980,11 @@ export const db: DbAdapter & { db2: Db2Adapter } = {
   bindWorkspaceS3Storage: (input) => getLegacyDb().bindWorkspaceS3Storage(input),
   touchWorkspace: (workspaceId) => getLegacyDb().touchWorkspace(workspaceId),
   updateWorkspace: (workspaceId, patch) => getLegacyDb().updateWorkspace(workspaceId, patch),
-  upsertWorkspaceArtifact: (input) => getLegacyDb().upsertWorkspaceArtifact(input),
-  getWorkspaceArtifact: (workspaceId, artifactType) =>
-    getLegacyDb().getWorkspaceArtifact(workspaceId, artifactType),
-  createWorkspaceVideoArchive: (input) => getLegacyDb().createWorkspaceVideoArchive(input),
-  getWorkspaceVideoArchiveByJob: (jobId) => getLegacyDb().getWorkspaceVideoArchiveByJob(jobId),
-  createProduct: (input) => getLegacyDb().createProduct(input),
-  getProduct: (productId) => getLegacyDb().getProduct(productId),
-  updateProduct: (productId, patch) => getLegacyDb().updateProduct(productId, patch),
   createAsset: (input) => getLegacyDb().createAsset(input),
   getAsset: (assetId) => getLegacyDb().getAsset(assetId),
-  findProductImageAssetByUrl: (url) => getLegacyDb().findProductImageAssetByUrl(url),
-  createJob: (input) => getLegacyDb().createJob(input),
   getJob: (jobId) => getLegacyDb().getJob(jobId),
-  updateJob: (jobId, patch) => getLegacyDb().updateJob(jobId, patch),
-  createScript: (input) => getLegacyDb().createScript(input),
   getScript: (scriptId) => getLegacyDb().getScript(scriptId),
-  updateScript: (scriptId, patch) => getLegacyDb().updateScript(scriptId, patch),
-  freezeScript: (scriptId) => getLegacyDb().freezeScript(scriptId),
   listShots: (scriptId) => getLegacyDb().listShots(scriptId),
-  createShots: (scriptId, shots) => getLegacyDb().createShots(scriptId, shots),
-  replaceShots: (scriptId, shots) => getLegacyDb().replaceShots(scriptId, shots),
   get db2() {
     return getCurrentDb();
   }

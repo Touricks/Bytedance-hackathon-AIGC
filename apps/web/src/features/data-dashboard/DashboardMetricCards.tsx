@@ -4,11 +4,17 @@ import type { DashboardKpiView } from "./useDataDashboardViewModel.js";
 
 export function DashboardMetricCards({ kpis }: { kpis: DashboardKpiView[] }) {
   return (
-    <div className="dash-kpi-row">
-      {kpis.map((kpi) => (
-        <DashboardKpiCard key={kpi.key} kpi={kpi} />
-      ))}
-    </div>
+    <>
+      <div className="dash-kpi-cap">
+        核心指标
+        <span className="dash-tag-demo">演示功能</span>
+      </div>
+      <div className="dash-kpi-row">
+        {kpis.map((kpi) => (
+          <DashboardKpiCard key={kpi.key} kpi={kpi} />
+        ))}
+      </div>
+    </>
   );
 }
 

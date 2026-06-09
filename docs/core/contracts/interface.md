@@ -60,7 +60,7 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 | POST | `/api/workspaces/:workspaceId/{module}/propose` | Creates a proposed artifact. |
 | POST | `/api/workspaces/:workspaceId/{module}/approve` | Creates the new approved/current artifact. |
 | POST | `/api/workspaces/:workspaceId/storyboard/voiceover/propose` | Creates a proposed storyboard with rewritten voiceover only. |
-| POST | `/api/workspaces/:workspaceId/reference-video/import` | Imports direct video URL or file, returns a four-factor recommendation (`productCategory`, `dealType`, `audience`, `strategy`), and creates proposed prompt requirements before requirements approval. |
+| POST | `/api/workspaces/:workspaceId/reference-video/import` | Imports a direct video URL, a single video file, or multiple reference files (product images `image/*` and `.txt`/`.md` text), returns a four-factor recommendation (`productCategory`, `dealType`, `audience`, `strategy`), and creates proposed prompt requirements before requirements approval. Reference images/text are transient inputs and are not stored as workspace materials. |
 
 ### Shot Set and Per-Shot Flow
 

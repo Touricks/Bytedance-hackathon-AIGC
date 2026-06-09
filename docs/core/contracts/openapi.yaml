@@ -652,10 +652,18 @@ paths:
           multipart/form-data:
             schema:
               type: object
+              description: >
+                One or more `file` parts. A single video file is analyzed as a
+                reference video; image files (`image/*`) and `.txt`/`.md` text
+                files are analyzed as reference material to recommend the four
+                creative factors. Reference files are NOT stored as workspace
+                materials.
               properties:
                 file:
-                  type: string
-                  format: binary
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 

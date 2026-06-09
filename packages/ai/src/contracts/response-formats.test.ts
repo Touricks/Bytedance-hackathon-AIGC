@@ -44,6 +44,7 @@ describe("buildReferenceVideoRequirementsResponseFormat", () => {
     assert.equal(schema.properties.draft, undefined);
     assert.equal(schema.required.includes("draft"), false);
     assert.deepEqual(factorProperties.productCategory.enum, [
+      "general",
       "beauty-personal-care",
       "fashion-accessories",
       "food-beverage",
@@ -56,6 +57,7 @@ describe("buildReferenceVideoRequirementsResponseFormat", () => {
       "automotive"
     ]);
     assert.deepEqual(factorProperties.dealType.enum, [
+      "general",
       "search-standard",
       "seeding-nonstandard",
       "impulse-hit",
@@ -70,6 +72,7 @@ describe("buildReferenceVideoRequirementsResponseFormat", () => {
       "senior"
     ]);
     assert.deepEqual(factorProperties.strategy.enum, [
+      "general",
       "pain-solution",
       "scenario-demo",
       "review-comparison",

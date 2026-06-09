@@ -8,7 +8,7 @@ import type {
   DashboardVideoContext,
 } from "./dashboardTypes.js";
 
-/** Current-video scope bar with dashboard attribution-factor chips (推销手法 = 可调杠杆). */
+/** Current-video scope bar with dashboard attribution-factor chips. */
 export function DashboardScopeBar({
   snapshot,
   video,
@@ -56,7 +56,7 @@ export function DashboardScopeBar({
             <i>人群</i>
             {labels.audience.label}
           </span>
-          <span className="dash-factor-chip is-lever">
+          <span className="dash-factor-chip">
             <i>推销手法</i>
             {labels.strategy.label}
           </span>

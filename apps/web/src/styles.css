@@ -533,6 +533,11 @@ label {
   white-space: nowrap;
 }
 
+.home-topbar__dashboard svg {
+  width: 16px;
+  height: 16px;
+}
+
 .home-topbar__search {
   position: relative;
   width: min(280px, 36vw);
@@ -902,7 +907,7 @@ label {
 
 .review-topbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   height: var(--review-topbar-h);
@@ -1813,6 +1818,13 @@ label {
   line-height: 1.55;
 }
 
+.creative-factor-panel__hint {
+  margin: 0 0 4px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
 .creative-factor-selects {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -1820,6 +1832,7 @@ label {
 }
 
 .creative-factor-select-card.MuiFormControl-root {
+  position: relative;
   display: grid;
   gap: 8px;
   border: 1px solid var(--line);
@@ -1827,6 +1840,22 @@ label {
   padding: 10px;
   background: var(--surface);
   color: var(--ink);
+}
+
+.creative-factor-recommended {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .creative-factor-select-card .MuiInputLabel-root {

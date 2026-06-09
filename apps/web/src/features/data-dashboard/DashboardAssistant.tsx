@@ -192,8 +192,24 @@ export function DashboardAssistant({
         <Avatar sx={{ width: 28, height: 28, bgcolor: "rgba(255,255,255,.18)", color: "#fff" }}>
           <Sparkles size={15} />
         </Avatar>
-        <Box sx={{ lineHeight: 1.25 }}>
+        <Box sx={{ lineHeight: 1.25, display: "flex", alignItems: "center", gap: 0.75 }}>
           <Typography sx={{ fontSize: 14, fontWeight: 700 }}>创作助手</Typography>
+          <Box
+            component="span"
+            sx={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.3px",
+              px: 0.75,
+              py: "1px",
+              borderRadius: 999,
+              bgcolor: "rgba(255,255,255,.2)",
+              color: "#fff",
+              whiteSpace: "nowrap",
+            }}
+          >
+            演示功能
+          </Box>
         </Box>
         <IconButton
           className="dash-no-drag"

@@ -35,6 +35,8 @@ const videoScriptId = "video_script_contract_001";
 const videoBatchId = "video_batch_contract_001";
 const videoCandidateId = "video_candidate_contract_001";
 const finalVideoJobId = "final_video_contract_001";
+const recProductCategory = "home-living";
+const recDealType = "premium-brand";
 const now = "2026-06-02T00:00:00.000Z";
 
 function workspace() {
@@ -337,6 +339,73 @@ function finalVideoJob() {
     compiledManifestHash: "sha256:final",
     errorMessage: null,
     createdAt: now,
+  };
+}
+
+function recommendationComboCell() {
+  return {
+    audience: "general",
+    audienceLabel: "不限定",
+    strategy: "scenario-demo",
+    strategyLabel: "场景演示",
+    sampleCount: 3,
+    impressions: 100,
+    clicks: 10,
+    conversions: 2,
+    spendCents: 1000,
+    gmvCents: 5000,
+    roas: 5,
+    avgRoas: 5,
+    ctr: 0.1,
+    cvr: 0.2,
+    gmvPerVideoCents: 1666,
+    cpaCents: 500,
+    adjRoas: 4.8,
+    adjGmvPerVideoCents: 1600,
+    score: 1,
+    rank: 1,
+    confidence: "medium",
+  };
+}
+
+function groupRecommendationMock() {
+  const cell = recommendationComboCell();
+  return {
+    groupKey: `${recProductCategory}::${recDealType}`,
+    productCategory: recProductCategory,
+    productCategoryLabel: "家居家装",
+    dealType: recDealType,
+    dealTypeLabel: "品牌型高客单",
+    publicationCount: 3,
+    comboCount: 1,
+    groupRoas: 5,
+    groupAvgRoas: 5,
+    groupSpendCents: 1000,
+    groupGmvCents: 5000,
+    groupGmvPerVideoCents: 1666,
+    confidence: "medium",
+    bestCombo: cell,
+    recommendedAudience: "general",
+    recommendedAudienceLabel: "不限定",
+    recommendedStrategy: "scenario-demo",
+    recommendedStrategyLabel: "场景演示",
+    headline: "推荐 不限定 + 场景演示",
+    audienceRanking: [
+      { ...cell, value: "general", label: "不限定", gmvShareOfGroup: 1, isRecommended: true },
+    ],
+    strategyRanking: [
+      { ...cell, value: "scenario-demo", label: "场景演示", gmvShareOfGroup: 1, isRecommended: true },
+    ],
+    cells: [cell],
+  };
+}
+
+function recommendationMeta() {
+  return {
+    schemaVersion: "recommendation.v1",
+    weights: { roas: 0.6, gmv: 0.4 },
+    priorStrength: 2,
+    totals: { records: 3, groups: 1 },
   };
 }
 
@@ -855,6 +924,29 @@ const contracts = [
     mock: () => ({ data: [] }),
     validate: (body) => assert.ok(Array.isArray(body.data)),
   },
+  {
+    id: "dashboard.recommendations.list",
+    method: "GET",
+    path: "/api/dashboard/recommendations",
+    source: ['"/api/dashboard/recommendations"'],
+    mock: () => ({ ...recommendationMeta(), groups: [groupRecommendationMock()] }),
+    validate: (body) => {
+      assert.equal(body.schemaVersion, "recommendation.v1");
+      assert.ok(Array.isArray(body.groups));
+      assert.equal(body.groups[0].recommendedStrategy, "scenario-demo");
+    },
+  },
+  {
+    id: "dashboard.recommendations.group",
+    method: "GET",
+    path: "/api/dashboard/recommendations/:productCategory/:dealType",
+    source: ['"/api/dashboard/recommendations/:productCategory/:dealType"'],
+    mock: () => ({ data: groupRecommendationMock(), meta: recommendationMeta() }),
+    validate: (body) => {
+      assert.equal(body.data.recommendedAudience, "general");
+      assert.equal(body.meta.schemaVersion, "recommendation.v1");
+    },
+  },
 ];
 
 function moduleContracts(moduleId, data) {
@@ -920,7 +1012,9 @@ function renderPath(template) {
     .replaceAll(":workspaceId", workspaceId)
     .replaceAll(":shotSetId", shotSetId)
     .replaceAll(":shotId", shotId)
-    .replaceAll(":finalVideoJobId", finalVideoJobId);
+    .replaceAll(":finalVideoJobId", finalVideoJobId)
+    .replaceAll(":productCategory", recProductCategory)
+    .replaceAll(":dealType", recDealType);
 }
 
 function toOpenApiPath(template) {
@@ -929,6 +1023,8 @@ function toOpenApiPath(template) {
     .replaceAll(":shotSetId", "{shotSetId}")
     .replaceAll(":shotId", "{shotId}")
     .replaceAll(":finalVideoJobId", "{finalVideoJobId}")
+    .replaceAll(":productCategory", "{productCategory}")
+    .replaceAll(":dealType", "{dealType}")
     .replaceAll(":ref", "{wildcard}");
 }
 

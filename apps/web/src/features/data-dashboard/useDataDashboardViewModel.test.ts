@@ -5,6 +5,8 @@ import { selectedItem } from "./dashboardFormatters.js";
 import {
   dashboardVideoContextFromArtifact,
   deriveDashboardKpis,
+  isGroupNotFoundError,
+  weightsFor,
 } from "./useDataDashboardViewModel.js";
 
 const snapshot = getDashboardAnalyticsSnapshot();
@@ -116,5 +118,37 @@ describe("dashboardVideoContextFromArtifact", () => {
     });
 
     assert.equal(context.audienceText, "未归类人群");
+  });
+});
+
+describe("weightsFor", () => {
+  it("leans on ROAS for 效率优先", () => {
+    assert.deepEqual(weightsFor("roas"), { roasWeight: 0.8, gmvWeight: 0.2 });
+  });
+
+  it("leans on GMV for 规模优先", () => {
+    assert.deepEqual(weightsFor("gmv"), { roasWeight: 0.4, gmvWeight: 0.6 });
+  });
+});
+
+describe("isGroupNotFoundError", () => {
+  it("treats a fetchJson 404 as no-data (true)", () => {
+    assert.equal(
+      isGroupNotFoundError(
+        new Error(
+          "GET /api/dashboard/recommendations/automotive/impulse-hit failed: 404 not found",
+        ),
+      ),
+      true,
+    );
+  });
+
+  it("does not swallow other errors", () => {
+    assert.equal(
+      isGroupNotFoundError(new Error("GET /x failed: 500 boom")),
+      false,
+    );
+    assert.equal(isGroupNotFoundError("nope"), false);
+    assert.equal(isGroupNotFoundError(new Error("network down")), false);
   });
 });

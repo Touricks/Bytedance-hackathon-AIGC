@@ -115,6 +115,10 @@
   ],
   "factorCatalog": {
     "productCategories": {
+      "general": {
+        "label": "不限定",
+        "description": "不限定具体品类，聚焦商品主体、真实使用与核心卖点的通用呈现。"
+      },
       "beauty-personal-care": {
         "label": "美妆个护",
         "description": "强调质地、使用过程与真实上脸/上手效果，克制前后对比。"
@@ -157,6 +161,10 @@
       }
     },
     "dealTypes": {
+      "general": {
+        "label": "不限定",
+        "description": "不限定成交路径，兼顾明确需求与场景激发两类购买动机。"
+      },
       "search-standard": {
         "label": "搜索型标品",
         "description": "用户带着明确需求比较参数、适配、价格和可信证明。"
@@ -201,6 +209,11 @@
       }
     },
     "strategies": {
+      "general": {
+        "label": "不限定",
+        "description": "不限定特定手法，围绕核心卖点和真实证据组织通用叙事。",
+        "flow": "吸引注意 -> 核心卖点 -> 证据支撑 -> 收益总结 -> 行动引导。"
+      },
       "pain-solution": {
         "label": "痛点解决",
         "description": "围绕明确痛点建立转化动机。",
@@ -727,13 +740,6 @@
       "tag": "注意",
       "title": "「好奇钩子」在 Instagram Reels CTR 最高但转化弱",
       "body": "「好奇钩子」在 Instagram Reels 上 CTR 达 4.5%（全矩阵最高），但 CVR 仅 2.2%、ROAS 4.10。它适合做拉新曝光，目标为转化时不建议作为主力手法。"
-    },
-    {
-      "level": "medium",
-      "metric": "可调杠杆",
-      "tag": "保持",
-      "title": "同一商品 × 人群下，推销手法是最高杠杆",
-      "body": "商品（可消耗商品）与人群（青年）固定时，仅更换推销手法即可带来 20%+ 的 ROAS 差异。相比换渠道或调预算，调整推销手法是当前性价比最高的可控因子。"
     }
   ],
   "strategyRecommendation": {

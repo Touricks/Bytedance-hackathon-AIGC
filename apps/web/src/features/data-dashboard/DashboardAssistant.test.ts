@@ -23,5 +23,8 @@ describe("DashboardAssistant", () => {
     assert.doesNotMatch(html, /基于诊断结论/);
     assert.match(html, /dash-no-drag/);
     assert.match(html, /问问这条视频该怎么改/);
+    // The preset chat is frontend seed → flagged 演示功能 in the header.
+    assert.match(html, /创作助手/);
+    assert.match(html, /演示功能/);
   });
 });

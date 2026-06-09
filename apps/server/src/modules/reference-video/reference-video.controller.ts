@@ -26,21 +26,42 @@ export async function registerReferenceVideoController(app: FastifyInstance) {
           };
         }
 
-        const file = await request.file();
-        if (file) {
+        const uploaded: Array<{
+          filename: string;
+          contentType: string;
+          bytes: Buffer;
+        }> = [];
+        for await (const part of request.files()) {
+          uploaded.push({
+            filename: part.filename,
+            contentType: part.mimetype || "application/octet-stream",
+            bytes: await part.toBuffer(),
+          });
+        }
+
+        if (uploaded.length === 0) {
+          return reply.status(400).send({
+            code: "REFERENCE_VIDEO_SOURCE_REQUIRED",
+            message: "A reference video, image, or text file is required.",
+          });
+        }
+
+        const first = uploaded[0]!;
+        const looksLikeVideo =
+          first.contentType.toLowerCase().startsWith("video/") ||
+          /\.(mp4|mov|m4v|webm)$/i.test(first.filename);
+        if (uploaded.length === 1 && looksLikeVideo) {
           return {
-            data: await referenceVideoService.importFile(params.workspaceId, {
-              filename: file.filename,
-              contentType: file.mimetype || "application/octet-stream",
-              bytes: await file.toBuffer(),
-            }),
+            data: await referenceVideoService.importFile(params.workspaceId, first),
           };
         }
 
-        return reply.status(400).send({
-          code: "REFERENCE_VIDEO_SOURCE_REQUIRED",
-          message: "Reference video file is required.",
-        });
+        return {
+          data: await referenceVideoService.importReferenceFiles(
+            params.workspaceId,
+            uploaded,
+          ),
+        };
       } catch (error) {
         const httpError = toHttpError(error);
         return reply.status(httpError.statusCode).send(httpError);

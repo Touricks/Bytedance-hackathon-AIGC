@@ -160,16 +160,22 @@ export function FactorSelect<TValue extends string>({
   value,
   options,
   onChange,
+  recommended,
 }: {
   label: string;
   value: TValue;
   options: Array<{ value: TValue; label: string }>;
   onChange: (value: TValue) => void;
+  recommended?: TValue;
 }) {
   const labelId = `creative-factor-${label}`;
+  const showsRecommended = recommended !== undefined && value === recommended;
   return (
     <FormControl className="creative-factor-select-card" size="small" variant="outlined">
       <InputLabel id={labelId}>{label}</InputLabel>
+      {showsRecommended ? (
+        <span className="creative-factor-recommended">推荐</span>
+      ) : null}
       <Select<TValue>
         labelId={labelId}
         label={label}

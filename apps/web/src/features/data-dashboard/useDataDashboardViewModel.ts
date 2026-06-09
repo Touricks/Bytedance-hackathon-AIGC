@@ -4,6 +4,12 @@ import {
   listDashboardVideoArtifacts,
   type DashboardVideoArtifact,
 } from "../../lib/api/dashboardVideoArtifacts.js";
+import {
+  getGroupRecommendation,
+  type GroupRecommendation,
+  type RecommendationMeta,
+  type RecommendationWeights,
+} from "../../lib/api/dashboardRecommendations.js";
 import type {
   ChannelMetric,
   DashboardAnalyticsSnapshot,
@@ -13,6 +19,7 @@ import type {
   DashboardVideoContext,
   DashboardVideoSeed,
   StrategyMetric,
+  WeightMode,
 } from "./dashboardTypes.js";
 import {
   factorLabels,
@@ -24,6 +31,25 @@ import {
   selectedItem,
   type DeltaView,
 } from "./dashboardFormatters.js";
+
+/**
+ * Engine query weights for a weighting posture. 效率优先 leans on ROAS; 规模优先
+ * leans on GMV. The engine renormalizes these so they need not sum to 1.
+ */
+export function weightsFor(mode: WeightMode): RecommendationWeights {
+  return mode === "gmv"
+    ? { roasWeight: 0.4, gmvWeight: 0.6 }
+    : { roasWeight: 0.8, gmvWeight: 0.2 };
+}
+
+/**
+ * The group endpoint returns 404 when a (商品一级类目 × 商品成交类型) group has no
+ * 投放 data. fetchJson surfaces that as `... failed: 404 ...`; treat it as an
+ * empty result (no recommendation) rather than an error.
+ */
+export function isGroupNotFoundError(error: unknown): boolean {
+  return error instanceof Error && / failed: 404\b/.test(error.message);
+}
 
 export interface DashboardKpiView {
   key: DashboardMetricTab;
@@ -105,6 +131,12 @@ export interface DataDashboardViewModel {
   selectedDashboardVideoId: string | null;
   selectedDashboardVideo: DashboardVideoArtifact | null;
   dashboardVideoContext: DashboardVideoContext | null;
+  weightMode: WeightMode;
+  setWeightMode: (mode: WeightMode) => void;
+  recommendation: GroupRecommendation | null;
+  recommendationMeta: RecommendationMeta | null;
+  recommendationLoading: boolean;
+  recommendationError: string | null;
   chatOpen: boolean;
   toast: string | null;
   channelRef: React.RefObject<HTMLDivElement | null>;
@@ -161,6 +193,13 @@ export function useDataDashboardViewModel({
   const [selectedDashboardVideoId, setSelectedDashboardVideoId] = useState<string | null>(
     initialSelectedDashboardVideoId,
   );
+  const [weightMode, setWeightMode] = useState<WeightMode>("roas");
+  const [recommendation, setRecommendation] = useState<GroupRecommendation | null>(null);
+  const [recommendationMeta, setRecommendationMeta] = useState<RecommendationMeta | null>(
+    null,
+  );
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<HTMLDivElement | null>(null);
@@ -240,6 +279,49 @@ export function useDataDashboardViewModel({
     [snapshot, selectedDashboardVideo],
   );
 
+  // Live 投放策略推荐: when a dashboard video is selected, fetch the engine's
+  // recommendation for its (商品一级类目 × 商品成交类型) group. Re-keyed by the
+  // group + weighting posture, so changing 效率/规模 优先 refetches. A 404 (group
+  // has no data) is rendered as empty, not an error.
+  const productCategory = selectedDashboardVideo?.creativeFactors.productCategory;
+  const dealType = selectedDashboardVideo?.creativeFactors.dealType;
+  useEffect(() => {
+    if (!productCategory || !dealType) {
+      setRecommendation(null);
+      setRecommendationMeta(null);
+      setRecommendationError(null);
+      setRecommendationLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setRecommendationLoading(true);
+    setRecommendationError(null);
+    getGroupRecommendation(productCategory, dealType, weightsFor(weightMode))
+      .then((response) => {
+        if (cancelled) return;
+        setRecommendation(response.data);
+        setRecommendationMeta(response.meta);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setRecommendation(null);
+        setRecommendationMeta(null);
+        setRecommendationError(
+          isGroupNotFoundError(error)
+            ? null
+            : error instanceof Error
+              ? error.message
+              : String(error),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setRecommendationLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productCategory, dealType, weightMode]);
+
   const selectDashboardVideo = useCallback((id: string) => {
     setSelectedDashboardVideoId(id);
     setActiveView("diagnosis");
@@ -275,6 +357,12 @@ export function useDataDashboardViewModel({
     selectedDashboardVideoId: selectedDashboardVideo?.id ?? selectedDashboardVideoId,
     selectedDashboardVideo,
     dashboardVideoContext,
+    weightMode,
+    setWeightMode,
+    recommendation,
+    recommendationMeta,
+    recommendationLoading,
+    recommendationError,
     chatOpen,
     toast,
     channelRef,

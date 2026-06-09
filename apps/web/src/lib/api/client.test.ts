@@ -711,6 +711,68 @@ describe("api client", () => {
     ]);
   });
 
+  it("imports reference requirements from multiple image and text files", async () => {
+    let capturedBody: FormData | null = null;
+    globalThis.fetch = async (_url, init) => {
+      capturedBody = init?.body instanceof FormData ? init.body : null;
+      return new Response(
+        JSON.stringify({
+          data: {
+            source: {
+              type: "files",
+              count: 2,
+              filenames: ["product.png", "卖点.md"],
+              totalBytes: 42
+            },
+            analysis: { summary: "综合素材推断。", confidence: "medium" },
+            creativeFactorsRecommendation: {
+              recommendedFactors: {
+                productCategory: "consumer-electronics",
+                dealType: "search-standard",
+                audience: "general",
+                strategy: "review-comparison"
+              },
+              confidence: "medium"
+            },
+            artifact: {
+              id: "prompt_req_files",
+              workspaceId: "workspace_123",
+              moduleId: "prompt-requirements",
+              type: "prompt-requirements",
+              status: "proposed",
+              isCurrent: false,
+              data: {},
+              sourceFingerprint: {},
+              promptAssembly: {},
+              createdAt: "2026-06-06T00:00:00.000Z",
+              updatedAt: "2026-06-06T00:00:00.000Z",
+              approvedAt: null
+            }
+          }
+        }),
+        { status: 200 }
+      );
+    };
+
+    const imported = await importReferenceVideoRequirements({
+      workspaceId: "workspace_123",
+      source: {
+        type: "files",
+        files: [
+          new File(["img"], "product.png", { type: "image/png" }),
+          new File(["核心卖点"], "卖点.md", { type: "text/markdown" })
+        ]
+      }
+    });
+
+    assert.equal(imported.source.type, "files");
+    assert.ok(capturedBody, "expected multipart FormData body");
+    const sent = (capturedBody as FormData).getAll("file");
+    assert.equal(sent.length, 2);
+    assert.equal((sent[0] as File).name, "product.png");
+    assert.equal((sent[1] as File).name, "卖点.md");
+  });
+
   it("creates and lists Fastify-managed workspaces", async () => {
     const calls: string[] = [];
     globalThis.fetch = async (url, init) => {

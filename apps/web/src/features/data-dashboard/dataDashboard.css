@@ -436,9 +436,53 @@
   flex: 0 0 auto;
 }
 .dash-card-title {
+  /* The global reset only zeroes margin-top for h3; clear the residual UA
+     bottom margin so the title centers against the A/B/C badge. */
+  margin: 0;
   font-size: 14.5px;
   font-weight: 650;
   letter-spacing: 0.2px;
+}
+/* provenance tags: real (engine/data pipeline) vs demo (frontend seed) */
+.dash-tag-real,
+.dash-tag-demo {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.dash-tag-real {
+  color: var(--accent);
+  background: var(--accent-weak);
+  border: 1px solid #bfe9da;
+}
+.dash-tag-demo {
+  color: var(--ink3);
+  background: var(--line2);
+  border: 1px solid var(--line);
+}
+.dash-card.is-accent {
+  border-color: #bfe9da;
+  box-shadow: 0 6px 22px rgba(15, 174, 126, 0.1);
+}
+.dash-card.is-accent .dash-card-hd {
+  background: linear-gradient(180deg, var(--accent-weak) 0%, #ffffff 90%);
+}
+.dash-card.is-accent .dash-card-badge {
+  background: linear-gradient(135deg, #15b98a, #0fae7e);
+}
+/* KPI row provenance caption */
+.dash-kpi-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink2);
+  margin-bottom: 10px;
 }
 .dash-card-info {
   color: var(--ink4);
@@ -731,6 +775,10 @@
   flex-direction: column;
   gap: 10px;
 }
+.dash-mtx-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
 .dash-mtx-grid {
   display: grid;
   gap: 4px;
@@ -1000,15 +1048,6 @@ button.dash-ch-row:hover {
   font-weight: 600;
   color: var(--ink3);
 }
-.dash-factor-chip.is-lever {
-  background: var(--primary-weak2);
-  border-color: #dcd7f7;
-  color: var(--primary);
-}
-.dash-factor-chip.is-lever i {
-  color: var(--primary);
-  opacity: 0.7;
-}
 .dash-factor-chip.ghost {
   background: #fff;
   color: var(--ink3);
@@ -1031,10 +1070,6 @@ button.dash-ch-row:hover {
   padding: 9px 11px;
   box-shadow: var(--sh-sm);
 }
-.dash-combo-item.is-lever {
-  background: linear-gradient(135deg, #f3f1ff, #fbfaff);
-  border-color: #dcd7f7;
-}
 .dash-combo-k {
   font-size: 11.5px;
   color: var(--ink3);
@@ -1047,20 +1082,6 @@ button.dash-ch-row:hover {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-}
-.dash-combo-item.is-lever .dash-combo-v {
-  color: var(--primary);
-}
-.dash-combo-lever-tag {
-  font-style: normal;
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--primary);
-  background: #fff;
-  border: 1px solid #dcd7f7;
-  padding: 1px 6px;
-  border-radius: 5px;
-  white-space: nowrap;
 }
 
 /* ===== advisor accent zone ===== */
@@ -1137,6 +1158,10 @@ button.dash-ch-row:hover {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-weak);
+}
+.dash-advisor-sec-hd .dash-tag-real,
+.dash-advisor-sec-hd .dash-tag-demo {
+  margin-left: auto;
 }
 
 /* diagnosis */
@@ -1230,6 +1255,12 @@ button.dash-ch-row:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.dash-srec-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .dash-srec-switch {
   display: flex;

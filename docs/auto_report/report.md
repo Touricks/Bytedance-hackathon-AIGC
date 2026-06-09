@@ -273,7 +273,39 @@ validate/aggregate correctly.
 
 ---
 
-## 9. Limitations & future work
+## 9. Dashboard integration (frontend)
+
+The 数据面板 (`apps/web/src/features/data-dashboard/`) now consumes the engine
+live instead of static seed JSON, and the UI makes the **provenance of every
+panel explicit** so a viewer never mistakes demo content for computed results.
+
+**Real (engine / data pipeline) — emphasized:**
+- `适用人群 × 推销手法 · 效果矩阵` (`DashboardComboMatrix`) — renders `group.cells`.
+  Promoted to the **first card** of the left column with an emerald `基于推荐引擎`
+  badge and accent shell.
+- `策略推荐` (`DashboardLiveRecommendation`) — the recommended 适用人群 + 推销手法,
+  zh headline, confidence, ROAS bars, and a 效率优先/规模优先 weight toggle that
+  re‑queries the engine. Tagged `基于推荐引擎` and moved **above** the demo diagnosis
+  in the advisor.
+- `当前因子组合` and the scope‑bar factor chips — the selected video's real
+  attribution factors.
+
+**Demo (frontend seed) — explicitly flagged `演示功能`:**
+- `核心指标` KPI cards, `转化漏斗`, `多渠道对比`, `诊断结论`. These remain for visual
+  completeness but carry a muted `演示功能` pill so they read as placeholder data.
+
+**Removed:** the prototype‑only `可调杠杆` framing (advisor factor tag, scope‑bar
+lever styling, and its seed diagnosis card) — it implied an engineering lever
+rather than a business recommendation.
+
+Data flow: selecting a dashboard video → its `productCategory × dealType` →
+`GET /api/dashboard/recommendations/:productCategory/:dealType` (404 ⇒ empty
+state, not error). The provenance treatment is the contract that keeps the demo
+seed and the live engine visually separable.
+
+---
+
+## 10. Limitations & future work
 
 - **Cross‑sectional, not causal.** Rankings are observational; they don't control
   for channel mix, spend level, or seasonality. A publication's platform/account
@@ -284,19 +316,25 @@ validate/aggregate correctly.
 - **Static factor menu.** New audience/strategy enum values flow through
   automatically (the engine is data‑driven), but business weighting defaults are
   global, not per‑category. Per‑group default weights are a possible refinement.
-- **Frontend surface.** The engine and API are complete; wiring the existing
-  数据面板 advisor panel to call `/api/dashboard/recommendations` (instead of its
-  static seed) is the obvious follow‑up and is intentionally out of scope here.
+- **Frontend demo panels remain.** The KPI cards, funnel, channel compare, and
+  diagnosis are still frontend seed (flagged `演示功能`). Replacing them with real
+  per‑video / per‑channel analytics is the next data‑pipeline increment.
 - **Time windows.** Currently uses each publication's latest cumulative snapshot.
   A `since`/`window` parameter could compute deltas over a date range.
 
 ---
 
-## 10. Files changed
+## 11. Files changed
 
 **New (`apps/server/src/modules/recommendation/`)** — engine, repository, service,
 controller, and two test files. **New scripts** — `recommendation-seed.json`
-fixture and `recommendation-preview.ts`. **Edited** — `apps/server/src/app.ts`
-(route registration), `docs/core/contracts/openapi.yaml` +
-`docs/core/contracts/interface.md` (API contract), `scripts/README.md`
-(mock‑data + preview docs).
+fixture and `recommendation-preview.ts`. **Edited (backend)** —
+`apps/server/src/app.ts` (route registration), `docs/core/contracts/openapi.yaml`
++ `docs/core/contracts/interface.md` (API contract), `scripts/README.md`.
+
+**Frontend (`apps/web/src/features/data-dashboard/` + `lib/api/`)** — new
+`dashboardRecommendations.ts` client, `DashboardLiveRecommendation.tsx`,
+`DashboardComboMatrix.tsx` (+ tests); the view model fetches the live engine;
+`DashboardOverview`/`DashboardAdvisor`/`DashboardCard` carry the
+`基于推荐引擎`/`演示功能` provenance treatment and the matrix‑first layout; the
+prototype `可调杠杆` framing and the static strategy×channel matrix were removed.

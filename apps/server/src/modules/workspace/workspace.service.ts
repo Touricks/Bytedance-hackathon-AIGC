@@ -712,7 +712,7 @@ export async function materialIntakeImageInputs(
   );
 }
 
-export async function materialIntakeImageInputsForWorkspace(
+export async function materialImagesForWorkspace(
   workspaceId: string,
   material: MaterialIntakeArtifact,
 ) {
