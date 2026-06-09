@@ -21,6 +21,7 @@ import { shotSetService } from "./shot-set.service.js";
 import { shotPromptService } from "./shotprompt.service.js";
 import { storyboardService } from "./storyboard.service.js";
 import { workspaceService } from "./workspace.service.js";
+import { suggestFactorsService } from "./suggest-factors.service.js";
 import {
   selectWorkspaceDirectory,
   type WorkspaceDirectorySelectResponse
@@ -487,6 +488,16 @@ export async function registerWorkspaceController(
           shotPromptArtifactId: body.shotPromptArtifactId,
         }),
       };
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(workspaceRoute("/creative-factors/suggest"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return { data: await suggestFactorsService.suggest(params.workspaceId) };
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);

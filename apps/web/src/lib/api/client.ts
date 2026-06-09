@@ -687,6 +687,23 @@ export async function importReferenceVideoRequirements(input: {
   ).data;
 }
 
+export interface SuggestCreativeFactorsResult {
+  summary: string;
+  recommendedFactors: CreativeFactors;
+  confidence: "low" | "medium" | "high";
+  reasons: string[];
+}
+
+export async function suggestCreativeFactors(
+  workspaceId: string
+): Promise<SuggestCreativeFactorsResult> {
+  const response = await postJson<{ data: SuggestCreativeFactorsResult }>(
+    `/api/workspaces/${workspaceId}/creative-factors/suggest`,
+    {}
+  );
+  return response.data;
+}
+
 export async function listCreativeRequirementTemplates(): Promise<CreativeRequirementTemplatesDetail> {
   const response = await fetchJson<{ data: CreativeRequirementTemplatesDetail }>(
     "/api/setup-templates/creative-requirements"

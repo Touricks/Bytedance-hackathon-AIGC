@@ -28,3 +28,4 @@ export * from "./providers/provider-config.js";
 export * from "./schemas/image-prompt.schema.js";
 export * from "./schemas/video-script.schema.js";
 export * from "./workflows/reference-video-requirements.workflow.js";
+export * from "./workflows/suggest-creative-factors.workflow.js";

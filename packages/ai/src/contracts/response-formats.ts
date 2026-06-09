@@ -216,6 +216,33 @@ export function buildReferenceVideoRequirementsResponseFormat(
   });
 }
 
+export function buildSuggestCreativeFactorsResponseFormat(
+  schemaVersion: string
+): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "suggest_creative_factors",
+    description: "基于商品素材图片推荐全局创作因子。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        summary: nonEmptyString,
+        recommendedFactors: strictObject(
+          {
+            productCategory: { type: "string", enum: productCategorySchema.options },
+            dealType: { type: "string", enum: dealTypeSchema.options },
+            audience: { type: "string", enum: audienceSchema.options },
+            strategy: { type: "string", enum: strategySchema.options }
+          },
+          ["productCategory", "dealType", "audience", "strategy"]
+        ),
+        confidence: confidenceSchema,
+        reasons: arrayOf(nonEmptyString)
+      },
+      ["summary", "recommendedFactors", "confidence", "reasons"]
+    )
+  });
+}
+
 export function buildStoryboardResponseFormat(input: {
   schemaVersion: string;
   material: MaterialIntakeArtifact;

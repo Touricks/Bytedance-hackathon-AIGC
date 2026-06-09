@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
 import { ChevronDown, ChevronRight, Upload, Wand2 } from "lucide-react";
 import {
+  AUDIENCE_LABELS,
+  DEAL_TYPE_LABELS,
+  PRODUCT_CATEGORY_LABELS,
+  STRATEGY_LABELS,
   type Audience,
   type CreativeFactors,
   type DealType,
@@ -11,8 +15,10 @@ import {
 } from "@aigc-video/shared";
 import {
   importReferenceVideoRequirements,
+  suggestCreativeFactors,
   type PromptRequirementsData,
   type ReferenceVideoRequirementsImportResult,
+  type SuggestCreativeFactorsResult,
   uploadWorkspaceMaterial,
   workspaceMaterialFileRejectionReason
 } from "../../../lib/api/client.js";
@@ -69,10 +75,31 @@ export function RequirementsStart({
     ReferenceVideoRequirementsImportResult["creativeFactorsRecommendation"] | null
   >(null);
   const [guidanceOpen, setGuidanceOpen] = useState(true);
+  const [suggestion, setSuggestion] = useState<SuggestCreativeFactorsResult | null>(null);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
 
   useEffect(() => {
     setForm(initialForm);
   }, [initialForm]);
+
+  const prevAssetCountRef = useRef(0);
+  useEffect(() => {
+    const count = assets.length;
+    if (count > 0 && count !== prevAssetCountRef.current && !suggestionLoading) {
+      prevAssetCountRef.current = count;
+      setSuggestionLoading(true);
+      suggestCreativeFactors(vm.workspaceId)
+        .then(setSuggestion)
+        .catch(() => undefined)
+        .finally(() => setSuggestionLoading(false));
+    }
+  }, [assets.length, vm.workspaceId, suggestionLoading]);
+
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    setForm(requirementFormWithCreativeFactors(suggestion.recommendedFactors));
+    setSuggestion(null);
+  };
 
   const updateCreativeFactor = <
     K extends "productCategory" | "dealType" | "audience" | "strategy"
@@ -239,6 +266,40 @@ export function RequirementsStart({
             <span>全局创作因子</span>
           </div>
         </div>
+        {suggestionLoading ? (
+          <div className="ai-suggestion ai-suggestion--loading">
+            <Wand2 size={14} />
+            <span>AI 正在分析素材，推荐创作因子…</span>
+          </div>
+        ) : suggestion ? (
+          <div className="ai-suggestion">
+            <Wand2 size={14} />
+            <span className="ai-suggestion__text">
+              AI 推荐：
+              <strong>{PRODUCT_CATEGORY_LABELS[suggestion.recommendedFactors.productCategory]}</strong>
+              {" · "}
+              <strong>{DEAL_TYPE_LABELS[suggestion.recommendedFactors.dealType]}</strong>
+              {" · "}
+              <strong>{AUDIENCE_LABELS[suggestion.recommendedFactors.audience]}</strong>
+              {" · "}
+              <strong>{STRATEGY_LABELS[suggestion.recommendedFactors.strategy]}</strong>
+            </span>
+            <button
+              type="button"
+              className="ai-suggestion__apply"
+              onClick={applySuggestion}
+            >
+              一键应用
+            </button>
+            <button
+              type="button"
+              className="ai-suggestion__dismiss"
+              onClick={() => setSuggestion(null)}
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
         <div className="creative-factor-selects">
           <FactorSelect
             label="商品一级类目"
