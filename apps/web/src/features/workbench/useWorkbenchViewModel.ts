@@ -61,6 +61,7 @@ import { useFinalVideo } from "./useFinalVideo.js";
 import {
   oneClickPollingInterval,
   resolveOneClickFinalVideoState,
+  workspaceStatusRefetchInterval,
 } from "./oneClickState.js";
 import { roundPollingInterval } from "./roundPolling.js";
 import { getVideoBatchGenerationTargets } from "./videoBatchTargets.js";
@@ -178,6 +179,10 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const workspaceStatus = useQuery({
     queryKey: ["workspace-status", workspaceId],
     queryFn: () => getWorkspaceStatus(workspaceId),
+    refetchInterval: (query) =>
+      workspaceStatusRefetchInterval({
+        activeOneClickFinalVideo: query.state.data?.activeOneClickFinalVideo,
+      }),
   });
 
   const shots = useQuery({

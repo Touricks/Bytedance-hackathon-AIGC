@@ -4,6 +4,7 @@ import type { OneClickFinalVideoJob } from "../../lib/api/oneClickFinalVideo.js"
 import {
   oneClickPollingInterval,
   resolveOneClickFinalVideoState,
+  workspaceStatusRefetchInterval,
 } from "./oneClickState.js";
 
 function oneClickJob(
@@ -104,6 +105,42 @@ describe("oneClickPollingInterval", () => {
         jobs: [oneClickJob({ status: "SUCCEEDED", currentStage: "completed" })],
       }),
       15_000,
+    );
+  });
+});
+
+describe("workspaceStatusRefetchInterval", () => {
+  it("polls workspace status while a one-click job is active", () => {
+    for (const status of ["PENDING", "RUNNING", "WAITING"] as const) {
+      assert.equal(
+        workspaceStatusRefetchInterval({
+          activeOneClickFinalVideo: oneClickJob({ status }),
+        }),
+        3_000,
+      );
+    }
+  });
+
+  it("stops polling once the one-click job is terminal", () => {
+    assert.equal(
+      workspaceStatusRefetchInterval({
+        activeOneClickFinalVideo: oneClickJob({
+          status: "SUCCEEDED",
+          currentStage: "completed",
+        }),
+      }),
+      false,
+    );
+  });
+
+  it("does not poll when no one-click job is active", () => {
+    assert.equal(
+      workspaceStatusRefetchInterval({ activeOneClickFinalVideo: null }),
+      false,
+    );
+    assert.equal(
+      workspaceStatusRefetchInterval({ activeOneClickFinalVideo: undefined }),
+      false,
     );
   });
 });

@@ -21,6 +21,20 @@ export function oneClickPollingInterval(input: {
     : 15_000;
 }
 
+/**
+ * Poll the workspace-status query while a one-click final-video job is running.
+ * The one-click pipeline advances artifacts (brief → storyboard → … → final)
+ * entirely server-side with no per-step frontend mutation, so without this the
+ * artifact-derived step indicators stay frozen until a manual refresh. Returns
+ * `false` to disable polling once no one-click job is active.
+ */
+export function workspaceStatusRefetchInterval(input: {
+  activeOneClickFinalVideo: OneClickFinalVideoJob | null | undefined;
+}): number | false {
+  const job = input.activeOneClickFinalVideo;
+  return job && isActiveOneClickStatus(job.status) ? 3_000 : false;
+}
+
 export function resolveOneClickFinalVideoState(input: {
   statusActiveJob: OneClickFinalVideoJob | null | undefined;
   jobs: OneClickFinalVideoJob[];
