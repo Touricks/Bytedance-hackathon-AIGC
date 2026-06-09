@@ -60,7 +60,7 @@ type CreateWorkspaceVideoArchiveInput = Omit<
   "id" | "createdAt"
 >;
 
-// ─── v2 row types ────────────────────────────────────────────────────────────
+// ─── Current row types ───────────────────────────────────────────────────────
 
 export interface StoryboardShotRow {
   id: string;
@@ -266,7 +266,7 @@ export interface WorkspaceStorageBindingRow {
   updatedAt: string;
 }
 
-// ─── v2 adapter interface ─────────────────────────────────────────────────────
+// ─── Current adapter interface ───────────────────────────────────────────────
 
 export interface Db2Adapter {
   pool(): Pool;
@@ -386,7 +386,7 @@ export interface Db2Adapter {
   ): Promise<TraceEventRow[]>;
 }
 
-// ─── v1 adapter interface (preserved) ────────────────────────────────────────
+// ─── Legacy adapter interface ────────────────────────────────────────────────
 
 interface DbAdapter {
   initialize(): Promise<void>;
@@ -1230,7 +1230,7 @@ class PostgresDbAdapter implements DbAdapter {
   }
 }
 
-// ─── v2 row mappers ───────────────────────────────────────────────────────────
+// ─── Current row mappers ─────────────────────────────────────────────────────
 
 function toStoryboardShotRow(row: Record<string, unknown>): StoryboardShotRow {
   return {
@@ -2395,56 +2395,55 @@ class PostgresDb2Adapter implements Db2Adapter {
 
 // ─── adapter singletons + exported db object ──────────────────────────────────
 
-let v1: PostgresDbAdapter | undefined;
-let v2: PostgresDb2Adapter | undefined;
+let legacyDb: PostgresDbAdapter | undefined;
+let currentDb: PostgresDb2Adapter | undefined;
 
-function getV1(): DbAdapter {
-  v1 ??= new PostgresDbAdapter(config.databaseUrl);
-  return v1;
+function getLegacyDb(): DbAdapter {
+  legacyDb ??= new PostgresDbAdapter(config.databaseUrl);
+  return legacyDb;
 }
 
-function getV2(): Db2Adapter {
-  v1 ??= new PostgresDbAdapter(config.databaseUrl);
-  // Reuse the existing pool from v1 to avoid opening a second connection pool.
-  // v1 is always a PostgresDbAdapter here (the concrete class).
-  v2 ??= new PostgresDb2Adapter((v1 as PostgresDbAdapter).getPool());
-  return v2;
+function getCurrentDb(): Db2Adapter {
+  legacyDb ??= new PostgresDbAdapter(config.databaseUrl);
+  // Reuse the existing pool from the legacy adapter to avoid opening a second connection pool.
+  currentDb ??= new PostgresDb2Adapter(legacyDb.getPool());
+  return currentDb;
 }
 
 export const db: DbAdapter & { db2: Db2Adapter } = {
-  initialize: () => getV1().initialize(),
-  close: () => getV1().close(),
-  createWorkspace: (input) => getV1().createWorkspace(input),
-  listWorkspaces: (limit) => getV1().listWorkspaces(limit),
-  getWorkspace: (workspaceId) => getV1().getWorkspace(workspaceId),
-  findWorkspaceByLocalPath: (localPath) => getV1().findWorkspaceByLocalPath(localPath),
-  getActiveWorkspaceStorage: (workspaceId) => getV1().getActiveWorkspaceStorage(workspaceId),
-  bindWorkspaceLocalStorage: (input) => getV1().bindWorkspaceLocalStorage(input),
-  bindWorkspaceS3Storage: (input) => getV1().bindWorkspaceS3Storage(input),
-  touchWorkspace: (workspaceId) => getV1().touchWorkspace(workspaceId),
-  updateWorkspace: (workspaceId, patch) => getV1().updateWorkspace(workspaceId, patch),
-  upsertWorkspaceArtifact: (input) => getV1().upsertWorkspaceArtifact(input),
+  initialize: () => getLegacyDb().initialize(),
+  close: () => getLegacyDb().close(),
+  createWorkspace: (input) => getLegacyDb().createWorkspace(input),
+  listWorkspaces: (limit) => getLegacyDb().listWorkspaces(limit),
+  getWorkspace: (workspaceId) => getLegacyDb().getWorkspace(workspaceId),
+  findWorkspaceByLocalPath: (localPath) => getLegacyDb().findWorkspaceByLocalPath(localPath),
+  getActiveWorkspaceStorage: (workspaceId) => getLegacyDb().getActiveWorkspaceStorage(workspaceId),
+  bindWorkspaceLocalStorage: (input) => getLegacyDb().bindWorkspaceLocalStorage(input),
+  bindWorkspaceS3Storage: (input) => getLegacyDb().bindWorkspaceS3Storage(input),
+  touchWorkspace: (workspaceId) => getLegacyDb().touchWorkspace(workspaceId),
+  updateWorkspace: (workspaceId, patch) => getLegacyDb().updateWorkspace(workspaceId, patch),
+  upsertWorkspaceArtifact: (input) => getLegacyDb().upsertWorkspaceArtifact(input),
   getWorkspaceArtifact: (workspaceId, artifactType) =>
-    getV1().getWorkspaceArtifact(workspaceId, artifactType),
-  createWorkspaceVideoArchive: (input) => getV1().createWorkspaceVideoArchive(input),
-  getWorkspaceVideoArchiveByJob: (jobId) => getV1().getWorkspaceVideoArchiveByJob(jobId),
-  createProduct: (input) => getV1().createProduct(input),
-  getProduct: (productId) => getV1().getProduct(productId),
-  updateProduct: (productId, patch) => getV1().updateProduct(productId, patch),
-  createAsset: (input) => getV1().createAsset(input),
-  getAsset: (assetId) => getV1().getAsset(assetId),
-  findProductImageAssetByUrl: (url) => getV1().findProductImageAssetByUrl(url),
-  createJob: (input) => getV1().createJob(input),
-  getJob: (jobId) => getV1().getJob(jobId),
-  updateJob: (jobId, patch) => getV1().updateJob(jobId, patch),
-  createScript: (input) => getV1().createScript(input),
-  getScript: (scriptId) => getV1().getScript(scriptId),
-  updateScript: (scriptId, patch) => getV1().updateScript(scriptId, patch),
-  freezeScript: (scriptId) => getV1().freezeScript(scriptId),
-  listShots: (scriptId) => getV1().listShots(scriptId),
-  createShots: (scriptId, shots) => getV1().createShots(scriptId, shots),
-  replaceShots: (scriptId, shots) => getV1().replaceShots(scriptId, shots),
+    getLegacyDb().getWorkspaceArtifact(workspaceId, artifactType),
+  createWorkspaceVideoArchive: (input) => getLegacyDb().createWorkspaceVideoArchive(input),
+  getWorkspaceVideoArchiveByJob: (jobId) => getLegacyDb().getWorkspaceVideoArchiveByJob(jobId),
+  createProduct: (input) => getLegacyDb().createProduct(input),
+  getProduct: (productId) => getLegacyDb().getProduct(productId),
+  updateProduct: (productId, patch) => getLegacyDb().updateProduct(productId, patch),
+  createAsset: (input) => getLegacyDb().createAsset(input),
+  getAsset: (assetId) => getLegacyDb().getAsset(assetId),
+  findProductImageAssetByUrl: (url) => getLegacyDb().findProductImageAssetByUrl(url),
+  createJob: (input) => getLegacyDb().createJob(input),
+  getJob: (jobId) => getLegacyDb().getJob(jobId),
+  updateJob: (jobId, patch) => getLegacyDb().updateJob(jobId, patch),
+  createScript: (input) => getLegacyDb().createScript(input),
+  getScript: (scriptId) => getLegacyDb().getScript(scriptId),
+  updateScript: (scriptId, patch) => getLegacyDb().updateScript(scriptId, patch),
+  freezeScript: (scriptId) => getLegacyDb().freezeScript(scriptId),
+  listShots: (scriptId) => getLegacyDb().listShots(scriptId),
+  createShots: (scriptId, shots) => getLegacyDb().createShots(scriptId, shots),
+  replaceShots: (scriptId, shots) => getLegacyDb().replaceShots(scriptId, shots),
   get db2() {
-    return getV2();
+    return getCurrentDb();
   }
 };

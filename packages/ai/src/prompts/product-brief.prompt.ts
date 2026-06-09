@@ -6,7 +6,7 @@ import type { RuntimePromptView } from "./material-intake.prompt.js";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const PRODUCT_BRIEF_PROMPT_VERSION = "product-brief.v1";
+export const PRODUCT_BRIEF_PROMPT_VERSION = "product-brief";
 
 export interface BuildProductBriefPromptInput {
   userDirection?: string;
@@ -112,9 +112,7 @@ export function buildProductBriefPromptView(
         {
           id: "user_direction",
           label: "用户方向",
-          body:
-            input.userDirection?.trim() ||
-            "未提供额外商品方向。",
+          body: input.userDirection?.trim() || "未提供额外商品方向。",
         },
         {
           id: "legacy_seed",
@@ -129,9 +127,7 @@ export function buildProductBriefPromptView(
         {
           id: "approved_material",
           label: "已确认素材",
-          body:
-            summarizeMaterial(input.material) ||
-            "没有可纳入生成的素材。",
+          body: summarizeMaterial(input.material) || "没有可纳入生成的素材。",
         },
         ...(creativeRequirements
           ? [

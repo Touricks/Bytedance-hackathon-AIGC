@@ -14,13 +14,14 @@ import {
   workspaceMaterialUploadRequestSchema,
   workspaceDirectoryRequestSchema
 } from "./workspace.schema.js";
-import { materialIntakeV2Service } from "./material-intake-v2.service.js";
-import { productBriefV2Service } from "./product-brief-v2.service.js";
+import { materialIntakeService } from "./material-intake.service.js";
+import { productBriefService } from "./product-brief.service.js";
 import { promptRequirementsService } from "./prompt-requirements.service.js";
 import { shotSetService } from "./shot-set.service.js";
-import { shotPromptV2Service } from "./shotprompt-v2.service.js";
-import { storyboardV2Service } from "./storyboard-v2.service.js";
+import { shotPromptService } from "./shotprompt.service.js";
+import { storyboardService } from "./storyboard.service.js";
 import { workspaceService } from "./workspace.service.js";
+import { suggestFactorsService } from "./suggest-factors.service.js";
 import {
   selectWorkspaceDirectory,
   type WorkspaceDirectorySelectResponse
@@ -186,7 +187,7 @@ export async function registerWorkspaceController(
       try {
         const params = request.params as { workspaceId: string };
         return {
-          data: await materialIntakeV2Service.getState(params.workspaceId),
+          data: await materialIntakeService.getState(params.workspaceId),
         };
       } catch (error) {
         const httpError = toHttpError(error);
@@ -204,7 +205,7 @@ export async function registerWorkspaceController(
           request.body,
         );
         return {
-          data: await materialIntakeV2Service.propose({
+          data: await materialIntakeService.propose({
             workspaceId: params.workspaceId,
             selectedMaterialRefs: body.selectedMaterialRefs,
             userDirection: body.userDirection,
@@ -224,7 +225,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = moduleArtifactApprovalRequestSchema.parse(request.body);
         return {
-          data: await materialIntakeV2Service.approve({
+          data: await materialIntakeService.approve({
             workspaceId: params.workspaceId,
             artifactId: body.artifactId,
             data: body.data,
@@ -295,7 +296,7 @@ export async function registerWorkspaceController(
       try {
         const params = request.params as { workspaceId: string };
         return {
-          data: await productBriefV2Service.getState(params.workspaceId),
+          data: await productBriefService.getState(params.workspaceId),
         };
       } catch (error) {
         const httpError = toHttpError(error);
@@ -311,7 +312,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = productBriefModuleProposeRequestSchema.parse(request.body);
         return {
-          data: await productBriefV2Service.propose({
+          data: await productBriefService.propose({
             workspaceId: params.workspaceId,
             ...body,
           }),
@@ -330,7 +331,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = moduleArtifactApprovalRequestSchema.parse(request.body);
         return {
-          data: await productBriefV2Service.approve({
+          data: await productBriefService.approve({
             workspaceId: params.workspaceId,
             artifactId: body.artifactId,
             data: body.data,
@@ -347,7 +348,7 @@ export async function registerWorkspaceController(
     try {
       const params = request.params as { workspaceId: string };
       return {
-        data: await storyboardV2Service.getState(params.workspaceId),
+        data: await storyboardService.getState(params.workspaceId),
       };
     } catch (error) {
       const httpError = toHttpError(error);
@@ -362,7 +363,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         storyboardModuleProposeRequestSchema.parse(request.body);
         return {
-          data: await storyboardV2Service.propose({
+          data: await storyboardService.propose({
             workspaceId: params.workspaceId,
           }),
         };
@@ -380,7 +381,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = storyboardVoiceoverProposeRequestSchema.parse(request.body);
         return {
-          data: await storyboardV2Service.proposeVoiceover({
+          data: await storyboardService.proposeVoiceover({
             workspaceId: params.workspaceId,
             baseArtifactId: body.baseArtifactId,
             draft: body.draft,
@@ -401,7 +402,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = moduleArtifactApprovalRequestSchema.parse(request.body);
         return {
-          data: await storyboardV2Service.approve({
+          data: await storyboardService.approve({
             workspaceId: params.workspaceId,
             artifactId: body.artifactId,
             data: body.data,
@@ -418,7 +419,7 @@ export async function registerWorkspaceController(
     try {
       const params = request.params as { workspaceId: string };
       return {
-        data: await shotPromptV2Service.getState(params.workspaceId),
+        data: await shotPromptService.getState(params.workspaceId),
       };
     } catch (error) {
       const httpError = toHttpError(error);
@@ -433,7 +434,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = shotPromptModuleProposeRequestSchema.parse(request.body);
         return {
-          data: await shotPromptV2Service.propose({
+          data: await shotPromptService.propose({
             workspaceId: params.workspaceId,
             aspectRatio: body.aspectRatio,
           }),
@@ -452,7 +453,7 @@ export async function registerWorkspaceController(
         const params = request.params as { workspaceId: string };
         const body = moduleArtifactApprovalRequestSchema.parse(request.body);
         return {
-          data: await shotPromptV2Service.approve({
+          data: await shotPromptService.approve({
             workspaceId: params.workspaceId,
             artifactId: body.artifactId,
             data: body.data,
@@ -487,6 +488,16 @@ export async function registerWorkspaceController(
           shotPromptArtifactId: body.shotPromptArtifactId,
         }),
       };
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.post(workspaceRoute("/creative-factors/suggest"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return { data: await suggestFactorsService.suggest(params.workspaceId) };
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);

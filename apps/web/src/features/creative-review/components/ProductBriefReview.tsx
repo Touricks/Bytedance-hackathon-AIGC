@@ -9,7 +9,7 @@ import {
   formToBrief,
   type ProductBriefFormState
 } from "../productBriefForm.js";
-import { ProposalPlaceholder } from "./Common.js";
+import { ProposalPlaceholder, ReviewActionDock } from "./Common.js";
 
 type ProductBriefChatMessage = {
   id: string;
@@ -21,6 +21,7 @@ export function ProductBriefReviewForm({
   artifactId,
   brief,
   busy,
+  regenerating,
   onApprove,
   onRegenerate,
   onActionComplete
@@ -28,6 +29,7 @@ export function ProductBriefReviewForm({
   artifactId: string;
   brief: ProductBriefArtifact;
   busy: boolean;
+  regenerating: boolean;
   onApprove: (data: ProductBriefArtifact) => void;
   onRegenerate: (
     input: Omit<ProposeWorkspaceBriefInput, "workspaceId">
@@ -141,7 +143,7 @@ export function ProductBriefReviewForm({
               disabled={busy || chatInput.trim().length === 0}
             >
               <Send size={16} />
-              {busy ? "正在重新生成..." : "重新生成商品卖点"}
+              {regenerating ? "正在重新生成..." : "重新生成商品卖点"}
             </button>
           </div>
           {chatError ? <p className="product-brief-chat__error">{chatError}</p> : null}
@@ -249,7 +251,7 @@ export function ProductBriefReviewForm({
           />
         </label>
       </div>
-      <div className="review-panel__actions">
+      <ReviewActionDock>
         <button
           type="button"
           className="review-primary"
@@ -262,7 +264,7 @@ export function ProductBriefReviewForm({
           <CheckCircle2 size={16} />
           批准商品卖点并生成分镜脚本
         </button>
-      </div>
+      </ReviewActionDock>
     </section>
   );
 }
@@ -291,11 +293,13 @@ export function ProductBriefReview({
   }
   const brief = artifact.data;
   const storyboardPending = Boolean(vm.pending?.storyboard);
+  const regenerating = Boolean(vm.pending?.productBrief);
   return (
     <ProductBriefReviewForm
       artifactId={artifact.id}
       brief={brief}
       busy={vm.busy || storyboardPending}
+      regenerating={regenerating}
       onApprove={vm.actions.approveBriefAndProposeStoryboard}
       onRegenerate={vm.actions.proposeBrief}
       onActionComplete={onActionComplete}

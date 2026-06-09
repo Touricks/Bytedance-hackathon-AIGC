@@ -25,14 +25,14 @@ describe("pipeline contract registry", () => {
   it("uses current workspace module contract versions", () => {
     const registry = getPipelineContracts();
 
-    assert.equal(registry.contractSet, "v1");
+    assert.equal(registry.contractSet, "current");
     assert.deepEqual(
       registry.steps.map((step) => [step.id, step.activeVersion]),
       [
-        ["material_intake", "material-intake.v1"],
-        ["product_brief", "product-brief.v1"],
-        ["storyboard", "ugc-storyboard.v1"],
-        ["shotprompt", "video-shotprompt.v1"]
+        ["material_intake", "material-intake"],
+        ["product_brief", "product-brief"],
+        ["storyboard", "ugc-storyboard"],
+        ["shotprompt", "video-shotprompt"]
       ]
     );
   });

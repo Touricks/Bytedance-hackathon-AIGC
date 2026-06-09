@@ -11,6 +11,8 @@
     "db:clear": "node scripts/clear-postgres.mjs",
     "redis:clear": "node scripts/clear-redis.mjs",
     "reset:dev": "node scripts/reset-dev-session.mjs",
+    "dev:reset": "node scripts/reset-dev-session.mjs",
+    "check:versioned-naming": "node scripts/check-versioned-naming.mjs",
     "contract:frontend-backend": "node scripts/frontend-backend-contract-check.mjs",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
@@ -22,15 +24,19 @@
     "eslint": "^9.18.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.2.11",
-    "newman": "^6.2.1",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
-    "typescript-eslint": "^8.20.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md,css}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.0.1"
   }
 }

@@ -1,155 +1,76 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CREATIVE_REQUIREMENT_TEMPLATES } from "@aigc-video/shared";
 import {
-  applyCreativeRequirementTemplate,
+  DEFAULT_CREATIVE_FACTORS,
+  buildCreativeFactorRequirements,
+  creativeFactorRequirementsDataSchema,
+} from "@aigc-video/shared";
+import {
   promptRequirementsDataFromForm,
-  requirementFormFromImportedDraft,
   requirementFormFromArtifact,
   syncCompiledRequirementFields,
 } from "./requirementsForm.js";
 
 describe("reference video requirements import mapping", () => {
-  it("maps imported draft fields into factor state and compiled requirement fields", () => {
-    const fallback = requirementFormFromArtifact(null);
-    const form = requirementFormFromImportedDraft(
-      {
-        image: {
-          style: "真实电商产品摄影",
-          composition: "主体稳定",
-          avoid: ["文字贴片", "商品变形"],
-        },
-        script: {
-          tone: "直接可信",
-          structure: "开场痛点，中段证明，结尾行动引导",
-        },
-        storyboard: {
-          rhythm: "快节奏卖点证明",
-          beats: ["吸引注意", "展示卖点"],
-        },
-        shotImage: {
-          global: "分镜图保持场景连续",
-        },
-        shotVideo: {
-          global: "镜头运动平滑",
-        },
-      },
-      fallback,
-    );
-
-    assert.deepEqual(
-      {
-        imageStyle: form.imageStyle,
-        imageComposition: form.imageComposition,
-        imageAvoid: form.imageAvoid,
-        scriptTone: form.scriptTone,
-        storyboardRhythm: form.storyboardRhythm,
-        shotImageGlobal: form.shotImageGlobal,
-        shotVideoGlobal: form.shotVideoGlobal,
-      },
-      {
-        imageStyle: "真实电商产品摄影",
-        imageComposition: "主体稳定",
-        imageAvoid: "文字贴片，商品变形",
-        scriptTone: "直接可信",
-        storyboardRhythm: "快节奏卖点证明",
-        shotImageGlobal: "分镜图保持场景连续",
-        shotVideoGlobal: "镜头运动平滑",
-      },
-    );
-    assert.deepEqual(form.creativeFactors, {
-      productType: "durable-good",
+  it("maps imported four-factor artifact data into canonical form state", () => {
+    const data = buildCreativeFactorRequirements({
+      productCategory: "consumer-electronics",
+      dealType: "search-standard",
       audience: "youth",
-      strategy: "scenario-demo",
+      strategy: "review-comparison",
     });
-    assert.equal(
-      form.factorGuidance.productType.subjectPresentation,
-      "真实展示商品主体、关键功能部位、使用场景和必要配件。",
-    );
-    assert.equal(
-      form.scriptInfluence.strategy.openingPattern,
-      "用真实使用场景或操作瞬间开场,快速说明商品如何解决问题。",
-    );
-  });
+    const form = requirementFormFromArtifact(data);
 
-  it("applies a setup template as a factor combination with source tags", () => {
-    const template = CREATIVE_REQUIREMENT_TEMPLATES[0];
-    assert.ok(template);
-    const subjectPresentation =
-      template.fields["factorGuidance.productType.subjectPresentation"];
-    assert.ok(subjectPresentation);
-
-    const form = applyCreativeRequirementTemplate(template);
-    const data = promptRequirementsDataFromForm(form);
-
-    assert.deepEqual(form.creativeFactors, template.creativeFactors);
-    assert.deepEqual(form.creativeRequirementTemplate, {
-      source: "setup-template",
-      templateId: template.id,
-      templateNameSnapshot: template.name,
-      templateVersion: template.version,
-      status: "applied",
-    });
-    assert.equal(
-      form.factorGuidance.productType.subjectPresentation,
-      subjectPresentation.value,
-    );
-    assert.deepEqual(data.creativeRequirementTemplate, form.creativeRequirementTemplate);
+    assert.deepEqual(form.creativeFactors, data.creativeFactors);
+    assert.equal(form.factorPromptVersion, data.factorPromptVersion);
+    assert.equal(form.factorComboKey, data.factorComboKey);
+    assert.equal(form.compiledRequirementsHash, data.compiledRequirementsHash);
     assert.deepEqual(
-      data.compiledRequirementSourceMap?.imageStyle.map((source) => source.label),
-      ["商品/服务类型:主体呈现"],
+      form.factorGuidance.productCategory.requiredVisualElements,
+      data.factorGuidance.productCategory.requiredVisualElements,
     );
+    assert.equal(form.imageStyle, data.image.style.join("；"));
+    assert.equal(form.shotVideoGlobal, data.shotVideo.global.join("；"));
   });
 
-  it("keeps template source when customized fields are saved", () => {
-    const template = CREATIVE_REQUIREMENT_TEMPLATES[0];
-    assert.ok(template);
-    const form = applyCreativeRequirementTemplate(template);
-    const customized = syncCompiledRequirementFields({
+  it("recompiles global prompt data from edited guidance fields", () => {
+    const canonical = buildCreativeFactorRequirements(DEFAULT_CREATIVE_FACTORS);
+    const form = syncCompiledRequirementFields({
+      creativeFactors: canonical.creativeFactors,
+      factorGuidance: canonical.factorGuidance,
+    });
+    const edited = syncCompiledRequirementFields({
       creativeFactors: form.creativeFactors,
       factorGuidance: {
         ...form.factorGuidance,
-        productType: {
-          ...form.factorGuidance.productType,
-          subjectPresentation: "展示产品开封、近景质地和真实使用动作。",
+        productCategory: {
+          ...form.factorGuidance.productCategory,
+          requiredVisualElements: ["用户手写主体呈现"],
         },
       },
-      scriptInfluence: form.scriptInfluence,
-      creativeRequirementTemplate: {
-        ...form.creativeRequirementTemplate!,
-        status: "customized",
-      },
     });
-
-    const data = promptRequirementsDataFromForm(customized);
-
-    assert.equal(data.image?.style, "展示产品开封、近景质地和真实使用动作。 保持真实拍摄质感和商品/服务身份可识别。");
-    assert.equal(data.creativeRequirementTemplate?.status, "customized");
-    assert.deepEqual(
-      data.compiledRequirementSourceMap?.shotVideoGlobal.map((source) => source.label),
-      ["推销手法:开场方式", "商品/服务类型:场景与交付"],
+    const data = creativeFactorRequirementsDataSchema.parse(
+      promptRequirementsDataFromForm(edited),
     );
+
+    assert.deepEqual(data.factorGuidance.productCategory.requiredVisualElements, [
+      "用户手写主体呈现",
+    ]);
+    assert.ok(data.image.composition.includes("用户手写主体呈现"));
+    assert.ok(data.shotImage.global.includes("用户手写主体呈现"));
+    assert.notEqual(data.compiledRequirementsHash, canonical.compiledRequirementsHash);
+    assert.deepEqual(data.creativeFactors, DEFAULT_CREATIVE_FACTORS);
   });
 
-  it("updates compiled global prompt fields when editable strategy guidance changes", () => {
-    const form = requirementFormFromArtifact(null);
-    const customized = syncCompiledRequirementFields({
-      creativeFactors: form.creativeFactors,
-      factorGuidance: {
-        ...form.factorGuidance,
-        strategy: {
-          ...form.factorGuidance.strategy,
-          openingHook: "先用用户自定义的真实开场想法切入。",
-        },
+  it("does not rehydrate old productType artifacts as valid current data", () => {
+    const form = requirementFormFromArtifact({
+      creativeFactors: {
+        productType: "durable-good",
+        audience: "youth",
+        strategy: "scenario-demo",
       },
-      scriptInfluence: form.scriptInfluence,
-      creativeRequirementTemplate: form.creativeRequirementTemplate,
-    });
-    const data = promptRequirementsDataFromForm(customized);
+    } as never);
 
-    assert.equal(
-      data.shotVideo?.global,
-      "先用用户自定义的真实开场想法切入。 按需求场景、功能展示、细节证明和使用结果推进。",
-    );
+    assert.deepEqual(form.creativeFactors, DEFAULT_CREATIVE_FACTORS);
   });
 });

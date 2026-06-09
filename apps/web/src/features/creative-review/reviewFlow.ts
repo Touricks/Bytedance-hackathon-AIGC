@@ -58,6 +58,18 @@ const oneClickStageLabels: Record<string, string> = {
   completed: "已生成成片",
 };
 
+const artifactStatusLabels: Record<string, string> = {
+  proposed: "待审核",
+  approved: "已生效",
+  archived: "已归档",
+  failed: "处理失败",
+};
+
+function artifactStatusLabel(status: string | null | undefined, fallback: string) {
+  if (!status) return fallback;
+  return artifactStatusLabels[status] ?? status;
+}
+
 export function statusTone(value: string | null | undefined): ReviewTone {
   if (!value) return "idle";
   if (value.includes("FAILED") || value === "failed" || value === "上游已变化") return "danger";
@@ -67,6 +79,7 @@ export function statusTone(value: string | null | undefined): ReviewTone {
     value === "SUCCEEDED" ||
     value === "已确认" ||
     value === "已生效" ||
+    value === "已归档" ||
     value === "已创建" ||
     value === "已生成"
   ) {
@@ -87,7 +100,7 @@ export function statusTone(value: string | null | undefined): ReviewTone {
   ) {
     return "busy";
   }
-  if (value === "proposed" || value.includes("READY") || value === "PARTIAL") {
+  if (value === "待审核" || value === "proposed" || value.includes("READY") || value === "PARTIAL") {
     return "review";
   }
   return "idle";
@@ -200,7 +213,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
   if (vm.pending?.oneClickFinalVideo) {
     return {
       title: "一键成片进行中",
-      message: `当前阶段：${oneClickStageLabel(vm)}。失败后已生成的中间产物会保留，可回到对应步骤手动继续。`,
+      message: `当前阶段：${oneClickStageLabel(vm)}。全部完成后即可查看成片。`,
       tone: "busy",
       stepId: "final",
       action: null,
@@ -450,7 +463,7 @@ export function deriveReviewStepIndicators(
         ? "生成中"
         : productBriefPending || vm.artifacts.material?.isCurrent
           ? "已生效"
-          : (vm.artifacts.material?.status ?? "等待生成"),
+          : artifactStatusLabel(vm.artifacts.material?.status, "等待生成"),
     },
     {
       id: "brief",
@@ -460,10 +473,10 @@ export function deriveReviewStepIndicators(
         : materialBlocksDownstream
           ? "上游已变化"
           : briefNeedsReview
-            ? (vm.artifacts.brief?.status ?? "proposed")
+            ? artifactStatusLabel(vm.artifacts.brief?.status, "待审核")
             : moduleIsUpstreamChanged("product-brief")
               ? "上游已变化"
-              : (vm.artifacts.brief?.status ?? "等待生成"),
+              : artifactStatusLabel(vm.artifacts.brief?.status, "等待生成"),
     },
     {
       id: "storyboard",
@@ -474,10 +487,10 @@ export function deriveReviewStepIndicators(
           : materialBlocksDownstream || productBriefPending || briefNeedsReview
           ? "上游已变化"
           : storyboardNeedsReview
-            ? (vm.artifacts.storyboard?.status ?? "proposed")
+            ? artifactStatusLabel(vm.artifacts.storyboard?.status, "待审核")
             : moduleIsUpstreamChanged("storyboard")
               ? "上游已变化"
-              : (vm.artifacts.storyboard?.status ?? "等待生成"),
+              : artifactStatusLabel(vm.artifacts.storyboard?.status, "等待生成"),
     },
     {
       id: "shotprompt",
@@ -488,10 +501,10 @@ export function deriveReviewStepIndicators(
           : shotPromptBlocksDownstream
           ? "上游已变化"
           : shotPromptNeedsReview
-            ? (shotPrompt?.status ?? "proposed")
+            ? artifactStatusLabel(shotPrompt?.status, "待审核")
             : moduleIsUpstreamChanged("shotprompt")
               ? "上游已变化"
-              : (shotPrompt?.status ?? "等待生成"),
+              : artifactStatusLabel(shotPrompt?.status, "等待生成"),
     },
     {
       id: "apply",

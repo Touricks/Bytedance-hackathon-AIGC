@@ -50,7 +50,7 @@ export interface ProviderCallTraceInput extends ProviderCallTraceContext {
 }
 
 export interface ProviderCallTraceEvent extends ProviderCallTraceInput {
-  schemaVersion: "provider_call.v1";
+  schemaVersion: "provider-call-trace";
   at: string;
   promptHash: string;
 }
@@ -101,7 +101,7 @@ export function buildProviderCallTraceEvent(
   clock: () => Date = () => new Date(),
 ): ProviderCallTraceEvent {
   return {
-    schemaVersion: "provider_call.v1",
+    schemaVersion: "provider-call-trace",
     at: clock().toISOString(),
     ...input,
     candidateId: input.candidateId ?? null,

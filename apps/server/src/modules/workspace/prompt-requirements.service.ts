@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { getModulePromptAssemblyMetadata } from "@aigc-video/ai";
+import { creativeFactorRequirementsDataSchema } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 
@@ -62,6 +63,18 @@ function defaultPromptAssembly(data: unknown) {
   };
 }
 
+function parsePromptRequirementsData(data: unknown) {
+  const parsed = creativeFactorRequirementsDataSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new HttpError(
+      400,
+      "INVALID_PROMPT_REQUIREMENTS_DATA",
+      "prompt requirements must use the current four-factor creative requirements schema",
+    );
+  }
+  return parsed.data;
+}
+
 async function getArtifactForWorkspace(workspaceId: string, artifactId: string) {
   const result = await db.db2.pool().query(
     `select *
@@ -80,6 +93,7 @@ async function getArtifactForWorkspace(workspaceId: string, artifactId: string) 
 export const promptRequirementsService = {
   async propose(workspaceId: string, data: unknown) {
     await db.getWorkspace(workspaceId);
+    const parsedData = parsePromptRequirementsData(data);
     const client = await db.db2.pool().connect();
     try {
       await client.query("begin");
@@ -106,8 +120,8 @@ export const promptRequirementsService = {
              returning *`,
             [
               workspaceId,
-              jsonbParam(data),
-              jsonbParam(defaultPromptAssembly(data)),
+              jsonbParam(parsedData),
+              jsonbParam(defaultPromptAssembly(parsedData)),
               existing.rows[0].id,
             ],
           )
@@ -119,8 +133,8 @@ export const promptRequirementsService = {
             [
               nanoid(),
               workspaceId,
-              jsonbParam(data),
-              jsonbParam(defaultPromptAssembly(data)),
+              jsonbParam(parsedData),
+              jsonbParam(defaultPromptAssembly(parsedData)),
             ],
           );
 
@@ -147,7 +161,7 @@ export const promptRequirementsService = {
     const source = input.artifactId
       ? await getArtifactForWorkspace(input.workspaceId, input.artifactId)
       : null;
-    const data = input.data ?? source?.data;
+    const data = parsePromptRequirementsData(input.data ?? source?.data);
     const promptAssembly =
       source?.promptAssembly && Object.keys(source.promptAssembly).length > 0
         ? source.promptAssembly

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   materialAssetSchema,
   materialIntakeArtifactSchema,
+  normalizeMaterialIntakePrimaryRole,
   type MaterialIntakeArtifact
 } from "@aigc-video/shared";
 import {
@@ -100,9 +101,7 @@ function mergeTags(
   const output = materialIntakeTagsSchema.parse(JSON.parse(rawOutput));
   const acceptedRefs = new Set(scanned.assets.map((asset) => asset.ref));
   const tagsByRef = new Map(
-    output.tags
-      .filter((tag) => acceptedRefs.has(tag.ref))
-      .map((tag) => [tag.ref, tag])
+    output.tags.filter((tag) => acceptedRefs.has(tag.ref)).map((tag) => [tag.ref, tag])
   );
   const assets = scanned.assets.map((asset) => {
     const tag = tagsByRef.get(asset.ref);
@@ -133,17 +132,17 @@ function mergeTags(
         asset.usable &&
         asset.included
     ) ??
-    assets.find(
-      (asset) => asset.kind === "image" && asset.usable && asset.included
-    ) ??
+    assets.find((asset) => asset.kind === "image" && asset.usable && asset.included) ??
     assets.find((asset) => asset.usable && asset.included);
 
-  return materialIntakeArtifactSchema.parse({
-    ...scanned,
-    primaryProductRef:
-      preferredPrimary?.ref ?? fallbackPrimary?.ref ?? scanned.primaryProductRef,
-    assets
-  });
+  return normalizeMaterialIntakePrimaryRole(
+    materialIntakeArtifactSchema.parse({
+      ...scanned,
+      primaryProductRef:
+        preferredPrimary?.ref ?? fallbackPrimary?.ref ?? scanned.primaryProductRef,
+      assets
+    })
+  );
 }
 
 export async function generateMaterialIntakeWithArk(
@@ -202,28 +201,24 @@ export async function generateMaterialIntakeWithArk(
   });
 
   const rawOutput = (
-    await generateTextWithArk(
-      { prompt, content },
-      config,
-      {
-        traceLogger: options.traceLogger,
-        createClient: options.createClient,
-        responseFormat,
-        trace: {
-          pipeline: "material_intake",
+    await generateTextWithArk({ prompt, content }, config, {
+      traceLogger: options.traceLogger,
+      createClient: options.createClient,
+      responseFormat,
+      trace: {
+        pipeline: "material_intake",
+        contractId: contract.id,
+        contractVersion: contract.activeVersion,
+        meta: {
+          promptVersion: MATERIAL_INTAKE_PROMPT_VERSION,
           contractId: contract.id,
           contractVersion: contract.activeVersion,
-          meta: {
-            promptVersion: MATERIAL_INTAKE_PROMPT_VERSION,
-            contractId: contract.id,
-            contractVersion: contract.activeVersion,
-            imageReferenceMode,
-            parsedOutputStatus: "not_parsed",
-            images: imageTraceMeta(imageInputs)
-          }
+          imageReferenceMode,
+          parsedOutputStatus: "not_parsed",
+          images: imageTraceMeta(imageInputs)
         }
       }
-    )
+    })
   ).output;
   let material: MaterialIntakeArtifact;
   try {

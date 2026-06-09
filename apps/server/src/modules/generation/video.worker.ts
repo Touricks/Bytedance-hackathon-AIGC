@@ -4,7 +4,7 @@ import type {
 } from "@aigc-video/shared";
 import { db } from "../../db/client.js";
 import { jobRepository } from "../job/job.repository.js";
-import type { GenerationV2JobMeta } from "../job/job.queue.js";
+import type { GenerationJobMeta } from "../job/job.queue.js";
 import { traceService } from "../trace/trace.service.js";
 import {
   runVideoGenerationBatch,
@@ -96,7 +96,7 @@ async function refreshVideoBatchCompletion(
 export async function processGenerateVideoCandidate(
   data: GenerateVideoCandidateJobData,
   adapter: Adapter = db.db2,
-  meta?: GenerationV2JobMeta,
+  meta?: GenerationJobMeta,
 ) {
   const batch = await adapter.getVideoBatch(data.batchId);
   if (batch.status !== "PENDING" && batch.status !== "RUNNING") return;

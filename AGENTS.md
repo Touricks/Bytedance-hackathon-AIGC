@@ -1,24 +1,10 @@
-## Agent skills
-
-### Issue tracker
-
-Issues and PRDs are tracked in GitHub Issues for `Touricks/Bytedance-hackathon-AIGC`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-This repo uses the canonical triage label vocabulary. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repo uses a single-context domain layout rooted at `CONTEXT.md`. See `docs/agents/domain.md`.
-
 ## System Prompt
 
 This file is the project constitution for Codex. Keep it short, factual, and specific to this AIGC commerce video repository.
 
 ### Repository profile
 
-- Product: merchant-facing AIGC commerce video generation. The V2 flow is material upload -> material intake -> prompt requirements -> product brief -> storyboard -> shotprompt -> shot set apply -> per-shot image/video candidates -> final compose.
+- Product: merchant-facing AIGC commerce video generation. The V3 flow is prompt requirements / creative factors -> material upload -> material intake -> product brief -> storyboard -> shotprompt -> shot set apply -> per-shot image/video candidates -> final compose -> campaign publication tags.
 - Package manager: `pnpm@9.15.4` in a pnpm workspace (`apps/*`, `packages/*`) with Turbo tasks.
 - Runtime: Node.js 22+, PostgreSQL 16, Redis/BullMQ, local workspace files under `.daireel/`, and ffmpeg for final composition.
 - Current frontend target: `apps/web`.
@@ -48,10 +34,10 @@ apps/web/          # current React/Vite frontend on 5173
 packages/ai/       # provider clients, agents/workflows, prompt assembly, response schemas
 packages/shared/   # shared Zod contracts, domain types, job payload types
 packages/config/   # shared lint/prettier/typescript config
-docs/core/         # authoritative V2 architecture, ERD, interface, OpenAPI, prompt workflow/artifacts
+docs/core/         # authoritative V3 architecture, ERD, interface, OpenAPI, prompt workflow/artifacts
 docs/reference/    # provider API references for Ark text/image and Seedance video
 docs/reference_frontend/ # Claude design reference for frontend migration
-docs/test/         # Postman/Newman and acceptance-test documentation
+test/postman/      # Postman collections, env/data files, and test-plan assets
 scripts/           # reset/dev/test/provider orchestration
 CONTEXT.md         # canonical business language
 ```
@@ -76,9 +62,9 @@ CONTEXT.md         # canonical business language
 ### Source of truth rules
 
 - Before backend, provider, or contract work, read `CONTEXT.md` plus the relevant `docs/core/` files.
-- `docs/core/arc_v2.md` is the target architecture; `docs/core/interface.md` and `docs/core/openapi.yaml` are the API contract; `docs/core/prompt_workflow.md` and `docs/core/prompt_artifact.md` describe prompt assembly and persisted prompt facts.
+- `docs/core/product/` and `docs/core/architecture/` are the target architecture; `docs/core/contracts/interface.md` and `docs/core/contracts/openapi.yaml` are the API contract. `docs/core/archived/` is migration staging only and may be deleted or ignored after facts are migrated.
 - Use `docs/reference/` before changing Ark text/image or Seedance video request/response handling.
-- When API behavior changes, update frontend clients, `docs/core/openapi.yaml`, `docs/core/interface.md` together when applicable.
+- When API behavior changes, update frontend clients, `docs/core/contracts/openapi.yaml`, `docs/core/contracts/interface.md` together when applicable.
 - When fixing issues, check whether `docs/core/` architecture/interface/prompt-chain files need matching updates.
 - Business rules belong in backend services, schemas, shared contracts, and domain docs, not duplicated only in UI.
 
@@ -194,3 +180,5 @@ When context is compacted or a new agent joins, use these files to regain the pr
 - 当完成修复issues时，检查docs/core/中的架构/接口/prompt链路文件是否需要更新
 - 使用$diagnose诊断时，将issue总结并写入docs/issues/P0
 - 前端基于apps/web/进行开发
+- 前端页面单.ts文件代码控制在400行之内
+- 当用户提到“重启服务”时，你需要:1. 解除端口占用 2. 使用pnpm dev启动服务器

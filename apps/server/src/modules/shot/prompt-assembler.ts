@@ -1,5 +1,5 @@
-export const SHOT_IMAGE_ASSEMBLER_VERSION = "server-image-prompt-assembler.v1";
-export const SHOT_VIDEO_ASSEMBLER_VERSION = "server-video-script-assembler.v1";
+export const SHOT_IMAGE_ASSEMBLER_VERSION = "server-image-prompt-assembler";
+export const SHOT_VIDEO_ASSEMBLER_VERSION = "server-video-script-assembler";
 
 const IMAGE_FIELD_ORDER = [
   "scene",

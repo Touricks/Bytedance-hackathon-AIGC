@@ -215,7 +215,7 @@ describe("shotprompt workflow", () => {
 
   it("constrains the provider schema to the storyboard shot count", () => {
     const responseFormat = buildShotPromptResponseFormat({
-      schemaVersion: "video-shotprompt.v1",
+      schemaVersion: "video-shotprompt",
       material,
       expectedShotCount: storyboard.shots.length,
     });

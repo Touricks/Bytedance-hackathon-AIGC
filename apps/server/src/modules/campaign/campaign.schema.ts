@@ -1,12 +1,5 @@
 import { z } from "zod";
 
-export const campaignPublicationStatusSchema = z.enum([
-  "planned",
-  "published",
-  "failed",
-  "archived",
-]);
-
 function emptyStringToUndefined(value: unknown) {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
@@ -21,13 +14,11 @@ const optionalUrl = z.preprocess(
 );
 
 export const createCampaignPublicationRequest = z.object({
-  finalVideoJobId: optionalText,
+  jobId: optionalText,
   platform: z.string().trim().min(1),
-  channelName: z.string().trim().min(1),
-  kolName: optionalText,
+  accountName: z.string().trim().min(1),
   publishUrl: optionalUrl,
-  status: campaignPublicationStatusSchema.default("planned"),
-  notes: optionalText,
+  publishedAt: z.string().datetime().optional(),
 });
 
 export const recordCampaignMetricsRequest = z.object({
@@ -35,9 +26,7 @@ export const recordCampaignMetricsRequest = z.object({
   clicks: z.number().int().min(0).default(0),
   conversions: z.number().int().min(0).default(0),
   spendCents: z.number().int().min(0).default(0),
-  capturedAt: z.string().datetime().optional(),
-  source: z.string().trim().min(1).default("manual"),
-  metadata: z.record(z.unknown()).default({}),
+  gmvCents: z.number().int().min(0).default(0),
 });
 
 export type CreateCampaignPublicationRequest = z.infer<

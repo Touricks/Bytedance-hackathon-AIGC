@@ -177,7 +177,7 @@ describe("trace service", () => {
         .map((line) => JSON.parse(line) as Record<string, unknown>);
 
       assert.equal(events.length, 1);
-      assert.equal(events[0]?.schemaVersion, "provider_call.v1");
+      assert.equal(events[0]?.schemaVersion, "provider-call-trace");
       assert.equal(events[0]?.workspaceId, workspaceId);
       assert.equal(events[0]?.mediaType, "image");
       assert.equal(events[0]?.jobId, "job-provider-trace");

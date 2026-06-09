@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
+import { buildCreativeFactorRequirements, type CreativeFactors } from "@aigc-video/shared";
 import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
@@ -50,18 +51,22 @@ function materialDraft(description = "商品主图素材 product.png") {
   };
 }
 
+function testPromptRequirementsData(input: Partial<CreativeFactors> = {}) {
+  return buildCreativeFactorRequirements({
+    productCategory: "consumer-electronics",
+    dealType: "search-standard",
+    audience: "youth",
+    strategy: "review-comparison",
+    ...input,
+  });
+}
+
 async function approvePromptRequirements(app: FastifyInstance, workspaceId: string) {
   const response = await app.inject({
     method: "POST",
     url: `/api/workspaces/${workspaceId}/prompt-requirements/approve`,
     payload: {
-      data: {
-        image: { style: "真实商品素材" },
-        script: { tone: "direct" },
-        storyboard: { structure: "开场钩子-卖点证明-行动号召" },
-        shotImage: { global: "保持商品身份一致" },
-        shotVideo: { global: "镜头运动稳定" },
-      },
+      data: testPromptRequirementsData(),
     },
   });
   assert.equal(response.statusCode, 200, response.body);

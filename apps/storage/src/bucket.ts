@@ -1,6 +1,7 @@
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -10,6 +11,10 @@ import {
   type S3Client,
 } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
+import { mapWithConcurrency } from "./concurrency.js";
+
+const DELETE_BATCH_SIZE = 1000;
+const DELETE_CONCURRENCY = 8;
 
 export async function ensureBucket(input: {
   client: S3Client;
@@ -155,4 +160,64 @@ export async function deleteObject(input: {
   await input.client.send(
     new DeleteObjectCommand({ Bucket: input.bucket, Key: input.key }),
   );
+}
+
+/**
+ * Delete many keys using batched `DeleteObjects` (<=1000 keys/request) with
+ * bounded concurrency. Throws an aggregated error naming any keys S3 reported
+ * as failed.
+ */
+export async function deleteObjects(input: {
+  client: S3Client;
+  bucket: string;
+  keys: string[];
+  concurrency?: number;
+}) {
+  if (input.keys.length === 0) return;
+  const chunks: string[][] = [];
+  for (let i = 0; i < input.keys.length; i += DELETE_BATCH_SIZE) {
+    chunks.push(input.keys.slice(i, i + DELETE_BATCH_SIZE));
+  }
+  const failuresPerChunk = await mapWithConcurrency(
+    chunks,
+    input.concurrency ?? DELETE_CONCURRENCY,
+    async (chunk) => {
+      const response = await input.client.send(
+        new DeleteObjectsCommand({
+          Bucket: input.bucket,
+          Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
+        }),
+      );
+      return (response.Errors ?? []).map((error) => error.Key ?? "");
+    },
+  );
+  const failed = failuresPerChunk.flat();
+  if (failed.length > 0) {
+    throw new Error(
+      `Failed to delete ${failed.length} object(s): ${failed.join(", ")}`,
+    );
+  }
+}
+
+/**
+ * List every key under `prefix` and delete them in batches. Used to purge a
+ * whole workspace prefix without a HEAD-per-object round trip.
+ */
+export async function deleteObjectsUnderPrefix(input: {
+  client: S3Client;
+  bucket: string;
+  prefix: string;
+  concurrency?: number;
+}) {
+  const keys = await listObjectKeys({
+    client: input.client,
+    bucket: input.bucket,
+    prefix: input.prefix,
+  });
+  await deleteObjects({
+    client: input.client,
+    bucket: input.bucket,
+    keys,
+    concurrency: input.concurrency,
+  });
 }

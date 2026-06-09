@@ -7,7 +7,7 @@ import type { RuntimePromptView } from "./material-intake.prompt.js";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard.v1";
+export const STORYBOARD_PROMPT_VERSION = "ugc-storyboard";
 
 export interface BuildStoryboardPromptInput {
   brief: ProductBriefArtifact;
@@ -82,7 +82,7 @@ export function buildStoryboardPromptView(
         {
           id: "task",
           label: "任务",
-          body: "生成一条 15 秒电商口播风格分镜。固定 3 镜，purpose 按顺序是 hook、proof、cta，durationSec 按顺序是 4、7、4。保留唯一核心卖点；productAssetRef 必须是已确认素材清单中的非空 ref；每段口播有效字数不超过 durationSec * 5。",
+          body: "生成一条 15 秒电商口播风格分镜。固定 3 镜，purpose 按顺序是 hook、proof、cta，durationSec 按顺序是 4、7、4。保留唯一核心卖点；productAssetRef 必须是已确认素材清单中的非空 ref；每段口播有效字数不超过 durationSec * 8（cta 留白除外）。",
         },
         {
           id: "output_contract",
@@ -135,7 +135,7 @@ export function buildStoryboardVoiceoverRewritePrompt(
       creativeRequirements,
       "任务：只重写分镜脚本中的 shots[].voiceover。",
       "边界：不得改变 narrative、totalDurationSec、shots 数量、index、purpose、durationSec、scene、visualDirection、productAssetRef、transition。",
-      "节奏约束：每段口播有效字数必须小于等于 durationSec * 5。",
+      "节奏约束：每段口播有效字数必须小于等于 durationSec * 8（cta 留白除外）。",
       "风格：用商家能直接审核的中文电商口播，避免夸大宣称和不可验证承诺。",
       input.userDirection?.trim()
         ? `用户补充要求：${input.userDirection.trim()}`

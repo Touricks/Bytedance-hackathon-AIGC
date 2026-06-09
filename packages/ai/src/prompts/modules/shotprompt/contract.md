@@ -11,6 +11,6 @@ shots[].shotImage 是静态关键帧字典，必须服务 image-prompt agent。�
 shots[].shotVideo 是动态视频运动字典，必须服务 video-script agent。它应包含 cameraMotion、subjectMotion、firstFrameIntent、lastFrameIntent、durationIntent、continuity、negative 等动态要求；必须描述运动、首末帧和连续性，不得只是复述 providerPrompt 或 shotImage。
 providerPrompt、shotImage、shotVideo 三层不得互相原样复制；如果信息相同，也要按各自职责重新表述。
 tts.voiceover 从 shots[].voiceover 汇总，不新增第二份脚本。
-tts.voiceProfile 是全片统一旁白声音策略，必须包含 gender、tone、pitch、pace。gender 只能是 female 或 male；pitch 只能是 low、medium 或 high；pace 只能是 slow、medium 或 fast。tone 用中文描述全片统一语气，例如“自信、友好、可信”。
+tts.voiceProfile 是全片统一旁白声音策略，必须包含 gender、tone、pitch、pace。gender 只能是 female 或 male；pitch 只能是 low、medium 或 high；pace 必须固定为 fast（快速语速，让 15 秒内信息密度最大化）。tone 用中文描述全片统一语气，例如”自信、友好、可信”。
 assumptions 只记录必要且可审计的中文假设。
 禁止输出占位符值，例如：字符串、string、TODO、N/A、示例、待补充。

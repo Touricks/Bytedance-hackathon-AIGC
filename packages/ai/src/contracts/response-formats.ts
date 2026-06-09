@@ -1,7 +1,11 @@
 import {
   STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
   STORYBOARD_SCRIPT_TOTAL_DURATION_SEC,
-  type MaterialIntakeArtifact,
+  audienceSchema,
+  dealTypeSchema,
+  productCategorySchema,
+  strategySchema,
+  type MaterialIntakeArtifact
 } from "@aigc-video/shared";
 import type { ArkJsonSchemaResponseFormat } from "../providers/ark-text.provider.js";
 
@@ -15,13 +19,13 @@ const booleanSchema = { type: "boolean" };
 
 function strictObject(
   properties: Record<string, JsonSchema>,
-  required: string[],
+  required: string[]
 ): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
     required,
-    properties,
+    properties
   };
 }
 
@@ -29,7 +33,7 @@ function arrayOf(items: JsonSchema, extra: JsonSchema = {}): JsonSchema {
   return {
     type: "array",
     items,
-    ...extra,
+    ...extra
   };
 }
 
@@ -59,16 +63,16 @@ function responseFormat(input: {
     description: input.description,
     schemaVersion: input.schemaVersion,
     strict: true,
-    schema: input.schema,
+    schema: input.schema
   };
 }
 
 export function buildMaterialIntakeResponseFormat(
-  schemaVersion: string,
+  schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "material_intake_v1",
-    description: "为 V1 素材清点步骤中的工作区素材打标。",
+    name: "material_intake",
+    description: "为素材清点步骤中的工作区素材打标。",
     schemaVersion,
     schema: strictObject(
       {
@@ -87,36 +91,36 @@ export function buildMaterialIntakeResponseFormat(
                   "demo_video",
                   "spec_text",
                   "reference",
-                  "other",
-                ],
+                  "other"
+                ]
               },
               description: nonEmptyString,
               relevance: { type: "string", enum: ["high", "medium", "low"] },
-              included: booleanSchema,
+              included: booleanSchema
             },
-            ["ref", "role", "description", "relevance", "included"],
-          ),
-        ),
+            ["ref", "role", "description", "relevance", "included"]
+          )
+        )
       },
-      ["primaryProductRef", "tags"],
-    ),
+      ["primaryProductRef", "tags"]
+    )
   });
 }
 
 const productAssetSchema = strictObject(
   {
     ref: nonEmptyString,
-    useAs: { type: "string", enum: ["primary", "support"] },
+    useAs: { type: "string", enum: ["primary", "support"] }
   },
-  ["ref", "useAs"],
+  ["ref", "useAs"]
 );
 
 export function buildProductBriefResponseFormat(
-  schemaVersion: string,
+  schemaVersion: string
 ): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "product_brief_v1",
-    description: "生成可编辑的 V1 商品 brief artifact。",
+    name: "product_brief",
+    description: "生成可编辑的商品 brief artifact。",
     schemaVersion,
     schema: strictObject(
       {
@@ -125,16 +129,16 @@ export function buildProductBriefResponseFormat(
             name: nonEmptyString,
             category: nonEmptyString,
             keyFacts: arrayOf(nonEmptyString),
-            assets: arrayOf(productAssetSchema),
+            assets: arrayOf(productAssetSchema)
           },
-          ["name", "category", "keyFacts", "assets"],
+          ["name", "category", "keyFacts", "assets"]
         ),
         audience: strictObject(
           {
             who: nonEmptyString,
-            painOrDesire: nonEmptyString,
+            painOrDesire: nonEmptyString
           },
-          ["who", "painOrDesire"],
+          ["who", "painOrDesire"]
         ),
         coreSellingPoint: nonEmptyString,
         proof: arrayOf(nonEmptyString),
@@ -143,7 +147,7 @@ export function buildProductBriefResponseFormat(
         brandTone: nonEmptyString,
         bannedExpressions: arrayOf(plainString),
         landingInfo: nullableString(),
-        assumptions: arrayOf(plainString),
+        assumptions: arrayOf(plainString)
       },
       [
         "product",
@@ -155,9 +159,87 @@ export function buildProductBriefResponseFormat(
         "brandTone",
         "bannedExpressions",
         "landingInfo",
-        "assumptions",
-      ],
-    ),
+        "assumptions"
+      ]
+    )
+  });
+}
+
+const confidenceSchema = { type: "string", enum: ["low", "medium", "high"] };
+
+export function buildReferenceVideoRequirementsResponseFormat(
+  schemaVersion: string
+): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "reference_video_requirements",
+    description: "从参考视频分析结构并推荐全局创作因子。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        analysis: strictObject(
+          {
+            summary: nonEmptyString,
+            confidence: confidenceSchema,
+            detectedBeats: arrayOf(nonEmptyString),
+            risks: arrayOf(nonEmptyString)
+          },
+          ["summary", "confidence", "detectedBeats", "risks"]
+        ),
+        creativeFactorsRecommendation: strictObject(
+          {
+            recommendedFactors: strictObject(
+              {
+                productCategory: {
+                  type: "string",
+                  enum: productCategorySchema.options
+                },
+                dealType: { type: "string", enum: dealTypeSchema.options },
+                audience: {
+                  type: "string",
+                  enum: audienceSchema.options
+                },
+                strategy: {
+                  type: "string",
+                  enum: strategySchema.options
+                }
+              },
+              ["productCategory", "dealType", "audience", "strategy"]
+            ),
+            confidence: confidenceSchema,
+            reasons: arrayOf(nonEmptyString)
+          },
+          ["recommendedFactors", "confidence", "reasons"]
+        )
+      },
+      ["analysis", "creativeFactorsRecommendation"]
+    )
+  });
+}
+
+export function buildSuggestCreativeFactorsResponseFormat(
+  schemaVersion: string
+): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "suggest_creative_factors",
+    description: "基于商品素材图片推荐全局创作因子。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        summary: nonEmptyString,
+        recommendedFactors: strictObject(
+          {
+            productCategory: { type: "string", enum: productCategorySchema.options },
+            dealType: { type: "string", enum: dealTypeSchema.options },
+            audience: { type: "string", enum: audienceSchema.options },
+            strategy: { type: "string", enum: strategySchema.options }
+          },
+          ["productCategory", "dealType", "audience", "strategy"]
+        ),
+        confidence: confidenceSchema,
+        reasons: arrayOf(nonEmptyString)
+      },
+      ["summary", "recommendedFactors", "confidence", "reasons"]
+    )
   });
 }
 
@@ -167,15 +249,15 @@ export function buildStoryboardResponseFormat(input: {
 }): ArkJsonSchemaResponseFormat {
   const refs = materialRefs(input.material);
   return responseFormat({
-    name: "ugc_storyboard_v1",
-    description: "生成可编辑的 V1 口播分镜 artifact。",
+    name: "ugc_storyboard",
+    description: "生成可编辑的口播分镜 artifact。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
       {
         narrative: nonEmptyString,
         totalDurationSec: {
           type: "integer",
-          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC],
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC]
         },
         shots: arrayOf(
           strictObject(
@@ -184,13 +266,13 @@ export function buildStoryboardResponseFormat(input: {
               purpose: { type: "string", enum: ["hook", "proof", "cta"] },
               durationSec: {
                 type: "integer",
-                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC,
+                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC
               },
               scene: nonEmptyString,
               visualDirection: nonEmptyString,
               productAssetRef: refSchema(refs),
               voiceover: nonEmptyString,
-              transition: nonEmptyString,
+              transition: nonEmptyString
             },
             [
               "index",
@@ -200,15 +282,15 @@ export function buildStoryboardResponseFormat(input: {
               "visualDirection",
               "productAssetRef",
               "voiceover",
-              "transition",
-            ],
+              "transition"
+            ]
           ),
-          { minItems: 3, maxItems: 3 },
+          { minItems: 3, maxItems: 3 }
         ),
-        assumptions: arrayOf(plainString),
+        assumptions: arrayOf(plainString)
       },
-      ["narrative", "totalDurationSec", "shots", "assumptions"],
-    ),
+      ["narrative", "totalDurationSec", "shots", "assumptions"]
+    )
   });
 }
 
@@ -217,7 +299,7 @@ export function buildStoryboardVoiceoverRewriteResponseFormat(input: {
   expectedShotCount: number;
 }): ArkJsonSchemaResponseFormat {
   return responseFormat({
-    name: "ugc_storyboard_voiceover_rewrite_v1",
+    name: "ugc_storyboard_voiceover_rewrite",
     description: "按已确认分镜结构重写每段中文口播，只返回 index 与 voiceover。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
@@ -226,18 +308,18 @@ export function buildStoryboardVoiceoverRewriteResponseFormat(input: {
           strictObject(
             {
               index: integer,
-              voiceover: nonEmptyString,
+              voiceover: nonEmptyString
             },
-            ["index", "voiceover"],
+            ["index", "voiceover"]
           ),
           {
             minItems: input.expectedShotCount,
-            maxItems: input.expectedShotCount,
-          },
-        ),
+            maxItems: input.expectedShotCount
+          }
+        )
       },
-      ["shots"],
-    ),
+      ["shots"]
+    )
   });
 }
 
@@ -254,7 +336,7 @@ export function buildShotPromptResponseFormat(input: {
       lighting: nonEmptyString,
       productVisibility: nonEmptyString,
       referenceUsage: nonEmptyString,
-      negative: arrayOf(plainString),
+      negative: arrayOf(plainString)
     },
     [
       "scene",
@@ -262,8 +344,8 @@ export function buildShotPromptResponseFormat(input: {
       "lighting",
       "productVisibility",
       "referenceUsage",
-      "negative",
-    ],
+      "negative"
+    ]
   );
   const shotVideoSchema = strictObject(
     {
@@ -273,7 +355,7 @@ export function buildShotPromptResponseFormat(input: {
       lastFrameIntent: nullableString(),
       durationIntent: nonEmptyString,
       continuity: nonEmptyString,
-      negative: arrayOf(plainString),
+      negative: arrayOf(plainString)
     },
     [
       "cameraMotion",
@@ -282,12 +364,12 @@ export function buildShotPromptResponseFormat(input: {
       "lastFrameIntent",
       "durationIntent",
       "continuity",
-      "negative",
-    ],
+      "negative"
+    ]
   );
   return responseFormat({
-    name: "video_shotprompt_v1",
-    description: "生成可编辑的 V1 Seedance 视频生成提示词 artifact。",
+    name: "video_shotprompt",
+    description: "生成可编辑的Seedance 视频生成提示词 artifact。",
     schemaVersion: input.schemaVersion,
     schema: strictObject(
       {
@@ -306,7 +388,7 @@ export function buildShotPromptResponseFormat(input: {
               referenceAssetRefs: arrayOf(refSchema(refs)),
               voiceover: nonEmptyString,
               shotImage: shotImageSchema,
-              shotVideo: shotVideoSchema,
+              shotVideo: shotVideoSchema
             },
             [
               "index",
@@ -316,10 +398,10 @@ export function buildShotPromptResponseFormat(input: {
               "referenceAssetRefs",
               "voiceover",
               "shotImage",
-              "shotVideo",
-            ],
+              "shotVideo"
+            ]
           ),
-          { minItems: input.expectedShotCount, maxItems: input.expectedShotCount },
+          { minItems: input.expectedShotCount, maxItems: input.expectedShotCount }
         ),
         tts: strictObject(
           {
@@ -331,14 +413,14 @@ export function buildShotPromptResponseFormat(input: {
                 gender: { type: "string", enum: ["female", "male"] },
                 tone: nonEmptyString,
                 pitch: { type: "string", enum: ["low", "medium", "high"] },
-                pace: { type: "string", enum: ["slow", "medium", "fast"] },
+                pace: { type: "string", enum: ["slow", "medium", "fast"] }
               },
-              ["gender", "tone", "pitch", "pace"],
-            ),
+              ["gender", "tone", "pitch", "pace"]
+            )
           },
-          ["enabled", "source", "voiceover", "voiceProfile"],
+          ["enabled", "source", "voiceover", "voiceProfile"]
         ),
-        assumptions: arrayOf(plainString),
+        assumptions: arrayOf(plainString)
       },
       [
         "targetProvider",
@@ -348,8 +430,129 @@ export function buildShotPromptResponseFormat(input: {
         "negativePrompt",
         "shots",
         "tts",
-        "assumptions",
-      ],
-    ),
+        "assumptions"
+      ]
+    )
+  });
+}
+
+export function buildRegenerateShotPromptResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  return responseFormat({
+    name: "video_shotprompt_single",
+    description: "重新生成单个分镜的 Seedance 提示词。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        index: integer,
+        startSec: integer,
+        endSec: positiveInteger,
+        providerPrompt: nonEmptyString,
+        referenceAssetRefs: arrayOf(refSchema(refs)),
+        voiceover: nonEmptyString,
+        shotImage: strictObject(
+          {
+            scene: nonEmptyString,
+            composition: nonEmptyString,
+            lighting: nonEmptyString,
+            productVisibility: nonEmptyString,
+            referenceUsage: nonEmptyString,
+            negative: arrayOf(plainString)
+          },
+          ["scene", "composition", "lighting", "productVisibility", "referenceUsage", "negative"]
+        ),
+        shotVideo: strictObject(
+          {
+            cameraMotion: nonEmptyString,
+            subjectMotion: nonEmptyString,
+            firstFrameIntent: nonEmptyString,
+            lastFrameIntent: nullableString(),
+            durationIntent: nonEmptyString,
+            continuity: nonEmptyString,
+            negative: arrayOf(plainString)
+          },
+          ["cameraMotion", "subjectMotion", "firstFrameIntent", "lastFrameIntent", "durationIntent", "continuity", "negative"]
+        )
+      },
+      ["index", "startSec", "endSec", "providerPrompt", "referenceAssetRefs", "voiceover", "shotImage", "shotVideo"]
+    )
+  });
+}
+
+export function buildViralImitationResponseFormat(input: {
+  schemaVersion: string;
+  material: MaterialIntakeArtifact;
+}): ArkJsonSchemaResponseFormat {
+  const refs = materialRefs(input.material);
+  return responseFormat({
+    name: "ugc_viral_imitation",
+    description: "模仿爆款结构生成可编辑的分镜 artifact。",
+    schemaVersion: input.schemaVersion,
+    schema: strictObject(
+      {
+        narrative: nonEmptyString,
+        totalDurationSec: {
+          type: "integer",
+          enum: [STORYBOARD_SCRIPT_TOTAL_DURATION_SEC]
+        },
+        shots: arrayOf(
+          strictObject(
+            {
+              index: integer,
+              purpose: { type: "string", enum: ["hook", "proof", "cta"] },
+              durationSec: {
+                type: "integer",
+                minimum: STORYBOARD_SCRIPT_MIN_SHOT_DURATION_SEC
+              },
+              scene: nonEmptyString,
+              visualDirection: nonEmptyString,
+              productAssetRef: refSchema(refs),
+              voiceover: nonEmptyString,
+              transition: nonEmptyString
+            },
+            ["index", "purpose", "durationSec", "scene", "visualDirection", "productAssetRef", "voiceover", "transition"]
+          ),
+          { minItems: 3, maxItems: 3 }
+        ),
+        assumptions: arrayOf(plainString),
+        viralTemplateUsed: nonEmptyString,
+        matchReason: nonEmptyString
+      },
+      ["narrative", "totalDurationSec", "shots", "assumptions", "viralTemplateUsed", "matchReason"]
+    )
+  });
+}
+
+export function buildVideoBreakdownResponseFormat(schemaVersion: string): ArkJsonSchemaResponseFormat {
+  return responseFormat({
+    name: "video_breakdown",
+    description: "分析参考视频的爆款结构，提取叙事和节奏模式。",
+    schemaVersion,
+    schema: strictObject(
+      {
+        hookTechnique: nonEmptyString,
+        sellingPoints: arrayOf(nonEmptyString, { minItems: 1 }),
+        structure: arrayOf(
+          strictObject(
+            {
+              purpose: { type: "string", enum: ["hook", "benefit", "proof", "cta"] },
+              description: nonEmptyString,
+              durationSec: positiveInteger
+            },
+            ["purpose", "description", "durationSec"]
+          ),
+          { minItems: 3 }
+        ),
+        emotionalArc: nonEmptyString,
+        copyStyle: nonEmptyString,
+        suggestedCategories: arrayOf(nonEmptyString, { minItems: 1 }),
+        suggestedName: nonEmptyString,
+        whyViral: nonEmptyString
+      },
+      ["hookTechnique", "sellingPoints", "structure", "emotionalArc", "copyStyle", "suggestedCategories", "suggestedName", "whyViral"]
+    )
   });
 }

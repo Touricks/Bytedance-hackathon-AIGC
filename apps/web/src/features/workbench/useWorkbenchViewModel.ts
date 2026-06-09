@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   MaterialIntakeArtifact,
@@ -20,7 +20,9 @@ import {
   proposeWorkspaceStoryboard,
   proposeWorkspaceStoryboardVoiceover,
   runWorkspaceMaterialIntake,
+  suggestCreativeFactors,
   uploadWorkspaceMaterial,
+  type SuggestCreativeFactorsResult,
 } from "../../lib/api/client.js";
 import type {
   AspectRatio,
@@ -59,7 +61,7 @@ import {
 import { selectVideo } from "../../lib/api/videoSelect.js";
 import { useFinalVideo } from "./useFinalVideo.js";
 import {
-  isActiveOneClickStatus,
+  oneClickPollingInterval,
   resolveOneClickFinalVideoState,
 } from "./oneClickState.js";
 import { roundPollingInterval } from "./roundPolling.js";
@@ -102,6 +104,9 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const [activeFinalJobId, setActiveFinalJobId] = useState<string | null>(null);
   const [imageCandidateCount, setImageCandidateCountState] = useState(1);
   const [videoCandidateCount, setVideoCandidateCountState] = useState(1);
+  const [factorSuggestion, setFactorSuggestion] = useState<SuggestCreativeFactorsResult | null>(null);
+  const [factorSuggestionLoading, setFactorSuggestionLoading] = useState(false);
+  const [factorSuggestionError, setFactorSuggestionError] = useState<string | null>(null);
 
   const configLimits = useQuery({
     queryKey: ["config-limits"],
@@ -263,9 +268,10 @@ export function useWorkbenchViewModel(workspaceId: string) {
     queryKey: ["one-click-final-videos", workspaceId],
     queryFn: () => listOneClickFinalVideos(workspaceId),
     refetchInterval: (query) =>
-      query.state.data?.data.some((job) => isActiveOneClickStatus(job.status))
-        ? 3_000
-        : 15_000,
+      oneClickPollingInterval({
+        statusActiveJob: workspaceStatus.data?.activeOneClickFinalVideo,
+        jobs: query.state.data?.data ?? [],
+      }),
   });
 
   const shotImageAutoSelectionJobs = useQuery({
@@ -373,6 +379,22 @@ export function useWorkbenchViewModel(workspaceId: string) {
       }),
     onSuccess: invalidateWorkspace,
   });
+
+  const runFactorSuggestion = () => {
+    setFactorSuggestionLoading(true);
+    setFactorSuggestionError(null);
+    setFactorSuggestion(null);
+    suggestCreativeFactors(workspaceId)
+      .then(setFactorSuggestion)
+      .catch((err: unknown) => {
+        const msg =
+          err instanceof Error && err.name === "AbortError"
+            ? "AI 分析超时，请重试"
+            : "AI 推荐失败，请重试";
+        setFactorSuggestionError(msg);
+      })
+      .finally(() => setFactorSuggestionLoading(false));
+  };
 
   const approveMaterialIntake = useMutation({
     mutationFn: (data: MaterialIntakeArtifact) =>
@@ -624,6 +646,18 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const artifacts = workspaceStatus.data?.artifacts;
+
+  // Trigger factor suggestion when new assets are uploaded (original flow: requirements page first).
+  const assetCount = workspaceStatus.data?.materialLibrary?.assets?.length ?? 0;
+  const lastSuggestedAssetCountRef = useRef(0);
+  useEffect(() => {
+    if (assetCount === 0 || assetCount === lastSuggestedAssetCountRef.current) return;
+    lastSuggestedAssetCountRef.current = assetCount;
+    runFactorSuggestion();
+  // runFactorSuggestion closes over only stable setters and workspaceId
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetCount]);
+
   const latestImageRound = (imageRounds.data?.data ?? [])[0] ?? null;
   const latestVideoRound = (videoRounds.data?.data ?? [])[0] ?? null;
   const latestImageBatch = latestImageRound?.batch ?? null;
@@ -694,6 +728,14 @@ export function useWorkbenchViewModel(workspaceId: string) {
     traces: traces.data?.data ?? [],
     finalVideo: finalVideo.data?.data ?? null,
     oneClickFinalVideo,
+    factorSuggestion: {
+      result: factorSuggestion,
+      loading: factorSuggestionLoading,
+      error: factorSuggestionError,
+      run: runFactorSuggestion,
+      clear: () => setFactorSuggestion(null),
+      clearError: () => setFactorSuggestionError(null),
+    },
     shotImageAutoSelection,
     activeFinalJobId: displayedFinalJobId,
     candidateCounts: {
@@ -751,10 +793,8 @@ export function useWorkbenchViewModel(workspaceId: string) {
       startCreativeReview: (data: PromptRequirementsData) =>
         startCreativeReview.mutate(data),
       runMaterialIntake: () => materialIntake.mutate(),
-      approveMaterialIntake: () => {
-        const data = artifacts?.material?.data;
-        if (data) approveMaterialIntake.mutate(data);
-      },
+      approveMaterialIntake: (data: MaterialIntakeArtifact) =>
+        approveMaterialIntake.mutate(data),
       approveMaterialIntakeAndProposeBrief: (data: MaterialIntakeArtifact) =>
         approveMaterialIntakeAndProposeBrief.mutate(data),
       startOneClickFinalVideo: (data: MaterialIntakeArtifact) =>

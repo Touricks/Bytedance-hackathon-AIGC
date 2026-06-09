@@ -340,7 +340,7 @@ async function defaultImageProvider(args: Parameters<ImageProvider>[0]): Promise
     return mockImageResult(args.count);
   }
   const cfg = resolveImageProviderConfig();
-  if (!cfg) throw new Error("IMAGE provider not configured");
+  if (!cfg) return mockImageResult(args.count);
   return generateImagesWithArk(
     {
       prompt: args.prompt,

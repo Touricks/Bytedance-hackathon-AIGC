@@ -15,6 +15,8 @@ export type TracePipeline =
   | "probe_image_to_video"
   | "shot_image"
   | "shot_video"
+  | "tts"
+  | "video_breakdown"
   | "final_compose";
 
 export type TraceStatus = "ok" | "error";

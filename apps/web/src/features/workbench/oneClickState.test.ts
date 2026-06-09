@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { OneClickFinalVideoJob } from "../../lib/api/oneClickFinalVideo.js";
-import { resolveOneClickFinalVideoState } from "./oneClickState.js";
+import {
+  oneClickPollingInterval,
+  resolveOneClickFinalVideoState,
+} from "./oneClickState.js";
 
 function oneClickJob(
   overrides: Partial<OneClickFinalVideoJob> = {},
@@ -70,5 +73,37 @@ describe("resolveOneClickFinalVideoState", () => {
     assert.equal(state.hasActiveJob, true);
     assert.equal(state.activeJob?.status, "RUNNING");
     assert.equal(state.displayJob?.currentStage, "image_selection");
+  });
+});
+
+describe("oneClickPollingInterval", () => {
+  it("polls every 5 seconds when the workspace summary has an active job", () => {
+    assert.equal(
+      oneClickPollingInterval({
+        statusActiveJob: oneClickJob({ status: "WAITING" }),
+        jobs: [],
+      }),
+      5_000,
+    );
+  });
+
+  it("polls every 5 seconds when the job list has an active job", () => {
+    assert.equal(
+      oneClickPollingInterval({
+        statusActiveJob: null,
+        jobs: [oneClickJob({ status: "RUNNING" })],
+      }),
+      5_000,
+    );
+  });
+
+  it("polls every 15 seconds when there is no active one-click job", () => {
+    assert.equal(
+      oneClickPollingInterval({
+        statusActiveJob: null,
+        jobs: [oneClickJob({ status: "SUCCEEDED", currentStage: "completed" })],
+      }),
+      15_000,
+    );
   });
 });

@@ -1,31 +1,31 @@
 import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
-import { GENERATION_V2_QUEUE_NAME, type GenerationV2JobData } from "@aigc-video/shared";
+import { GENERATION_QUEUE_NAME, type GenerationJobData } from "@aigc-video/shared";
 import { config } from "../../common/config.js";
 import { logger } from "../../common/logger.js";
 import { db } from "../../db/client.js";
 import { resolveWorkerConcurrency } from "./concurrency.js";
 import { shouldReenqueueInflightJob } from "./job.recovery.js";
 
-let queue: Queue<GenerationV2JobData> | undefined;
-let worker: Worker<GenerationV2JobData> | undefined;
+let queue: Queue<GenerationJobData> | undefined;
+let worker: Worker<GenerationJobData> | undefined;
 
-export interface GenerationV2JobMeta {
+export interface GenerationJobMeta {
   attemptsMade: number;
   attempts: number;
 }
 
-export type Generationv2Processor = (
-  data: GenerationV2JobData,
-  meta?: GenerationV2JobMeta
+export type GenerationProcessor = (
+  data: GenerationJobData,
+  meta?: GenerationJobMeta
 ) => Promise<void>;
-let registeredProcessor: Generationv2Processor | undefined;
+let registeredProcessor: GenerationProcessor | undefined;
 
-interface EnqueueGenerationV2Options {
+interface EnqueueGenerationOptions {
   delayMs?: number;
 }
 
-export function registerGenerationV2Processor(fn: Generationv2Processor) {
+export function registerGenerationProcessor(fn: GenerationProcessor) {
   registeredProcessor = fn;
 }
 
@@ -33,8 +33,8 @@ function createRedisConnection() {
   return new IORedis(config.redisUrl, { maxRetriesPerRequest: null });
 }
 
-function getGenerationV2Queue() {
-  queue ??= new Queue<GenerationV2JobData>(GENERATION_V2_QUEUE_NAME, {
+function getGenerationQueue() {
+  queue ??= new Queue<GenerationJobData>(GENERATION_QUEUE_NAME, {
     connection: createRedisConnection()
   });
   return queue;
@@ -42,7 +42,7 @@ function getGenerationV2Queue() {
 
 async function getQueueJobState(queueJobId: string | null) {
   if (!config.useRedisQueue || !queueJobId) return null;
-  const job = await getGenerationV2Queue().getJob(queueJobId);
+  const job = await getGenerationQueue().getJob(queueJobId);
   return job ? job.getState() : null;
 }
 
@@ -77,7 +77,7 @@ async function prepareGenerationJobForReplay(
 ) {
   const pool = db.db2.pool();
   const errorMessage = job.queueJobId
-    ? `Recovered ${GENERATION_V2_QUEUE_NAME} job ${job.queueJobId} from ${
+    ? `Recovered ${GENERATION_QUEUE_NAME} job ${job.queueJobId} from ${
         queueJobState ?? "missing"
       } state`
     : null;
@@ -170,12 +170,12 @@ async function prepareGenerationJobForReplay(
   }
 }
 
-export async function enqueueGenerationV2(
-  data: GenerationV2JobData,
-  options: EnqueueGenerationV2Options = {},
+export async function enqueueGeneration(
+  data: GenerationJobData,
+  options: EnqueueGenerationOptions = {},
 ) {
   if (config.useRedisQueue) {
-    const job = await getGenerationV2Queue().add(data.kind, data, {
+    const job = await getGenerationQueue().add(data.kind, data, {
       attempts: 3,
       delay: options.delayMs ?? 0,
       backoff: { type: "exponential", delay: 5_000 }
@@ -184,22 +184,22 @@ export async function enqueueGenerationV2(
   }
   setTimeout(() => {
     if (!registeredProcessor) {
-      logger.error("No generation_v2 processor registered");
+      logger.error("No generation processor registered");
       return;
     }
     registeredProcessor(data, { attemptsMade: 0, attempts: 1 }).catch((err) =>
-      logger.error("generation_v2 job failed", { err })
+      logger.error("generation job failed", { err })
     );
   }, options.delayMs ?? 0);
   return null;
 }
 
-export function startGenerationV2Worker() {
+export function startGenerationWorker() {
   if (!config.useRedisQueue) return;
-  worker ??= new Worker<GenerationV2JobData>(
-    GENERATION_V2_QUEUE_NAME,
+  worker ??= new Worker<GenerationJobData>(
+    GENERATION_QUEUE_NAME,
     async (job) => {
-      if (!registeredProcessor) throw new Error("No generation_v2 processor registered");
+      if (!registeredProcessor) throw new Error("No generation processor registered");
       await registeredProcessor(job.data, {
         attemptsMade: job.attemptsMade,
         attempts: job.opts.attempts ?? 1
@@ -248,7 +248,7 @@ export async function recoverInflightGenerationJobs() {
     // Re-enqueue based on job_type + related_batch_id
     if (r.jobType === "generate_images" && r.relatedBatchId) {
       const batch = await db.db2.getImageBatch(r.relatedBatchId);
-      await enqueueGenerationV2({
+      await enqueueGeneration({
         kind: "generate_images",
         jobId: r.id,
         batchId: batch.id,
@@ -270,7 +270,7 @@ export async function recoverInflightGenerationJobs() {
         typeof payload.imagePromptArtifactId === "string" &&
         typeof payload.aspectRatio === "string"
       ) {
-        const queueJobId = await enqueueGenerationV2({
+        const queueJobId = await enqueueGeneration({
           kind: "generate_image_candidate",
           jobId: r.id,
           batchId: payload.batchId,
@@ -300,7 +300,7 @@ export async function recoverInflightGenerationJobs() {
     }
     if (r.jobType === "generate_videos" && r.relatedBatchId) {
       const batch = await db.db2.getVideoBatch(r.relatedBatchId);
-      await enqueueGenerationV2({
+      await enqueueGeneration({
         kind: "generate_videos",
         jobId: r.id,
         batchId: batch.id,
@@ -322,7 +322,7 @@ export async function recoverInflightGenerationJobs() {
         typeof payload.videoScriptArtifactId === "string" &&
         typeof payload.aspectRatio === "string"
       ) {
-        const queueJobId = await enqueueGenerationV2({
+        const queueJobId = await enqueueGeneration({
           kind: "generate_video_candidate",
           jobId: r.id,
           batchId: payload.batchId,
@@ -342,7 +342,7 @@ export async function recoverInflightGenerationJobs() {
     }
     if (r.jobType === "compose_final_video" && r.relatedBatchId) {
       const job = await db.db2.getFinalVideoJob(r.relatedBatchId);
-      await enqueueGenerationV2({
+      await enqueueGeneration({
         kind: "compose_final_video",
         jobId: r.id,
         finalVideoJobId: job.id,
@@ -364,7 +364,7 @@ export async function recoverInflightGenerationJobs() {
             : null;
       }
       if (workspaceId) {
-        const queueJobId = await enqueueGenerationV2({
+        const queueJobId = await enqueueGeneration({
           kind: "advance_one_click_final_video",
           jobId: r.id,
           oneClickJobId: r.relatedBatchId,
@@ -390,7 +390,7 @@ export async function recoverInflightGenerationJobs() {
             : null;
       }
       if (workspaceId) {
-        const queueJobId = await enqueueGenerationV2({
+        const queueJobId = await enqueueGeneration({
           kind: "advance_shot_image_auto_selection",
           jobId: r.id,
           shotImageAutoSelectionJobId: r.relatedBatchId,

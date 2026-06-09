@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
+  BarChart3,
   Clock3,
   Film,
   FolderOpen,
@@ -21,6 +22,10 @@ import {
 import { getConfigLimits } from "../lib/api/configLimits.js";
 import type { DiscoveredWorkspace } from "../lib/api/client.js";
 import type { CreativeWorkspace } from "@aigc-video/shared";
+import {
+  navigateToDataDashboard,
+  navigateToWorkspace,
+} from "./routeState.js";
 
 const pipelineStages = [
   "创作要求",
@@ -65,8 +70,7 @@ const statusLabel: Record<CreativeWorkspace["status"], string> = {
 };
 
 function openWorkspace(id: string) {
-  window.history.pushState({}, "", `/workspaces/${id}`);
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  navigateToWorkspace(id);
 }
 
 function workspaceName(workspace: CreativeWorkspace) {
@@ -333,6 +337,16 @@ export function App() {
           </span>
           <strong>Daireel</strong>
         </div>
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm home-topbar__dashboard"
+          onClick={() => navigateToDataDashboard()}
+          title="进入数据面板"
+          aria-label="进入数据面板"
+        >
+          <BarChart3 size={14} />
+          进入数据面板
+        </button>
         <div className="home-topbar__search">
           <Search size={15} />
           <input

@@ -9,11 +9,10 @@ import type {
   GenerationJob,
   MaterialIntakeArtifact,
   ProductBriefArtifact,
-  ScriptInfluence,
   Script,
   ShotPromptArtifact,
   StoryboardArtifact,
-  StoryboardShot,
+  StoryboardShot
 } from "@aigc-video/shared";
 import type { OneClickFinalVideoJob } from "./oneClickFinalVideo.js";
 
@@ -25,10 +24,7 @@ const env = (
   }
 ).env;
 
-function resolveApiBaseUrl(
-  baseUrl: string,
-  serverPort = "3000",
-) {
+function resolveApiBaseUrl(baseUrl: string, serverPort = "3000") {
   const parsed = new URL(baseUrl);
   if (!parsed.port && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)) {
     parsed.port = serverPort;
@@ -38,7 +34,7 @@ function resolveApiBaseUrl(
 
 const apiBaseUrl = resolveApiBaseUrl(
   env?.VITE_API_BASE_URL ?? env?.PUBLIC_API_BASE_URL ?? "http://localhost",
-  env?.SERVER_PORT ?? "3000",
+  env?.SERVER_PORT ?? "3000"
 );
 
 export interface JobDetail {
@@ -112,8 +108,11 @@ export interface PromptRequirementsData {
   shotVideo?: Record<string, unknown>;
   creativeFactors?: CreativeFactors;
   factorGuidance?: FactorGuidance;
-  scriptInfluence?: ScriptInfluence;
   compiledRequirementSourceMap?: CompiledRequirementSourceMap;
+  factorPromptVersion?: string;
+  factorComboKey?: string;
+  compiledRequirementsHash?: string;
+  attributionEligible?: boolean;
   creativeRequirementTemplate?: CreativeRequirementTemplateSource;
   [key: string]: unknown;
 }
@@ -133,7 +132,6 @@ export interface ReferenceVideoRequirementsImportResult {
         contentType: string;
         sizeBytes: number;
       };
-  draft: PromptRequirementsData;
   analysis: {
     summary: string;
     confidence: "low" | "medium" | "high";
@@ -298,10 +296,7 @@ export interface WorkspaceDeleteDetail {
 export const maxModelImageMaterialBytes = 10 * 1024 * 1024;
 
 export function workspaceMaterialFileRejectionReason(file: File): string | null {
-  if (
-    file.type.startsWith("image/") &&
-    file.size > maxModelImageMaterialBytes
-  ) {
+  if (file.type.startsWith("image/") && file.size > maxModelImageMaterialBytes) {
     return "图片超过 10MB，无法进入模型，请压缩后再上传";
   }
   return null;
@@ -321,16 +316,12 @@ export interface WorkspaceArtifactDetail<TData> {
   trace?: Record<string, unknown>;
 }
 
-export type WorkspaceMaterialDetail =
-  WorkspaceArtifactDetail<MaterialIntakeArtifact>;
+export type WorkspaceMaterialDetail = WorkspaceArtifactDetail<MaterialIntakeArtifact>;
 export type WorkspacePromptRequirementsDetail =
   WorkspaceArtifactDetail<PromptRequirementsData>;
-export type WorkspaceBriefDetail =
-  WorkspaceArtifactDetail<ProductBriefArtifact>;
-export type WorkspaceStoryboardDetail =
-  WorkspaceArtifactDetail<StoryboardArtifact>;
-export type WorkspaceShotPromptDetail =
-  WorkspaceArtifactDetail<ShotPromptArtifact>;
+export type WorkspaceBriefDetail = WorkspaceArtifactDetail<ProductBriefArtifact>;
+export type WorkspaceStoryboardDetail = WorkspaceArtifactDetail<StoryboardArtifact>;
+export type WorkspaceShotPromptDetail = WorkspaceArtifactDetail<ShotPromptArtifact>;
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -367,10 +358,7 @@ function looksLikeZodIssueJson(value: string) {
       Array.isArray(parsed) &&
       parsed.some(
         (issue) =>
-          issue &&
-          typeof issue === "object" &&
-          "code" in issue &&
-          "path" in issue,
+          issue && typeof issue === "object" && "code" in issue && "path" in issue
       )
     );
   } catch {
@@ -378,7 +366,7 @@ function looksLikeZodIssueJson(value: string) {
   }
 }
 
-// ----- v2 envelope -----
+// ----- current envelope -----
 export interface WorkflowEnvelope<T> {
   data: T;
   shotStatus?: string;
@@ -422,37 +410,31 @@ export type AspectRatio = "9:16" | "16:9" | "1:1";
 
 export { apiBaseUrl };
 
-export async function fetchJson<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+      ...(init?.headers ?? {})
+    }
   });
   const text = await response.text();
   const body = text ? JSON.parse(text) : undefined;
   if (!response.ok) {
     throw new Error(
-      `${init?.method ?? "GET"} ${path} failed: ${response.status} ${text}`,
+      `${init?.method ?? "GET"} ${path} failed: ${response.status} ${text}`
     );
   }
   return body as T;
 }
 
-async function postJson<TResponse>(
-  path: string,
-  body: unknown,
-): Promise<TResponse> {
+async function postJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -463,30 +445,30 @@ async function postJson<TResponse>(
 }
 
 function normalizeWorkspaceArtifact<TData>(
-  artifact: WorkspaceArtifact<TData> | null | undefined,
+  artifact: WorkspaceArtifact<TData> | null | undefined
 ) {
   if (!artifact) return null;
   return {
     ...artifact,
-    type: artifact.type ?? artifact.moduleId,
+    type: artifact.type ?? artifact.moduleId
   };
 }
 
 function workspaceArtifactTimestamp(
-  artifact: WorkspaceArtifact<unknown> | null | undefined,
+  artifact: WorkspaceArtifact<unknown> | null | undefined
 ) {
   if (!artifact) return 0;
   return Math.max(
     ...[artifact.approvedAt, artifact.updatedAt, artifact.createdAt]
       .map((value) => (value ? Date.parse(value) : NaN))
       .filter(Number.isFinite),
-    0,
+    0
   );
 }
 
 function preferredWorkspaceArtifact<TData>(
   moduleState: WorkspaceModuleState<TData> | null | undefined,
-  fallback: WorkspaceArtifact<TData> | null | undefined,
+  fallback: WorkspaceArtifact<TData> | null | undefined
 ) {
   const proposed = normalizeWorkspaceArtifact(moduleState?.proposed);
   const current = normalizeWorkspaceArtifact(moduleState?.current);
@@ -500,14 +482,11 @@ function preferredWorkspaceArtifact<TData>(
 
 async function postModuleArtifact<TData>(
   path: string,
-  body: unknown,
+  body: unknown
 ): Promise<WorkspaceArtifactDetail<TData>> {
-  const response = await postJson<{ data: WorkspaceArtifact<TData> }>(
-    path,
-    body,
-  );
+  const response = await postJson<{ data: WorkspaceArtifact<TData> }>(path, body);
   return {
-    artifact: normalizeWorkspaceArtifact(response.data)!,
+    artifact: normalizeWorkspaceArtifact(response.data)!
   };
 }
 
@@ -517,13 +496,13 @@ export async function uploadProductImage(file: File): Promise<Asset> {
   const response = await fetch(`${apiBaseUrl}/api/materials/product-image`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     },
     body: JSON.stringify({
       filename: file.name,
       contentType: file.type || "image/png",
-      dataBase64,
-    }),
+      dataBase64
+    })
   });
 
   if (!response.ok) {
@@ -545,10 +524,10 @@ export function toWorkspaceMaterialUrl(workspaceId: string, refOrUrl: string) {
 }
 
 export async function initializeWorkspace(
-  directory: string,
+  directory: string
 ): Promise<WorkspaceInitializeDetail> {
   return postJson<WorkspaceInitializeDetail>("/api/workspaces/init", {
-    directory,
+    directory
   });
 }
 
@@ -562,18 +541,16 @@ export async function listWorkspaces(): Promise<WorkspaceListDetail> {
   return (await response.json()) as WorkspaceListDetail;
 }
 
-export async function createWorkspace(
-  name?: string,
-): Promise<WorkspaceInitializeDetail> {
+export async function createWorkspace(name?: string): Promise<WorkspaceInitializeDetail> {
   return postJson<WorkspaceInitializeDetail>("/api/workspaces", { name });
 }
 
 export async function deleteWorkspace(
-  workspaceId: string,
+  workspaceId: string
 ): Promise<WorkspaceDeleteDetail> {
   const response = await fetch(
     `${apiBaseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}`,
-    { method: "DELETE" },
+    { method: "DELETE" }
   );
 
   if (!response.ok) {
@@ -584,10 +561,7 @@ export async function deleteWorkspace(
 }
 
 export async function selectWorkspaceDirectory(): Promise<WorkspaceDirectorySelectDetail> {
-  return postJson<WorkspaceDirectorySelectDetail>(
-    "/api/workspaces/directory/select",
-    {},
-  );
+  return postJson<WorkspaceDirectorySelectDetail>("/api/workspaces/directory/select", {});
 }
 
 export async function uploadWorkspaceMaterial(input: {
@@ -601,8 +575,8 @@ export async function uploadWorkspaceMaterial(input: {
     `${apiBaseUrl}/api/workspaces/${input.workspaceId}/materials`,
     {
       method: "POST",
-      body,
-    },
+      body
+    }
   );
 
   if (!response.ok) {
@@ -618,7 +592,7 @@ export async function deleteWorkspaceMaterial(input: {
 }): Promise<WorkspaceMaterialDeleteDetail> {
   const response = await fetch(
     `${apiBaseUrl}/api/workspaces/${input.workspaceId}/materials/${encodeURIComponent(input.ref)}`,
-    { method: "DELETE" },
+    { method: "DELETE" }
   );
 
   if (!response.ok) {
@@ -629,33 +603,31 @@ export async function deleteWorkspaceMaterial(input: {
 }
 
 export async function getWorkspaceStatus(
-  workspaceId: string,
+  workspaceId: string
 ): Promise<WorkspaceStatusDetail> {
   const detail = await fetchJson<WorkspaceStatusDetail>(
-    `/api/workspaces/${workspaceId}/status`,
+    `/api/workspaces/${workspaceId}/status`
   );
   if (detail.artifacts) {
     detail.artifacts = {
       ...detail.artifacts,
-      promptRequirements: normalizeWorkspaceArtifact(
-        detail.artifacts.promptRequirements,
-      ),
+      promptRequirements: normalizeWorkspaceArtifact(detail.artifacts.promptRequirements),
       material: preferredWorkspaceArtifact(
         detail.modules?.["material-intake"],
-        detail.artifacts.material,
+        detail.artifacts.material
       ),
       brief: preferredWorkspaceArtifact(
         detail.modules?.["product-brief"],
-        detail.artifacts.brief,
+        detail.artifacts.brief
       ),
       storyboard: preferredWorkspaceArtifact(
         detail.modules?.storyboard,
-        detail.artifacts.storyboard,
+        detail.artifacts.storyboard
       ),
       shotPrompt: preferredWorkspaceArtifact(
         detail.modules?.shotprompt,
-        detail.artifacts.shotPrompt,
-      ),
+        detail.artifacts.shotPrompt
+      )
     };
   }
   return detail;
@@ -667,7 +639,7 @@ export async function proposeWorkspacePromptRequirements(input: {
 }): Promise<WorkspacePromptRequirementsDetail> {
   return postModuleArtifact<PromptRequirementsData>(
     `/api/workspaces/${input.workspaceId}/prompt-requirements/propose`,
-    { data: input.data },
+    { data: input.data }
   );
 }
 
@@ -678,15 +650,13 @@ export async function approveWorkspacePromptRequirements(input: {
 }): Promise<WorkspacePromptRequirementsDetail> {
   return postModuleArtifact<PromptRequirementsData>(
     `/api/workspaces/${input.workspaceId}/prompt-requirements/approve`,
-    input.artifactId ? { artifactId: input.artifactId } : { data: input.data },
+    input.artifactId ? { artifactId: input.artifactId } : { data: input.data }
   );
 }
 
 export async function importReferenceVideoRequirements(input: {
   workspaceId: string;
-  source:
-    | { type: "url"; url: string }
-    | { type: "file"; file: File };
+  source: { type: "url"; url: string } | { type: "file"; file: File };
 }): Promise<ReferenceVideoRequirementsImportResult> {
   const endpoint = `/api/workspaces/${input.workspaceId}/reference-video/import`;
   if (input.source.type === "url") {
@@ -695,8 +665,8 @@ export async function importReferenceVideoRequirements(input: {
     }>(endpoint, {
       source: {
         type: "url",
-        url: input.source.url,
-      },
+        url: input.source.url
+      }
     });
     return response.data;
   }
@@ -705,19 +675,51 @@ export async function importReferenceVideoRequirements(input: {
   body.set("file", input.source.file);
   const response = await fetch(`${apiBaseUrl}${endpoint}`, {
     method: "POST",
-    body,
+    body
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response));
   }
-  return ((await response.json()) as {
-    data: ReferenceVideoRequirementsImportResult;
-  }).data;
+  return (
+    (await response.json()) as {
+      data: ReferenceVideoRequirementsImportResult;
+    }
+  ).data;
+}
+
+export interface SuggestCreativeFactorsResult {
+  summary: string;
+  recommendedFactors: CreativeFactors;
+  confidence: "low" | "medium" | "high";
+  reasons: string[];
+}
+
+export async function suggestCreativeFactors(
+  workspaceId: string
+): Promise<SuggestCreativeFactorsResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 40000);
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/api/workspaces/${workspaceId}/creative-factors/suggest`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        signal: controller.signal
+      }
+    );
+    if (!response.ok) throw new Error(await readApiErrorMessage(response));
+    const json = (await response.json()) as { data: SuggestCreativeFactorsResult };
+    return json.data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function listCreativeRequirementTemplates(): Promise<CreativeRequirementTemplatesDetail> {
   const response = await fetchJson<{ data: CreativeRequirementTemplatesDetail }>(
-    "/api/setup-templates/creative-requirements",
+    "/api/setup-templates/creative-requirements"
   );
   return response.data;
 }
@@ -731,18 +733,18 @@ export async function runWorkspaceMaterialIntake(input: {
     `/api/workspaces/${input.workspaceId}/material-intake/propose`,
     {
       userDirection: input.prompt,
-      selectedMaterialRefs: input.selectedMaterialRefs,
-    },
+      selectedMaterialRefs: input.selectedMaterialRefs
+    }
   );
 }
 
 export async function approveWorkspaceMaterialIntake(
   workspaceId: string,
-  data: MaterialIntakeArtifact,
+  data: MaterialIntakeArtifact
 ): Promise<WorkspaceMaterialDetail> {
   return postModuleArtifact<MaterialIntakeArtifact>(
     `/api/workspaces/${workspaceId}/material-intake/approve`,
-    { data },
+    { data }
   );
 }
 
@@ -758,7 +760,7 @@ export interface ProposeWorkspaceBriefInput {
 }
 
 export async function proposeWorkspaceBrief(
-  input: ProposeWorkspaceBriefInput,
+  input: ProposeWorkspaceBriefInput
 ): Promise<WorkspaceBriefDetail> {
   return postModuleArtifact<ProductBriefArtifact>(
     `/api/workspaces/${input.workspaceId}/product-brief/propose`,
@@ -769,27 +771,27 @@ export async function proposeWorkspaceBrief(
       audience: input.audience,
       stylePreference: input.stylePreference,
       draft: input.draft,
-      baseArtifactId: input.baseArtifactId,
-    },
+      baseArtifactId: input.baseArtifactId
+    }
   );
 }
 
 export async function approveWorkspaceBrief(
   workspaceId: string,
-  data: ProductBriefArtifact,
+  data: ProductBriefArtifact
 ): Promise<WorkspaceBriefDetail> {
   return postModuleArtifact<ProductBriefArtifact>(
     `/api/workspaces/${workspaceId}/product-brief/approve`,
-    { data },
+    { data }
   );
 }
 
 export async function proposeWorkspaceStoryboard(
-  workspaceId: string,
+  workspaceId: string
 ): Promise<WorkspaceStoryboardDetail> {
   return postModuleArtifact<StoryboardArtifact>(
     `/api/workspaces/${workspaceId}/storyboard/propose`,
-    {},
+    {}
   );
 }
 
@@ -804,18 +806,18 @@ export async function proposeWorkspaceStoryboardVoiceover(input: {
     {
       baseArtifactId: input.baseArtifactId,
       draft: input.draft,
-      userDirection: input.userDirection,
-    },
+      userDirection: input.userDirection
+    }
   );
 }
 
 export async function approveWorkspaceStoryboard(
   workspaceId: string,
-  data: StoryboardArtifact,
+  data: StoryboardArtifact
 ): Promise<WorkspaceStoryboardDetail> {
   return postModuleArtifact<StoryboardArtifact>(
     `/api/workspaces/${workspaceId}/storyboard/approve`,
-    { data },
+    { data }
   );
 }
 
@@ -825,17 +827,17 @@ export async function compileWorkspaceShotPrompt(input: {
 }): Promise<WorkspaceShotPromptDetail> {
   return postModuleArtifact<ShotPromptArtifact>(
     `/api/workspaces/${input.workspaceId}/shotprompt/propose`,
-    { aspectRatio: input.aspectRatio },
+    { aspectRatio: input.aspectRatio }
   );
 }
 
 export async function approveWorkspaceShotPrompt(
   workspaceId: string,
-  data: ShotPromptArtifact,
+  data: ShotPromptArtifact
 ): Promise<WorkspaceShotPromptDetail> {
   return postModuleArtifact<ShotPromptArtifact>(
     `/api/workspaces/${workspaceId}/shotprompt/approve`,
-    { data },
+    { data }
   );
 }
 
@@ -845,6 +847,6 @@ export async function applyWorkspaceShotSet(input: {
 }): Promise<{ data: WorkspaceShotSet }> {
   return postJson<{ data: WorkspaceShotSet }>(
     `/api/workspaces/${input.workspaceId}/shot-sets`,
-    { shotPromptArtifactId: input.shotPromptArtifactId },
+    { shotPromptArtifactId: input.shotPromptArtifactId }
   );
 }

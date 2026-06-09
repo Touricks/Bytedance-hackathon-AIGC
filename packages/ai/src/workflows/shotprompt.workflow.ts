@@ -8,7 +8,8 @@ import {
 } from "@aigc-video/shared";
 import {
   buildShotPromptPrompt,
-  SHOTPROMPT_PROMPT_VERSION
+  SHOTPROMPT_PROMPT_VERSION,
+  type CreativeRequirements,
 } from "../prompts/shotprompt.prompt.js";
 import { getPipelineContractStep } from "../contracts/pipeline.contracts.js";
 import { generateTextWithArk } from "../providers/ark-text.provider.js";
@@ -26,7 +27,7 @@ export interface GenerateShotPromptInput {
   material: MaterialIntakeArtifact;
   storyboard: StoryboardArtifact;
   aspectRatio: "9:16" | "16:9" | "1:1";
-  creativeRequirements?: unknown;
+  creativeRequirements?: CreativeRequirements;
 }
 
 export interface ShotPromptTrace {

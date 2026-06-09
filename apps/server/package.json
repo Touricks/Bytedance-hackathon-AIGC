@@ -13,7 +13,8 @@
     "test": "TRACE_LOG_SCOPE=tests WORKSPACE_STORAGE_KIND=local USE_REDIS_QUEUE=false UPLOAD_DIR=${TMPDIR:-/tmp}/aigc-video-test-uploads UPLOAD_URL_PREFIX=/uploads MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= TEXT_API_KEY= TEXT_BASE_URL= TEXT_ENDPOINT_ID= IMAGE_API_KEY= IMAGE_BASE_URL= IMAGE_ENDPOINT_ID= VIDEO_API_KEY= VIDEO_BASE_URL= VIDEO_ENDPOINT_ID= node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "test:unit": "TRACE_LOG_SCOPE=tests WORKSPACE_STORAGE_KIND=local USE_REDIS_QUEUE=false UPLOAD_DIR=${TMPDIR:-/tmp}/aigc-video-test-uploads UPLOAD_URL_PREFIX=/uploads MODEL_MODE=mock ARK_API_KEY= ARK_TEXT_ENDPOINT_ID= ARK_VIDEO_ENDPOINT_ID= TEXT_API_KEY= TEXT_BASE_URL= TEXT_ENDPOINT_ID= IMAGE_API_KEY= IMAGE_BASE_URL= IMAGE_ENDPOINT_ID= VIDEO_API_KEY= VIDEO_BASE_URL= VIDEO_ENDPOINT_ID= node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --max-warnings=0"
+    "lint": "eslint src --max-warnings=0",
+    "seed:dashboard": "node --import tsx scripts/seed-dashboard.ts"
   },
   "dependencies": {
     "@aigc-video/ai": "workspace:*",
@@ -26,6 +27,7 @@
     "ioredis": "^5.4.2",
     "nanoid": "^5.0.9",
     "pg": "^8.21.0",
+    "sharp": "^0.34.5",
     "zod": "^3.24.1"
   },
   "devDependencies": {

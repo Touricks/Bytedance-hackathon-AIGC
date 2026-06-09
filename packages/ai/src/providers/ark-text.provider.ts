@@ -51,12 +51,16 @@ interface ChatCompletionResponse {
 }
 
 interface ResponsesCreateResponse {
-  output_text?: string;
+  status?: "completed" | "failed" | "in_progress" | "incomplete" | string;
+  output_text?: string | null;
   output?: Array<{
     content?: Array<{
       text?: string;
     }>;
   }>;
+  error?: {
+    message?: string | null;
+  } | null;
 }
 
 export interface OpenAICompatibleTextClient {
@@ -95,6 +99,7 @@ export interface ArkResponsesTextProviderRequest {
 
 export interface ArkResponsesTextProviderOptions {
   createClient?: (config: TextProviderConfig) => OpenAICompatibleResponsesClient;
+  responseFormat?: ArkJsonSchemaResponseFormat;
 }
 
 function createOpenAICompatibleClient(
@@ -122,6 +127,21 @@ function toArkResponseFormat(responseFormat?: ArkJsonSchemaResponseFormat) {
   return {
     type: responseFormat.type,
     json_schema: {
+      name: responseFormat.name,
+      ...(responseFormat.description ? { description: responseFormat.description } : {}),
+      strict: responseFormat.strict ?? true,
+      schema: responseFormat.schema
+    }
+  };
+}
+
+function toArkResponsesText(responseFormat?: ArkJsonSchemaResponseFormat) {
+  if (!responseFormat) {
+    return undefined;
+  }
+  return {
+    format: {
+      type: responseFormat.type,
       name: responseFormat.name,
       ...(responseFormat.description ? { description: responseFormat.description } : {}),
       strict: responseFormat.strict ?? true,
@@ -258,6 +278,14 @@ function responseText(response: ResponsesCreateResponse) {
   return "";
 }
 
+function assertCompletedResponse(response: ResponsesCreateResponse) {
+  if (!response.status || response.status === "completed") {
+    return;
+  }
+  const message = response.error?.message ?? "No error message";
+  throw new Error(`Responses API returned status ${response.status}: ${message}`);
+}
+
 async function generateResponsesTextWithArkInner(
   request: ArkResponsesTextProviderRequest,
   config: TextProviderConfig,
@@ -269,8 +297,12 @@ async function generateResponsesTextWithArkInner(
   const response = await client.responses.create({
     model: config.model,
     input: request.input,
-    temperature: request.temperature ?? 0.2
+    temperature: request.temperature ?? 0.2,
+    ...(options.responseFormat
+      ? { text: toArkResponsesText(options.responseFormat) }
+      : {})
   });
+  assertCompletedResponse(response);
   return {
     provider: config.provider,
     model: config.model,

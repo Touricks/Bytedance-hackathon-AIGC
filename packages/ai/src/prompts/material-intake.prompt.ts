@@ -2,7 +2,7 @@ import type { MaterialIntakeArtifact } from "@aigc-video/shared";
 import { formatCreativeRequirementsForModule } from "./creative-requirements-context.js";
 import { buildModulePrompt } from "./module-prompt-assembler.js";
 
-export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake.v1";
+export const MATERIAL_INTAKE_PROMPT_VERSION = "material-intake";
 
 export interface BuildMaterialIntakePromptInput {
   initialPrompt?: string;
@@ -39,13 +39,13 @@ function materialManifestPreview(input: MaterialIntakeArtifact) {
   return input.assets
     .map(
       (asset) =>
-        `${asset.ref}（${asset.kind}，${asset.mime}，${asset.bytes} 字节，默认角色：${asset.role}）`
+        `${asset.ref}（${asset.kind}，${asset.mime}，${asset.bytes} 字节，默认角色：${asset.role}）`,
     )
     .join("\n");
 }
 
 export function buildMaterialIntakePromptView(
-  input: BuildMaterialIntakePromptViewInput
+  input: BuildMaterialIntakePromptViewInput,
 ): RuntimePromptView {
   const creativeRequirements = formatCreativeRequirementsForModule(
     input.creativeRequirements,
@@ -62,18 +62,17 @@ export function buildMaterialIntakePromptView(
         {
           id: "role",
           label: "角色",
-          body:
-            "你是电商视频生成工作区的素材清点标签构建器，负责给已验证素材打标。"
+          body: "你是电商视频生成工作区的素材清点标签构建器，负责给已验证素材打标。",
         },
         {
           id: "user_intent",
           label: "用户意图",
-          body: input.initialPrompt?.trim() || "未提供初始用户方向。"
+          body: input.initialPrompt?.trim() || "未提供初始用户方向。",
         },
         {
           id: "selected_material_manifest",
           label: "已选择素材清单",
-          body: materialManifestPreview(input.scanned) || "没有选择可用素材。"
+          body: materialManifestPreview(input.scanned) || "没有选择可用素材。",
         },
         ...(creativeRequirements
           ? [
@@ -87,23 +86,21 @@ export function buildMaterialIntakePromptView(
         {
           id: "task",
           label: "任务",
-          body:
-            "为每个已验证素材选择角色、描述、相关性和是否纳入生成。优先选择一张有效商品图作为 primaryProductRef。"
+          body: "为每个已验证素材选择角色、描述、相关性和是否纳入生成。优先选择一张有效商品图作为 primaryProductRef。",
         },
         {
           id: "output_contract",
           label: "输出契约",
-          body:
-            "返回包含 primaryProductRef 和 tags 的严格 JSON。不要生成商品 brief、开场钩子、分镜或视频生成提示词。"
-        }
-      ]
+          body: "返回包含 primaryProductRef 和 tags 的严格 JSON。product_main/product_detail 的 description 要尽量详细（颜色、材质、形状、尺寸感知、五金、背法、内部结构等可见细节）。不要生成商品 brief、开场钩子、分镜或视频生成提示词。",
+        },
+      ],
     },
     variables: {
       initialPrompt: input.initialPrompt ?? null,
       materialRefs: input.scanned.assets.map((asset) => asset.ref),
       rejectedRefs: input.scanned.rejected.map((item) => item.ref),
-      textPreviewRefs: input.textPreviews?.map((preview) => preview.ref) ?? []
-    }
+      textPreviewRefs: input.textPreviews?.map((preview) => preview.ref) ?? [],
+    },
   };
 }
 
