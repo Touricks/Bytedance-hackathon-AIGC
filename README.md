@@ -4,6 +4,42 @@
 
 它的核心目标不是一次性“盲生成”一条视频，而是把创作过程拆成可检查、可调整、可继续推进的环节：每一步都先给出待确认内容，用户确认后再进入后续生成。
 
+## 快速启动
+
+**依赖环境**：Node.js 22+、pnpm 9.15+、Docker、ffmpeg（成片合成必需，需在系统 PATH 可用）。
+
+```bash
+git clone https://github.com/Touricks/Bytedance-hackathon-AIGC.git
+cd Bytedance-hackathon-AIGC && pnpm install
+
+docker compose -f infra/docker-compose.yml up -d   # 启动 postgres / redis / minio
+cp .env.example .env                               # 两种模式都需要（数据库 / 队列连接）
+
+# 方式一：Mock 模式（无需任何 API 密钥，.env 保持默认即可）
+pnpm dev:mock
+
+# 方式二：Real 模式（在 .env 填写 TEXT / IMAGE / VIDEO 的 API Key 和 Endpoint ID）
+pnpm dev
+```
+
+- 访问地址：Web `http://localhost:5173`，API `http://localhost:3000`。
+- 无需手动构建：`pnpm dev` 启动前会自动构建 workspace 依赖包。
+- Mock 模式不调用真实模型即可走通全链路：文本环节由确定性规则生成，分镜图 / 视频候选使用仓库内置真实样片，成片为真实 ffmpeg 拼接产物。
+- 清空业务数据并重启：`pnpm reset:dev -- --yes`（mock 模式下用 `MODEL_MODE=mock pnpm reset:dev -- --yes`，否则会按 `.env` 的 `MODEL_MODE` 启动）。
+
+**目录结构**：
+
+```text
+apps/server/     Fastify API、BullMQ Worker、Postgres 访问、ffmpeg 成片
+apps/web/        React/Vite 前端（创作审核台 + 数据看板）
+apps/storage/    S3 兼容存储客户端封装
+packages/ai/     提供商客户端、AI workflow、Prompt 装配、响应 schema
+packages/shared/ 跨包 Zod 契约与领域类型
+infra/           docker-compose（postgres / redis / minio）
+```
+
+**配置说明**：`MODEL_MODE=mock|real` 决定是否调用真实模型；其余环境变量（提供商密钥、存储、候选数与并发）见 `.env.example` 内注释。开发、测试与重置的更多细节见 [docs/core/implementation/runbook_local_dev.md](./docs/core/implementation/runbook_local_dev.md)。
+
 ## 适合做什么
 
 - 用商品图片、场景图、参考视频和卖点文案生成电商带货短视频。
@@ -88,4 +124,4 @@
 ## 项目资料
 
 面向产品和业务协作时，优先使用 [CONTEXT.md](./CONTEXT.md) 中的领域语言。
-项目维护资料放在 [docs/core/](./docs/core/)；日常使用创作审核台时无需阅读这些文档。
+项目维护资料放在 [docs/core/](./docs/core/)，本地开发与重置细节见 [docs/core/implementation/runbook_local_dev.md](./docs/core/implementation/runbook_local_dev.md)；日常使用创作审核台时无需阅读这些文档。
