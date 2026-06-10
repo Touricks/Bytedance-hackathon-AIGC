@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
     "PUBLIC_",
     "SERVER_PORT",
     "VITE_",
+    "WEB_ALLOWED_HOSTS",
     "WEB_PORT",
   ]);
   return {
@@ -13,6 +14,15 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: Number(env.WEB_PORT ?? process.env.WEB_PORT ?? 5173),
+      // Allow tunnel hostnames (e.g. Cloudflare Tunnel) when WEB_ALLOWED_HOSTS
+      // is set: "true" allows any host, otherwise a comma-separated list.
+      allowedHosts:
+        (env.WEB_ALLOWED_HOSTS ?? process.env.WEB_ALLOWED_HOSTS) === "true"
+          ? true
+          : (env.WEB_ALLOWED_HOSTS ?? process.env.WEB_ALLOWED_HOSTS)
+              ?.split(",")
+              .map((host) => host.trim())
+              .filter(Boolean),
     },
   };
 });
