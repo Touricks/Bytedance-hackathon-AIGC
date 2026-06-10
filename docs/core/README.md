@@ -17,17 +17,17 @@ Use these docs for new work:
 1. `product/original_prd.md`
 2. `product/product_scope.md`
 3. `product/prd_traceability.md`
-4. `decisions/README.md`
-5. `architecture/domain.md`
-6. `architecture/runtime_flow.md`
-7. `contracts/openapi.yaml`
-8. `contracts/interface.md`
-9. `contracts/contract_mapping.md`
-10. `architecture/data_model.md`
-11. `architecture/erd.md`
-12. `architecture/backend.md`
-13. `architecture/frontend.md`
-14. `architecture/agent.md`
+4. `architecture/domain.md`
+5. `architecture/runtime_flow.md`
+6. `contracts/openapi.yaml`
+7. `contracts/interface.md`
+8. `contracts/contract_mapping.md`
+9. `architecture/data_model.md`
+10. `architecture/erd.md`
+11. `architecture/backend.md`
+12. `architecture/frontend.md`
+13. `architecture/agent.md`
+14. `architecture/recommendation_engine.md`
 15. `architecture/security.md`
 16. `testing/test_strategy.md`
 17. `testing/e2e_plan.md`
@@ -38,12 +38,10 @@ Use these docs for new work:
 ```text
 docs/core/
   product/        Product source, selected scope, PRD traceability.
-  decisions/      Architecture decisions and ADR template.
   contracts/      OpenAPI, interface notes, frontend/backend mapping, examples, Postman notes.
-  architecture/   Domain, runtime, backend, frontend, agent, security, data model, ERD.
+  architecture/   Domain, runtime, backend, frontend, agent, recommendation engine, security, data model, ERD.
   implementation/ Local runbook and implementation slices.
   testing/        Test strategy and E2E plan.
-  migration/      Heading-level migration report for `docs/core_v0/`.
 ```
 
 ## 3. Current V3 Flow
