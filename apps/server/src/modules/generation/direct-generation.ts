@@ -1,5 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   generateImagesWithArk,
   generateVideoWithSeedance,
@@ -21,6 +23,7 @@ import {
   persistGeneratedAsset,
   type GeneratedAssetPersister,
 } from "./generated-asset-storage.js";
+import { runFfmpeg } from "./ffmpeg.js";
 import { buildSeedanceVoiceProfilePrompt } from "./voice-profile.js";
 
 type Adapter = typeof db.db2;
@@ -207,14 +210,50 @@ async function recordVideoAssetPersistTrace(input: {
 const mockImageDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAUklEQVR42u3PMQ0AAAgDMIRNCYqRhQQuviY10JrkVXpelYCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDAZQHIEvEtQ7Jm2gAAAABJRU5ErkJggg==";
 
-function mockImageResult(count: number): ArkImageResult {
+// Sample assets for mock mode live under apps/server/static/. When present they
+// replace the flat-color placeholders so the mock chain looks like a real run;
+// when absent (fresh clone), mock falls back to generated placeholders.
+const mockStaticDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../static",
+);
+
+async function listMockStaticFiles(subdir: string, pattern: RegExp): Promise<string[]> {
+  try {
+    const dir = path.join(mockStaticDir, subdir);
+    const entries = await readdir(dir);
+    return entries
+      .filter((name) => pattern.test(name))
+      .sort()
+      .map((name) => path.join(dir, name));
+  } catch {
+    return [];
+  }
+}
+
+let mockImagePoolPromise: Promise<string[]> | undefined;
+function mockImagePool(): Promise<string[]> {
+  mockImagePoolPromise ??= (async () => {
+    const files = await listMockStaticFiles("generated-images", /\.(jpe?g|png|webp|avif)$/i);
+    return Promise.all(
+      files.map(async (file) => {
+        const bytes = await readFile(file);
+        return `data:${imageContentTypeForPath(file)};base64,${bytes.toString("base64")}`;
+      }),
+    );
+  })();
+  return mockImagePoolPromise;
+}
+
+async function mockImageResult(count: number): Promise<ArkImageResult> {
+  const pool = await mockImagePool();
   return {
     provider: "ark-seedream",
     model: "mock-seedream",
     created: Math.floor(Date.now() / 1000),
-    candidates: Array.from({ length: count }, () => ({
-      imageUrl: mockImageDataUrl,
-      size: "64x64",
+    candidates: Array.from({ length: count }, (_, index) => ({
+      imageUrl: pool.length > 0 ? pool[index % pool.length]! : mockImageDataUrl,
+      ...(pool.length > 0 ? {} : { size: "64x64" }),
     })),
     candidateErrors: [],
     usage: {
@@ -354,10 +393,69 @@ async function defaultImageProvider(args: Parameters<ImageProvider>[0]): Promise
   );
 }
 
+const MOCK_VIDEO_SIZES: Record<Parameters<VideoProvider>[0]["aspectRatio"], string> = {
+  "9:16": "720x1280",
+  "16:9": "1280x720",
+  "1:1": "720x720",
+};
+
+// ffmpeg is already a hard dependency for final compose, so mock candidates are
+// rendered as real (playable, concat-able) clips instead of placeholder bytes.
+const mockVideoCache = new Map<string, Promise<string>>();
+
+function mockVideoDataUrl(durationSec: number, aspectRatio: Parameters<VideoProvider>[0]["aspectRatio"]): Promise<string> {
+  const duration = Math.min(Math.max(Math.round(durationSec) || 4, 1), 15);
+  const size = MOCK_VIDEO_SIZES[aspectRatio] ?? MOCK_VIDEO_SIZES["9:16"];
+  const key = `${duration}:${size}`;
+  let pending = mockVideoCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const dir = path.join(tmpdir(), "daireel-mock-videos");
+      await mkdir(dir, { recursive: true });
+      const outPath = path.join(dir, `mock-${duration}s-${size}.mp4`);
+      await runFfmpeg([
+        "-f", "lavfi", "-i", `color=c=0x3a3f4a:s=${size}:d=${duration}:r=24`,
+        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+        "-t", String(duration),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+        "-c:a", "aac", "-b:a", "96k",
+        "-movflags", "+faststart",
+        "-y", outPath,
+      ]);
+      const bytes = await readFile(outPath);
+      return `data:video/mp4;base64,${bytes.toString("base64")}`;
+    })();
+    mockVideoCache.set(key, pending);
+    pending.catch(() => mockVideoCache.delete(key));
+  }
+  return pending;
+}
+
+let mockVideoPoolPromise: Promise<string[]> | undefined;
+function mockVideoPool(): Promise<string[]> {
+  mockVideoPoolPromise ??= (async () => {
+    const files = await listMockStaticFiles("videos", /\.mp4$/i);
+    return Promise.all(
+      files.map(async (file) => {
+        const bytes = await readFile(file);
+        return `data:video/mp4;base64,${bytes.toString("base64")}`;
+      }),
+    );
+  })();
+  return mockVideoPoolPromise;
+}
+
+let mockVideoRotation = 0;
+
 async function defaultVideoProvider(args: Parameters<VideoProvider>[0]): Promise<SeedanceVideoResult> {
   if (!isRealProviderMode()) {
+    const pool = await mockVideoPool();
+    const videoUrl =
+      pool.length > 0
+        ? pool[mockVideoRotation++ % pool.length]!
+        : await mockVideoDataUrl(args.durationSec, args.aspectRatio);
     return {
-      videoUrl: "data:video/mp4;base64,AAAA",
+      videoUrl,
       provider: "mock",
       model: "mock-seedance",
       prompt: args.prompt,
