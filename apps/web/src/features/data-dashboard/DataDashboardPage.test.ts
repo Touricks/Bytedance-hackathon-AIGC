@@ -25,6 +25,15 @@ const importedVideo: DashboardVideoArtifact = {
   updatedAt: "2026-06-06T08:00:00.000Z",
 };
 
+const otherWorkspaceVideo: DashboardVideoArtifact = {
+  ...importedVideo,
+  id: "dash_video_2",
+  workspaceId: "workspace_other",
+  finalVideoJobId: "fv_2",
+  name: "其它工作区成片",
+  localUrl: "/api/dashboard/videos/dash_video_2/file",
+};
+
 function renderDashboardWithSelectedVideo() {
   return renderToStaticMarkup(
     React.createElement(DataDashboardPage, {
@@ -159,6 +168,24 @@ describe("DataDashboardPage", () => {
 
     assert.match(html, /618 亲子旅行成片/);
     assert.match(html, /数据面板导入/);
+    assert.doesNotMatch(html, /暂无选中视频/);
+  });
+
+  it("opens a workspace-return dashboard deep link without hiding other videos", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(DataDashboardPage, {
+        returnWorkspaceId: "workspace_123",
+        initialView: "diagnosis",
+        initialDashboardVideos: [importedVideo, otherWorkspaceVideo],
+        initialDashboardVideoId: "dash_video_1",
+        initialFinalVideoJobId: "fv_1",
+      }),
+    );
+
+    assert.match(html, /618 亲子旅行成片/);
+    assert.match(html, /数据面板视频库，共 2 条/);
+    assert.match(html, /切换视频/);
+    assert.match(html, /创作审核台/);
     assert.doesNotMatch(html, /暂无选中视频/);
   });
 

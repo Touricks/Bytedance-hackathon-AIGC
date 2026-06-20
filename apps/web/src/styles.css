@@ -3464,6 +3464,20 @@ label {
   max-width: 100%;
 }
 
+.review-panel:has(.review-final) {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  height: auto;
+  min-height: 0;
+}
+
+.review-panel:has(.review-final) .review-final {
+  align-self: start;
+  width: min(380px, 100%);
+  max-width: 100%;
+}
+
 .review-image-prompt-form {
   display: grid;
   gap: 12px;
@@ -3699,7 +3713,6 @@ label {
   resize: vertical;
 }
 
-.review-final video,
 .review-video {
   display: block;
   width: 100%;
@@ -3743,7 +3756,13 @@ label {
 }
 
 .review-final video {
-  max-height: 560px;
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  max-height: 640px;
+  border-radius: calc(var(--r-sm) * var(--radius-scale));
+  background: var(--surface-3);
+  object-fit: contain;
 }
 
 .review-panel:has(.review-final) .download-link {

@@ -6,6 +6,7 @@ import {
   dashboardVideoContextFromArtifact,
   deriveDashboardKpis,
   isGroupNotFoundError,
+  shouldUseWorkspaceDashboardVideos,
   weightsFor,
 } from "./useDataDashboardViewModel.js";
 
@@ -150,5 +151,16 @@ describe("isGroupNotFoundError", () => {
     );
     assert.equal(isGroupNotFoundError("nope"), false);
     assert.equal(isGroupNotFoundError(new Error("network down")), false);
+  });
+});
+
+describe("shouldUseWorkspaceDashboardVideos", () => {
+  it("uses the global dashboard registry by default even with a return workspace", () => {
+    assert.equal(shouldUseWorkspaceDashboardVideos("global", "workspace_123"), false);
+  });
+
+  it("uses workspace-scoped dashboard videos only for explicit workspace scope", () => {
+    assert.equal(shouldUseWorkspaceDashboardVideos("workspace", "workspace_123"), true);
+    assert.equal(shouldUseWorkspaceDashboardVideos("workspace"), false);
   });
 });

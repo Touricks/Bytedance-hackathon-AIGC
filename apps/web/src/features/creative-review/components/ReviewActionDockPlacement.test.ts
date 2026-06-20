@@ -60,4 +60,29 @@ describe("ReviewActionDock placement", () => {
       /\.creative-factor-field__label\s*{[\s\S]*font-size:\s*15\.5px;/
     );
   });
+
+  it("keeps media result panels sized to content instead of stretching sparse rows", () => {
+    const styles = readFileSync(new URL("../../../styles.css", import.meta.url), "utf8");
+
+    assert.match(
+      styles,
+      /\.review-panel:has\(\.review-image-grid\)[\s\S]*?\.review-panel:has\(\.review-video-grid\)\s*{[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*0;/
+    );
+    assert.match(
+      styles,
+      /\.review-panel:has\(\.review-image-grid\) \.review-round[\s\S]*?\.review-panel:has\(\.review-video-grid\) \.review-round\s*{[\s\S]*?width:\s*fit-content;/
+    );
+    assert.match(
+      styles,
+      /\.review-panel:has\(\.review-final\)\s*{[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*0;/
+    );
+    assert.match(
+      styles,
+      /\.review-panel:has\(\.review-final\) \.review-final\s*{[\s\S]*?width:\s*min\(380px, 100%\);/
+    );
+    assert.match(
+      styles,
+      /\.review-final video\s*{[\s\S]*?aspect-ratio:\s*9 \/ 16;[\s\S]*?object-fit:\s*contain;/
+    );
+  });
 });

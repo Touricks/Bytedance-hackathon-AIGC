@@ -283,6 +283,26 @@
   }
 }
 
+.dash-video-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: var(--sh-sm);
+}
+
+.dash-video-switcher span {
+  min-width: 0;
+  color: var(--ink2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* dropdown */
 .dash-dd {
   position: relative;

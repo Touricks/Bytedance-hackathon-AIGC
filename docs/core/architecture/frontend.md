@@ -31,7 +31,7 @@ The frontend target is `apps/web`. It renders the 创作审核台 and data dashb
 | 商品卖点 / 分镜脚本 / 分镜生成要求 | Review/edit proposed/current artifacts. |
 | 分镜图选择 / 分镜视频选择 | Display active shot set candidates and selections. |
 | 生成成片 | Show final compose state, preview, download, dashboard import. |
-| 分析诊断 | Read dashboard video artifacts and sample/recorded metrics. |
+| 分析诊断 | Read the global dashboard video registry and sample/recorded metrics; workspace ids are return context, not the default data scope. |
 
 ## 4. Contracts / Interfaces
 
@@ -39,6 +39,7 @@ The frontend target is `apps/web`. It renders the 创作审核台 and data dashb
 - Do not expose raw provider prompt, system prompt, mock labels, or artifact console language as primary UI copy.
 - Progress bars for one-click final video are derived from `currentStage/stageState` and active shot counts.
 - Polling must respect active/idle states to avoid unnecessary backend pressure.
+- Dashboard routes are global by default: `/dashboard?view=diagnosis&videoId=:artifactId&returnWorkspaceId=:workspaceId` deep-links a selected dashboard video while keeping the full video registry discoverable. `/dashboard/:workspaceId?scope=workspace` is reserved for explicit workspace-scoped diagnostics.
 
 ## 5. Implementation Slices
 
@@ -60,4 +61,3 @@ The frontend target is `apps/web`. It renders the 创作审核台 and data dashb
 
 - `contracts/contract_mapping.md`
 - `testing/e2e_plan.md`
-

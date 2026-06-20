@@ -4,6 +4,7 @@ import {
   listDashboardVideoArtifacts,
   type DashboardVideoArtifact,
 } from "../../lib/api/dashboardVideoArtifacts.js";
+import { dashboardPath, type DashboardRouteScope } from "../../routes/routeState.js";
 import {
   getGroupRecommendation,
   type GroupRecommendation,
@@ -158,10 +159,20 @@ export interface DataDashboardViewModel {
 export interface UseDataDashboardViewModelParams {
   snapshot: DashboardAnalyticsSnapshot;
   workspaceId?: string;
+  returnWorkspaceId?: string;
+  dashboardScope?: DashboardRouteScope;
   initialView?: DashboardView;
   initialDashboardVideos?: DashboardVideoArtifact[];
   initialSelectedDashboardVideoId?: string | null;
+  initialDashboardVideoId?: string | null;
   initialFinalVideoJobId?: string | null;
+}
+
+export function shouldUseWorkspaceDashboardVideos(
+  dashboardScope: DashboardRouteScope,
+  workspaceId?: string,
+) {
+  return dashboardScope === "workspace" && Boolean(workspaceId);
 }
 
 /**
@@ -172,9 +183,12 @@ export interface UseDataDashboardViewModelParams {
 export function useDataDashboardViewModel({
   snapshot,
   workspaceId,
+  returnWorkspaceId,
+  dashboardScope = "global",
   initialView = "diagnosis",
   initialDashboardVideos = [],
   initialSelectedDashboardVideoId = null,
+  initialDashboardVideoId = null,
   initialFinalVideoJobId = null,
 }: UseDataDashboardViewModelParams): DataDashboardViewModel {
   const [activeView, setActiveView] = useState<DashboardView>(initialView);
@@ -204,6 +218,10 @@ export function useDataDashboardViewModel({
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<HTMLDivElement | null>(null);
   const matrixRef = useRef<HTMLDivElement | null>(null);
+  const useWorkspaceScopedVideos = shouldUseWorkspaceDashboardVideos(
+    dashboardScope,
+    workspaceId,
+  );
 
   const fireToast = useCallback((message: string) => {
     setToast(message);
@@ -213,7 +231,7 @@ export function useDataDashboardViewModel({
 
   const refreshDashboardVideos = useCallback(async () => {
     try {
-      const response = workspaceId
+      const response = useWorkspaceScopedVideos && workspaceId
         ? await listDashboardVideoArtifacts(workspaceId)
         : await listGlobalDashboardVideoArtifacts();
       setDashboardVideos(response.data);
@@ -221,12 +239,12 @@ export function useDataDashboardViewModel({
     } catch {
       fireToast("数据面板视频刷新失败");
     }
-  }, [fireToast, workspaceId]);
+  }, [fireToast, useWorkspaceScopedVideos, workspaceId]);
 
   useEffect(() => {
     if (initialDashboardVideos.length > 0) return;
     let cancelled = false;
-    const listVideos = workspaceId
+    const listVideos = useWorkspaceScopedVideos && workspaceId
       ? listDashboardVideoArtifacts(workspaceId)
       : listGlobalDashboardVideoArtifacts();
     listVideos
@@ -237,7 +255,7 @@ export function useDataDashboardViewModel({
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, initialDashboardVideos.length]);
+  }, [workspaceId, useWorkspaceScopedVideos, initialDashboardVideos.length]);
 
   useEffect(() => {
     return () => {
@@ -264,11 +282,21 @@ export function useDataDashboardViewModel({
       dashboardVideos.find((candidate) => candidate.id === selectedDashboardVideoId) ??
       dashboardVideos.find(
         (candidate) =>
+          Boolean(initialDashboardVideoId) &&
+          candidate.id === initialDashboardVideoId,
+      ) ??
+      dashboardVideos.find(
+        (candidate) =>
           Boolean(initialFinalVideoJobId) &&
           candidate.finalVideoJobId === initialFinalVideoJobId,
       ) ??
       null,
-    [dashboardVideos, initialFinalVideoJobId, selectedDashboardVideoId],
+    [
+      dashboardVideos,
+      initialDashboardVideoId,
+      initialFinalVideoJobId,
+      selectedDashboardVideoId,
+    ],
   );
 
   const dashboardVideoContext = useMemo(
@@ -322,10 +350,26 @@ export function useDataDashboardViewModel({
     };
   }, [productCategory, dealType, weightMode]);
 
-  const selectDashboardVideo = useCallback((id: string) => {
-    setSelectedDashboardVideoId(id);
-    setActiveView("diagnosis");
-  }, []);
+  const selectDashboardVideo = useCallback(
+    (id: string) => {
+      setSelectedDashboardVideoId(id);
+      setActiveView("diagnosis");
+      if (typeof window === "undefined") return;
+      const video = dashboardVideos.find((candidate) => candidate.id === id);
+      window.history.replaceState(
+        {},
+        "",
+        dashboardPath(
+          workspaceId ?? returnWorkspaceId,
+          "diagnosis",
+          video?.finalVideoJobId ?? undefined,
+          id,
+          { scope: dashboardScope, returnWorkspaceId },
+        ),
+      );
+    },
+    [dashboardScope, dashboardVideos, returnWorkspaceId, workspaceId],
+  );
 
   const handleAssistantAction = useCallback((action: string) => {
     const target =

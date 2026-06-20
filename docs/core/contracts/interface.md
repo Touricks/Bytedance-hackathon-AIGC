@@ -114,6 +114,7 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 
 - Keep `contracts/openapi.yaml` aligned with `apps/server/src/modules/*/*.controller.ts`.
 - Keep `apps/web/src/lib/api/*` request/response types aligned with OpenAPI and shared schemas.
+- The data dashboard UI consumes `/api/dashboard/videos` by default. Workspace-scoped dashboard listing is an explicit scope, not the default behavior of workspace-origin deep links.
 - Use `pnpm contract:frontend-backend` before accepting contract-sensitive changes.
 
 ## 6. Acceptance Tests

@@ -34,7 +34,10 @@ function Root() {
     return (
       <DataDashboardPage
         workspaceId={route.workspaceId}
+        returnWorkspaceId={route.returnWorkspaceId}
+        dashboardScope={route.dashboardScope}
         initialView={route.initialView}
+        initialDashboardVideoId={route.initialDashboardVideoId}
         initialFinalVideoJobId={route.initialFinalVideoJobId}
       />
     );

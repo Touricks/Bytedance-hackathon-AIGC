@@ -49,6 +49,18 @@ export function DashboardOverview({ vm }: { vm: DataDashboardViewModel }) {
   return (
     <>
       <DashboardFilterBar vm={vm} />
+      <div className="dash-video-switcher">
+        <span>
+          当前诊断视频来自数据面板视频库，共 {vm.dashboardVideos.length} 条
+        </span>
+        <button
+          type="button"
+          className="dash-hbtn"
+          onClick={() => vm.setActiveView("videos")}
+        >
+          切换视频
+        </button>
+      </div>
       <DashboardScopeBar snapshot={snapshot} video={videoContext} channel={vm.channel} />
       <DashboardMetricCards kpis={vm.kpis} />
 

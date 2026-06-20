@@ -28,7 +28,12 @@ export async function importFinalVideoToDashboard(
     (video) => video.finalVideoJobId === input.finalVideoJobId,
   );
   if (existingVideo) {
-    deps.navigateToDataDashboard(input.workspaceId, "diagnosis", input.finalVideoJobId);
+    deps.navigateToDataDashboard(
+      input.workspaceId,
+      "diagnosis",
+      input.finalVideoJobId,
+      existingVideo.id,
+    );
     return { status: "already-exists" as const, data: existingVideo };
   }
 
@@ -36,7 +41,12 @@ export async function importFinalVideoToDashboard(
     finalVideoJobId: input.finalVideoJobId,
     name: input.name,
   });
-  deps.navigateToDataDashboard(input.workspaceId, "diagnosis", input.finalVideoJobId);
+  deps.navigateToDataDashboard(
+    input.workspaceId,
+    "diagnosis",
+    input.finalVideoJobId,
+    created.data.id,
+  );
   return { status: "imported" as const, data: created.data };
 }
 

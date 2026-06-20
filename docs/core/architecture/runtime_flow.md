@@ -25,9 +25,12 @@ prompt-requirements approve
   -> video script / video batch / video select
   -> final compose
   -> dashboard import / campaign publication
+  -> global dashboard diagnosis deep link
 ```
 
 One-click final video starts from a material-intake draft, approves it, then advances the same downstream artifacts, selections, and final compose. Shot image auto-selection only automates the image side for the active shot set.
+
+Dashboard import copies a completed final video into the decoupled dashboard registry. The creative workbench opens `/dashboard?view=diagnosis&videoId=:artifactId&returnWorkspaceId=:workspaceId` so the selected video is focused while the full dashboard video library remains discoverable.
 
 ## 3. Target State
 

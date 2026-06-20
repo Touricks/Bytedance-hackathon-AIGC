@@ -5,6 +5,7 @@ import {
   navigateToWorkspace,
   navigateToWorkspacesLanding,
 } from "../../routes/routeState.js";
+import type { DashboardRouteScope } from "../../routes/routeState.js";
 import { DashboardAssistant } from "./DashboardAssistant.js";
 import { DashboardOverview } from "./DashboardOverview.js";
 import { DashboardSidebar } from "./DashboardSidebar.js";
@@ -17,9 +18,12 @@ import { useDataDashboardViewModel } from "./useDataDashboardViewModel.js";
 
 interface DataDashboardPageProps {
   workspaceId?: string;
+  returnWorkspaceId?: string;
+  dashboardScope?: DashboardRouteScope;
   initialView?: DashboardView;
   initialDashboardVideos?: DashboardVideoArtifact[];
   initialSelectedDashboardVideoId?: string | null;
+  initialDashboardVideoId?: string | null;
   initialFinalVideoJobId?: string | null;
 }
 
@@ -33,19 +37,27 @@ function goToCreativeReview(workspaceId?: string) {
 
 export function DataDashboardPage({
   workspaceId,
+  returnWorkspaceId,
+  dashboardScope = "global",
   initialView = "diagnosis",
   initialDashboardVideos = [],
   initialSelectedDashboardVideoId = null,
+  initialDashboardVideoId = null,
   initialFinalVideoJobId = null,
 }: DataDashboardPageProps) {
   const snapshot = getDashboardAnalyticsSnapshot();
+  const backWorkspaceId = returnWorkspaceId ?? workspaceId;
   const vm = useDataDashboardViewModel({
     snapshot,
     workspaceId,
+    dashboardScope,
     initialView,
     initialDashboardVideos,
-    initialSelectedDashboardVideoId,
+    initialSelectedDashboardVideoId:
+      initialSelectedDashboardVideoId ?? initialDashboardVideoId,
+    initialDashboardVideoId,
     initialFinalVideoJobId,
+    returnWorkspaceId: backWorkspaceId,
   });
 
   return (
@@ -66,10 +78,10 @@ export function DataDashboardPage({
               <button
                 type="button"
                 className="dash-hbtn"
-                onClick={() => goToCreativeReview(workspaceId)}
+                onClick={() => goToCreativeReview(backWorkspaceId)}
               >
                 <ArrowLeft size={16} strokeWidth={1.8} />
-                {workspaceId ? "创作审核台" : "主工作台"}
+                {backWorkspaceId ? "创作审核台" : "主工作台"}
               </button>
               <button
                 type="button"

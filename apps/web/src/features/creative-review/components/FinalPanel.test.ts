@@ -91,14 +91,25 @@ describe("FinalPanel", () => {
       {
         importDashboardVideoArtifact: async (workspaceId, body) => {
           calls.push({ type: "import", workspaceId, body });
-          return { data: {} as never };
+          return { data: { id: "dash_video_1" } as never };
         },
         listDashboardVideoArtifacts: async (workspaceId) => {
           calls.push({ type: "list", workspaceId });
           return { data: [] };
         },
-        navigateToDataDashboard: (workspaceId, view) => {
-          calls.push({ type: "navigate", workspaceId, view });
+        navigateToDataDashboard: (
+          workspaceId,
+          view,
+          finalVideoJobId,
+          dashboardVideoId,
+        ) => {
+          calls.push({
+            type: "navigate",
+            workspaceId,
+            view,
+            finalVideoJobId,
+            dashboardVideoId,
+          });
         },
       },
     );
@@ -113,7 +124,13 @@ describe("FinalPanel", () => {
         workspaceId: "workspace_123",
         body: { finalVideoJobId: "fv_1", name: "618 亲子旅行成片" },
       },
-      { type: "navigate", workspaceId: "workspace_123", view: "diagnosis" },
+      {
+        type: "navigate",
+        workspaceId: "workspace_123",
+        view: "diagnosis",
+        finalVideoJobId: "fv_1",
+        dashboardVideoId: "dash_video_1",
+      },
     ]);
   });
 
@@ -157,8 +174,19 @@ describe("FinalPanel", () => {
           calls.push({ type: "import" });
           return { data: {} as never };
         },
-        navigateToDataDashboard: (workspaceId, view, finalVideoJobId) => {
-          calls.push({ type: "navigate", workspaceId, view, finalVideoJobId });
+        navigateToDataDashboard: (
+          workspaceId,
+          view,
+          finalVideoJobId,
+          dashboardVideoId,
+        ) => {
+          calls.push({
+            type: "navigate",
+            workspaceId,
+            view,
+            finalVideoJobId,
+            dashboardVideoId,
+          });
         },
       },
     );
@@ -174,6 +202,7 @@ describe("FinalPanel", () => {
         workspaceId: "workspace_123",
         view: "diagnosis",
         finalVideoJobId: "fv_1",
+        dashboardVideoId: "dash_video_1",
       },
     ]);
   });
