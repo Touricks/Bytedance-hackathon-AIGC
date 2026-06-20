@@ -160,10 +160,12 @@ recommendFromRecords(records: PerformanceRecord[], options?): RecommendationResu
 
 `scripts/fixtures/recommendation-seed.json` extends the existing dashboard seeder
 (non‑destructively — the original `dashboard-seed.json` is untouched). It defines
-**15 videos / 35 publications** across **5 groups**, each with 3 competing
+**21 videos / 49 publications** across **7 groups**, each with 3 competing
 `(适用人群 × 推销手法)` combinations and 2–3 publications apiece. One group
 (`服饰鞋包 × 品牌型高客单`) is intentionally built so ROAS and GMV **disagree**, to
-exercise the weighting logic.
+exercise the weighting logic. The dashboard seeder also copies
+`apps/static/placehold.mp4` into each mock dashboard artifact so seeded videos
+stream from `/api/dashboard/videos/:id/file` during local validation.
 
 Seed it and call the API:
 

@@ -5,8 +5,8 @@
       "key": "summer-mask",
       "name": "夏季补水面膜种草",
       "durationSec": 15,
-      "width": 1080,
-      "height": 1920,
+      "width": 720,
+      "height": 1280,
       "creativeFactors": {
         "productCategory": "beauty-personal-care",
         "dealType": "seeding-nonstandard",
@@ -50,8 +50,8 @@
       "key": "earbuds-launch",
       "name": "降噪耳机首发评测",
       "durationSec": 15,
-      "width": 1080,
-      "height": 1920,
+      "width": 720,
+      "height": 1280,
       "creativeFactors": {
         "productCategory": "consumer-electronics",
         "dealType": "search-standard",

@@ -24,8 +24,8 @@ pnpm seed:dashboard -- --fixture <path> --workspace <id>
 
 - Reads `apps/server/scripts/fixtures/dashboard-seed.json` by default (videos -> KOL publications -> `days` + `finalTotals`). Edit it to change the injected data, then re-run with `--reset`.
 - Per publication it backfills one cumulative `external_kol_metrics` snapshot per day, ending exactly at `finalTotals`. `ctr` / `cvr` / `roas` are derived at read time, not stored.
-- Idempotent: every row uses a deterministic `mock_*` id. `--reset` deletes prior `mock_*` rows first — required when changing totals/days, since inserts use `on conflict do nothing`.
-- No MP4 is written, so `GET /api/dashboard/videos/:id/file` returns 404; the list and analytics rows still render.
+- Refreshable: every row uses a deterministic `mock_*` id. `--reset` deletes prior `mock_*` rows first, which is still recommended when changing totals/days so old publication and metric rows are removed cleanly.
+- Each mock dashboard video copies `apps/static/placehold.mp4` into the LOCAL dashboard asset directory, so `GET /api/dashboard/videos/:id/file` streams a 720x1280 / 15s placeholder MP4 while analytics rows render.
 
 Flags: `--reset`, `--fixture <path>`, `--workspace <id>`, `--help`. The pure daily-curve generator (`scripts/seed/cumulative-series.ts`) has unit tests: `node --import tsx --test scripts/seed/cumulative-series.test.ts`.
 
