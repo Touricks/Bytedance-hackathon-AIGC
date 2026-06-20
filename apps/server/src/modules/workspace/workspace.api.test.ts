@@ -11,6 +11,9 @@ import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
 import { transparentPngBytes } from "../../test/image-fixtures.js";
 import { __setWorkspaceStorageAdapterFactoryForTests } from "./storage/workspace-storage-resolver.js";
+import { workspaceModuleRunService } from "./workspace-module-run.service.js";
+
+process.env.MODEL_MODE = "mock";
 
 const cleanupDirs: string[] = [];
 
@@ -635,6 +638,42 @@ describe("workspace API", () => {
       await db.db2.pool().query(`delete from one_click_final_video_jobs where id = $1`, [
         oneClickJobId,
       ]);
+    }
+  });
+
+  it("surfaces active workspace module runs and rejects deletion while they run", async () => {
+    const { workspaceId, directory } = await createInitializedWorkspace(app);
+    const run = await workspaceModuleRunService.start({
+      workspaceId,
+      moduleId: "storyboard",
+      operation: "propose",
+      runtimeBuilder: "storyboard",
+      provider: "ark",
+      sourceFingerprint: { productBriefArtifactId: "brief_current" },
+    });
+
+    try {
+      const statusResponse = await app.inject({
+        method: "GET",
+        url: `/api/workspaces/${workspaceId}/status`,
+      });
+      assert.equal(statusResponse.statusCode, 200, statusResponse.body);
+      const status = statusResponse.json();
+      const activeRun = status.runtime.activeRuns.find(
+        (candidate: { id: string }) => candidate.id === run.id,
+      );
+      assert.equal(activeRun?.moduleId, "storyboard");
+      assert.equal(status.modules.storyboard.runtime.active.id, run.id);
+
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/workspaces/${workspaceId}`,
+      });
+      assert.equal(deleteResponse.statusCode, 409, deleteResponse.body);
+      assert.equal(deleteResponse.json().code, "WORKSPACE_DELETE_BUSY");
+      await stat(path.join(directory, ".daireel", "workspace.json"));
+    } finally {
+      await workspaceModuleRunService.complete({ runId: run.id });
     }
   });
 

@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { isRealProviderMode, redactTraceValue } from "@aigc-video/ai";
 import { logger } from "../../common/logger.js";
-import { db } from "../../db/client.js";
-import { resolveWorkspaceStorageLocalPath } from "../workspace/workspace.service.js";
+import { recordTraceEvent } from "./trace-sink.js";
 
 export const providerCallTraceRelativePath = path.join(
   ".daireel",
@@ -113,24 +111,6 @@ export function buildProviderCallTraceEvent(
   };
 }
 
-export async function appendProviderCallTraceFile(input: {
-  workspaceLocalPath: string;
-  event: ProviderCallTraceInput;
-  clock?: () => Date;
-}) {
-  const tracePath = path.join(
-    input.workspaceLocalPath,
-    providerCallTraceRelativePath,
-  );
-  await mkdir(path.dirname(tracePath), { recursive: true });
-  const event = buildProviderCallTraceEvent(input.event, input.clock);
-  await appendFile(
-    tracePath,
-    `${JSON.stringify(redactTraceValue(event))}\n`,
-    "utf8",
-  );
-}
-
 function providerCallTraceMetadata(event: ProviderCallTraceEvent) {
   return redactTraceValue({
     schemaVersion: event.schemaVersion,
@@ -167,37 +147,6 @@ function providerCallTraceMetadata(event: ProviderCallTraceEvent) {
   }) as Record<string, unknown>;
 }
 
-async function insertProviderCallTraceEvent(event: ProviderCallTraceEvent) {
-  const row = {
-    id: "trc_" + Math.random().toString(36).slice(2, 12),
-    workspaceId: event.workspaceId,
-    shotId: event.shotId,
-    traceType: "provider_call" as const,
-    name: `${event.mediaType}_provider_call_${event.status}`,
-    inputPreview: null,
-    outputPreview: null,
-    metadata: providerCallTraceMetadata(event),
-  };
-  try {
-    await db.db2.insertTraceEvent(row);
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error &&
-      "code" in error &&
-      error.code === "23503"
-    ) {
-      await db.db2.insertTraceEvent({
-        ...row,
-        id: "trc_" + Math.random().toString(36).slice(2, 12),
-        shotId: null,
-      });
-      return;
-    }
-    throw error;
-  }
-}
-
 export async function recordProviderCallTrace(input: ProviderCallTraceInput) {
   if (!shouldRecordProviderCallTrace()) return;
 
@@ -208,17 +157,37 @@ export async function recordProviderCallTrace(input: ProviderCallTraceInput) {
     }
 
     const event = buildProviderCallTraceEvent(input);
-    await insertProviderCallTraceEvent(event);
-
-    const binding = await db.getActiveWorkspaceStorage(input.workspaceId);
-    if (binding?.kind === "LOCAL" && binding.localPath) {
-      const workspaceLocalPath = await resolveWorkspaceStorageLocalPath(
-        input.workspaceId,
-      );
-      await appendProviderCallTraceFile({
-        workspaceLocalPath,
-        event: input,
+    const traceInput = {
+      workspaceId: event.workspaceId,
+      shotId: event.shotId,
+      traceType: "provider_call" as const,
+      name: `${event.mediaType}_provider_call_${event.status}`,
+      metadata: providerCallTraceMetadata(event),
+    };
+    try {
+      await recordTraceEvent(traceInput, {
+        archiveGroup: "provider-calls",
+        localMirrorRelativePath: providerCallTraceRelativePath,
+        fileEvent: event,
       });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        error.code === "23503"
+      ) {
+        await recordTraceEvent(
+          { ...traceInput, shotId: undefined },
+          {
+            archiveGroup: "provider-calls",
+            localMirrorRelativePath: providerCallTraceRelativePath,
+            fileEvent: { ...event, shotId: null },
+          },
+        );
+        return;
+      }
+      throw error;
     }
   } catch (error) {
     logger.warn("Failed to write provider call trace", {

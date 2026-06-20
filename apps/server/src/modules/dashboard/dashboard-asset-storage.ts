@@ -5,6 +5,7 @@ import type { Readable } from "node:stream";
 import {
   createS3Client,
   getObjectStream,
+  headObject,
   loadS3CompatibleConfig,
   putObject,
 } from "@aigc-video/storage";
@@ -29,7 +30,26 @@ interface DashboardS3Ops {
     body: Uint8Array | string;
     contentType?: string;
   }): Promise<void>;
-  getObjectStream(input: { bucket: string; key: string }): Promise<Readable>;
+  getObjectStream(input: {
+    bucket: string;
+    key: string;
+    range?: string;
+  }): Promise<Readable>;
+  headObject?(input: {
+    bucket: string;
+    key: string;
+  }): Promise<{ contentLength: number | null; contentType?: string | null }>;
+}
+
+export interface DashboardVideoStream {
+  stream: Readable;
+  statusCode: 200 | 206;
+  headers: Record<string, string | number>;
+}
+
+interface ByteRange {
+  start: number;
+  end: number;
 }
 
 let dashboardS3OpsOverride: DashboardS3Ops | undefined;
@@ -124,7 +144,22 @@ async function putDashboardS3Object(input: {
   });
 }
 
-async function getDashboardS3ObjectStream(input: { bucket: string; key: string }) {
+async function headDashboardS3Object(input: { bucket: string; key: string }) {
+  if (dashboardS3OpsOverride?.headObject) {
+    return dashboardS3OpsOverride.headObject(input);
+  }
+  return headObject({
+    client: createS3Client(loadS3CompatibleConfig()),
+    bucket: input.bucket,
+    key: input.key,
+  });
+}
+
+async function getDashboardS3RangedObjectStream(input: {
+  bucket: string;
+  key: string;
+  range?: string;
+}) {
   if (dashboardS3OpsOverride) {
     return dashboardS3OpsOverride.getObjectStream(input);
   }
@@ -132,6 +167,7 @@ async function getDashboardS3ObjectStream(input: { bucket: string; key: string }
     client: createS3Client(loadS3CompatibleConfig()),
     bucket: input.bucket,
     key: input.key,
+    range: input.range,
   });
 }
 
@@ -164,6 +200,14 @@ export function dashboardS3Locator(artifactId: string): DashboardAssetLocator {
   };
 }
 
+export function dashboardConfiguredLocator(
+  artifactId: string,
+): DashboardAssetLocator {
+  return config.dashboardS3Bucket
+    ? dashboardS3Locator(artifactId)
+    : dashboardLocalLocator(artifactId);
+}
+
 export async function persistDashboardVideoAsset(input: {
   artifactId: string;
   sourceStorage: WorkspaceStorageAdapter;
@@ -173,9 +217,7 @@ export async function persistDashboardVideoAsset(input: {
   const videoBody = await input.sourceStorage.readObject(input.sourceRelativePath);
   // The dashboard target is dashboard-owned (dedicated bucket vs global dir),
   // independent of which storage the source workspace happens to use.
-  const locator = config.dashboardS3Bucket
-    ? dashboardS3Locator(input.artifactId)
-    : dashboardLocalLocator(input.artifactId);
+  const locator = dashboardConfiguredLocator(input.artifactId);
   return persistDashboardVideoAssetBytes({
     artifactId: input.artifactId,
     locator,
@@ -215,19 +257,140 @@ export async function persistDashboardVideoAssetBytes(input: {
   return input.locator;
 }
 
+function contentRangeHeader(range: ByteRange, size: number) {
+  return `bytes ${range.start}-${range.end}/${size}`;
+}
+
+function s3RangeHeader(range: ByteRange) {
+  return `bytes=${range.start}-${range.end}`;
+}
+
+function parseDashboardVideoRange(
+  rangeHeader: string | undefined,
+  size: number,
+): ByteRange | null {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match || rangeHeader.includes(",")) {
+    throw new HttpError(
+      416,
+      "DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE",
+      "Dashboard video range is not satisfiable",
+    );
+  }
+
+  const [, rawStart, rawEnd] = match;
+  if (!rawStart && !rawEnd) {
+    throw new HttpError(
+      416,
+      "DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE",
+      "Dashboard video range is not satisfiable",
+    );
+  }
+
+  if (size <= 0) {
+    throw new HttpError(
+      416,
+      "DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE",
+      "Dashboard video range is not satisfiable",
+    );
+  }
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+      throw new HttpError(
+        416,
+        "DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE",
+        "Dashboard video range is not satisfiable",
+      );
+    }
+    return {
+      start: Math.max(size - suffixLength, 0),
+      end: size - 1,
+    };
+  }
+
+  const start = Number(rawStart);
+  const requestedEnd = rawEnd ? Number(rawEnd) : size - 1;
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    requestedEnd < start ||
+    start >= size
+  ) {
+    throw new HttpError(
+      416,
+      "DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE",
+      "Dashboard video range is not satisfiable",
+    );
+  }
+
+  return {
+    start,
+    end: Math.min(requestedEnd, size - 1),
+  };
+}
+
+function streamHeaders(input: {
+  size: number | null;
+  range: ByteRange | null;
+}): Pick<DashboardVideoStream, "statusCode" | "headers"> {
+  const baseHeaders: Record<string, string | number> = {
+    "Content-Type": "video/mp4",
+    "Accept-Ranges": "bytes",
+  };
+  if (!input.range) {
+    if (input.size !== null) baseHeaders["Content-Length"] = input.size;
+    return { statusCode: 200, headers: baseHeaders };
+  }
+
+  const contentLength = input.range.end - input.range.start + 1;
+  return {
+    statusCode: 206,
+    headers: {
+      ...baseHeaders,
+      "Content-Length": contentLength,
+      "Content-Range": contentRangeHeader(input.range, input.size ?? 0),
+    },
+  };
+}
+
 export async function streamDashboardVideoAsset(row: {
   id: string;
   storage_kind?: unknown;
   storage_bucket?: unknown;
   video_object_key?: unknown;
-}) {
+}, options: { rangeHeader?: string } = {}): Promise<DashboardVideoStream> {
   if (row.storage_kind === "S3") {
     const bucket = typeof row.storage_bucket === "string" ? row.storage_bucket : null;
     const key =
       typeof row.video_object_key === "string" ? row.video_object_key : null;
     if (!bucket || !key) throw new NotFoundError("DashboardVideoFile");
     try {
-      return await getDashboardS3ObjectStream({ bucket, key });
+      const metadata = await headDashboardS3Object({ bucket, key });
+      const size = metadata.contentLength;
+      if (options.rangeHeader && typeof size !== "number") {
+        throw new HttpError(
+          416,
+          "DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE",
+          "Dashboard video range is not satisfiable",
+        );
+      }
+      const range =
+        typeof size === "number"
+          ? parseDashboardVideoRange(options.rangeHeader, size)
+          : null;
+      const stream = await getDashboardS3RangedObjectStream({
+        bucket,
+        key,
+        range: range ? s3RangeHeader(range) : undefined,
+      });
+      return {
+        stream,
+        ...streamHeaders({ size, range }),
+      };
     } catch (error) {
       if (isS3NotFoundError(error)) throw new NotFoundError("DashboardVideoFile");
       throw error;
@@ -235,11 +398,18 @@ export async function streamDashboardVideoAsset(row: {
   }
 
   const videoPath = dashboardArtifactVideoPath(String(row.id));
+  let size: number;
   try {
-    await stat(videoPath);
+    size = (await stat(videoPath)).size;
   } catch (error) {
     if (isNodeNotFoundError(error)) throw new NotFoundError("DashboardVideoFile");
     throw error;
   }
-  return createReadStream(videoPath);
+  const range = parseDashboardVideoRange(options.rangeHeader, size);
+  return {
+    stream: range
+      ? createReadStream(videoPath, { start: range.start, end: range.end })
+      : createReadStream(videoPath),
+    ...streamHeaders({ size, range }),
+  };
 }

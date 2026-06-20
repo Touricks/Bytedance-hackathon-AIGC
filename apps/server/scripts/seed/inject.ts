@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { db } from "../../src/db/client.js";
 import {
-  dashboardLocalLocator,
+  dashboardConfiguredLocator,
   persistDashboardVideoAssetBytes,
 } from "../../src/modules/dashboard/dashboard-asset-storage.js";
 import { buildCumulativeSeries } from "./cumulative-series.js";
@@ -152,12 +152,39 @@ async function ensureDashboardArtifact(
   const id = dashboardArtifactId(video.key);
   const localUrl = dashboardVideoUrl(id);
   const parameters = seedVideoParameters(video);
+  const locator = dashboardConfiguredLocator(id);
+  await persistDashboardVideoAssetBytes({
+    artifactId: id,
+    locator,
+    videoBody: await readPlaceholderVideo(),
+    metadata: (metadataLocator) => ({
+      schemaVersion: "dashboard-video-metadata",
+      id,
+      workspaceId,
+      finalVideoJobId: jobId,
+      name: video.name,
+      localUrl,
+      importedAt: importedAtISO,
+      ...parameters,
+      creativeFactors: video.creativeFactors,
+      storage: {
+        kind: metadataLocator.storageKind,
+        bucket: metadataLocator.storageBucket,
+        videoObjectKey: metadataLocator.videoObjectKey,
+        metadataObjectKey: metadataLocator.metadataObjectKey,
+        localAssetDir: metadataLocator.localAssetDir,
+      },
+      source: {
+        placeholderVideoPath: DASHBOARD_SEED_PLACEHOLDER_VIDEO.path,
+      },
+    }),
+  });
   await db.db2.pool().query(
     `insert into dashboard_video_artifacts
        (id, workspace_id, final_video_job_id, name, local_url, duration_sec,
         width, height, creative_factors, imported_at, storage_kind,
         storage_bucket, video_object_key, metadata_object_key)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'LOCAL',null,null,null)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      on conflict (id) do update set
        workspace_id = excluded.workspace_id,
        final_video_job_id = excluded.final_video_job_id,
@@ -168,10 +195,10 @@ async function ensureDashboardArtifact(
        height = excluded.height,
        creative_factors = excluded.creative_factors,
        imported_at = excluded.imported_at,
-       storage_kind = 'LOCAL',
-       storage_bucket = null,
-       video_object_key = null,
-       metadata_object_key = null,
+       storage_kind = excluded.storage_kind,
+       storage_bucket = excluded.storage_bucket,
+       video_object_key = excluded.video_object_key,
+       metadata_object_key = excluded.metadata_object_key,
        updated_at = now()`,
     [
       id,
@@ -184,34 +211,12 @@ async function ensureDashboardArtifact(
       parameters.height,
       JSON.stringify(video.creativeFactors),
       importedAtISO,
+      locator.storageKind,
+      locator.storageBucket,
+      locator.videoObjectKey,
+      locator.metadataObjectKey,
     ],
   );
-  await persistDashboardVideoAssetBytes({
-    artifactId: id,
-    locator: dashboardLocalLocator(id),
-    videoBody: await readPlaceholderVideo(),
-    metadata: (locator) => ({
-      schemaVersion: "dashboard-video-metadata",
-      id,
-      workspaceId,
-      finalVideoJobId: jobId,
-      name: video.name,
-      localUrl,
-      importedAt: importedAtISO,
-      ...parameters,
-      creativeFactors: video.creativeFactors,
-      storage: {
-        kind: locator.storageKind,
-        bucket: locator.storageBucket,
-        videoObjectKey: locator.videoObjectKey,
-        metadataObjectKey: locator.metadataObjectKey,
-        localAssetDir: locator.localAssetDir,
-      },
-      source: {
-        placeholderVideoPath: DASHBOARD_SEED_PLACEHOLDER_VIDEO.path,
-      },
-    }),
-  });
   return id;
 }
 

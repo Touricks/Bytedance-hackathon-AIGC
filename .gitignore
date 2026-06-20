@@ -31,6 +31,25 @@ CONTEXT.md
 test/postman/
 # Keep most design docs locally only; some test/core specs are shared.
 docs/*
+!docs/README.md
+!docs/migrations/
+!docs/migrations/**
+!docs/ownership/
+!docs/ownership/**
+!docs/architecture/
+!docs/architecture/**
+!docs/contracts/
+!docs/contracts/**
+!docs/data/
+!docs/data/**
+!docs/frontend/
+!docs/frontend/**
+!docs/ai/
+!docs/ai/**
+!docs/eval/
+!docs/eval/**
+!docs/decisions/
+!docs/decisions/**
 !docs/core/
 !docs/core/**
 docs/core/prd_safe.pdf

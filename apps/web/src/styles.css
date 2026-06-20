@@ -1097,8 +1097,11 @@ label {
 }
 
 .review-step__state--busy,
+.review-step__state--waiting,
 .review-step__state--review,
 .review-status--busy,
+.review-status--waiting,
+.review-status--running,
 .review-status--review {
   color: var(--amber);
   border-color: var(--amber-line);
@@ -1427,6 +1430,8 @@ label {
 }
 
 .review-activity--busy,
+.review-activity--waiting,
+.review-activity--running,
 .review-activity--review {
   border-left-color: var(--amber);
 }
@@ -3184,6 +3189,8 @@ label {
 }
 
 .review-status--busy,
+.review-status--waiting,
+.review-status--running,
 .review-status--review {
   color: var(--amber);
   border-color: var(--amber-line);

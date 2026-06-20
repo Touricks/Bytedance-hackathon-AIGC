@@ -7,16 +7,17 @@ import {
 } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
+import { createWorkspaceTraceAppendLogger } from "../trace/trace.service.js";
+import { runtimeMode } from "./workspace-runtime.js";
 import {
   applySelectedMaterialRefs,
   collectWorkspaceMaterialLibraryForWorkspace,
   copySelectedLegacyRootMaterials,
-  createWorkspaceTraceLoggerForWorkspace,
   materialImagesForWorkspace,
-  materialVideosForWorkspace,
   materialIntakeTextPreviewsForWorkspace,
-  runtimeMode
-} from "./workspace.service.js";
+  materialVideosForWorkspace,
+} from "./workspace-material-library.service.js";
+import { workspaceModuleRunService } from "./workspace-module-run.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
 
@@ -163,56 +164,68 @@ export const materialIntakeService = {
       input.workspaceId,
       scanned
     );
-    const imageInputs =
-      runtimeMode() === "real"
-        ? await materialImagesForWorkspace(input.workspaceId, scanned)
-        : [];
-    const videoInputs =
-      runtimeMode() === "real"
-        ? await materialVideosForWorkspace(input.workspaceId, scanned)
-        : [];
-    const data: MaterialIntakeArtifact = normalizeMaterialIntakePrimaryRole(
-      runtimeMode() === "real"
-        ? (
-            await generateMaterialIntakeWithArk(
-              {
-                initialPrompt: input.userDirection,
-                scanned,
-                textPreviews,
-                creativeRequirements: requirements.data
-              },
-              {
-                traceLogger: await createWorkspaceTraceLoggerForWorkspace(workspace),
-                imageInputs,
-                videoInputs,
-                includeImageInputs: true
-              }
-            )
-          ).material
-        : scanned
-    );
+    const mode = runtimeMode();
     const sourceFingerprint = {
       promptRequirementsArtifactId: requirements.id
     };
-    const result = await db.db2.pool().query(
-      `insert into material_intake_artifacts
-         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
-       values ($1, $2, 'proposed', false, $3, $4, $5)
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        jsonbParam(data),
-        jsonbParam(sourceFingerprint),
-        jsonbParam(
-          promptAssembly({
-            requirementArtifactId: requirements.id,
-            data
-          })
-        )
-      ]
-    );
-    return toMaterialIntakeArtifact(result.rows[0]);
+    return workspaceModuleRunService.withRun({
+      workspaceId: input.workspaceId,
+      moduleId: "material-intake",
+      operation: "propose",
+      runtimeBuilder: "material_intake",
+      provider: mode === "real" ? "ark" : "deterministic",
+      sourceFingerprint,
+      artifactId: (artifact) => artifact.id,
+      run: async () => {
+        const imageInputs =
+          mode === "real"
+            ? await materialImagesForWorkspace(input.workspaceId, scanned)
+            : [];
+        const videoInputs =
+          mode === "real"
+            ? await materialVideosForWorkspace(input.workspaceId, scanned)
+            : [];
+        const data: MaterialIntakeArtifact = normalizeMaterialIntakePrimaryRole(
+          mode === "real"
+            ? (
+                await generateMaterialIntakeWithArk(
+                  {
+                    initialPrompt: input.userDirection,
+                    scanned,
+                    textPreviews,
+                    creativeRequirements: requirements.data
+                  },
+                  {
+                    traceLogger: createWorkspaceTraceAppendLogger(workspace),
+                    imageInputs,
+                    videoInputs,
+                    includeImageInputs: true
+                  }
+                )
+              ).material
+            : scanned
+        );
+        const result = await db.db2.pool().query(
+          `insert into material_intake_artifacts
+             (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+           values ($1, $2, 'proposed', false, $3, $4, $5)
+           returning *`,
+          [
+            nanoid(),
+            input.workspaceId,
+            jsonbParam(data),
+            jsonbParam(sourceFingerprint),
+            jsonbParam(
+              promptAssembly({
+                requirementArtifactId: requirements.id,
+                data
+              })
+            )
+          ]
+        );
+        return toMaterialIntakeArtifact(result.rows[0]);
+      }
+    });
   },
 
   async approve(input: { workspaceId: string; artifactId?: string; data?: unknown }) {

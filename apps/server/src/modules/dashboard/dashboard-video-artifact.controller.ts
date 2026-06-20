@@ -18,10 +18,14 @@ export async function registerDashboardVideoArtifactController(
   app.get("/api/dashboard/videos/:artifactId/file", async (request, reply) => {
     try {
       const params = request.params as { artifactId: string };
-      reply.header("Content-Type", "video/mp4");
-      return reply.send(
-        await dashboardVideoArtifactService.streamVideo(params.artifactId),
-      );
+      const rangeHeader = request.headers.range;
+      const result = await dashboardVideoArtifactService.streamVideo(params.artifactId, {
+        rangeHeader: Array.isArray(rangeHeader) ? rangeHeader[0] : rangeHeader,
+      });
+      for (const [key, value] of Object.entries(result.headers)) {
+        reply.header(key, value);
+      }
+      return reply.status(result.statusCode).send(result.stream);
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);

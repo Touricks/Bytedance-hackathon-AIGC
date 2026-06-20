@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { copySelectedLegacyRootMaterials } from "./workspace.service.js";
+import { copySelectedLegacyRootMaterials } from "./workspace-material-library.service.js";
 
 const MATERIALS_SUBDIR = path.join(".daireel", "materials");
 

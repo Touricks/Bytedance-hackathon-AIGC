@@ -391,6 +391,7 @@ describe("file trace logger", () => {
       authorization: "Bearer secret-token",
       apiKey: "secret-api-key",
       imageUrl: "data:image/png;base64,c2Vuc2l0aXZl",
+      providerTemporaryUrl: "https://provider.example/download/temp.png",
       nested: {
         header: "Authorization: Bearer nested-token"
       }
@@ -402,6 +403,7 @@ describe("file trace logger", () => {
       authorization: "Bearer <redacted>",
       apiKey: "<redacted>",
       imageUrl: "data:image/<redacted>;base64,<redacted>",
+      providerTemporaryUrl: "<redacted>",
       nested: {
         header: "Authorization: Bearer <redacted>"
       }

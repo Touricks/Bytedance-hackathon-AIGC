@@ -43,7 +43,7 @@ The server registers routes in `apps/server/src/app.ts` and module controllers u
 | GET/POST | `/api/workspaces` | List or create managed workspaces. |
 | POST | `/api/workspaces/directory/select` | Native local directory picker. |
 | POST | `/api/workspaces/init` | Find or create local workspace and `.daireel/workspace.json`. |
-| GET | `/api/workspaces/:workspaceId/status` | Workspace state, active artifacts, active shot set, active one-click job, next action. |
+| GET | `/api/workspaces/:workspaceId/status` | Workspace state, active artifacts, active shot set, active one-click job, workspace module run runtime, next action. |
 | GET | `/api/workspaces/:workspaceId/storage` | Active storage binding. |
 | POST | `/api/workspaces/:workspaceId/storage/bind` | Bind LOCAL or S3 workspace storage. |
 | DELETE | `/api/workspaces/:workspaceId` | Delete registered workspace after running-job checks. |
@@ -52,7 +52,7 @@ The server registers routes in `apps/server/src/app.ts` and module controllers u
 
 ### Workspace Module Artifacts
 
-The module set is `prompt-requirements`, `material-intake`, `product-brief`, `storyboard`, and `shotprompt`.
+The artifact module set is `prompt-requirements`, `material-intake`, `product-brief`, `storyboard`, and `shotprompt`. `/status` also returns short-lived `runtime.activeRuns` / `runtime.latestRunsByModule` facts for long-running `material-intake`, `product-brief`, `storyboard`, `shotprompt`, and `shot-set` operations. The frontend uses those facts for refresh-safe running and failure state; proposed/approved artifacts remain the downstream data contract.
 
 | Method | Path | Behavior |
 |---|---|---|
@@ -85,7 +85,7 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | Select succeeded stable video candidate. |
 | POST | `/api/shots/:shotId/retry` | Retry active image or video batch using caller idempotency key. |
 
-### Final Video, Dashboard, Campaign, Trace
+### Final Video, Dashboard, Campaign
 
 | Method | Path | Behavior |
 |---|---|---|
@@ -101,14 +101,12 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 | GET | `/api/workspaces/:workspaceId/final-videos/:finalVideoJobId/file` | Stream final video file. |
 | POST/GET | `/api/workspaces/:workspaceId/dashboard/videos` | Import or list workspace dashboard video artifacts; repeated imports of the same `finalVideoJobId` return the existing artifact. |
 | GET | `/api/dashboard/videos` | List global dashboard video artifacts. |
-| GET | `/api/dashboard/videos/:artifactId/file` | Stream dashboard MP4 copy from its internal LOCAL/S3 storage locator. |
+| GET | `/api/dashboard/videos/:artifactId/file` | Stream dashboard MP4 copy from its internal LOCAL/S3 storage locator; supports single `Range: bytes=start-end` requests for browser video playback. |
 | GET | `/api/dashboard/recommendations` | 投放策略推荐: per `商品一级类目 × 商品成交类型` group, the best `适用人群` + `推销手法` ranked by a composite of average ROAS (`Σgmv/Σspend`) and per-video GMV. Optional `roasWeight`/`gmvWeight`/`priorStrength` query knobs. Read-only across all workspaces. |
 | GET | `/api/dashboard/recommendations/:productCategory/:dealType` | Single-group recommendation (`{ data, meta }`); 400 on invalid factor value, 404 when the group has no data. |
 | POST/GET | `/api/workspaces/:workspaceId/campaign-publications` | Create/list KOL/channel placements (`jobId` validated to the workspace; `platform`, `accountName`, `publishedAt`). |
 | GET | `/api/workspaces/:workspaceId/campaign-publications/:publicationId` | Read a placement with its latest cumulative metrics. |
 | POST | `/api/workspaces/:workspaceId/campaign-publications/:publicationId/metrics` | Append a cumulative metric snapshot (`impressions/clicks/conversions/spendCents/gmvCents`); `ctr/cvr/roas` derived at read time. |
-| GET | `/api/workspaces/:workspaceId/traces` | List workspace trace events. |
-| GET | `/api/shots/:shotId/traces` | List shot trace events. |
 
 ## 5. Implementation Slices
 

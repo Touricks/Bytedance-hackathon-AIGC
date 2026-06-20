@@ -161,11 +161,57 @@ export interface UpstreamDrift {
   changedSources: string[];
 }
 
+export type WorkspaceModuleRunModuleId =
+  | "material-intake"
+  | "product-brief"
+  | "storyboard"
+  | "shotprompt"
+  | "shot-set";
+
+export type WorkspaceModuleRunStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "TIMED_OUT";
+
+export interface WorkspaceModuleRun {
+  id: string;
+  workspaceId: string;
+  moduleId: WorkspaceModuleRunModuleId;
+  operation: string;
+  status: WorkspaceModuleRunStatus;
+  runtimeBuilder: string | null;
+  provider: string | null;
+  sourceFingerprint: Record<string, unknown>;
+  artifactId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  heartbeatAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceModuleRuntime {
+  active: WorkspaceModuleRun | null;
+  latest: WorkspaceModuleRun | null;
+  latestFailed: WorkspaceModuleRun | null;
+}
+
+export interface WorkspaceRuntime {
+  activeRuns: WorkspaceModuleRun[];
+  latestRunsByModule: Partial<Record<WorkspaceModuleRunModuleId, WorkspaceModuleRun>>;
+}
+
 export interface WorkspaceModuleState<TData = unknown> {
   moduleId: WorkspaceArtifact<TData>["moduleId"];
   proposed: WorkspaceArtifact<TData> | null;
   current: WorkspaceArtifact<TData> | null;
   upstream?: UpstreamDrift;
+  runtime?: WorkspaceModuleRuntime;
 }
 
 export interface WorkspaceShotSet {
@@ -240,6 +286,7 @@ export interface WorkspaceStatusDetail {
   manifest: WorkspaceManifest;
   nextAction: WorkspaceNextAction;
   materialLibrary: WorkspaceMaterialLibrary;
+  runtime?: WorkspaceRuntime;
   modules?: {
     "prompt-requirements"?: WorkspaceModuleState;
     "material-intake"?: WorkspaceModuleState<MaterialIntakeArtifact>;

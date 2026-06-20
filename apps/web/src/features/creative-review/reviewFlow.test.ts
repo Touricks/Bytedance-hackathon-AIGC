@@ -67,7 +67,7 @@ describe("deriveReviewStepIndicators", () => {
     );
   });
 
-  it("marks user-action waiting states as in progress", () => {
+  it("marks user-action waiting states without rendering them as running", () => {
     const initialSteps = deriveReviewStepIndicators(baseViewModel());
     const materialSteps = deriveReviewStepIndicators(
       baseViewModel({
@@ -95,10 +95,10 @@ describe("deriveReviewStepIndicators", () => {
       }),
     );
 
-    assert.equal(initialSteps.find((step) => step.id === "requirements")?.tone, "busy");
-    assert.equal(materialSteps.find((step) => step.id === "material")?.tone, "busy");
-    assert.equal(applySteps.find((step) => step.id === "apply")?.tone, "busy");
-    assert.equal(finalSteps.find((step) => step.id === "final")?.tone, "busy");
+    assert.equal(initialSteps.find((step) => step.id === "requirements")?.tone, "waiting");
+    assert.equal(materialSteps.find((step) => step.id === "material")?.tone, "waiting");
+    assert.equal(applySteps.find((step) => step.id === "apply")?.tone, "waiting");
+    assert.equal(finalSteps.find((step) => step.id === "final")?.tone, "waiting");
   });
 
   it("marks completed workflow checkpoints as done", () => {
@@ -144,7 +144,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "material",
       label: "素材解读",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
   });
 
@@ -169,7 +169,48 @@ describe("deriveReviewStepIndicators", () => {
       id: "final",
       label: "生成成片",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
+    });
+  });
+
+  it("marks an unrecovered module run failure as failed instead of waiting", () => {
+    const failedRun = {
+      id: "run_storyboard_failed",
+      status: "FAILED",
+      errorMessage: "Connection error.",
+      updatedAt: "2026-06-20T12:00:00.000Z",
+    };
+    const vm = baseViewModel({
+      artifacts: {
+        promptRequirements: { isCurrent: true },
+        material: { isCurrent: true, status: "approved" },
+        brief: { isCurrent: true, status: "approved" },
+        storyboard: null,
+        shotPrompt: null,
+      },
+      workspaceStatus: {
+        modules: {
+          storyboard: {
+            runtime: {
+              active: null,
+              latest: failedRun,
+              latestFailed: failedRun,
+            },
+          },
+        },
+      },
+    });
+
+    const activity = deriveCreativeActivity(vm);
+    const steps = deriveReviewStepIndicators(vm);
+
+    assert.equal(activity.title, "分镜脚本生成失败");
+    assert.match(activity.message, /Connection error/);
+    assert.deepEqual(steps.find((step) => step.id === "storyboard"), {
+      id: "storyboard",
+      label: "分镜脚本",
+      state: "生成失败",
+      tone: "danger",
     });
   });
 
@@ -210,7 +251,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "material",
       label: "素材解读",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(steps.find((step) => step.id === "brief")?.state, "上游已变化");
     assert.equal(steps.find((step) => step.id === "brief")?.tone, "idle");
@@ -268,7 +309,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "brief",
       label: "商品卖点审核",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(steps.find((step) => step.id === "material")?.tone, "good");
   });
@@ -291,7 +332,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "storyboard",
       label: "分镜脚本",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(
       steps.find((step) => step.id === "shotprompt")?.state,
@@ -328,7 +369,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "shotprompt",
       label: "分镜生成要求",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(steps.find((step) => step.id === "apply")?.state, "上游已变化");
     assert.equal(steps.find((step) => step.id === "apply")?.tone, "idle");
@@ -405,7 +446,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "apply",
       label: "应用分镜",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(steps.find((step) => step.id === "image")?.state, "上游已变化");
     assert.equal(steps.find((step) => step.id === "image")?.tone, "idle");
@@ -439,7 +480,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "image",
       label: "分镜图选择",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(steps.find((step) => step.id === "video")?.state, "上游已变化");
     assert.equal(steps.find((step) => step.id === "video")?.tone, "idle");
@@ -473,7 +514,7 @@ describe("deriveReviewStepIndicators", () => {
       id: "video",
       label: "分镜视频选择",
       state: "生成中",
-      tone: "busy",
+      tone: "running",
     });
     assert.equal(steps.find((step) => step.id === "final")?.state, "上游已变化");
     assert.equal(steps.find((step) => step.id === "final")?.tone, "idle");
@@ -517,7 +558,7 @@ describe("deriveReviewStepIndicators", () => {
         id: "final",
         label: "生成成片",
         state: "生成中",
-        tone: "busy",
+        tone: "running",
       });
     }
   });
@@ -702,7 +743,7 @@ describe("deriveCreativeActivity", () => {
     assert.deepEqual(activity, {
       title: "素材解读生成中",
       message: "正在解读上传素材，完成后可以确认素材标签、相关性和主商品素材。",
-      tone: "busy",
+      tone: "running",
       stepId: "material",
       action: null,
     });
@@ -747,7 +788,7 @@ describe("deriveCreativeActivity", () => {
     assert.deepEqual(activity, {
       title: "商品卖点生成中",
       message: "正在生成商品卖点草稿，完成后可以审核卖点是否准确。",
-      tone: "busy",
+      tone: "running",
       stepId: "brief",
       action: null,
     });

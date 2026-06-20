@@ -1,18 +1,18 @@
-# Core Architecture Package
+# Legacy Core Architecture Package
 
-Status: Accepted
+Status: Deprecated
 Owner: Project team
-Last Updated: 2026-06-08
-Applies To: AIGC commerce video generation V3 implementation in `apps/server`, `apps/web`, `packages/ai`, and `packages/shared`
-Depends On: `CONTEXT.md`, current code, `docs/core_v0/`
-Blocks: Backend/API/frontend/prompt-chain changes without matching contract and architecture updates
-Decision State: Accepted
+Last Updated: 2026-06-20
+Applies To: Migration compatibility for AIGC commerce video generation docs
+Depends On: `docs/README.md`, current code, `docs/self-use/core_v0/`
+Blocks: Treating deprecated compatibility docs as new canonical project contracts
+Decision State: Deprecated
 
 ## 1. Purpose
 
-This package is the current source of truth for the merchant-facing AIGC commerce video generation system. It replaces the legacy `docs/core_v0/` flat documents with a template-aligned architecture set.
+This package is a deprecated compatibility copy for the merchant-facing AIGC commerce video generation system. The canonical Spec Kit style project-docs root is now `docs/`.
 
-Use these docs for new work:
+Use `docs/README.md` for new work. The files below remain available as migration evidence and temporary compatibility anchors:
 
 1. `product/original_prd.md`
 2. `product/product_scope.md`
@@ -67,8 +67,8 @@ Workspace modules use `propose -> approve`. Downstream modules read only approve
 
 ## 4. Contract Anchors
 
-- `contracts/openapi.yaml` is the machine-readable frontend/backend HTTP contract.
-- `architecture/data_model.md` is the service-facing artifact and payload contract.
-- `architecture/erd.md` is the PostgreSQL/BullMQ/storage fact model.
+- `docs/contracts/openapi.yaml` is the canonical machine-readable frontend/backend HTTP contract.
+- `docs/data/persistence-boundary.md` is the canonical persistence boundary.
+- `docs/contracts/state-machine.md` is the canonical workflow status contract.
 
-When API behavior changes, update all applicable anchors together.
+When API behavior changes, update the canonical `docs/` anchors first. Update this package only when compatibility requires it.

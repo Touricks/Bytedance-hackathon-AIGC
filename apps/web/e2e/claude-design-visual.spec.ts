@@ -313,10 +313,6 @@ async function mockVisualApi(page: Page) {
       return json(route, { data: [] });
     }
 
-    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
-      return json(route, { data: [] });
-    }
-
     return route.continue();
   });
 }

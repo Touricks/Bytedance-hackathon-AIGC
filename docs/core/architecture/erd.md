@@ -21,6 +21,7 @@ The authoritative DDL is `apps/server/src/db/schema/schema.sql`. The active sche
 ```mermaid
 erDiagram
   creative_workspace ||--o{ workspace_storage_bindings : binds
+  creative_workspace ||--o{ workspace_module_runs : tracks
   creative_workspace ||--o{ prompt_requirements_artifacts : owns
   creative_workspace ||--o{ material_intake_artifacts : owns
   creative_workspace ||--o{ product_brief_artifacts : owns
@@ -72,6 +73,7 @@ erDiagram
 |---|---|---|
 | `creative_workspace` | Workspace business state | `id` primary key; `local_path` nullable. |
 | `workspace_storage_bindings` | Active LOCAL/S3 storage target | One active binding per workspace; LOCAL requires normalized path; S3 requires bucket/prefix. |
+| `workspace_module_runs` | Short-lived module execution runtime | One active `PENDING/RUNNING` run per workspace/module; records provider/apply running, success artifact id, and failure summary for `/status` UI and delete-busy checks. |
 | `prompt_requirements_artifacts` | 创作要求 artifact | Partial unique index for current approved. |
 | `material_intake_artifacts` | 素材解读 artifact | Partial unique index for current approved. |
 | `product_brief_artifacts` | 商品卖点 artifact | Partial unique index for current approved. |
@@ -88,7 +90,7 @@ erDiagram
 | `video_generation_batches` / `video_candidates` | Video generation facts | Supports candidate `PERSISTING`; service layer treats `PENDING/RUNNING` as one active video batch per shot. `PARTIAL` batches may still supply selectable succeeded candidates, and no-feedback reroll creates a new terminal-round successor batch. |
 | `video_select_artifacts` | Current 分镜视频选择 | `shot_id` unique. |
 | `generation_jobs` | BullMQ business mirror | Related batch/candidate/final job id. |
-| `trace_events` | Agent/provider/job/user audit | Indexed by workspace and shot. |
+| `trace_events` | Agent/provider/job/user audit | Internal index by workspace and shot; public trace HTTP reads are not part of the contract. S3-backed workspaces also archive immutable per-event JSON objects under the workspace storage prefix. |
 | `final_video_jobs` | Final compose jobs | Idempotency key unique; points to `shot_set_id`. |
 | `dashboard_video_artifacts` | Imported dashboard videos (decoupled registry) | Non-null four-factor `creative_factors` + LOCAL/S3 storage locator columns. `workspace_id`/`final_video_job_id` are **soft text refs** (no FK, no cascade); partial unique index on `final_video_job_id`; survives workspace deletion; S3 copies live in the dedicated `DASHBOARD_S3_BUCKET`. |
 | `one_click_final_video_jobs` | One-click orchestrator | One active job per workspace while `PENDING/RUNNING/WAITING`. |

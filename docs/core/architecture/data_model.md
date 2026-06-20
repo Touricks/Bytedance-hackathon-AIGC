@@ -34,6 +34,25 @@ Each workspace module artifact table stores:
 | `promptAssembly` | Prompt module id and assembly preview. |
 | `createdAt/updatedAt/approvedAt` | Lifecycle timestamps. |
 
+### Workspace Module Run Runtime
+
+`workspace_module_runs` stores short-lived execution facts for workspace modules whose provider calls or apply transactions can outlive a single frontend render:
+
+| Field | Meaning |
+|---|---|
+| `id` | Run id. |
+| `workspaceId` | Owning workspace. |
+| `moduleId` | `material-intake`, `product-brief`, `storyboard`, `shotprompt`, or `shot-set`. |
+| `operation` | `propose`, `rewrite`, `rewrite_voiceover`, or `apply`. |
+| `status` | `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, or `TIMED_OUT`. |
+| `runtimeBuilder/provider` | Runtime builder and provider label used for observability. |
+| `sourceFingerprint` | Upstream artifact ids read before the run started. |
+| `artifactId` | Proposed artifact id or applied shot-set id after success. |
+| `errorCode/errorMessage` | Failure summary for recovery UX. |
+| `startedAt/completedAt/heartbeatAt` | Runtime timestamps. |
+
+Only one `PENDING`/`RUNNING` run is allowed per `(workspaceId, moduleId)`. These rows drive `/status` running/failure UI and deletion busy checks; they are not prompt inputs and do not replace module artifact rows.
+
 ### `prompt_requirements_artifacts.data`
 
 Canonical schema: `creativeFactorRequirementsDataSchema`.
@@ -78,6 +97,8 @@ Canonical schema: `storyboardArtifactSchema`.
 Fields: `narrative`, `totalDurationSec`, `shots[]`, `assumptions[]`. Each shot includes `index`, `purpose`, `durationSec`, `scene`, `visualDirection`, `productAssetRef`, `voiceover`, and `transition`.
 
 P0 storyboard validation currently enforces a 15-second three-shot script in service boundaries that require the P0 format.
+
+Mock-mode storyboard data is produced by `apps/server/src/modules/workspace/deterministic-artifacts.ts`. The deterministic builder derives voiceover from product brief fields (`product.name`, `audience.painOrDesire`, `coreSellingPoint`, `proof[0]`, `offer`) and applies P0 voiceover timing limits. It must mark deterministic source in `assumptions` so downstream prompt chains can distinguish mock artifacts from provider output.
 
 ### `shot_prompt_artifacts.data`
 

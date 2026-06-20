@@ -254,7 +254,6 @@ async function mockImageFeedbackApi(page: Page) {
 
     if (path.includes("/video-rounds")) return json(route, { data: [] });
     if (path.includes("/shot-sets")) return json(route, { data: [] });
-    if (path.includes("/traces")) return json(route, { data: [] });
     return json(route, {});
   };
 

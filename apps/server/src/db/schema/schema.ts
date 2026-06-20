@@ -75,6 +75,33 @@ create unique index if not exists idx_workspace_storage_active_local
 create unique index if not exists idx_workspace_storage_active_s3
   on workspace_storage_bindings(s3_bucket, s3_prefix)
   where status = 'ACTIVE' and kind = 'S3';
+create table if not exists workspace_module_runs (
+  id text primary key,
+  workspace_id text not null references creative_workspace(id) on delete cascade,
+  module_id text not null,
+  operation text not null,
+  status text not null check (
+    status in ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT')
+  ),
+  runtime_builder text,
+  provider text,
+  source_fingerprint jsonb not null default '{}'::jsonb,
+  artifact_id text,
+  error_code text,
+  error_message text,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  heartbeat_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists idx_workspace_module_runs_active
+  on workspace_module_runs(workspace_id, module_id)
+  where status in ('PENDING', 'RUNNING');
+create index if not exists idx_workspace_module_runs_workspace_created
+  on workspace_module_runs(workspace_id, created_at desc);
+create index if not exists idx_workspace_module_runs_module_created
+  on workspace_module_runs(workspace_id, module_id, created_at desc);
 insert into workspace_storage_bindings (
   id,
   workspace_id,

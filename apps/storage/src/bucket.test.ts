@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { describe, it } from "node:test";
 import {
   DeleteObjectsCommand,
+  GetObjectCommand,
   ListObjectsV2Command,
   type S3Client,
 } from "@aws-sdk/client-s3";
-import { deleteObjects, deleteObjectsUnderPrefix } from "./bucket.js";
+import { deleteObjects, deleteObjectsUnderPrefix, getObjectStream } from "./bucket.js";
 
 type SentCommand = { name: string; input: Record<string, unknown> };
 
@@ -29,6 +31,9 @@ function fakeClient(options?: {
       }
       if (command instanceof DeleteObjectsCommand) {
         return options?.deleteResponse ? options.deleteResponse(command.input) : {};
+      }
+      if (command instanceof GetObjectCommand) {
+        return { Body: Readable.from([Buffer.from("ok")]) };
       }
       throw new Error(`unexpected command ${command.constructor.name}`);
     },
@@ -102,5 +107,27 @@ describe("deleteObjectsUnderPrefix", () => {
     const { client, sent } = fakeClient({ listPages: [{ keys: [] }] });
     await deleteObjectsUnderPrefix({ client, bucket: "b", prefix: "p/" });
     assert.ok(!sent.some((c) => c.name === "DeleteObjectsCommand"));
+  });
+});
+
+describe("getObjectStream", () => {
+  it("passes byte ranges through to S3 GetObject", async () => {
+    const { client, sent } = fakeClient();
+    const stream = await getObjectStream({
+      client,
+      bucket: "b",
+      key: "video.mp4",
+      range: "bytes=10-20",
+    });
+    for await (const chunk of stream) {
+      assert.ok(chunk);
+      // drain the stream
+    }
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]?.name, "GetObjectCommand");
+    assert.equal(sent[0]?.input.Bucket, "b");
+    assert.equal(sent[0]?.input.Key, "video.mp4");
+    assert.equal(sent[0]?.input.Range, "bytes=10-20");
   });
 });

@@ -282,7 +282,7 @@ export const dashboardVideoArtifactService = {
     return { data: toArtifact(row) };
   },
 
-  async streamVideo(artifactId: string) {
+  async streamVideo(artifactId: string, options: { rangeHeader?: string } = {}) {
     const result = await db.db2.pool().query(
       `select id, storage_kind, storage_bucket, video_object_key
        from dashboard_video_artifacts where id = $1`,
@@ -290,6 +290,6 @@ export const dashboardVideoArtifactService = {
     );
     const row = result.rows[0];
     if (!row) throw new NotFoundError("DashboardVideoArtifact");
-    return streamDashboardVideoAsset(row);
+    return streamDashboardVideoAsset(row, options);
   },
 };

@@ -178,6 +178,7 @@ const generationWorkerConcurrency = positiveIntEnv(
   "GENERATION_WORKER_CONCURRENCY",
   imageProviderConcurrency + videoProviderConcurrency
 );
+const traceS3ArchiveEnabled = process.env.TRACE_S3_ARCHIVE_ENABLED !== "false";
 
 export const config = {
   port: Number(process.env.SERVER_PORT ?? 3000),
@@ -197,6 +198,7 @@ export const config = {
   textProviderConcurrency,
   imageProviderConcurrency,
   videoProviderConcurrency,
+  traceS3ArchiveEnabled,
   workspaceDiscoveryRoots: parseDiscoveryRoots(process.env.WORKSPACE_DISCOVERY_ROOTS),
   workspaceStorageKind: workspaceStorageKindEnv(),
 };

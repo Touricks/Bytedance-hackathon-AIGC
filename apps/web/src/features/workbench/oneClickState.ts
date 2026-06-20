@@ -30,9 +30,13 @@ export function oneClickPollingInterval(input: {
  */
 export function workspaceStatusRefetchInterval(input: {
   activeOneClickFinalVideo: OneClickFinalVideoJob | null | undefined;
+  activeModuleRunCount?: number;
 }): number | false {
   const job = input.activeOneClickFinalVideo;
-  return job && isActiveOneClickStatus(job.status) ? 3_000 : false;
+  return (job && isActiveOneClickStatus(job.status)) ||
+    (input.activeModuleRunCount ?? 0) > 0
+    ? 3_000
+    : false;
 }
 
 export function resolveOneClickFinalVideoState(input: {

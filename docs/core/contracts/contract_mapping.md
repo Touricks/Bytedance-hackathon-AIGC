@@ -23,7 +23,7 @@ This mapping ties frontend API clients, backend controllers, service-owned schem
 | Generation | `imageBatch.ts`, `videoBatch.ts`, `finalVideo.ts`, `oneClickFinalVideo.ts` | `generation.controller.ts`, generation services/workers | generation unit/integration tests |
 | Dashboard | `dashboardVideoArtifacts.ts` | `dashboard-video-artifact.controller.ts` | dashboard API/web tests |
 | Campaign | data dashboard clients/view model | `campaign.controller.ts`, `campaign.service.ts` | campaign API tests |
-| Trace | `trace.ts` | `trace.routes.ts`, `trace.service.ts` | trace tests |
+| Trace observability | none (not public API) | `trace.service.ts`, `trace-sink.ts`, provider-call trace helpers | trace sink tests |
 
 ## 3. Change Rule
 
@@ -34,4 +34,3 @@ When an endpoint, body field, enum, or response shape changes:
 3. Update `contracts/openapi.yaml` and `contracts/interface.md`.
 4. Update `architecture/data_model.md` or `architecture/erd.md` if artifact/database shape changes.
 5. Run `pnpm contract:frontend-backend` and targeted tests.
-

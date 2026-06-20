@@ -6,7 +6,8 @@ info:
     Current V3 frontend/backend contract for the merchant-facing AIGC commerce
     video generation workspace. Workspace modules use propose -> approve.
     Downstream reads approved/current artifacts only. Upstream changes are
-    warnings, not automatic deletion or invalidation.
+    warnings, not automatic deletion or invalidation. Workspace status includes
+    short-lived module run facts for refresh-safe running/failure UX.
 servers:
   - url: http://localhost:3000
     description: Local Fastify API
@@ -19,7 +20,6 @@ tags:
   - name: Generation
   - name: Dashboard
   - name: Campaign
-  - name: Trace
 
 components:
   parameters:
@@ -459,6 +459,11 @@ paths:
   /api/workspaces/{workspaceId}/status:
     get:
       tags: [Workspace]
+      description: >
+        Returns workspace state, material library, current/proposed module
+        artifacts, active shot set, active one-click job, and workspace module
+        runtime (`activeRuns`, `latestRunsByModule`) for synchronous provider
+        modules and shot-set apply.
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       responses:
@@ -961,10 +966,31 @@ paths:
   /api/dashboard/videos/{artifactId}/file:
     get:
       tags: [Dashboard]
-      description: Streams the dashboard MP4 through the API proxy. The backing object may be LOCAL or S3-compatible storage.
-      parameters: [{ $ref: "#/components/parameters/ArtifactId" }]
+      description: Streams the dashboard MP4 through the API proxy. The backing object may be LOCAL or S3-compatible storage. Supports single byte-range requests for browser video playback.
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+        - name: Range
+          in: header
+          required: false
+          schema: { type: string }
+          example: bytes=0-1023
       responses:
         "200": { $ref: "#/components/responses/File" }
+        "206":
+          description: Partial MP4 stream for a satisfiable byte range.
+          headers:
+            Accept-Ranges:
+              schema: { type: string, example: bytes }
+            Content-Range:
+              schema: { type: string, example: bytes 0-1023/5006448 }
+            Content-Length:
+              schema: { type: integer, example: 1024 }
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "416": { $ref: "#/components/responses/Error" }
   /api/workspaces/{workspaceId}/dashboard/videos:
     get:
       tags: [Dashboard]
@@ -1058,18 +1084,6 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
-  /api/workspaces/{workspaceId}/traces:
-    get:
-      tags: [Trace]
-      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
-      responses:
-        "200": { $ref: "#/components/responses/Ok" }
-  /api/shots/{shotId}/traces:
-    get:
-      tags: [Trace]
-      parameters: [{ $ref: "#/components/parameters/ShotId" }]
-      responses:
-        "200": { $ref: "#/components/responses/Ok" }
   /api/scripts/{jobId}:
     get:
       tags: [Platform]

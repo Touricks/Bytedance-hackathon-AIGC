@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { Readable } from "node:stream";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../app.js";
 import { db } from "../../db/client.js";
+import type { WorkspaceStorageObjectInfo } from "../workspace/storage/workspace-storage.adapter.js";
+import { __setWorkspaceStorageAdapterFactoryForTests } from "../workspace/storage/workspace-storage-resolver.js";
 import { traceService } from "./trace.service.js";
 import {
   providerCallTraceRelativePath,
@@ -73,6 +76,7 @@ describe("trace service", () => {
 
   after(async () => {
     await app.close();
+    __setWorkspaceStorageAdapterFactoryForTests(undefined);
     await Promise.all(
       cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })),
     );
@@ -193,6 +197,82 @@ describe("trace service", () => {
         "data:image/<redacted>;base64,<redacted>",
       );
     });
+  });
+
+  it("archives trace records as immutable S3 per-event JSON objects", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: `trace-s3-${Date.now()}` },
+    });
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const workspace = createResponse.json().workspace as { id: string };
+    await db.bindWorkspaceS3Storage({
+      workspaceId: workspace.id,
+      bucket: "trace-test",
+      prefix: `workspaces/${workspace.id}`,
+      region: "test-region",
+      endpoint: "https://s3.example.test",
+    });
+
+    const writes: Array<{ relativePath: string; body: string }> = [];
+    __setWorkspaceStorageAdapterFactoryForTests((binding) => ({
+      kind: binding.kind,
+      binding,
+      async putObject(input) {
+        writes.push({
+          relativePath: input.relativePath,
+          body: String(input.body),
+        });
+        return {
+          relativePath: input.relativePath,
+          size: String(input.body).length,
+          contentType: input.contentType ?? null,
+          lastModified: new Date(),
+        } satisfies WorkspaceStorageObjectInfo;
+      },
+      readObject: async () => Buffer.alloc(0),
+      streamObject: async () => {
+        throw new Error("not implemented") as never as Readable;
+      },
+      deleteObject: async () => {},
+      listObjects: async () => [],
+      statObject: async () => {
+        throw new Error("not implemented");
+      },
+      exists: async () => false,
+      downloadToTemp: async () => {},
+      deletePrefix: async () => {},
+    }));
+
+    await traceService.record({
+      workspaceId: workspace.id,
+      traceType: "agent_run",
+      name: "material_intake.request_prepared",
+      inputPreview: "Authorization: Bearer archive-token",
+      metadata: {
+        apiKey: "secret-api-key",
+        imageUrl: "data:image/png;base64,c2Vuc2l0aXZl",
+        providerTemporaryUrl: "https://provider.example/temp.png",
+      },
+    });
+
+    assert.equal(writes.length, 1);
+    assert.match(
+      writes[0]!.relativePath,
+      /^trace\/events\/[^/]+-trc_[a-z0-9]+\.json$/,
+    );
+    const payload = JSON.parse(writes[0]!.body) as {
+      workspaceId?: string;
+      meta?: Record<string, unknown>;
+    };
+    assert.equal(payload.workspaceId, workspace.id);
+    assert.equal(payload.meta?.apiKey, "<redacted>");
+    assert.equal(
+      payload.meta?.imageUrl,
+      "data:image/<redacted>;base64,<redacted>",
+    );
+    assert.equal(payload.meta?.providerTemporaryUrl, "<redacted>");
   });
 
   it("does not create provider call trace files outside real mode", async () => {

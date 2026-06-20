@@ -410,24 +410,6 @@ async function mockCreativeReviewApi(
       });
     }
 
-    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
-      return json(route, {
-        data: [
-          {
-            id: "tr-1",
-            workspaceId,
-            shotId,
-            traceType: "agent_run",
-            name: "image_prompt_proposed",
-            inputPreview: null,
-            outputPreview: "ok",
-            metadata: {},
-            createdAt: now
-          }
-        ]
-      });
-    }
-
     if (request.method() === "POST" && path === `/api/workspaces/${workspaceId}/final-videos`) {
       finalStarted = true;
       requests.finalCompose = request.postDataJSON();
@@ -666,9 +648,6 @@ async function mockReviewStartApi(page: Page) {
       return json(route, {
         data: { workspaceId, shots: [], canComposeFinalVideo: false }
       });
-    }
-    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
-      return json(route, { data: [] });
     }
     if (
       request.method() === "POST" &&
@@ -1150,9 +1129,6 @@ async function mockLayeredReviewApi(
             ]
           : []
       });
-    }
-    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
-      return json(route, { data: [] });
     }
     if (
       request.method() === "POST" &&

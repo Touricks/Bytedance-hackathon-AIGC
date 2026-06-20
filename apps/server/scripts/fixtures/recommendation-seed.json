@@ -941,6 +941,234 @@
           }
         }
       ]
+    },
+    {
+      "key": "home-repeat-youth-pain",
+      "name": "厨房抹布替换装·痛点解决",
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "repeat-consumable",
+        "audience": "youth",
+        "strategy": "pain-solution"
+      },
+      "publications": [
+        {
+          "key": "dy",
+          "platform": "douyin",
+          "accountName": "租房厨房急救",
+          "publishedAt": "2026-05-28T00:00:00.000Z",
+          "days": 14,
+          "finalTotals": {
+            "impressions": 240000,
+            "clicks": 7600,
+            "conversions": 620,
+            "spendCents": 720000,
+            "gmvCents": 4700000
+          }
+        },
+        {
+          "key": "xhs",
+          "platform": "xiaohongshu",
+          "accountName": "厨房清洁补货站",
+          "publishedAt": "2026-05-30T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 116000,
+            "clicks": 3900,
+            "conversions": 330,
+            "spendCents": 360000,
+            "gmvCents": 2380000
+          }
+        },
+        {
+          "key": "dy2",
+          "platform": "douyin",
+          "accountName": "下班十分钟收拾家",
+          "publishedAt": "2026-06-02T00:00:00.000Z",
+          "days": 10,
+          "finalTotals": {
+            "impressions": 168000,
+            "clicks": 5200,
+            "conversions": 410,
+            "spendCents": 510000,
+            "gmvCents": 3230000
+          }
+        }
+      ]
+    },
+    {
+      "key": "home-repeat-general-tutorial",
+      "name": "洗衣机槽清洁片·教程价值",
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "repeat-consumable",
+        "audience": "general",
+        "strategy": "tutorial-value"
+      },
+      "publications": [
+        {
+          "key": "dy",
+          "platform": "douyin",
+          "accountName": "家电清洁课",
+          "publishedAt": "2026-05-27T00:00:00.000Z",
+          "days": 13,
+          "finalTotals": {
+            "impressions": 198000,
+            "clicks": 5200,
+            "conversions": 390,
+            "spendCents": 620000,
+            "gmvCents": 3310000
+          }
+        },
+        {
+          "key": "xhs",
+          "platform": "xiaohongshu",
+          "accountName": "月度清洁清单",
+          "publishedAt": "2026-05-29T00:00:00.000Z",
+          "days": 11,
+          "finalTotals": {
+            "impressions": 92000,
+            "clicks": 2900,
+            "conversions": 220,
+            "spendCents": 310000,
+            "gmvCents": 1680000
+          }
+        },
+        {
+          "key": "ks",
+          "platform": "kuaishou",
+          "accountName": "家庭囤货指南",
+          "publishedAt": "2026-06-01T00:00:00.000Z",
+          "days": 9,
+          "finalTotals": {
+            "impressions": 130000,
+            "clicks": 3100,
+            "conversions": 230,
+            "spendCents": 420000,
+            "gmvCents": 2180000
+          }
+        }
+      ]
+    },
+    {
+      "key": "home-repeat-youth-review",
+      "name": "一次性厨房巾·测评对比",
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "repeat-consumable",
+        "audience": "youth",
+        "strategy": "review-comparison"
+      },
+      "publications": [
+        {
+          "key": "dy",
+          "platform": "douyin",
+          "accountName": "厨房纸巾实测",
+          "publishedAt": "2026-05-30T00:00:00.000Z",
+          "days": 12,
+          "finalTotals": {
+            "impressions": 184000,
+            "clicks": 5000,
+            "conversions": 300,
+            "spendCents": 560000,
+            "gmvCents": 2410000
+          }
+        },
+        {
+          "key": "xhs",
+          "platform": "xiaohongshu",
+          "accountName": "清洁用品横评",
+          "publishedAt": "2026-06-02T00:00:00.000Z",
+          "days": 10,
+          "finalTotals": {
+            "impressions": 84000,
+            "clicks": 2600,
+            "conversions": 160,
+            "spendCents": 280000,
+            "gmvCents": 1170000
+          }
+        }
+      ]
+    },
+    {
+      "key": "home-repeat-senior-scenario",
+      "name": "地板清洁湿巾·场景演示",
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "repeat-consumable",
+        "audience": "senior",
+        "strategy": "scenario-demo"
+      },
+      "publications": [
+        {
+          "key": "dy",
+          "platform": "douyin",
+          "accountName": "爸妈省力家务",
+          "publishedAt": "2026-05-31T00:00:00.000Z",
+          "days": 11,
+          "finalTotals": {
+            "impressions": 152000,
+            "clicks": 3600,
+            "conversions": 225,
+            "spendCents": 480000,
+            "gmvCents": 1770000
+          }
+        },
+        {
+          "key": "ks",
+          "platform": "kuaishou",
+          "accountName": "银发家务轻松做",
+          "publishedAt": "2026-06-02T00:00:00.000Z",
+          "days": 9,
+          "finalTotals": {
+            "impressions": 110000,
+            "clicks": 2400,
+            "conversions": 145,
+            "spendCents": 340000,
+            "gmvCents": 1210000
+          }
+        }
+      ]
+    },
+    {
+      "key": "home-repeat-general-authority",
+      "name": "浴室除霉啫喱·权威证明",
+      "creativeFactors": {
+        "productCategory": "home-living",
+        "dealType": "repeat-consumable",
+        "audience": "general",
+        "strategy": "authority-proof"
+      },
+      "publications": [
+        {
+          "key": "dy",
+          "platform": "douyin",
+          "accountName": "浴室清洁实验室",
+          "publishedAt": "2026-06-01T00:00:00.000Z",
+          "days": 10,
+          "finalTotals": {
+            "impressions": 135000,
+            "clicks": 3000,
+            "conversions": 162,
+            "spendCents": 430000,
+            "gmvCents": 1370000
+          }
+        },
+        {
+          "key": "xhs",
+          "platform": "xiaohongshu",
+          "accountName": "卫生间除霉记录",
+          "publishedAt": "2026-06-03T00:00:00.000Z",
+          "days": 8,
+          "finalTotals": {
+            "impressions": 76000,
+            "clicks": 2100,
+            "conversions": 120,
+            "spendCents": 260000,
+            "gmvCents": 858000
+          }
+        }
+      ]
     }
   ]
 }

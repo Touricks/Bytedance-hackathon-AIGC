@@ -13,10 +13,9 @@ import {
 } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
-import {
-  createWorkspaceTraceLoggerForWorkspace,
-  runtimeMode,
-} from "./workspace.service.js";
+import { createWorkspaceTraceAppendLogger } from "../trace/trace.service.js";
+import { workspaceModuleRunService } from "./workspace-module-run.service.js";
+import { runtimeMode } from "./workspace-runtime.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
 
@@ -286,55 +285,65 @@ export const shotPromptService = {
     const storyboard = storyboardArtifactSchema.parse(sources.storyboard.data);
     assertP0StoryboardBoundary(storyboard);
     const aspectRatio = input.aspectRatio ?? "9:16";
-    const data = enrichShotPrompt(
-      runtimeMode() === "real"
-        ? (
-            await generateShotPromptWithArk(
-              {
-                brief,
-                material,
-                storyboard,
-                aspectRatio,
-                creativeRequirements: sources.requirements.data,
-              },
-              {
-                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
-                  workspace,
-                ),
-              },
-            )
-          ).shotPrompt
-        : compileShotPromptArtifact(storyboard, { aspectRatio }),
-      storyboard,
-    );
     const sourceFingerprint = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,
       productBriefArtifactId: sources.productBrief.id,
       storyboardArtifactId: sources.storyboard.id,
     };
-    const result = await db.db2.pool().query(
-      `insert into shot_prompt_artifacts
-         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
-       values ($1, $2, 'proposed', false, $3, $4, $5)
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        jsonbParam(data),
-        jsonbParam(sourceFingerprint),
-        jsonbParam(
-          promptAssembly({
-            requirementArtifactId: sources.requirements.id,
-            data,
-          }),
-        ),
-      ],
-    );
-    await db.updateWorkspace(input.workspaceId, {
-      status: "shotprompt_proposed",
+    const mode = runtimeMode();
+    return workspaceModuleRunService.withRun({
+      workspaceId: input.workspaceId,
+      moduleId: "shotprompt",
+      operation: "propose",
+      runtimeBuilder: "shotprompt",
+      provider: mode === "real" ? "ark" : "deterministic",
+      sourceFingerprint,
+      artifactId: (artifact) => artifact.id,
+      run: async () => {
+        const data = enrichShotPrompt(
+          mode === "real"
+            ? (
+                await generateShotPromptWithArk(
+                  {
+                    brief,
+                    material,
+                    storyboard,
+                    aspectRatio,
+                    creativeRequirements: sources.requirements.data,
+                  },
+                  {
+                    traceLogger: createWorkspaceTraceAppendLogger(workspace),
+                  },
+                )
+              ).shotPrompt
+            : compileShotPromptArtifact(storyboard, { aspectRatio }),
+          storyboard,
+        );
+        const result = await db.db2.pool().query(
+          `insert into shot_prompt_artifacts
+             (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+           values ($1, $2, 'proposed', false, $3, $4, $5)
+           returning *`,
+          [
+            nanoid(),
+            input.workspaceId,
+            jsonbParam(data),
+            jsonbParam(sourceFingerprint),
+            jsonbParam(
+              promptAssembly({
+                requirementArtifactId: sources.requirements.id,
+                data,
+              }),
+            ),
+          ],
+        );
+        await db.updateWorkspace(input.workspaceId, {
+          status: "shotprompt_proposed",
+        });
+        return toShotPromptArtifact(result.rows[0]);
+      },
     });
-    return toShotPromptArtifact(result.rows[0]);
   },
 
   async approve(input: {

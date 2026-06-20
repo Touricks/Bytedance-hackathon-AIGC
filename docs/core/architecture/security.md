@@ -19,6 +19,7 @@ The current API is unauthenticated and single-tenant for local development, but 
 - Reference video URL import blocks localhost/private hosts and requires direct video download.
 - Workspace file streaming rejects path traversal.
 - Provider call trace stores URL summaries/hashes rather than full signed/data URLs.
+- Project logging goes through the project logger backed by Pino JSON output; business code should not import Pino directly.
 
 ## 3. Target State
 
@@ -28,7 +29,7 @@ The current API is unauthenticated and single-tenant for local development, but 
 | Upload size/type | Validate content type, bytes, and model-specific limits before provider calls. |
 | Path traversal | Resolve relative paths under workspace storage roots only. |
 | SSRF | Restrict reference video imports to http(s), block private/local hosts, require video content. |
-| Trace leakage | Redact signed URLs/data URLs; keep provider request summaries minimal. |
+| Trace/log leakage | Redact bearer tokens, API keys, data URLs, and provider temporary URLs in trace sink and structured logs; keep provider request summaries minimal. |
 | S3 exposure | Frontend uses server proxy URLs, not direct object URLs. |
 | Tenant boundary | Future auth/multi-tenant work must add permission checks before sharing routes publicly. |
 
@@ -36,14 +37,14 @@ The current API is unauthenticated and single-tenant for local development, but 
 
 - Upload and streaming endpoints return business errors rather than stack traces.
 - `reference-video/import` returns `INVALID_REFERENCE_VIDEO_URL`, `REFERENCE_VIDEO_NOT_DIRECT_DOWNLOAD`, `REFERENCE_VIDEO_TOO_LARGE`, or `UNSUPPORTED_REFERENCE_VIDEO_TYPE` for import violations.
-- Provider failures should preserve diagnostic code without leaking secrets or full signed URLs.
+- Provider failures should preserve diagnostic code without leaking secrets, data URLs, or full signed/temporary provider URLs.
 
 ## 5. Implementation Slices
 
 - Upload guards and image/video provider input filters.
 - Storage adapter path checks.
 - Reference video SSRF and size controls.
-- Trace redaction and logging policy.
+- Trace redaction, Pino structured logging, LOCAL mirror, and S3 archive policy.
 
 ## 6. Acceptance Tests
 
@@ -60,4 +61,3 @@ The current API is unauthenticated and single-tenant for local development, but 
 
 - `architecture/backend.md`
 - `testing/test_strategy.md`
-

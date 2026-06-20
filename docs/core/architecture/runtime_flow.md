@@ -10,7 +10,7 @@ Decision State: Accepted
 
 ## 1. Executive Summary
 
-Runtime flow is review-gated until the shot set is applied. After apply, per-shot image/video generation and final compose are asynchronous through `generation` jobs. One-click final video and shot image auto-selection orchestrate existing modules instead of creating separate business facts.
+Runtime flow is review-gated until the shot set is applied. Provider-backed workspace module operations record short-lived `workspace_module_runs` facts so the UI can show refresh-safe running/failure state, while proposed/approved artifacts remain the downstream data contract. After apply, per-shot image/video generation and final compose are asynchronous through `generation` jobs. One-click final video and shot image auto-selection orchestrate existing modules instead of creating separate business facts.
 
 ## 2. Current Reality
 
@@ -39,12 +39,14 @@ Dashboard import copies a completed final video into the decoupled dashboard reg
 - `propose` creates待审创作产物 and never becomes downstream input.
 - `approve` inserts a new approved/current row and makes old approved rows non-current.
 - Approved/current is the only source read by downstream modules.
+- Provider-backed `propose` operations for `material-intake`, `product-brief`, `storyboard`, and `shotprompt` create one active `workspace_module_runs` row per workspace/module while the call is running. Success links the run to the proposed artifact; failure records error code/message without creating a downstream artifact.
 
 ### Shot Set Apply
 
 - `shotprompt approve` does not create shots.
 - `POST /api/workspaces/:workspaceId/shot-sets` creates the active 分镜链路实例.
 - Applying a new shot set archives the previous active set but preserves all historical rows.
+- Shot-set apply also records a `workspace_module_runs` row with `module_id='shot-set'` so the review rail can show running/failure state between 分镜生成要求 and 分镜图选择.
 
 ### Per-Shot Runtime
 
@@ -67,6 +69,7 @@ Dashboard import copies a completed final video into the decoupled dashboard reg
 - `Idempotency-Key` is required for retry, final compose, one-click final video, and image auto-selection. Per-shot image/video propose endpoints additionally enforce batch idempotency by shot id.
 - `candidateCount` is an operation parameter bounded by server config, not a 创作要求 field.
 - `upstreamChanged` is computed by comparing saved `source_fingerprint` to current approved source ids.
+- `/api/workspaces/:workspaceId/status` exposes module run runtime (`runtime.activeRuns`, `runtime.latestRunsByModule`, and per-module `runtime`) for UI state only. It does not make run rows downstream prompt inputs.
 
 ## 5. Implementation Slices
 

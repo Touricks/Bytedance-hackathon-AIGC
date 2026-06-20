@@ -11,6 +11,7 @@ import type { PoolClient } from "pg";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import { compareSourceFingerprint } from "./upstream-drift.service.js";
+import { workspaceModuleRunService } from "./workspace-module-run.service.js";
 
 interface ShotPromptShot {
   index?: number;
@@ -320,113 +321,125 @@ export const shotSetService = {
       );
     }
     const shots = assertShotPromptShots(shotPrompt.data);
-    const shotSetId = nanoid();
-    const client = await db.db2.pool().connect();
+    const sourceFingerprint = {
+      ...shotPrompt.sourceFingerprint,
+      shotPromptArtifactId: shotPrompt.id,
+    };
+    return workspaceModuleRunService.withRun({
+      workspaceId: input.workspaceId,
+      moduleId: "shot-set",
+      operation: "apply",
+      runtimeBuilder: "shot_set_apply",
+      provider: null,
+      sourceFingerprint,
+      artifactId: (shotSet) => shotSet.id,
+      run: async () => {
+        const shotSetId = nanoid();
+        const client = await db.db2.pool().connect();
 
-    try {
-      await client.query("begin");
-      await client.query(
-        `update shot_sets
-         set status = 'archived',
-             archived_at = now()
-         where workspace_id = $1 and status = 'active'`,
-        [input.workspaceId],
-      );
-      const shotSetResult = await client.query(
-        `insert into shot_sets
-           (id, workspace_id, shot_prompt_artifact_id, status, source_fingerprint)
-         values ($1, $2, $3, 'active', $4)
-         returning *`,
-        [
-          shotSetId,
-          input.workspaceId,
-          shotPrompt.id,
-          jsonbParam({
-            ...shotPrompt.sourceFingerprint,
-            shotPromptArtifactId: shotPrompt.id,
-          }),
-        ],
-      );
-
-      for (const [position, shot] of shots.entries()) {
-        const orderIndex = position;
-        const startSec =
-          typeof shot.startSec === "number" && Number.isFinite(shot.startSec)
-            ? shot.startSec
-            : 0;
-        const endSec =
-          typeof shot.endSec === "number" && Number.isFinite(shot.endSec)
-            ? shot.endSec
-            : startSec + 4;
-        const prompt = shot.providerPrompt || `Shot ${orderIndex + 1}`;
-        const shotId = nanoid();
-        await client.query(
-          `insert into storyboard_shots
-             (id, workspace_id, shot_set_id, script_id, order_index, title, objective,
-              default_duration_sec, status)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT')`,
-          [
-            shotId,
-            input.workspaceId,
-            shotSetId,
-            workspace.currentScriptId,
-            orderIndex,
-            prompt.slice(0, 80) || `Shot ${orderIndex + 1}`,
-            prompt,
-            Math.max(1, endSec - startSec),
-          ],
-        );
-        await client.query(
-          `insert into shot_prompt_requirements
-             (id, workspace_id, shot_set_id, shot_id, shot_prompt_artifact_id,
-              shot_image, shot_video)
-           values ($1, $2, $3, $4, $5, $6, $7)`,
-          [
-            nanoid(),
-            input.workspaceId,
-            shotSetId,
-            shotId,
-            shotPrompt.id,
-            jsonbParam(shot.shotImage ?? {}),
-            jsonbParam(shot.shotVideo ?? {}),
-          ],
-        );
-
-        const refs = [...new Set(shot.referenceAssetRefs ?? [])];
-        for (const [refIndex, ref] of refs.entries()) {
-          const assetId = await ensureMaterialAsset({
-            client,
-            workspaceId: input.workspaceId,
-            ref,
-            localPath,
-          });
+        try {
+          await client.query("begin");
           await client.query(
-            `insert into shot_asset_refs
-               (id, shot_id, asset_id, role, weight, position)
-             values ($1, $2, $3, $4, $5, $6)
-             on conflict (shot_id, asset_id, role) do update
-             set weight = excluded.weight,
-                 position = excluded.position`,
+            `update shot_sets
+             set status = 'archived',
+                 archived_at = now()
+             where workspace_id = $1 and status = 'active'`,
+            [input.workspaceId],
+          );
+          const shotSetResult = await client.query(
+            `insert into shot_sets
+               (id, workspace_id, shot_prompt_artifact_id, status, source_fingerprint)
+             values ($1, $2, $3, 'active', $4)
+             returning *`,
             [
-              nanoid(),
-              shotId,
-              assetId,
-              refIndex === 0 ? "product_identity" : "reference_scene",
-              refIndex === 0 ? 1 : 0.8,
-              refIndex,
+              shotSetId,
+              input.workspaceId,
+              shotPrompt.id,
+              jsonbParam(sourceFingerprint),
             ],
           );
-        }
-      }
 
-      await client.query("commit");
-      return shotSetView(shotSetResult.rows[0]);
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+          for (const [position, shot] of shots.entries()) {
+            const orderIndex = position;
+            const startSec =
+              typeof shot.startSec === "number" && Number.isFinite(shot.startSec)
+                ? shot.startSec
+                : 0;
+            const endSec =
+              typeof shot.endSec === "number" && Number.isFinite(shot.endSec)
+                ? shot.endSec
+                : startSec + 4;
+            const prompt = shot.providerPrompt || `Shot ${orderIndex + 1}`;
+            const shotId = nanoid();
+            await client.query(
+              `insert into storyboard_shots
+                 (id, workspace_id, shot_set_id, script_id, order_index, title, objective,
+                  default_duration_sec, status)
+               values ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT')`,
+              [
+                shotId,
+                input.workspaceId,
+                shotSetId,
+                workspace.currentScriptId,
+                orderIndex,
+                prompt.slice(0, 80) || `Shot ${orderIndex + 1}`,
+                prompt,
+                Math.max(1, endSec - startSec),
+              ],
+            );
+            await client.query(
+              `insert into shot_prompt_requirements
+                 (id, workspace_id, shot_set_id, shot_id, shot_prompt_artifact_id,
+                  shot_image, shot_video)
+               values ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                nanoid(),
+                input.workspaceId,
+                shotSetId,
+                shotId,
+                shotPrompt.id,
+                jsonbParam(shot.shotImage ?? {}),
+                jsonbParam(shot.shotVideo ?? {}),
+              ],
+            );
+
+            const refs = [...new Set(shot.referenceAssetRefs ?? [])];
+            for (const [refIndex, ref] of refs.entries()) {
+              const assetId = await ensureMaterialAsset({
+                client,
+                workspaceId: input.workspaceId,
+                ref,
+                localPath,
+              });
+              await client.query(
+                `insert into shot_asset_refs
+                   (id, shot_id, asset_id, role, weight, position)
+                 values ($1, $2, $3, $4, $5, $6)
+                 on conflict (shot_id, asset_id, role) do update
+                 set weight = excluded.weight,
+                     position = excluded.position`,
+                [
+                  nanoid(),
+                  shotId,
+                  assetId,
+                  refIndex === 0 ? "product_identity" : "reference_scene",
+                  refIndex === 0 ? 1 : 0.8,
+                  refIndex,
+                ],
+              );
+            }
+          }
+
+          await client.query("commit");
+          return shotSetView(shotSetResult.rows[0]);
+        } catch (error) {
+          await client.query("rollback");
+          throw error;
+        } finally {
+          client.release();
+        }
+      },
+    });
   },
 
   async listShotSetShots(input: { workspaceId: string; shotSetId: string }) {

@@ -889,38 +889,6 @@ const contracts = [
     validate: (body) => assert.equal(body.data.id, finalVideoJobId),
   },
   {
-    id: "traces.workspace",
-    method: "GET",
-    path: "/api/workspaces/:workspaceId/traces",
-    source: ['"/api/workspaces/:workspaceId/traces"'],
-    query: "limit=12",
-    mock: () => ({
-      data: [
-        {
-          id: "trace_contract_001",
-          workspaceId,
-          shotId: null,
-          traceType: "agent_run",
-          name: "material_intake.request_prepared",
-          inputPreview: null,
-          outputPreview: null,
-          metadata: {},
-          createdAt: now,
-        },
-      ],
-    }),
-    validate: (body) => assert.equal(body.data[0].traceType, "agent_run"),
-  },
-  {
-    id: "traces.shot",
-    method: "GET",
-    path: "/api/shots/:shotId/traces",
-    source: ['"/api/shots/:shotId/traces"'],
-    query: "limit=12",
-    mock: () => ({ data: [] }),
-    validate: (body) => assert.ok(Array.isArray(body.data)),
-  },
-  {
     id: "dashboard.recommendations.list",
     method: "GET",
     path: "/api/dashboard/recommendations",
@@ -1175,15 +1143,15 @@ Existing shot-set apply may keep legacy \`reference\` rows, but the edit API sho
 ## Acceptance
 
 - The endpoints are implemented in the shot controller/service.
-- \`docs/core/contracts/openapi.yaml\`, \`docs/core/contracts/interface.md\`, and \`test/postman/postman-test-plan.md\` remain aligned.
+- \`docs/contracts/openapi.yaml\`, \`docs/contracts/interface.md\`, and \`docs/contracts/postman/postman_collection.json\` remain aligned.
 - A Postman P0 case covers GET, PATCH add, PATCH remove, invalid shot, invalid asset, and archived shot behavior.
 `;
   await writeFile(issuePath, content, "utf8");
   return issuePath;
 }
 
-test("docs/core/contracts/openapi.yaml covers the frontend API surface", async () => {
-  const openapi = await readFile(path.join(rootDir, "docs/core/contracts/openapi.yaml"), "utf8");
+test("docs/contracts/openapi.yaml covers the frontend API surface", async () => {
+  const openapi = await readFile(path.join(rootDir, "docs/contracts/openapi.yaml"), "utf8");
   const missing = contracts.filter(
     (contract) =>
       !openApiHasMethod(

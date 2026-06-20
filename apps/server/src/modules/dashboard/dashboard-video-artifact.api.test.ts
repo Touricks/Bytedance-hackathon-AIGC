@@ -56,6 +56,9 @@ describe("dashboard video artifact API", () => {
     );
     cleanupDirs.push(dashboardAssetDir);
     config.dashboardAssetDir = dashboardAssetDir;
+    config.dashboardS3Bucket = undefined;
+    __setWorkspaceStorageAdapterFactoryForTests(undefined);
+    __setDashboardS3OpsForTests(undefined);
     app = await buildServer();
   });
 
@@ -262,7 +265,35 @@ describe("dashboard video artifact API", () => {
     });
     assert.equal(fileResponse.statusCode, 200, fileResponse.body);
     assert.equal(fileResponse.headers["content-type"], "video/mp4");
+    assert.equal(fileResponse.headers["accept-ranges"], "bytes");
+    assert.equal(
+      Number(fileResponse.headers["content-length"]),
+      sourceVideoBytes.length,
+    );
     assert.deepEqual(fileResponse.rawPayload, sourceVideoBytes);
+
+    const rangeResponse = await app.inject({
+      method: "GET",
+      url: created.data.localUrl,
+      headers: { range: "bytes=2-7" },
+    });
+    assert.equal(rangeResponse.statusCode, 206, rangeResponse.body);
+    assert.equal(rangeResponse.headers["content-type"], "video/mp4");
+    assert.equal(rangeResponse.headers["accept-ranges"], "bytes");
+    assert.equal(
+      rangeResponse.headers["content-range"],
+      `bytes 2-7/${sourceVideoBytes.length}`,
+    );
+    assert.equal(Number(rangeResponse.headers["content-length"]), 6);
+    assert.deepEqual(rangeResponse.rawPayload, sourceVideoBytes.subarray(2, 8));
+
+    const invalidRangeResponse = await app.inject({
+      method: "GET",
+      url: created.data.localUrl,
+      headers: { range: `bytes=${sourceVideoBytes.length}-` },
+    });
+    assert.equal(invalidRangeResponse.statusCode, 416, invalidRangeResponse.body);
+    assert.match(invalidRangeResponse.body, /DASHBOARD_VIDEO_RANGE_NOT_SATISFIABLE/);
   });
 
   it("rejects importing a final video before the stable file is ready", async () => {
@@ -473,27 +504,24 @@ describe("dashboard video artifact API", () => {
   });
 
   it("stores imported dashboard videos in the dedicated dashboard S3 bucket and survives workspace deletion", async () => {
-    const createWorkspaceResponse = await app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: `s3-dashboard-${Date.now()}` },
+    const workspaceId = `ws_dashboard_s3_${Date.now()}`;
+    await db.createWorkspace({
+      id: workspaceId,
+      currentScriptId: "script_dashboard_s3",
+      status: "video_ready",
+      traceFile: `${workspaceId}.jsonl`,
+      localPath: null,
     });
-    assert.equal(createWorkspaceResponse.statusCode, 200, createWorkspaceResponse.body);
-    const workspaceId = createWorkspaceResponse.json().workspace.id as string;
+    await db.bindWorkspaceS3Storage({
+      workspaceId,
+      bucket: "workspace-source-bucket",
+      prefix: `workspaces/${workspaceId}`,
+      region: null,
+      endpoint: "http://localhost:9000",
+    });
     cleanupWorkspaceIds.push(workspaceId);
     // Dashboard copies go to a DEDICATED bucket, distinct from the workspace's source bucket.
     config.dashboardS3Bucket = "dashboard-bucket";
-    const bindResponse = await app.inject({
-      method: "POST",
-      url: `/api/workspaces/${workspaceId}/storage/bind`,
-      payload: {
-        kind: "s3",
-        bucket: "workspace-source-bucket",
-        prefix: `workspaces/${workspaceId}`,
-        endpoint: "http://localhost:9000",
-      },
-    });
-    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
 
     const finalVideoJobId = `fv_dashboard_s3_${Date.now()}`;
     const localPath = `final/${finalVideoJobId}/final.mp4`;
@@ -510,6 +538,7 @@ describe("dashboard video artifact API", () => {
         lastModified: null,
       }),
       readObject: async (relativePath) => {
+        assert.equal(binding.s3Bucket, "workspace-source-bucket");
         assert.equal(relativePath, localPath);
         return sourceVideoBytes;
       },
@@ -535,11 +564,26 @@ describe("dashboard video artifact API", () => {
           contentType,
         });
       },
-      getObjectStream: async ({ bucket, key }) => {
+      getObjectStream: async ({ bucket, key, range }) => {
         assert.equal(bucket, "dashboard-bucket");
         const object = s3Objects.get(key);
         assert.ok(object, `missing object ${key}`);
+        const match = range ? /^bytes=(\d+)-(\d+)$/.exec(range) : null;
+        if (match) {
+          const start = Number(match[1]);
+          const end = Number(match[2]);
+          return Readable.from([object.body.subarray(start, end + 1)]);
+        }
         return Readable.from([object.body]);
+      },
+      headObject: async ({ bucket, key }) => {
+        assert.equal(bucket, "dashboard-bucket");
+        const object = s3Objects.get(key);
+        assert.ok(object, `missing object ${key}`);
+        return {
+          contentLength: object.body.length,
+          contentType: object.contentType,
+        };
       },
     });
 
@@ -633,7 +677,25 @@ describe("dashboard video artifact API", () => {
       url: created.data.localUrl,
     });
     assert.equal(fileResponse.statusCode, 200, fileResponse.body);
+    assert.equal(fileResponse.headers["accept-ranges"], "bytes");
+    assert.equal(
+      Number(fileResponse.headers["content-length"]),
+      sourceVideoBytes.length,
+    );
     assert.deepEqual(fileResponse.rawPayload, sourceVideoBytes);
+
+    const rangeResponse = await app.inject({
+      method: "GET",
+      url: created.data.localUrl,
+      headers: { range: "bytes=5-10" },
+    });
+    assert.equal(rangeResponse.statusCode, 206, rangeResponse.body);
+    assert.equal(
+      rangeResponse.headers["content-range"],
+      `bytes 5-10/${sourceVideoBytes.length}`,
+    );
+    assert.equal(Number(rangeResponse.headers["content-length"]), 6);
+    assert.deepEqual(rangeResponse.rawPayload, sourceVideoBytes.subarray(5, 11));
 
     const putCountAfterFirstImport = putKeys.length;
     const duplicateResponse = await app.inject({

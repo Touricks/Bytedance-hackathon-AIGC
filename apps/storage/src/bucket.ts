@@ -81,9 +81,14 @@ export async function getObjectStream(input: {
   client: S3Client;
   bucket: string;
   key: string;
+  range?: string;
 }) {
   const response = await input.client.send(
-    new GetObjectCommand({ Bucket: input.bucket, Key: input.key }),
+    new GetObjectCommand({
+      Bucket: input.bucket,
+      Key: input.key,
+      Range: input.range,
+    }),
   );
   if (!response.Body) {
     return Readable.from([]);

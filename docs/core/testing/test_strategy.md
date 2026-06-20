@@ -18,7 +18,7 @@ The test strategy separates deterministic local regression coverage from manual 
 |---|---|---|
 | Shared contracts | `pnpm --filter @aigc-video/shared test` | Zod schemas, creative factors, storyboard validation. |
 | AI package | `pnpm --filter @aigc-video/ai test` | Prompt assembly, provider clients, response formats. |
-| Server | `pnpm --filter @aigc-video/server test` | API/services/workers/storage/trace. |
+| Server | `pnpm --filter @aigc-video/server test` | API/services/workers/storage/internal trace sink. |
 | Web | `pnpm --filter @aigc-video/web test` | API clients, creative review state, dashboard UI logic. |
 | Frontend/backend contract | `pnpm contract:frontend-backend` | OpenAPI path/method coverage and frontend mock shape checks. |
 | Provider probes | `node scripts/verify-provider-image.mjs --json`, `node scripts/verify-provider-video.mjs --image-url <url> --json` | Manual provider endpoint diagnosis only. |
@@ -33,6 +33,7 @@ The test strategy separates deterministic local regression coverage from manual 
 ## 4. Contracts / Interfaces
 
 - Contract tests read `docs/core/contracts/openapi.yaml`.
+- Trace tests cover DB index, Pino-safe redaction, LOCAL JSONL mirror, and S3 per-event archive; trace HTTP endpoints are not part of frontend/backend contract coverage.
 - Server API tests should verify status codes, error codes, and business state writes.
 - Frontend tests should verify view-model behavior, not duplicate server business rules.
 
@@ -66,4 +67,3 @@ Run narrower subsets when the change is documentation-only or when runtime depen
 
 - `testing/e2e_plan.md`
 - `implementation/runbook_local_dev.md`
-

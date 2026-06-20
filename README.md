@@ -38,7 +38,7 @@ packages/shared/ 跨包 Zod 契约与领域类型
 infra/           docker-compose（postgres / redis / minio）
 ```
 
-**配置说明**：`MODEL_MODE=mock|real` 决定是否调用真实模型；其余环境变量（提供商密钥、存储、候选数与并发）见 `.env.example` 内注释。开发、测试与重置的更多细节见 [docs/core/implementation/runbook_local_dev.md](./docs/core/implementation/runbook_local_dev.md)。
+**配置说明**：`MODEL_MODE=mock|real` 决定是否调用真实模型；其余环境变量（提供商密钥、存储、候选数与并发）见 `.env.example` 内注释。项目维护资料入口见 [docs/README.md](./docs/README.md)，迁移期本地开发与重置细节仍见 [docs/core/implementation/runbook_local_dev.md](./docs/core/implementation/runbook_local_dev.md)。
 
 ## 适合做什么
 
@@ -124,4 +124,4 @@ infra/           docker-compose（postgres / redis / minio）
 ## 项目资料
 
 面向产品和业务协作时，优先使用 [CONTEXT.md](./CONTEXT.md) 中的领域语言。
-项目维护资料放在 [docs/core/](./docs/core/)，本地开发与重置细节见 [docs/core/implementation/runbook_local_dev.md](./docs/core/implementation/runbook_local_dev.md)；日常使用创作审核台时无需阅读这些文档。
+项目维护资料入口放在 [docs/README.md](./docs/README.md)。`docs/core/` 是迁移期兼容资料区，本地开发与重置细节仍见 [docs/core/implementation/runbook_local_dev.md](./docs/core/implementation/runbook_local_dev.md)；日常使用创作审核台时无需阅读这些文档。

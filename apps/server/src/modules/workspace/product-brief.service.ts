@@ -8,12 +8,13 @@ import {
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
 import {
-  createWorkspaceTraceLoggerForWorkspace,
   productBriefImageInputForWorkspace,
-  runtimeMode,
-  toProductBrief,
-  writeReviewSnapshotForWorkspace,
-} from "./workspace.service.js";
+} from "./workspace-material-library.service.js";
+import { createWorkspaceTraceAppendLogger } from "../trace/trace.service.js";
+import { buildDeterministicProductBrief } from "./deterministic-artifacts.js";
+import { workspaceModuleRunService } from "./workspace-module-run.service.js";
+import { runtimeMode } from "./workspace-runtime.js";
+import { writeReviewSnapshotForWorkspace } from "./workspace-review-snapshot.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
 
@@ -201,30 +202,6 @@ export const productBriefService = {
         : undefined);
     const rewriteKind =
       draft || input.baseArtifactId ? "merchant_direction" : undefined;
-    const data: ProductBriefArtifact = productBriefArtifactSchema.parse(
-      runtimeMode() === "real"
-        ? (
-            await generateProductBriefWithArk(
-              {
-                ...input,
-                material,
-                draft,
-                creativeRequirements: sources.requirements.data,
-              },
-              {
-                imageInput: await productBriefImageInputForWorkspace(
-                  input.workspaceId,
-                  material,
-                ),
-                includeImageInput: true,
-                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
-                  workspace,
-                ),
-              },
-            )
-          ).productBrief
-        : toProductBrief({ ...input, material, draft }),
-    );
     const sourceFingerprint: Record<string, unknown> = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,
@@ -233,38 +210,72 @@ export const productBriefService = {
       sourceFingerprint.baseProductBriefArtifactId = input.baseArtifactId ?? null;
       sourceFingerprint.rewriteKind = rewriteKind;
     }
-    const result = await db.db2.pool().query(
-      `insert into product_brief_artifacts
-         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
-       values ($1, $2, 'proposed', false, $3, $4, $5)
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        jsonbParam(data),
-        jsonbParam(sourceFingerprint),
-        jsonbParam(
-          promptAssembly({
-            requirementArtifactId: sources.requirements.id,
-            data,
-            userDirection: input.userDirection,
-            baseProductBriefArtifactId: input.baseArtifactId ?? null,
-            rewriteKind,
-          }),
-        ),
-      ],
-    );
-    await writeReviewSnapshotForWorkspace({
-      workspace,
-      artifact: "product-brief",
-      status: "proposed",
-      schemaVersion: "product-brief",
-      data,
+    const mode = runtimeMode();
+    return workspaceModuleRunService.withRun({
+      workspaceId: input.workspaceId,
+      moduleId: "product-brief",
+      operation: rewriteKind ? "rewrite" : "propose",
+      runtimeBuilder: "product_brief",
+      provider: mode === "real" ? "ark" : "deterministic",
+      sourceFingerprint,
+      artifactId: (artifact) => artifact.id,
+      run: async () => {
+        const data: ProductBriefArtifact = productBriefArtifactSchema.parse(
+          mode === "real"
+            ? (
+                await generateProductBriefWithArk(
+                  {
+                    ...input,
+                    material,
+                    draft,
+                    creativeRequirements: sources.requirements.data,
+                  },
+                  {
+                    imageInput: await productBriefImageInputForWorkspace(
+                      input.workspaceId,
+                      material,
+                    ),
+                    includeImageInput: true,
+                    traceLogger: createWorkspaceTraceAppendLogger(workspace),
+                  },
+                )
+              ).productBrief
+            : buildDeterministicProductBrief({ ...input, material, draft }),
+        );
+        const result = await db.db2.pool().query(
+          `insert into product_brief_artifacts
+             (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+           values ($1, $2, 'proposed', false, $3, $4, $5)
+           returning *`,
+          [
+            nanoid(),
+            input.workspaceId,
+            jsonbParam(data),
+            jsonbParam(sourceFingerprint),
+            jsonbParam(
+              promptAssembly({
+                requirementArtifactId: sources.requirements.id,
+                data,
+                userDirection: input.userDirection,
+                baseProductBriefArtifactId: input.baseArtifactId ?? null,
+                rewriteKind,
+              }),
+            ),
+          ],
+        );
+        await writeReviewSnapshotForWorkspace({
+          workspace,
+          artifact: "product-brief",
+          status: "proposed",
+          schemaVersion: "product-brief",
+          data,
+        });
+        await db.updateWorkspace(input.workspaceId, {
+          status: "brief_proposed",
+        });
+        return toProductBriefArtifact(result.rows[0]);
+      },
     });
-    await db.updateWorkspace(input.workspaceId, {
-      status: "brief_proposed",
-    });
-    return toProductBriefArtifact(result.rows[0]);
   },
 
   async approve(input: {

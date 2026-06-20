@@ -74,7 +74,7 @@ export function StepRail({
       <ol className="review-steps">
         {steps.map((step, index) => {
           const reachable = canOpenReviewStep(vm, step.id, defaultStep);
-          const processing = step.tone === "busy" && step.state === "生成中";
+          const processing = step.tone === "running";
           return (
             <li key={step.id}>
               <button

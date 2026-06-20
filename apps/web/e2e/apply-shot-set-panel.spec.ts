@@ -203,10 +203,6 @@ async function mockApplyPanelApi(page: Page) {
       });
     }
 
-    if (request.method() === "GET" && path === `/api/workspaces/${workspaceId}/traces`) {
-      return json(route, { data: [] });
-    }
-
     if (path.includes("/image-rounds") || path.includes("/video-rounds")) {
       return json(route, { data: [] });
     }

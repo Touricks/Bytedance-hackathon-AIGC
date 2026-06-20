@@ -15,7 +15,7 @@ import { registerWorkspaceController } from "./modules/workspace/workspace.contr
 import { maxReferenceFileCount } from "./modules/reference-video/reference-video.service.js";
 import {
   maxWorkspaceMaterialBytes,
-} from "./modules/workspace/workspace.service.js";
+} from "./modules/workspace/workspace-material-library.service.js";
 import { getWorkspaceStorageAdapter } from "./modules/workspace/storage/workspace-storage-resolver.js";
 import { registerShotController } from "./modules/shot/shot.controller.js";
 import { registerGenerationController } from "./modules/generation/generation.controller.js";
@@ -24,7 +24,6 @@ import {
   registerDashboardVideoArtifactController,
 } from "./modules/dashboard/dashboard-video-artifact.controller.js";
 import { registerRecommendationController } from "./modules/recommendation/recommendation.controller.js";
-import { registerTraceController } from "./modules/trace/trace.routes.js";
 import { registerReferenceVideoController } from "./modules/reference-video/reference-video.controller.js";
 import { registerSetupTemplateController } from "./modules/setup-template/setup-template.controller.js";
 import type { WorkspaceDirectorySelectResponse } from "./modules/workspace/workdir-picker.js";
@@ -207,7 +206,6 @@ export async function buildServer(options: BuildServerOptions = {}) {
   await registerCampaignController(app);
   await registerDashboardVideoArtifactController(app);
   await registerRecommendationController(app);
-  await registerTraceController(app);
   await registerReferenceVideoController(app);
   await registerSetupTemplateController(app);
 

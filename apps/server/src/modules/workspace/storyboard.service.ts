@@ -14,12 +14,11 @@ import {
 } from "@aigc-video/shared";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import { db } from "../../db/client.js";
-import {
-  createWorkspaceTraceLoggerForWorkspace,
-  runtimeMode,
-  toStoryboard,
-  writeReviewSnapshotForWorkspace,
-} from "./workspace.service.js";
+import { createWorkspaceTraceAppendLogger } from "../trace/trace.service.js";
+import { buildDeterministicStoryboard } from "./deterministic-artifacts.js";
+import { workspaceModuleRunService } from "./workspace-module-run.service.js";
+import { runtimeMode } from "./workspace-runtime.js";
+import { writeReviewSnapshotForWorkspace } from "./workspace-review-snapshot.service.js";
 
 type ModuleArtifactStatus = "proposed" | "approved" | "archived" | "failed";
 
@@ -247,59 +246,69 @@ export const storyboardService = {
     const material = materialIntakeArtifactSchema.parse(
       sources.materialIntake.data,
     );
-    const data: StoryboardArtifact = storyboardArtifactSchema.parse(
-      runtimeMode() === "real"
-        ? (
-            await generateStoryboardWithArk(
-              {
-                brief,
-                material,
-                creativeRequirements: sources.requirements.data,
-              },
-              {
-                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
-                  workspace,
-                ),
-              },
-            )
-          ).storyboard
-        : toStoryboard(brief),
-    );
-    assertValidP0StoryboardScript(data);
     const sourceFingerprint = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,
       productBriefArtifactId: sources.productBrief.id,
     };
-    const result = await db.db2.pool().query(
-      `insert into storyboard_artifacts
-         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
-       values ($1, $2, 'proposed', false, $3, $4, $5)
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        jsonbParam(data),
-        jsonbParam(sourceFingerprint),
-        jsonbParam(
-          promptAssembly({
-            requirementArtifactId: sources.requirements.id,
-            data,
-          }),
-        ),
-      ],
-    );
-    await writeReviewSnapshotForWorkspace({
-      workspace,
-      artifact: "storyboard",
-      status: "proposed",
-      schemaVersion: "ugc-storyboard",
-      data,
+    const mode = runtimeMode();
+    return workspaceModuleRunService.withRun({
+      workspaceId: input.workspaceId,
+      moduleId: "storyboard",
+      operation: "propose",
+      runtimeBuilder: "storyboard",
+      provider: mode === "real" ? "ark" : "deterministic",
+      sourceFingerprint,
+      artifactId: (artifact) => artifact.id,
+      run: async () => {
+        const data: StoryboardArtifact = storyboardArtifactSchema.parse(
+          mode === "real"
+            ? (
+                await generateStoryboardWithArk(
+                  {
+                    brief,
+                    material,
+                    creativeRequirements: sources.requirements.data,
+                  },
+                  {
+                    traceLogger: createWorkspaceTraceAppendLogger(workspace),
+                  },
+                )
+              ).storyboard
+            : buildDeterministicStoryboard(brief),
+        );
+        assertValidP0StoryboardScript(data);
+        const result = await db.db2.pool().query(
+          `insert into storyboard_artifacts
+             (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+           values ($1, $2, 'proposed', false, $3, $4, $5)
+           returning *`,
+          [
+            nanoid(),
+            input.workspaceId,
+            jsonbParam(data),
+            jsonbParam(sourceFingerprint),
+            jsonbParam(
+              promptAssembly({
+                requirementArtifactId: sources.requirements.id,
+                data,
+              }),
+            ),
+          ],
+        );
+        await writeReviewSnapshotForWorkspace({
+          workspace,
+          artifact: "storyboard",
+          status: "proposed",
+          schemaVersion: "ugc-storyboard",
+          data,
+        });
+        await db.updateWorkspace(input.workspaceId, {
+          status: "storyboard_proposed",
+        });
+        return toStoryboardArtifact(result.rows[0]);
+      },
     });
-    await db.updateWorkspace(input.workspaceId, {
-      status: "storyboard_proposed",
-    });
-    return toStoryboardArtifact(result.rows[0]);
   },
 
   async proposeVoiceover(input: {
@@ -320,28 +329,6 @@ export const storyboardService = {
     );
     const draft = storyboardArtifactSchema.parse(input.draft);
     assertValidP0StoryboardStructure(draft);
-    const data: StoryboardArtifact = storyboardArtifactSchema.parse(
-      runtimeMode() === "real"
-        ? (
-            await rewriteStoryboardVoiceoversWithArk(
-              {
-                brief,
-                material,
-                storyboard: draft,
-                userDirection: input.userDirection,
-                creativeRequirements: sources.requirements.data,
-              },
-              {
-                traceLogger: await createWorkspaceTraceLoggerForWorkspace(
-                  workspace,
-                ),
-              },
-            )
-          ).storyboard
-        : mockVoiceoverRewrite(brief, draft),
-    );
-    assertValidP0StoryboardScript(data);
-
     const sourceFingerprint = {
       promptRequirementsArtifactId: sources.requirements.id,
       materialIntakeArtifactId: sources.materialIntake.id,
@@ -349,35 +336,66 @@ export const storyboardService = {
       baseStoryboardArtifactId: input.baseArtifactId ?? null,
       rewriteKind: "voiceover",
     };
-    const result = await db.db2.pool().query(
-      `insert into storyboard_artifacts
-         (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
-       values ($1, $2, 'proposed', false, $3, $4, $5)
-       returning *`,
-      [
-        nanoid(),
-        input.workspaceId,
-        jsonbParam(data),
-        jsonbParam(sourceFingerprint),
-        jsonbParam(
-          promptAssembly({
-            requirementArtifactId: sources.requirements.id,
-            data,
-          }),
-        ),
-      ],
-    );
-    await writeReviewSnapshotForWorkspace({
-      workspace,
-      artifact: "storyboard",
-      status: "proposed",
-      schemaVersion: "ugc-storyboard",
-      data,
+    const mode = runtimeMode();
+    return workspaceModuleRunService.withRun({
+      workspaceId: input.workspaceId,
+      moduleId: "storyboard",
+      operation: "rewrite_voiceover",
+      runtimeBuilder: "storyboard_voiceover",
+      provider: mode === "real" ? "ark" : "deterministic",
+      sourceFingerprint,
+      artifactId: (artifact) => artifact.id,
+      run: async () => {
+        const data: StoryboardArtifact = storyboardArtifactSchema.parse(
+          mode === "real"
+            ? (
+                await rewriteStoryboardVoiceoversWithArk(
+                  {
+                    brief,
+                    material,
+                    storyboard: draft,
+                    userDirection: input.userDirection,
+                    creativeRequirements: sources.requirements.data,
+                  },
+                  {
+                    traceLogger: createWorkspaceTraceAppendLogger(workspace),
+                  },
+                )
+              ).storyboard
+            : mockVoiceoverRewrite(brief, draft),
+        );
+        assertValidP0StoryboardScript(data);
+        const result = await db.db2.pool().query(
+          `insert into storyboard_artifacts
+             (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly)
+           values ($1, $2, 'proposed', false, $3, $4, $5)
+           returning *`,
+          [
+            nanoid(),
+            input.workspaceId,
+            jsonbParam(data),
+            jsonbParam(sourceFingerprint),
+            jsonbParam(
+              promptAssembly({
+                requirementArtifactId: sources.requirements.id,
+                data,
+              }),
+            ),
+          ],
+        );
+        await writeReviewSnapshotForWorkspace({
+          workspace,
+          artifact: "storyboard",
+          status: "proposed",
+          schemaVersion: "ugc-storyboard",
+          data,
+        });
+        await db.updateWorkspace(input.workspaceId, {
+          status: "storyboard_proposed",
+        });
+        return toStoryboardArtifact(result.rows[0]);
+      },
     });
-    await db.updateWorkspace(input.workspaceId, {
-      status: "storyboard_proposed",
-    });
-    return toStoryboardArtifact(result.rows[0]);
   },
 
   async approve(input: {

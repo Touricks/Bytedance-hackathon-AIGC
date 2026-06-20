@@ -160,18 +160,22 @@ recommendFromRecords(records: PerformanceRecord[], options?): RecommendationResu
 
 `scripts/fixtures/recommendation-seed.json` extends the existing dashboard seeder
 (non‑destructively — the original `dashboard-seed.json` is untouched). It defines
-**21 videos / 49 publications** across **7 groups**, each with 3 competing
-`(适用人群 × 推销手法)` combinations and 2–3 publications apiece. One group
-(`服饰鞋包 × 品牌型高客单`) is intentionally built so ROAS and GMV **disagree**, to
-exercise the weighting logic. The dashboard seeder also copies
-`apps/static/placehold.mp4` into each mock dashboard artifact so seeded videos
-stream from `/api/dashboard/videos/:id/file` during local validation.
+**26 videos / 61 publications** across **8 groups**. Most groups have 3 competing
+`(适用人群 × 推销手法)` combinations and 2–3 publications apiece; the
+`家居家装 × 复购型消耗品` group has 5 combinations and 12 publications so home
+cleaning consumables exercise the matrix and recommendation cards with usable
+signal. One group (`服饰鞋包 × 品牌型高客单`) is intentionally built so ROAS and GMV
+**disagree**, to exercise the weighting logic. The dashboard seeder also persists
+`apps/static/placehold.mp4` through the dashboard asset storage rule: S3-compatible
+storage when `DASHBOARD_S3_BUCKET` is configured, otherwise the LOCAL dashboard
+asset directory. Seeded videos still stream from `/api/dashboard/videos/:id/file`
+during local validation.
 
 Seed it and call the API:
 
 ```bash
 # from apps/server
-pnpm seed:dashboard -- --reset --fixture scripts/fixtures/recommendation-seed.json
+pnpm seed:dashboard:recommendation -- --reset
 ```
 
 Or preview the engine **without a database** (each publication's `finalTotals`
@@ -232,14 +236,18 @@ Representative response (`美妆个护 × 种草型非标品`, default weights, 
 | 商品一级类目 × 商品成交类型 | 推荐 适用人群 | 推荐 推销手法 | 组合 ROAS | 组基准 ROAS | n |
 |---|---|---|---|---|---|
 | 3C数码 × 搜索型标品 | 不限定 | 测评对比 | 7.13 | 6.08 | 7 |
+| 家居家装 × 复购型消耗品 | 青年 | 痛点解决 | 6.48 | 4.97 | 12 |
+| 运动户外 × 搜索型标品 | 青年 | 测评对比 | 6.88 | 5.71 | 7 |
 | 食品饮料 × 冲动消费型爆款 | 不限定 | 好奇钩子 | 4.49 | 4.05 | 7 |
 | 服饰鞋包 × 品牌型高客单 | 老年/银发 | 权威证明 | 5.04 | 3.51 | 7 |
 | 母婴宠物 × 复购型消耗品 | 幼儿/新手家长 | 教程价值 | 5.98 | 5.08 | 7 |
 | 美妆个护 × 种草型非标品 | 青年 | 场景演示 | 5.48 | 4.50 | 7 |
+| 家居家装 × 冲动消费型爆款 | 青年 | 痛点解决 | 5.40 | 4.55 | 7 |
 
 Each recommendation beats its group baseline, and the picks are
-business‑plausible (测评对比 for standardized 3C search demand; 教程价值 for
-trust‑driven repeat baby consumables; 好奇钩子 for impulse food).
+business‑plausible (测评对比 for standardized 3C search demand; 痛点解决 for
+repeat home cleaning replenishment; 教程价值 for trust‑driven repeat baby
+consumables; 好奇钩子 for impulse food).
 
 **The weighting knob (`服饰鞋包 × 品牌型高客单`):** this group has a high‑ROAS niche
 (`老年 + 权威证明`, ROAS 5.04, small GMV) competing with a high‑GMV mainstream
@@ -261,6 +269,7 @@ rather than a single hard‑coded metric.
 | Check | Command | Result |
 |---|---|---|
 | Pure engine unit tests (no DB) | `node --import tsx --test src/modules/recommendation/recommendation-engine.test.ts` | **10/10 pass** |
+| Recommendation fixture guard (no DB) | `node --import tsx --test scripts/seed/recommendation-fixture.test.ts` | proves `家居家装 × 复购型消耗品` is present and recommends `青年 × 痛点解决` |
 | DB‑backed API + SQL tests | `node --import tsx --test src/modules/recommendation/recommendation.api.test.ts` | **4/4 pass** |
 | Typecheck | `pnpm --filter @aigc-video/server typecheck` | clean |
 | Lint | `eslint src/modules/recommendation` | clean |

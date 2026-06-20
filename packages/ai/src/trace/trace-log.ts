@@ -56,6 +56,8 @@ export interface FileTraceLogger {
 }
 
 const SECRET_KEY_PATTERN = /^(api[-_]?key|token|secret)$/i;
+const TEMPORARY_URL_KEY_PATTERN =
+  /^(provider[-_]?temporary[-_]?url|temporary[-_]?url)$/i;
 const DATA_URL_PATTERN =
   /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi;
 const BEARER_PATTERN = /Bearer\s+[a-z0-9._~+/=-]+/gi;
@@ -130,7 +132,9 @@ export function redactTraceValue(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
         key,
-        SECRET_KEY_PATTERN.test(key) ? "<redacted>" : redactTraceValue(nested)
+        SECRET_KEY_PATTERN.test(key) || TEMPORARY_URL_KEY_PATTERN.test(key)
+          ? "<redacted>"
+          : redactTraceValue(nested)
       ])
     );
   }

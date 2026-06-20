@@ -24,6 +24,7 @@ import type {
   AspectRatio,
   PromptRequirementsData,
   ProposeWorkspaceBriefInput,
+  WorkspaceModuleRunModuleId,
 } from "../../lib/api/client.js";
 import { createFinalVideo, listFinalVideos } from "../../lib/api/finalVideo.js";
 import { getConfigLimits } from "../../lib/api/configLimits.js";
@@ -49,7 +50,6 @@ import {
   listWorkspaceShotSets,
   retryShot,
 } from "../../lib/api/shots.js";
-import { listWorkspaceTraces } from "../../lib/api/trace.js";
 import { listVideoRounds } from "../../lib/api/videoBatch.js";
 import {
   proposeVideoScript,
@@ -191,6 +191,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     refetchInterval: (query) =>
       workspaceStatusRefetchInterval({
         activeOneClickFinalVideo: query.state.data?.activeOneClickFinalVideo,
+        activeModuleRunCount: query.state.data?.runtime?.activeRuns.length ?? 0,
       }),
   });
 
@@ -261,12 +262,6 @@ export function useWorkbenchViewModel(workspaceId: string) {
       }),
   });
 
-  const traces = useQuery({
-    queryKey: ["traces", workspaceId, "compact"],
-    queryFn: () => listWorkspaceTraces(workspaceId, { limit: 12 }),
-    refetchInterval: 15_000,
-  });
-
   const finalVideoJobs = useQuery({
     queryKey: ["final-videos", workspaceId],
     queryFn: () => listFinalVideos(workspaceId),
@@ -298,6 +293,21 @@ export function useWorkbenchViewModel(workspaceId: string) {
     mutationPending: false,
   });
   const oneClickFinalVideo = oneClickState.displayJob;
+  const hasActiveModuleRun = (moduleId: WorkspaceModuleRunModuleId) =>
+    Boolean(
+      workspaceStatus.data?.runtime?.activeRuns.some(
+        (run) => run.moduleId === moduleId,
+      ),
+    );
+  const hasActiveModuleRunOperation = (
+    moduleId: WorkspaceModuleRunModuleId,
+    operation: string,
+  ) =>
+    Boolean(
+      workspaceStatus.data?.runtime?.activeRuns.some(
+        (run) => run.moduleId === moduleId && run.operation === operation,
+      ),
+    );
   const shotImageAutoSelection =
     shotImageAutoSelectionJobs.data?.data.find((job) =>
       ACTIVE_AUTO_SELECTION_STATUSES.has(job.status),
@@ -340,7 +350,6 @@ export function useWorkbenchViewModel(workspaceId: string) {
       qc.invalidateQueries({ queryKey: ["shots", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["shot-sets", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] }),
-      qc.invalidateQueries({ queryKey: ["traces", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["final-videos", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["one-click-final-videos", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["shot-image-auto-selections", workspaceId] }),
@@ -735,7 +744,6 @@ export function useWorkbenchViewModel(workspaceId: string) {
     videoRounds: videoRounds.data?.data ?? [],
     latestImageRound,
     latestVideoRound,
-    traces: traces.data?.data ?? [],
     finalVideo: finalVideo.data?.data ?? null,
     oneClickFinalVideo,
     shotImageAutoSelection,
@@ -772,17 +780,32 @@ export function useWorkbenchViewModel(workspaceId: string) {
       setAspectRatio,
     },
     pending: {
-      materialIntake: startCreativeReview.isPending || materialIntake.isPending,
+      materialIntake:
+        startCreativeReview.isPending ||
+        materialIntake.isPending ||
+        hasActiveModuleRun("material-intake"),
       productBrief:
-        approveMaterialIntakeAndProposeBrief.isPending || proposeBrief.isPending,
+        approveMaterialIntakeAndProposeBrief.isPending ||
+        proposeBrief.isPending ||
+        hasActiveModuleRun("product-brief"),
       oneClickFinalVideo: hasActiveOneClickFinalVideo,
-      storyboard: approveBriefAndProposeStoryboard.isPending || proposeStoryboard.isPending,
-      storyboardVoiceover: proposeStoryboardVoiceover.isPending,
+      storyboard:
+        approveBriefAndProposeStoryboard.isPending ||
+        proposeStoryboard.isPending ||
+        proposeStoryboardVoiceover.isPending ||
+        hasActiveModuleRun("storyboard"),
+      storyboardVoiceover:
+        proposeStoryboardVoiceover.isPending ||
+        hasActiveModuleRunOperation("storyboard", "rewrite_voiceover"),
       shotPrompt:
         approveStoryboardAndProposeShotPrompt.isPending ||
         compileShotPrompt.isPending ||
-        approveShotPrompt.isPending,
-      applyShotSet: applyShotSet.isPending || approveShotPromptAndApply.isPending,
+        approveShotPrompt.isPending ||
+        hasActiveModuleRun("shotprompt"),
+      applyShotSet:
+        applyShotSet.isPending ||
+        approveShotPromptAndApply.isPending ||
+        hasActiveModuleRun("shot-set"),
       image:
         proposeImage.isPending ||
         regenerateImage.isPending ||

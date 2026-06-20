@@ -16,6 +16,7 @@ const tables = [
   "external_kol_publications",
   "dashboard_video_artifacts",
   "trace_events",
+  "workspace_module_runs",
   "final_video_jobs",
   "generation_jobs",
   "video_select_artifacts",

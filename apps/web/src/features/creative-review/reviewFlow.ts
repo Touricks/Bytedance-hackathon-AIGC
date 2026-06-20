@@ -12,7 +12,14 @@ export type ReviewStepId =
   | "final";
 
 export type ReviewModuleId = "product-brief" | "storyboard" | "shotprompt";
-export type ReviewTone = "idle" | "good" | "busy" | "review" | "danger";
+export type ReviewTone =
+  | "idle"
+  | "good"
+  | "busy"
+  | "waiting"
+  | "running"
+  | "review"
+  | "danger";
 
 export interface ReviewStepIndicator {
   id: ReviewStepId;
@@ -72,7 +79,12 @@ function artifactStatusLabel(status: string | null | undefined, fallback: string
 
 export function statusTone(value: string | null | undefined): ReviewTone {
   if (!value) return "idle";
-  if (value.includes("FAILED") || value === "failed" || value === "上游已变化") return "danger";
+  if (
+    value.includes("FAILED") ||
+    value === "failed" ||
+    value === "上游已变化" ||
+    value === "生成失败"
+  ) return "danger";
   if (
     value.includes("SELECTED") ||
     value === "approved" ||
@@ -88,17 +100,22 @@ export function statusTone(value: string | null | undefined): ReviewTone {
   if (
     value.includes("GENERATING") ||
     value.includes("PROPOSING") ||
-    value === "PENDING" ||
     value === "RUNNING" ||
-    value === "WAITING" ||
     value === "PERSISTING" ||
+    value === "生成中"
+  ) {
+    return "running";
+  }
+  if (
+    value === "PENDING" ||
+    value === "WAITING" ||
     value === "待提交" ||
-    value === "生成中" ||
     value === "等待生成" ||
     value === "等待应用" ||
-    value === "可生成"
+    value === "可生成" ||
+    value === "等待选择"
   ) {
-    return "busy";
+    return "waiting";
   }
   if (value === "待审核" || value === "proposed" || value.includes("READY") || value === "PARTIAL") {
     return "review";
@@ -109,6 +126,46 @@ export function statusTone(value: string | null | undefined): ReviewTone {
 function selectionProgressTone(selectedCount: number, totalCount: number): ReviewTone {
   if (totalCount < 1) return "idle";
   return selectedCount === totalCount ? "good" : "busy";
+}
+
+function timestampMs(value: string | null | undefined) {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function latestModuleFailure(vm: WorkbenchViewModel, moduleId: ReviewModuleId | "material-intake") {
+  return vm.workspaceStatus?.modules?.[moduleId]?.runtime?.latestFailed ?? null;
+}
+
+function latestShotSetFailure(vm: WorkbenchViewModel) {
+  const latest = vm.workspaceStatus?.runtime?.latestRunsByModule?.["shot-set"] ?? null;
+  return latest?.status === "FAILED" ? latest : null;
+}
+
+function unrecoveredModuleFailure(
+  vm: WorkbenchViewModel,
+  moduleId: ReviewModuleId | "material-intake",
+  artifact: { createdAt?: string; updatedAt?: string } | null | undefined,
+) {
+  const failed = latestModuleFailure(vm, moduleId);
+  if (!failed) return null;
+  const artifactTime = Math.max(
+    timestampMs(artifact?.updatedAt),
+    timestampMs(artifact?.createdAt),
+  );
+  return timestampMs(failed.updatedAt) > artifactTime ? failed : null;
+}
+
+function unrecoveredShotSetFailure(vm: WorkbenchViewModel) {
+  const failed = latestShotSetFailure(vm);
+  if (!failed) return null;
+  const activeShotSet = vm.workspaceStatus?.activeShotSet;
+  const shotSetTime = Math.max(
+    timestampMs(activeShotSet?.createdAt),
+    timestampMs(activeShotSet?.archivedAt),
+  );
+  return timestampMs(failed.updatedAt) > shotSetTime ? failed : null;
 }
 
 function hasImageActivity(vm: WorkbenchViewModel) {
@@ -169,7 +226,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "素材解读生成中",
       message: "正在解读上传素材，完成后可以确认素材标签、相关性和主商品素材。",
-      tone: "busy",
+      tone: "running",
       stepId: "material",
       action: null,
     };
@@ -178,7 +235,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "商品卖点生成中",
       message: "正在生成商品卖点草稿，完成后可以审核卖点是否准确。",
-      tone: "busy",
+      tone: "running",
       stepId: "brief",
       action: null,
     };
@@ -187,7 +244,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "分镜脚本生成中",
       message: "正在生成分镜脚本，完成后可以确认口播、节奏和画面意图。",
-      tone: "busy",
+      tone: "running",
       stepId: "storyboard",
       action: null,
     };
@@ -196,7 +253,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "分镜生成要求生成中",
       message: "正在生成分镜生成要求，完成后可以检查每个分镜的图像和视频要求。",
-      tone: "busy",
+      tone: "running",
       stepId: "shotprompt",
       action: null,
     };
@@ -205,7 +262,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "分镜链路创建中",
       message: "正在创建分镜链路实例，完成后可以逐个选择分镜图。",
-      tone: "busy",
+      tone: "running",
       stepId: "apply",
       action: null,
     };
@@ -214,9 +271,47 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "一键成片进行中",
       message: `当前阶段：${oneClickStageLabel(vm)}。全部完成后即可查看成片。`,
-      tone: "busy",
+      tone: "running",
       stepId: "final",
       action: null,
+    };
+  }
+  const failedModuleActivity = [
+    {
+      run: unrecoveredModuleFailure(vm, "material-intake", vm.artifacts.material),
+      title: "素材解读生成失败",
+      stepId: "material" as const,
+    },
+    {
+      run: unrecoveredModuleFailure(vm, "product-brief", vm.artifacts.brief),
+      title: "商品卖点生成失败",
+      stepId: "brief" as const,
+    },
+    {
+      run: unrecoveredModuleFailure(vm, "storyboard", vm.artifacts.storyboard),
+      title: "分镜脚本生成失败",
+      stepId: "storyboard" as const,
+    },
+    {
+      run: unrecoveredModuleFailure(vm, "shotprompt", vm.artifacts.shotPrompt),
+      title: "分镜生成要求生成失败",
+      stepId: "shotprompt" as const,
+    },
+    {
+      run: unrecoveredShotSetFailure(vm),
+      title: "应用分镜失败",
+      stepId: "apply" as const,
+    },
+  ].find((item) => item.run);
+  if (failedModuleActivity?.run) {
+    return {
+      title: failedModuleActivity.title,
+      message:
+        failedModuleActivity.run.errorMessage ??
+        "生成链路已停止，可回到对应步骤重新发起。",
+      tone: "danger",
+      stepId: failedModuleActivity.stepId,
+      action: { label: "查看", stepId: failedModuleActivity.stepId },
     };
   }
   if (activeShotSetUpstreamChanged(vm) && vm.artifacts.shotPrompt?.isCurrent) {
@@ -232,7 +327,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "分镜图生成中",
       message: "正在生成分镜图候选，完成后可以为当前分镜选择一张图。",
-      tone: "busy",
+      tone: "running",
       stepId: "image",
       action: null,
     };
@@ -241,7 +336,7 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
     return {
       title: "分镜视频生成中",
       message: "正在生成分镜视频候选，完成后可以选择可用于成片的视频。",
-      tone: "busy",
+      tone: "running",
       stepId: "video",
       action: null,
     };
@@ -419,17 +514,38 @@ export function deriveReviewStepIndicators(
   const materialNeedsReview = Boolean(
     vm.artifacts.material && !vm.artifacts.material.isCurrent,
   );
+  const materialFailure = unrecoveredModuleFailure(
+    vm,
+    "material-intake",
+    vm.artifacts.material,
+  );
   const briefNeedsReview = Boolean(
     vm.artifacts.brief && !vm.artifacts.brief.isCurrent,
   );
+  const briefFailure = unrecoveredModuleFailure(
+    vm,
+    "product-brief",
+    vm.artifacts.brief,
+  );
   const storyboardNeedsReview = Boolean(
     vm.artifacts.storyboard && !vm.artifacts.storyboard.isCurrent,
+  );
+  const storyboardFailure = unrecoveredModuleFailure(
+    vm,
+    "storyboard",
+    vm.artifacts.storyboard,
   );
   const shotPrompt = vm.artifacts.shotPrompt;
   const shotPromptNeedsReview = Boolean(
     shotPrompt && !shotPrompt.isCurrent,
   );
+  const shotPromptFailure = unrecoveredModuleFailure(
+    vm,
+    "shotprompt",
+    shotPrompt,
+  );
   const activeShotSetChanged = activeShotSetUpstreamChanged(vm);
+  const applyShotSetFailure = unrecoveredShotSetFailure(vm);
   const materialBlocksDownstream = materialPending || materialNeedsReview;
   const shotPromptBlocksDownstream =
     materialBlocksDownstream ||
@@ -461,6 +577,8 @@ export function deriveReviewStepIndicators(
       label: "素材解读",
       state: materialPending
         ? "生成中"
+        : materialFailure
+          ? "生成失败"
         : productBriefPending || vm.artifacts.material?.isCurrent
           ? "已生效"
           : artifactStatusLabel(vm.artifacts.material?.status, "等待生成"),
@@ -472,6 +590,8 @@ export function deriveReviewStepIndicators(
         ? "生成中"
         : materialBlocksDownstream
           ? "上游已变化"
+          : briefFailure
+            ? "生成失败"
           : briefNeedsReview
             ? artifactStatusLabel(vm.artifacts.brief?.status, "待审核")
             : moduleIsUpstreamChanged("product-brief")
@@ -486,6 +606,8 @@ export function deriveReviewStepIndicators(
           ? "生成中"
           : materialBlocksDownstream || productBriefPending || briefNeedsReview
           ? "上游已变化"
+          : storyboardFailure
+            ? "生成失败"
           : storyboardNeedsReview
             ? artifactStatusLabel(vm.artifacts.storyboard?.status, "待审核")
             : moduleIsUpstreamChanged("storyboard")
@@ -500,6 +622,8 @@ export function deriveReviewStepIndicators(
           ? "生成中"
           : shotPromptBlocksDownstream
           ? "上游已变化"
+          : shotPromptFailure
+            ? "生成失败"
           : shotPromptNeedsReview
             ? artifactStatusLabel(shotPrompt?.status, "待审核")
             : moduleIsUpstreamChanged("shotprompt")
@@ -509,10 +633,12 @@ export function deriveReviewStepIndicators(
     {
       id: "apply",
       label: "应用分镜",
-      state: applyBlocksDownstream || activeShotSetChanged
-        ? "上游已变化"
-        : applyShotSetPending
-          ? "生成中"
+      state: applyShotSetPending
+        ? "生成中"
+        : applyBlocksDownstream || activeShotSetChanged
+          ? "上游已变化"
+          : applyShotSetFailure
+            ? "生成失败"
           : vm.workspaceStatus?.activeShotSet
           ? "已创建"
           : "等待应用",
