@@ -33,6 +33,4 @@ test/postman/
 docs/*
 !docs/core/
 !docs/core/**
-!docs/future/
-!docs/future/**
 docs/core/prd_safe.pdf
