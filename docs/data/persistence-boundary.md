@@ -24,6 +24,7 @@ Decision State: Proposed
 - Dashboard video artifacts are decoupled published-video registry rows; workspace deletion must not silently erase already imported dashboard videos.
 - API consumers receive server proxy URLs rather than direct local paths or S3 object addresses.
 - Queue state may drive polling, but durable business facts must be persisted before the frontend can select or compose them.
+- `creative_workspace.display_name` is user-facing metadata only; workspace ids and LOCAL/S3 object keys remain stable when it changes.
 - Compatibility copies under legacy docs do not own data semantics.
 
 ## Change Rule

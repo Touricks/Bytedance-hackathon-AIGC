@@ -17,6 +17,7 @@ import {
   runWorkspaceMaterialIntake,
   selectWorkspaceDirectory,
   toWorkspaceMaterialUrl,
+  updateWorkspaceDisplayName,
   uploadWorkspaceMaterial,
   uploadProductImage,
   workspaceMaterialFileRejectionReason
@@ -778,6 +779,7 @@ describe("api client", () => {
           JSON.stringify({
             workspace: {
               id: "workspace_123",
+              displayName: "Desk Demo",
               localPath: "/tmp/uploads/workspaces/desk-demo-workspace_123",
               currentScriptId: "script_123",
               status: "draft",
@@ -796,12 +798,32 @@ describe("api client", () => {
           { status: 200 }
         );
       }
+      if (String(url).endsWith("/api/workspaces/workspace_123") && init?.method === "PATCH") {
+        assert.deepEqual(JSON.parse(String(init.body)), { displayName: "Desk Demo 2" });
+        return new Response(
+          JSON.stringify({
+            workspace: {
+              id: "workspace_123",
+              displayName: "Desk Demo 2",
+              localPath: "/tmp/uploads/workspaces/desk-demo-workspace_123",
+              currentScriptId: "script_123",
+              status: "draft",
+              traceFile: ".daireel/trace/events.jsonl",
+              createdAt: "2026-05-25T00:00:00.000Z",
+              updatedAt: "2026-05-25T00:00:00.000Z",
+              lastSeenAt: "2026-05-25T00:00:00.000Z"
+            }
+          }),
+          { status: 200 }
+        );
+      }
 
       return new Response(
         JSON.stringify({
           workspaces: [
             {
               id: "workspace_123",
+              displayName: "Desk Demo",
               localPath: "/tmp/uploads/workspaces/desk-demo-workspace_123",
               currentScriptId: "script_123",
               status: "draft",
@@ -823,10 +845,17 @@ describe("api client", () => {
     };
 
     const created = await createWorkspace("Desk Demo");
+    const renamed = await updateWorkspaceDisplayName({
+      workspaceId: "workspace_123",
+      displayName: "Desk Demo 2"
+    });
     const listed = await listWorkspaces();
 
     assert.equal(created.workspace.id, "workspace_123");
+    assert.equal(created.workspace.displayName, "Desk Demo");
+    assert.equal(renamed.workspace.displayName, "Desk Demo 2");
     assert.equal(listed.workspaces[0]?.id, "workspace_123");
+    assert.equal(listed.workspaces[0]?.displayName, "Desk Demo");
     assert.equal(
       listed.discovered[0]?.localPath,
       "/Users/demo/Drafts/IntegrationTest_current"
@@ -834,6 +863,7 @@ describe("api client", () => {
     assert.equal(listed.discovered[0]?.workspaceId, "VBuy2YQUO9cwRY42fdcy8");
     assert.deepEqual(calls, [
       "POST http://localhost:3000/api/workspaces",
+      "PATCH http://localhost:3000/api/workspaces/workspace_123",
       "GET http://localhost:3000/api/workspaces"
     ]);
   });

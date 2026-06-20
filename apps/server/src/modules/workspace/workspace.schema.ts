@@ -21,7 +21,11 @@ export type WorkspaceDirectoryRequest = z.infer<
 >;
 
 export const managedWorkspaceCreateRequestSchema = z.object({
-  name: z.string().min(1).max(80).optional(),
+  name: z.string().max(80).optional(),
+});
+
+export const managedWorkspaceUpdateRequestSchema = z.object({
+  displayName: z.string().max(80).nullable().optional(),
 });
 
 export const workspaceStorageBindRequestSchema = z.discriminatedUnion("kind", [

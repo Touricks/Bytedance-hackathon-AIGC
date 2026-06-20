@@ -597,6 +597,15 @@ label {
   gap: 9px;
 }
 
+.workspaces-landing__name-field {
+  display: grid;
+  width: min(260px, 100%);
+  gap: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .workspaces-landing__directory-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -676,10 +685,10 @@ label {
   text-align: left;
 }
 
-.ws-card__delete {
+.ws-card__delete,
+.ws-card__rename {
   position: absolute;
   top: 128px;
-  right: 12px;
   z-index: 4;
   display: grid;
   width: 30px;
@@ -691,6 +700,20 @@ label {
   background: var(--surface-2);
   box-shadow: 0 8px 18px #11182712;
   transition: border-color .14s, color .14s, background .14s;
+}
+
+.ws-card__rename {
+  right: 48px;
+}
+
+.ws-card__delete {
+  right: 12px;
+}
+
+.ws-card__rename:hover {
+  border-color: #C4B5FD;
+  color: var(--accent);
+  background: #F5F3FF;
 }
 
 .ws-card__delete:hover {
@@ -807,6 +830,10 @@ label {
 
 .ws-card__progress span.is-on {
   background: var(--accent);
+}
+
+.ws-card__progress span.is-current {
+  background: #C7D2FE;
 }
 
 .ws-card__meta {
@@ -3954,6 +3981,7 @@ label {
     justify-content: stretch;
   }
 
+  .workspaces-landing__name-field,
   .home-hero__actions .btn,
   .workspaces-landing__form-actions .btn {
     width: 100%;

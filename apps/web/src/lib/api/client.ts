@@ -497,6 +497,22 @@ async function postJson<TResponse>(path: string, body: unknown): Promise<TRespon
   return (await response.json()) as TResponse;
 }
 
+async function patchJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+
+  return (await response.json()) as TResponse;
+}
+
 function normalizeWorkspaceArtifact<TData>(
   artifact: WorkspaceArtifact<TData> | null | undefined
 ) {
@@ -596,6 +612,16 @@ export async function listWorkspaces(): Promise<WorkspaceListDetail> {
 
 export async function createWorkspace(name?: string): Promise<WorkspaceInitializeDetail> {
   return postJson<WorkspaceInitializeDetail>("/api/workspaces", { name });
+}
+
+export async function updateWorkspaceDisplayName(input: {
+  workspaceId: string;
+  displayName: string | null;
+}): Promise<{ workspace: CreativeWorkspace }> {
+  return patchJson<{ workspace: CreativeWorkspace }>(
+    `/api/workspaces/${input.workspaceId}`,
+    { displayName: input.displayName },
+  );
 }
 
 export async function deleteWorkspace(

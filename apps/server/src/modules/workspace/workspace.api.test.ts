@@ -18,22 +18,15 @@ process.env.MODEL_MODE = "mock";
 const cleanupDirs: string[] = [];
 
 async function createBoundWorkspace(app: FastifyInstance) {
-  const createResponse = await app.inject({
-    method: "POST",
-    url: "/api/workspaces",
-    payload: { name: `workspace-current-${Date.now()}` },
-  });
-  assert.equal(createResponse.statusCode, 200, createResponse.body);
-  const workspace = createResponse.json().workspace as { id: string };
-
   const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-current-"));
   cleanupDirs.push(directory);
-  const bindResponse = await app.inject({
+  const initResponse = await app.inject({
     method: "POST",
-    url: `/api/workspaces/${workspace.id}/storage/bind`,
-    payload: { kind: "local", localPath: directory },
+    url: "/api/workspaces/init",
+    payload: { directory },
   });
-  assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+  assert.equal(initResponse.statusCode, 200, initResponse.body);
+  const workspace = initResponse.json().workspace as { id: string };
 
   return { workspaceId: workspace.id, directory };
 }
@@ -293,6 +286,52 @@ describe("workspace API", () => {
     await Promise.all(
       cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })),
     );
+  });
+
+  it("persists and updates a custom workspace display name", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "  浴室清洁布投放测试  " },
+    });
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const workspaceId = createResponse.json().workspace.id as string;
+    assert.equal(createResponse.json().workspace.displayName, "浴室清洁布投放测试");
+
+    const updateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${workspaceId}`,
+      payload: { displayName: "  复购消耗品二轮  " },
+    });
+    assert.equal(updateResponse.statusCode, 200, updateResponse.body);
+    assert.equal(updateResponse.json().workspace.displayName, "复购消耗品二轮");
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/workspaces",
+    });
+    assert.equal(listResponse.statusCode, 200, listResponse.body);
+    assert.equal(
+      listResponse
+        .json()
+        .workspaces.find((workspace: { id: string }) => workspace.id === workspaceId)
+        ?.displayName,
+      "复购消耗品二轮",
+    );
+
+    const clearResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${workspaceId}`,
+      payload: { displayName: "   " },
+    });
+    assert.equal(clearResponse.statusCode, 200, clearResponse.body);
+    assert.equal(clearResponse.json().workspace.displayName, null);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
+    });
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
   });
 
   it("creates a logical workspace, binds local storage, and uploads managed material", async () => {
@@ -685,17 +724,19 @@ describe("workspace API", () => {
     });
     assert.equal(createResponse.statusCode, 200, createResponse.body);
     const workspaceId = createResponse.json().workspace.id as string;
-    const bindResponse = await app.inject({
-      method: "POST",
-      url: `/api/workspaces/${workspaceId}/storage/bind`,
-      payload: {
-        kind: "s3",
-        bucket: "test-bucket",
-        prefix: `workspaces/${workspaceId}`,
-        endpoint: "http://localhost:9000",
-      },
-    });
-    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    if (createResponse.json().storage?.kind !== "s3") {
+      const bindResponse = await app.inject({
+        method: "POST",
+        url: `/api/workspaces/${workspaceId}/storage/bind`,
+        payload: {
+          kind: "s3",
+          bucket: "test-bucket",
+          prefix: `workspaces/${workspaceId}`,
+          endpoint: "http://localhost:9000",
+        },
+      });
+      assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    }
     const deletedPrefixes: string[] = [];
     __setWorkspaceStorageAdapterFactoryForTests((binding) => ({
       kind: "S3",
@@ -751,17 +792,19 @@ describe("workspace API", () => {
     });
     assert.equal(createResponse.statusCode, 200, createResponse.body);
     const workspaceId = createResponse.json().workspace.id as string;
-    const bindResponse = await app.inject({
-      method: "POST",
-      url: `/api/workspaces/${workspaceId}/storage/bind`,
-      payload: {
-        kind: "s3",
-        bucket: "test-bucket",
-        prefix: `workspaces/${workspaceId}`,
-        endpoint: "http://localhost:9000",
-      },
-    });
-    assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    if (createResponse.json().storage?.kind !== "s3") {
+      const bindResponse = await app.inject({
+        method: "POST",
+        url: `/api/workspaces/${workspaceId}/storage/bind`,
+        payload: {
+          kind: "s3",
+          bucket: "test-bucket",
+          prefix: `workspaces/${workspaceId}`,
+          endpoint: "http://localhost:9000",
+        },
+      });
+      assert.equal(bindResponse.statusCode, 200, bindResponse.body);
+    }
     let purgeAttempted = false;
     __setWorkspaceStorageAdapterFactoryForTests((binding) => ({
       kind: "S3",

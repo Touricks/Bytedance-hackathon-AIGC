@@ -148,7 +148,7 @@ describe("deriveReviewStepIndicators", () => {
     });
   });
 
-  it("keeps final generation active while one-click final video is running", () => {
+  it("maps active one-click image selection to the image review step", () => {
     const vm = baseViewModel({
       pending: { oneClickFinalVideo: true },
       oneClickFinalVideo: {
@@ -162,12 +162,13 @@ describe("deriveReviewStepIndicators", () => {
     const activity = deriveCreativeActivity(vm);
     const steps = deriveReviewStepIndicators(vm);
 
-    assert.equal(deriveActiveStep(vm), "final");
+    assert.equal(deriveActiveStep(vm), "image");
     assert.equal(activity.title, "一键成片进行中");
     assert.match(activity.message, /生成并选择分镜图/);
-    assert.deepEqual(steps.find((step) => step.id === "final"), {
-      id: "final",
-      label: "生成成片",
+    assert.equal(activity.stepId, "image");
+    assert.deepEqual(steps.find((step) => step.id === "image"), {
+      id: "image",
+      label: "分镜图选择",
       state: "生成中",
       tone: "running",
     });
@@ -229,8 +230,10 @@ describe("deriveReviewStepIndicators", () => {
     const activity = deriveCreativeActivity(vm);
 
     assert.equal(activity.title, "一键成片失败");
-    assert.equal(activity.message, "No succeeded video candidate");
-    assert.deepEqual(activity.action, { label: "查看进度", stepId: "material" });
+    assert.match(activity.message, /失败阶段：生成并选择分镜视频/);
+    assert.match(activity.message, /No succeeded video candidate/);
+    assert.equal(activity.stepId, "video");
+    assert.deepEqual(activity.action, { label: "查看对应阶段", stepId: "video" });
   });
 
   it("keeps material intake active and marks downstream modules stale while regenerating it", () => {

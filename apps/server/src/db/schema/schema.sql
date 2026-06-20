@@ -33,6 +33,7 @@ create table if not exists asset (
 );
 create table if not exists creative_workspace (
   id text primary key,
+  display_name text,
   local_path text,
   current_script_id text not null,
   current_job_id text,
@@ -42,6 +43,7 @@ create table if not exists creative_workspace (
   updated_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
+alter table if exists creative_workspace add column if not exists display_name text;
 alter table if exists creative_workspace alter column local_path drop not null;
 alter table if exists creative_workspace drop constraint if exists creative_workspace_local_path_key;
 create table if not exists workspace_storage_bindings (

@@ -98,6 +98,7 @@ export type WorkspaceStatus =
 
 export interface CreativeWorkspace {
   id: string;
+  displayName: string | null;
   localPath: string;
   currentScriptId: string;
   currentJobId?: string;

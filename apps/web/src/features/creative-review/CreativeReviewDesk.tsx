@@ -26,6 +26,8 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
   const [selectedStep, setSelectedStep] = useState<ReviewStepId | null>(null);
   const [manualShotSelectionId, setManualShotSelectionId] = useState<string | null>(null);
   const active = selectedStep ?? defaultStep;
+  const workspaceTitle =
+    vm.workspace?.displayName?.trim() || vm.workspace?.localPath || vm.workspaceId;
 
   useEffect(() => {
     if (selectedStep && !canOpenReviewStep(vm, selectedStep, defaultStep)) {
@@ -62,7 +64,7 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
         </Tooltip>
         <div className="review-topbar__title">
           <span>创作工作区</span>
-          <strong>{vm.workspace?.localPath || vm.workspaceId}</strong>
+          <strong>{workspaceTitle}</strong>
         </div>
         <Tooltip title="刷新">
           <IconButton

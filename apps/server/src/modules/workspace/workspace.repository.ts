@@ -3,8 +3,8 @@ import { db, type WorkspaceStorageBindingRow } from "../../db/client.js";
 
 type CreateWorkspaceInput = Omit<
   CreativeWorkspace,
-  "createdAt" | "updatedAt" | "lastSeenAt" | "localPath"
-> & { localPath?: string | null };
+  "createdAt" | "updatedAt" | "lastSeenAt" | "localPath" | "displayName"
+> & { displayName?: string | null; localPath?: string | null };
 
 export const workspaceRepository = {
   createWorkspace(input: CreateWorkspaceInput) {
@@ -17,6 +17,13 @@ export const workspaceRepository = {
 
   getWorkspace(workspaceId: string) {
     return db.getWorkspace(workspaceId);
+  },
+
+  updateWorkspaceDisplayName(
+    workspaceId: string,
+    displayName: string | null,
+  ) {
+    return db.updateWorkspace(workspaceId, { displayName });
   },
 
   getActiveStorage(

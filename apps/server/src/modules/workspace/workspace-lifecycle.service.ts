@@ -24,10 +24,17 @@ import {
   workspaceStorageBindingService,
 } from "./workspace-storage-binding.service.js";
 
+function normalizeWorkspaceDisplayName(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, 80) : null;
+}
+
 export const workspaceLifecycleService = {
   async createManagedWorkspace(name?: string) {
+    const displayName = normalizeWorkspaceDisplayName(name);
     const workspace = await workspaceRepository.createWorkspace({
       id: nanoid(),
+      displayName,
       localPath: null,
       currentScriptId: nanoid(),
       status: "draft",
@@ -45,7 +52,6 @@ export const workspaceLifecycleService = {
         currentJobId: workspace.currentJobId,
       }),
       storage: storageBindingView(binding),
-      ...(name ? { name: name.trim() } : {}),
     };
   },
 
@@ -110,6 +116,17 @@ export const workspaceLifecycleService = {
         deleted: true,
       },
     };
+  },
+
+  async updateWorkspaceDisplayName(
+    workspaceId: string,
+    displayName: string | null | undefined,
+  ) {
+    const workspace = await workspaceRepository.updateWorkspaceDisplayName(
+      workspaceId,
+      normalizeWorkspaceDisplayName(displayName),
+    );
+    return { workspace };
   },
 
   async initialize(directory: string) {

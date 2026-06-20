@@ -10,6 +10,7 @@ import {
   storyboardModuleProposeRequestSchema,
   storyboardVoiceoverProposeRequestSchema,
   managedWorkspaceCreateRequestSchema,
+  managedWorkspaceUpdateRequestSchema,
   workspaceStorageBindRequestSchema,
   workspaceMaterialUploadRequestSchema,
   workspaceDirectoryRequestSchema
@@ -120,6 +121,20 @@ export async function registerWorkspaceController(
     try {
       const params = request.params as { workspaceId: string };
       return await workspaceService.deleteWorkspace(params.workspaceId);
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
+  app.patch(workspaceRoute(""), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      const body = managedWorkspaceUpdateRequestSchema.parse(request.body);
+      return await workspaceService.updateWorkspaceDisplayName(
+        params.workspaceId,
+        body.displayName,
+      );
     } catch (error) {
       const httpError = toHttpError(error);
       return reply.status(httpError.statusCode).send(httpError);

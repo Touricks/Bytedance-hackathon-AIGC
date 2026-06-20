@@ -6,6 +6,7 @@ import {
   Film,
   FolderOpen,
   Link2,
+  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -17,6 +18,7 @@ import {
   initializeWorkspace,
   listWorkspaces,
   selectWorkspaceDirectory,
+  updateWorkspaceDisplayName,
 } from "../lib/api/client.js";
 import { getConfigLimits } from "../lib/api/configLimits.js";
 import type { DiscoveredWorkspace } from "../lib/api/client.js";
@@ -53,6 +55,21 @@ const statusStageIndex: Record<CreativeWorkspace["status"], number> = {
   missing: 0,
 };
 
+const completedStageCount: Record<CreativeWorkspace["status"], number> = {
+  draft: 0,
+  materials_ready: 2,
+  brief_proposed: 2,
+  brief_approved: 3,
+  storyboard_proposed: 3,
+  storyboard_approved: 4,
+  shotprompt_proposed: 4,
+  shotprompt_approved: 5,
+  video_generating: 7,
+  video_ready: 8,
+  failed: 0,
+  missing: 0,
+};
+
 const statusLabel: Record<CreativeWorkspace["status"], string> = {
   draft: "待提交创作要求",
   materials_ready: "素材已就绪",
@@ -73,6 +90,8 @@ function openWorkspace(id: string) {
 }
 
 function workspaceName(workspace: CreativeWorkspace) {
+  const displayName = workspace.displayName?.trim();
+  if (displayName) return displayName;
   if (!workspace.localPath) {
     return workspace.id;
   }
@@ -122,16 +141,21 @@ function WorkspaceCard({
   isCurrent,
   onOpen,
   onDelete,
+  onRename,
   isDeleting,
+  isRenaming,
 }: {
   workspace: CreativeWorkspace;
   isCurrent: boolean;
   onOpen: (id: string) => void;
   onDelete: (workspace: CreativeWorkspace) => void;
+  onRename: (workspace: CreativeWorkspace) => void;
   isDeleting: boolean;
+  isRenaming: boolean;
 }) {
   const stageIndex = statusStageIndex[workspace.status] ?? 0;
-  const progress = Math.round(((stageIndex + 1) / pipelineStages.length) * 100);
+  const doneCount = completedStageCount[workspace.status] ?? 0;
+  const progress = Math.round((doneCount / pipelineStages.length) * 100);
   const gradientSeed = Math.abs(
     Array.from(workspace.id).reduce(
       (total, char) => total + char.charCodeAt(0),
@@ -168,7 +192,13 @@ function WorkspaceCard({
               <span
                 key={stage}
                 title={stage}
-                className={index <= stageIndex ? "is-on" : undefined}
+                className={
+                  index < doneCount
+                    ? "is-on"
+                    : index === stageIndex
+                      ? "is-current"
+                      : undefined
+                }
               />
             ))}
           </div>
@@ -180,6 +210,16 @@ function WorkspaceCard({
             <strong className="mono tnum">{progress}%</strong>
           </div>
         </div>
+      </button>
+      <button
+        type="button"
+        className="ws-card__rename"
+        title="重命名工作区"
+        aria-label={`重命名工作区 ${workspaceName(workspace)}`}
+        onClick={() => onRename(workspace)}
+        disabled={isRenaming || isDeleting}
+      >
+        <Pencil size={14} />
       </button>
       <button
         type="button"
@@ -202,9 +242,13 @@ export function App() {
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(
     null,
   );
+  const [renamingWorkspaceId, setRenamingWorkspaceId] = useState<string | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [directory, setDirectory] = useState("");
   const [query, setQuery] = useState("");
+  const [workspaceNameDraft, setWorkspaceNameDraft] = useState("");
   const [workspaceStorageKind, setWorkspaceStorageKind] = useState<"local" | "s3">(
     "local",
   );
@@ -251,10 +295,18 @@ export function App() {
     }
   };
 
+  const applyWorkspaceNameDraft = async (workspaceId: string) => {
+    const displayName = workspaceNameDraft.trim();
+    if (!displayName) return;
+    await updateWorkspaceDisplayName({ workspaceId, displayName });
+    setWorkspaceNameDraft("");
+  };
+
   const openDirectory = async (path: string) => {
     setError(null);
     try {
       const detail = await initializeWorkspace(path);
+      await applyWorkspaceNameDraft(detail.workspace.id);
       openWorkspace(detail.workspace.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -294,7 +346,8 @@ export function App() {
     if (isCloudWorkspaceMode) {
       setError(null);
       try {
-        const detail = await createWorkspace();
+        const detail = await createWorkspace(workspaceNameDraft.trim() || undefined);
+        setWorkspaceNameDraft("");
         openWorkspace(detail.workspace.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -324,6 +377,29 @@ export function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeletingWorkspaceId(null);
+    }
+  };
+
+  const onRenameWorkspace = async (workspace: CreativeWorkspace) => {
+    const nextName = window.prompt("工作区名称", workspace.displayName ?? workspaceName(workspace));
+    if (nextName === null) return;
+
+    setError(null);
+    setRenamingWorkspaceId(workspace.id);
+    try {
+      const result = await updateWorkspaceDisplayName({
+        workspaceId: workspace.id,
+        displayName: nextName.trim() || null,
+      });
+      setWorkspaces((current) =>
+        current.map((item) =>
+          item.id === workspace.id ? result.workspace : item,
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenamingWorkspaceId(null);
     }
   };
 
@@ -368,6 +444,16 @@ export function App() {
             </p>
           </div>
           <div className="home-hero__actions">
+            <label className="workspaces-landing__name-field">
+              <span>工作区名称</span>
+              <input
+                className="field"
+                value={workspaceNameDraft}
+                onChange={(event) => setWorkspaceNameDraft(event.target.value)}
+                placeholder="例如：浴室清洁布投放测试"
+                maxLength={80}
+              />
+            </label>
             <button
               type="button"
               className="btn btn--lg btn--primary workspaces-landing__primary"
@@ -440,7 +526,9 @@ export function App() {
                   isCurrent={workspace.id === latestWorkspace?.id}
                   onOpen={openWorkspace}
                   onDelete={onDeleteWorkspace}
+                  onRename={onRenameWorkspace}
                   isDeleting={deletingWorkspaceId === workspace.id}
+                  isRenaming={renamingWorkspaceId === workspace.id}
                 />
               </li>
             ))}

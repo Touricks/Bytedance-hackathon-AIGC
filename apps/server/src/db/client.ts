@@ -14,10 +14,13 @@ import { schemaSql } from "./schema/schema.js";
 type CreateAssetInput = Omit<Asset, "id" | "createdAt">;
 type CreateWorkspaceInput = Omit<
   CreativeWorkspace,
-  "createdAt" | "updatedAt" | "lastSeenAt" | "localPath"
-> & { localPath?: string | null };
+  "createdAt" | "updatedAt" | "lastSeenAt" | "localPath" | "displayName"
+> & { displayName?: string | null; localPath?: string | null };
 type UpdateWorkspaceInput = Partial<
-  Pick<CreativeWorkspace, "currentScriptId" | "currentJobId" | "status" | "traceFile">
+  Pick<
+    CreativeWorkspace,
+    "currentScriptId" | "currentJobId" | "status" | "traceFile" | "displayName"
+  >
 >;
 
 // ─── Current row types ───────────────────────────────────────────────────────
@@ -444,6 +447,7 @@ function toGenerationJob(row: Record<string, unknown>): GenerationJob {
 function toWorkspace(row: Record<string, unknown>): CreativeWorkspace {
   return {
     id: String(row.id),
+    displayName: typeof row.display_name === "string" ? row.display_name : null,
     localPath: typeof row.local_path === "string" ? row.local_path : "",
     currentScriptId: String(row.current_script_id),
     currentJobId: typeof row.current_job_id === "string" ? row.current_job_id : undefined,
@@ -552,11 +556,12 @@ class PostgresDbAdapter implements DbAdapter {
   async createWorkspace(input: CreateWorkspaceInput): Promise<CreativeWorkspace> {
     const result = await this.getPool().query(
       `insert into creative_workspace
-         (id, local_path, current_script_id, current_job_id, status, trace_file)
-       values ($1, $2, $3, $4, $5, $6)
+         (id, display_name, local_path, current_script_id, current_job_id, status, trace_file)
+       values ($1, $2, $3, $4, $5, $6, $7)
        returning *`,
       [
         input.id,
+        input.displayName ?? null,
         input.localPath ?? null,
         input.currentScriptId,
         input.currentJobId ?? null,
@@ -746,16 +751,18 @@ class PostgresDbAdapter implements DbAdapter {
     const next = { ...workspace, ...patch };
     const result = await this.getPool().query(
       `update creative_workspace
-       set current_script_id = $2,
-           current_job_id = $3,
-           status = $4,
-           trace_file = $5,
+       set display_name = $2,
+           current_script_id = $3,
+           current_job_id = $4,
+           status = $5,
+           trace_file = $6,
            updated_at = now(),
            last_seen_at = now()
        where id = $1
        returning *`,
       [
         workspaceId,
+        next.displayName ?? null,
         next.currentScriptId,
         next.currentJobId ?? null,
         next.status,

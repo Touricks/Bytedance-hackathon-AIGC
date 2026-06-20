@@ -71,7 +71,7 @@ erDiagram
 
 | Table | Purpose | Key constraints |
 |---|---|---|
-| `creative_workspace` | Workspace business state | `id` primary key; `local_path` nullable. |
+| `creative_workspace` | Workspace business state | `id` primary key; `display_name` nullable user-facing metadata; `local_path` nullable. |
 | `workspace_storage_bindings` | Active LOCAL/S3 storage target | One active binding per workspace; LOCAL requires normalized path; S3 requires bucket/prefix. |
 | `workspace_module_runs` | Short-lived module execution runtime | One active `PENDING/RUNNING` run per workspace/module; records provider/apply running, success artifact id, and failure summary for `/status` UI and delete-busy checks. |
 | `prompt_requirements_artifacts` | 创作要求 artifact | Partial unique index for current approved. |

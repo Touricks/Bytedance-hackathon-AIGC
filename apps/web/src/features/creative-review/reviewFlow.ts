@@ -54,6 +54,7 @@ export const reviewStepOrder: ReviewStepId[] = [
 const imageActiveStatuses = new Set(["IMAGE_PROMPT_PROPOSING", "IMAGE_GENERATING"]);
 const videoActiveStatuses = new Set(["VIDEO_SCRIPT_PROPOSING", "VIDEO_GENERATING"]);
 const finalVideoActiveStatuses = new Set(["PENDING", "RUNNING"]);
+const oneClickActiveStatuses = new Set(["PENDING", "RUNNING", "WAITING"]);
 const oneClickStageLabels: Record<string, string> = {
   product_brief: "生成商品卖点",
   storyboard: "生成分镜脚本",
@@ -185,7 +186,7 @@ function hasVideoActivity(vm: WorkbenchViewModel) {
 function hasFinalVideoActivity(vm: WorkbenchViewModel) {
   return (
     Boolean(vm.pending?.finalVideo) ||
-    Boolean(vm.pending?.oneClickFinalVideo) ||
+    activeOneClickStep(vm) === "final" ||
     finalVideoActiveStatuses.has(vm.finalVideo?.status ?? "")
   );
 }
@@ -195,11 +196,53 @@ function oneClickStageLabel(vm: WorkbenchViewModel) {
   return stage ? (oneClickStageLabels[stage] ?? stage) : "准备一键成片";
 }
 
+function oneClickStageStepId(stage: string | null | undefined): ReviewStepId {
+  switch (stage) {
+    case "product_brief":
+      return "brief";
+    case "storyboard":
+      return "storyboard";
+    case "shotprompt":
+      return "shotprompt";
+    case "shot_set":
+      return "apply";
+    case "image_selection":
+      return "image";
+    case "video_selection":
+      return "video";
+    case "final_compose":
+    case "completed":
+      return "final";
+    default:
+      return "final";
+  }
+}
+
+function isActiveOneClick(vm: WorkbenchViewModel) {
+  const status = vm.oneClickFinalVideo?.status;
+  return Boolean(vm.pending?.oneClickFinalVideo) ||
+    (typeof status === "string" && oneClickActiveStatuses.has(status));
+}
+
+function activeOneClickStep(vm: WorkbenchViewModel): ReviewStepId | null {
+  return isActiveOneClick(vm)
+    ? oneClickStageStepId(vm.oneClickFinalVideo?.currentStage)
+    : null;
+}
+
+function failedOneClickStep(vm: WorkbenchViewModel): ReviewStepId | null {
+  return vm.oneClickFinalVideo?.status === "FAILED"
+    ? oneClickStageStepId(vm.oneClickFinalVideo.currentStage)
+    : null;
+}
+
 function activeShotSetUpstreamChanged(vm: WorkbenchViewModel) {
   return Boolean(vm.workspaceStatus?.activeShotSet?.upstream?.upstreamChanged);
 }
 
 function deriveProcessingStep(vm: WorkbenchViewModel): ReviewStepId | null {
+  const oneClickStep = activeOneClickStep(vm);
+  if (oneClickStep) return oneClickStep;
   if (vm.pending?.materialIntake) return "material";
   if (vm.pending?.productBrief) return "brief";
   if (vm.pending?.storyboard) return "storyboard";
@@ -267,13 +310,27 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
       action: null,
     };
   }
-  if (vm.pending?.oneClickFinalVideo) {
+  const oneClickStep = activeOneClickStep(vm);
+  if (oneClickStep) {
     return {
       title: "一键成片进行中",
       message: `当前阶段：${oneClickStageLabel(vm)}。全部完成后即可查看成片。`,
       tone: "running",
-      stepId: "final",
+      stepId: oneClickStep,
       action: null,
+    };
+  }
+  const oneClickFailedStep = failedOneClickStep(vm);
+  if (oneClickFailedStep) {
+    return {
+      title: "一键成片失败",
+      message:
+        `失败阶段：${oneClickStageLabel(vm)}。` +
+        (vm.oneClickFinalVideo?.errorMessage ??
+          "一键链路已停止，已生成的中间产物会保留，可回到对应步骤手动继续。"),
+      tone: "danger",
+      stepId: oneClickFailedStep,
+      action: { label: "查看对应阶段", stepId: oneClickFailedStep },
     };
   }
   const failedModuleActivity = [
@@ -339,17 +396,6 @@ export function deriveCreativeActivity(vm: WorkbenchViewModel): CreativeActivity
       tone: "running",
       stepId: "video",
       action: null,
-    };
-  }
-  if (vm.oneClickFinalVideo?.status === "FAILED") {
-    return {
-      title: "一键成片失败",
-      message:
-        vm.oneClickFinalVideo.errorMessage ??
-        "一键链路已停止，已生成的中间产物会保留，可回到对应步骤手动继续。",
-      tone: "danger",
-      stepId: "final",
-      action: { label: "查看进度", stepId: "material" },
     };
   }
   if (vm.finalVideo?.localUrl) {
@@ -511,6 +557,8 @@ export function deriveReviewStepIndicators(
   const imageActive = hasImageActivity(vm);
   const videoActive = hasVideoActivity(vm);
   const finalVideoActive = hasFinalVideoActivity(vm);
+  const oneClickActiveStep = activeOneClickStep(vm);
+  const oneClickFailedStep = failedOneClickStep(vm);
   const materialNeedsReview = Boolean(
     vm.artifacts.material && !vm.artifacts.material.isCurrent,
   );
@@ -688,10 +736,22 @@ export function deriveReviewStepIndicators(
   ];
 
   return steps.map((step) => {
-    const tone = step.tone ?? statusTone(step.state);
+    const state =
+      oneClickFailedStep === step.id
+        ? "生成失败"
+        : oneClickActiveStep === step.id
+          ? "生成中"
+          : step.state;
+    const tone =
+      oneClickFailedStep === step.id
+        ? "danger"
+        : oneClickActiveStep === step.id
+          ? "running"
+          : (step.tone ?? statusTone(state));
     const reachable = canOpenReviewStep(vm, step.id, defaultStep);
     return {
       ...step,
+      state,
       tone: reachable ? tone : "idle",
     };
   });
@@ -784,7 +844,8 @@ export function deriveActiveStep(vm: WorkbenchViewModel): ReviewStepId {
   const allVideosSelected =
     hasShots && vm.shots.every((shot) => Boolean(shot.selectedVideoId));
 
-  if (vm.pending?.oneClickFinalVideo) return "final";
+  const oneClickStep = activeOneClickStep(vm);
+  if (oneClickStep) return oneClickStep;
   if (materialPending) return "material";
   if (!hasRequirements) return "requirements";
   if (productBriefPending) return "brief";

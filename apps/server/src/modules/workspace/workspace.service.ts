@@ -16,6 +16,16 @@ export const workspaceService = {
     return workspaceLifecycleService.deleteWorkspace(workspaceId);
   },
 
+  updateWorkspaceDisplayName(
+    workspaceId: string,
+    displayName: string | null | undefined,
+  ) {
+    return workspaceLifecycleService.updateWorkspaceDisplayName(
+      workspaceId,
+      displayName,
+    );
+  },
+
   initialize(directory: string) {
     return workspaceLifecycleService.initialize(directory);
   },

@@ -43,6 +43,7 @@ The server registers routes in `apps/server/src/app.ts` and module controllers u
 | GET/POST | `/api/workspaces` | List or create managed workspaces. |
 | POST | `/api/workspaces/directory/select` | Native local directory picker. |
 | POST | `/api/workspaces/init` | Find or create local workspace and `.daireel/workspace.json`. |
+| PATCH | `/api/workspaces/:workspaceId` | Update workspace `displayName` metadata. Empty values clear the custom name and do not affect workspace id or storage keys. |
 | GET | `/api/workspaces/:workspaceId/status` | Workspace state, active artifacts, active shot set, active one-click job, workspace module run runtime, next action. |
 | GET | `/api/workspaces/:workspaceId/storage` | Active storage binding. |
 | POST | `/api/workspaces/:workspaceId/storage/bind` | Bind LOCAL or S3 workspace storage. |

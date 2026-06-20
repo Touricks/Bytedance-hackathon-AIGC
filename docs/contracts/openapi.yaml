@@ -389,7 +389,7 @@ paths:
             schema:
               type: object
               properties:
-                name: { type: string }
+                name: { type: string, maxLength: 80 }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
   /api/workspaces/directory/select:
@@ -411,6 +411,21 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
   /api/workspaces/{workspaceId}:
+    patch:
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: [string, "null"]
+                  maxLength: 80
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
     delete:
       tags: [Workspace]
       parameters:
