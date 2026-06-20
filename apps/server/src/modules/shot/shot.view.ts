@@ -25,6 +25,7 @@ export interface WorkflowShotSource {
 
 export interface WorkflowShotExtras {
   activeImageBatchId: string | null;
+  activeImageBatchStatus: WorkflowBatchStatus | null;
   activeVideoBatchId: string | null;
   activeVideoBatchStatus: WorkflowBatchStatus | null;
   selectedImageCandidate: { imageUrl: string | null } | null;
@@ -43,6 +44,7 @@ export interface WorkflowShotRow {
   activeVideoScriptArtifactId: string | null;
   selectedVideoId: string | null;
   activeImageBatchId: string | null;
+  activeImageBatchStatus: WorkflowBatchStatus | null;
   activeVideoBatchId: string | null;
   activeVideoBatchStatus: WorkflowBatchStatus | null;
   upstream: WorkflowShotUpstream;
@@ -71,6 +73,7 @@ export function buildWorkflowShotRow(
     activeVideoScriptArtifactId: shot.activeVideoScriptArtifactId,
     selectedVideoId: shot.selectedVideoId,
     activeImageBatchId: extras.activeImageBatchId,
+    activeImageBatchStatus: extras.activeImageBatchStatus,
     activeVideoBatchId: extras.activeVideoBatchId,
     activeVideoBatchStatus: extras.activeVideoBatchStatus,
     upstream: extras.upstream,

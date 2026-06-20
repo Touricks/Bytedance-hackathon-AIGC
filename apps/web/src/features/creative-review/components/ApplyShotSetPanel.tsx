@@ -34,6 +34,23 @@ export function ApplyShotSetPanel({
         ? "应用并创建新实例"
         : "重新创建实例"
       : "创建分镜链路实例";
+  const applyDescription = activeShotSet
+    ? activeChanged
+      ? "应用后会创建新的分镜链路实例，当前实例进入归档历史。"
+      : null
+    : "创建后会生成可执行分镜脚本，后续分镜图和分镜视频只读取当前生效实例。";
+  const actionDisabledReason = vm.hasActiveGeneration
+    ? "当前分镜生成任务正在执行，请完成后再试。"
+    : pending
+      ? "正在创建分镜链路实例，请完成后再试。"
+      : vm.busy
+        ? "当前任务正在执行，请完成后再试。"
+        : !shotPrompt?.isCurrent
+          ? "请先批准当前分镜生成要求。"
+          : storyboardRequiresApproval
+            ? "请先批准 15 秒三镜版本后再应用分镜。"
+            : null;
+  const actionDisabled = Boolean(actionDisabledReason);
 
   return (
     <section className="review-panel">
@@ -99,18 +116,12 @@ export function ApplyShotSetPanel({
                 : "当前分镜链路实例已创建"
               : "等待创建分镜链路实例"}
           </strong>
-          <span>
-            {activeShotSet
-              ? activeChanged
-                ? "应用后会创建新的分镜链路实例，当前实例进入归档历史。"
-                : "如需强制重新创建，可手动触发；通常可以继续进入分镜图选择。"
-              : "创建后会生成可执行分镜脚本，后续分镜图和分镜视频只读取当前生效实例。"}
-          </span>
+          {applyDescription ? <span>{applyDescription}</span> : null}
         </div>
         <button
           type="button"
           className={actionClass}
-          disabled={vm.busy || !shotPrompt?.isCurrent || storyboardRequiresApproval}
+          disabled={actionDisabled}
           onClick={() => {
             vm.actions.applyShotSet();
             onActionComplete();
@@ -120,6 +131,9 @@ export function ApplyShotSetPanel({
           {actionLabel}
         </button>
       </div>
+      {actionDisabledReason ? (
+        <span className="review-action-note">{actionDisabledReason}</span>
+      ) : null}
       <span className="review-action-note">
         批准分镜生成要求不会自动清空或重建已有分镜链路。
       </span>

@@ -5,7 +5,9 @@ import {
   patchShotAssetRefsRequest,
   proposeImagePromptRequest,
   proposeVideoScriptRequest,
+  regenerateImageCandidatesRequest,
   regenerateImagePromptRequest,
+  regenerateVideoCandidatesRequest,
   regenerateVideoScriptRequest,
   retryRequest,
   selectImageRequest,
@@ -108,6 +110,25 @@ export async function registerShotController(app: FastifyInstance) {
     },
   );
 
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/image-candidates/regenerate",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = regenerateImageCandidatesRequest.parse(req.body ?? {});
+        return await shotWorkflowService.regenerateImageCandidates({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
+          userDirection: body.userDirection,
+          candidateCount: body.candidateCount,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
   app.get("/api/shots/:shotId/image-prompts", async (req, reply) => {
     try {
       const params = req.params as { shotId: string };
@@ -184,6 +205,25 @@ export async function registerShotController(app: FastifyInstance) {
           shotId: params.shotId,
           baseArtifactId: body.baseArtifactId,
           feedbackVideoCandidateId: body.feedbackVideoCandidateId,
+          userDirection: body.userDirection,
+          candidateCount: body.candidateCount,
+        });
+      } catch (e) {
+        const err = toHttpError(e);
+        return reply.status(err.statusCode).send(err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/workspaces/:workspaceId/shots/:shotId/video-candidates/regenerate",
+    async (req, reply) => {
+      try {
+        const params = req.params as { workspaceId: string; shotId: string };
+        const body = regenerateVideoCandidatesRequest.parse(req.body ?? {});
+        return await shotWorkflowService.regenerateVideoCandidates({
+          workspaceId: params.workspaceId,
+          shotId: params.shotId,
           userDirection: body.userDirection,
           candidateCount: body.candidateCount,
         });

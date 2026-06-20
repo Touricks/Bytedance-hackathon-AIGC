@@ -48,6 +48,11 @@ One-click final video starts from a material-intake draft, approves it, then adv
 - Image prompt propose creates an ACTIVE `image_prompt_artifacts` version and an image batch.
 - Video script propose requires image selections and creates an ACTIVE `video_script_artifacts` version and async video candidate jobs.
 - Video candidates are selectable only after stable workspace persistence sets `status='SUCCEEDED'` and `videoUrl/objectKey`.
+- Per-shot image/video generation is batch-idempotent. Image prompt propose is a first-generation entry: if the shot already has any image batch, the request reuses that batch instead of creating another prompt/batch. Feedback regeneration remains the explicit path for creating a new image/video batch from a succeeded latest-round candidate.
+- No-feedback candidate reroll uses `/image-candidates/regenerate` or `/video-candidates/regenerate`. These endpoints reuse an active `PENDING/RUNNING` batch, but once the latest batch is terminal (`SUCCEEDED/PARTIAL/FAILED/CANCELLED`) they create a new prompt/script artifact and generation batch so users can recover from failed or unsatisfactory rounds without selecting a feedback candidate.
+- A `RUNNING` or `PARTIAL` video batch may already contain succeeded stable candidates. The frontend should surface that partial progress and allow selecting succeeded videos while remaining candidates are still running or have failed.
+- Active video generation blocks image propose/regenerate for the active shot set, because video batches are consuming the selected image frames.
+- Ordinary per-shot image generation and `shot_image_auto_selection_jobs` are mutually exclusive for the active shot set. An active auto-selection job blocks single-shot image generation; any existing ordinary image batch blocks starting auto-selection.
 
 ### Final Compose
 
@@ -56,7 +61,7 @@ One-click final video starts from a material-intake draft, approves it, then adv
 
 ## 4. Contracts / Interfaces
 
-- `Idempotency-Key` is required for retry, final compose, one-click final video, and image auto-selection.
+- `Idempotency-Key` is required for retry, final compose, one-click final video, and image auto-selection. Per-shot image/video propose endpoints additionally enforce batch idempotency by shot id.
 - `candidateCount` is an operation parameter bounded by server config, not a 创作要求 field.
 - `upstreamChanged` is computed by comparing saved `source_fingerprint` to current approved source ids.
 
@@ -84,4 +89,3 @@ One-click final video starts from a material-intake draft, approves it, then adv
 - `architecture/backend.md`
 - `architecture/agent.md`
 - `testing/e2e_plan.md`
-

@@ -21,7 +21,12 @@ export const generationService = {
     const existing = await db.db2.getImageBatchByIdempotencyKey(input.idempotencyKey);
     if (existing) {
       const candidates = await db.db2.listImageCandidatesByBatch(existing.id);
-      return { data: existing, candidates, deduped: true };
+      return { data: existing, batch: existing, candidates, deduped: true };
+    }
+    const active = await db.db2.getActiveImageBatchForShot(input.shotId);
+    if (active) {
+      const candidates = await db.db2.listImageCandidatesByBatch(active.id);
+      return { data: active, batch: active, candidates, deduped: true, ignored: true };
     }
     const count = shotWorkflowService.resolveBatchCount("image", input.count);
     const batch = await db.db2.insertImageBatch({
@@ -135,6 +140,11 @@ export const generationService = {
     if (existing) {
       const candidates = await db.db2.listVideoCandidatesByBatch(existing.id);
       return { data: existing, batch: existing, candidates, deduped: true };
+    }
+    const active = await db.db2.getActiveVideoBatchForShot(input.shotId);
+    if (active) {
+      const candidates = await db.db2.listVideoCandidatesByBatch(active.id);
+      return { data: active, batch: active, candidates, deduped: true, ignored: true };
     }
     const script = await db.db2.getVideoScriptArtifact(input.videoScriptArtifactId);
     if (script.status !== "ACTIVE") {

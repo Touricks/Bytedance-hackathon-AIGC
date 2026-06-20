@@ -21,6 +21,7 @@ describe("buildWorkflowShotRow", () => {
   it("exposes the selected image url so the shot list can render its thumbnail", () => {
     const row = buildWorkflowShotRow(baseShot, {
       activeImageBatchId: "imb_1",
+      activeImageBatchStatus: "RUNNING",
       activeVideoBatchId: null,
       activeVideoBatchStatus: null,
       selectedImageCandidate: {
@@ -33,6 +34,7 @@ describe("buildWorkflowShotRow", () => {
     assert.equal(row.selectedImageUrl, "/api/workspaces/ws_1/videos/shot_1/imc_1.png");
     assert.equal(row.selectedImageId, "imc_1");
     assert.equal(row.activeImageBatchId, "imb_1");
+    assert.equal(row.activeImageBatchStatus, "RUNNING");
     assert.equal(row.shotId, "shot_1");
     assert.deepEqual(row.upstream, noUpstream);
   });
@@ -42,6 +44,7 @@ describe("buildWorkflowShotRow", () => {
       { ...baseShot, status: "DRAFT", selectedImageId: null },
       {
         activeImageBatchId: null,
+        activeImageBatchStatus: null,
         activeVideoBatchId: null,
         activeVideoBatchStatus: null,
         selectedImageCandidate: null,
@@ -57,6 +60,7 @@ describe("buildWorkflowShotRow", () => {
   it("returns a null selected image url when the selected candidate has no url yet", () => {
     const row = buildWorkflowShotRow(baseShot, {
       activeImageBatchId: "imb_1",
+      activeImageBatchStatus: "SUCCEEDED",
       activeVideoBatchId: null,
       activeVideoBatchStatus: null,
       selectedImageCandidate: { imageUrl: null },
@@ -74,6 +78,7 @@ describe("buildWorkflowShotRow", () => {
     };
     const row = buildWorkflowShotRow(baseShot, {
       activeImageBatchId: "imb_1",
+      activeImageBatchStatus: "SUCCEEDED",
       activeVideoBatchId: "vbb_1",
       activeVideoBatchStatus: "SUCCEEDED",
       selectedImageCandidate: { imageUrl: "/image.png" },

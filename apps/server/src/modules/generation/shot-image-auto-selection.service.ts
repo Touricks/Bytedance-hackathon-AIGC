@@ -254,6 +254,17 @@ function shouldKeepWaitingForBatch(status: string) {
   return status === "PENDING" || status === "RUNNING";
 }
 
+async function assertNoImageBatchesForShotSet(shotSetId: string) {
+  const imageBatches = await db.db2.listImageBatchesForShotSet(shotSetId);
+  if (imageBatches.length > 0) {
+    throw new HttpError(
+      409,
+      "IMAGE_BATCH_EXISTS",
+      "Image generation already exists for the active shot set"
+    );
+  }
+}
+
 export const shotImageAutoSelectionService = {
   async create(input: {
     workspaceId: string;
@@ -281,6 +292,7 @@ export const shotImageAutoSelectionService = {
     if (!activeShotSet) {
       throw new HttpError(400, "NO_ACTIVE_SHOT_SET", "Active shot set is required");
     }
+    await assertNoImageBatchesForShotSet(activeShotSet.id);
 
     const stageState: StageState = {
       image: {
@@ -442,6 +454,7 @@ export const shotImageAutoSelectionService = {
             workspaceId: job.workspaceId,
             shotId: shot.id,
             candidateCount: job.candidateCount,
+            allowActiveShotImageAutoSelection: true,
           });
           batchId = proposed.batch.id;
           imageState.batchIdsByShotId = {
@@ -540,6 +553,7 @@ export const shotImageAutoSelectionService = {
 };
 
 export const shotImageAutoSelectionTestHooks = {
+  assertNoImageBatchesForShotSet,
   firstSucceededImageCandidate,
   shouldKeepWaitingForBatch,
 };

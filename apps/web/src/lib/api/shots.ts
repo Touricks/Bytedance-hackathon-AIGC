@@ -46,6 +46,14 @@ export interface WorkflowStatus {
     activeVideoScriptArtifactId: string | null;
     selectedVideoId: string | null;
     activeImageBatchId?: string | null;
+    activeImageBatchStatus?:
+      | "PENDING"
+      | "RUNNING"
+      | "SUCCEEDED"
+      | "PARTIAL"
+      | "FAILED"
+      | "CANCELLED"
+      | null;
     activeVideoBatchId?: string | null;
     activeVideoBatchStatus?:
       | "PENDING"

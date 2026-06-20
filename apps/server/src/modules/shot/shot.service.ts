@@ -4,7 +4,11 @@ import {
   productBriefArtifactSchema,
   shotPromptArtifactSchema
 } from "@aigc-video/shared";
-import { db } from "../../db/client.js";
+import {
+  db,
+  type ImageGenerationBatchRow,
+  type VideoGenerationBatchRow
+} from "../../db/client.js";
 import { config } from "../../common/config.js";
 import { HttpError, NotFoundError } from "../../common/errors.js";
 import {
@@ -115,21 +119,147 @@ function assertShotInWorkspace(
   }
 }
 
-function promptArtifactView<T extends Record<string, unknown>>(artifact: T) {
-  const promptAssembly = artifact.promptAssembly ?? artifact.prompt_assembly ?? {};
+function promptArtifactView<T extends object>(artifact: T) {
+  const artifactRecord = artifact as Record<string, unknown>;
+  const promptAssembly =
+    artifactRecord.promptAssembly ?? artifactRecord.prompt_assembly ?? {};
   const sourceFingerprint =
-    artifact.sourceFingerprint ?? artifact.source_fingerprint ?? {};
+    artifactRecord.sourceFingerprint ?? artifactRecord.source_fingerprint ?? {};
   return {
     ...artifact,
     promptAssembly,
     sourceFingerprint,
-    baseArtifactId: artifact.baseArtifactId ?? artifact.base_artifact_id ?? null,
-    createdBy: artifact.createdBy ?? artifact.created_by,
-    agentName: artifact.agentName ?? artifact.agent_name ?? null,
+    baseArtifactId:
+      artifactRecord.baseArtifactId ?? artifactRecord.base_artifact_id ?? null,
+    createdBy: artifactRecord.createdBy ?? artifactRecord.created_by,
+    agentName: artifactRecord.agentName ?? artifactRecord.agent_name ?? null,
     promptTemplateVersion:
-      artifact.promptTemplateVersion ?? artifact.prompt_template_version ?? null,
+      artifactRecord.promptTemplateVersion ??
+      artifactRecord.prompt_template_version ??
+      null,
     referenceAssetIds:
-      artifact.referenceAssetIds ?? artifact.reference_asset_ids ?? []
+      artifactRecord.referenceAssetIds ?? artifactRecord.reference_asset_ids ?? []
+  };
+}
+
+function artifactContext(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const context = (value as { context?: unknown }).context;
+  return context ?? null;
+}
+
+async function assertNoActiveShotImageAutoSelection(
+  workspaceId: string,
+  allowActiveShotImageAutoSelection?: boolean
+) {
+  if (allowActiveShotImageAutoSelection) return;
+  const active = await db.db2.getActiveShotImageAutoSelectionJob(workspaceId);
+  if (active) {
+    throw new HttpError(
+      409,
+      "SHOT_IMAGE_AUTO_SELECTION_RUNNING",
+      "A shot image auto-selection task is already running for this workspace"
+    );
+  }
+}
+
+async function assertNoActiveVideoBatchInActiveShotSet(workspaceId: string) {
+  const activeShotSet = await shotSetService.getActiveShotSet(workspaceId);
+  if (!activeShotSet) return;
+  const activeVideoBatches = await db.db2.listActiveVideoBatchesForShotSet(
+    activeShotSet.id
+  );
+  if (activeVideoBatches.length > 0) {
+    throw new HttpError(
+      409,
+      "VIDEO_BATCH_RUNNING",
+      "Video generation is already running for the active shot set"
+    );
+  }
+}
+
+async function reuseActiveImageBatchResponse(input: {
+  shotId: string;
+  batch: ImageGenerationBatchRow;
+}) {
+  const artifact = await db.db2.getImagePromptArtifact(
+    input.batch.imagePromptArtifactId
+  );
+  const artifactView = promptArtifactView(artifact);
+  const candidates = await db.db2.listImageCandidatesByBatch(input.batch.id);
+  await db.db2.updateShot(input.shotId, {
+    status: "IMAGE_GENERATING",
+    activeImagePromptArtifactId: artifact.id
+  });
+  return {
+    data: artifactView,
+    artifact: artifactView,
+    batch: input.batch,
+    candidates,
+    usage: null,
+    shotStatus: "IMAGE_GENERATING" as const,
+    nextAction: getNextAction("IMAGE_GENERATING"),
+    traceId: null,
+    context: artifactContext(artifact.promptJson),
+    deduped: true,
+    ignored: true
+  };
+}
+
+async function reuseActiveVideoBatchResponse(input: {
+  shotId: string;
+  batch: VideoGenerationBatchRow;
+}) {
+  const artifact = await db.db2.getVideoScriptArtifact(
+    input.batch.videoScriptArtifactId
+  );
+  const artifactView = promptArtifactView(artifact);
+  const candidates = await db.db2.listVideoCandidatesByBatch(input.batch.id);
+  const providerRequest =
+    input.batch.providerRequest &&
+    typeof input.batch.providerRequest === "object" &&
+    !Array.isArray(input.batch.providerRequest)
+      ? (input.batch.providerRequest as Record<string, unknown>)
+      : {};
+  await db.db2.updateShot(input.shotId, {
+    status: "VIDEO_GENERATING",
+    activeVideoScriptArtifactId: artifact.id
+  });
+  return {
+    data: artifactView,
+    artifact: artifactView,
+    batch: input.batch,
+    candidates,
+    shotStatus: "VIDEO_GENERATING" as const,
+    nextAction: getNextAction("VIDEO_GENERATING"),
+    traceId: null,
+    context: artifactContext(artifact.scriptJson),
+    frames: {
+      firstFrameCandidateId:
+        typeof providerRequest.firstFrameCandidateId === "string"
+          ? providerRequest.firstFrameCandidateId
+          : artifact.basedOnImageCandidateId,
+      lastFrameCandidateId:
+        typeof providerRequest.lastFrameCandidateId === "string"
+          ? providerRequest.lastFrameCandidateId
+          : artifact.basedOnNextImageCandidateId,
+      firstFrameUrl:
+        typeof providerRequest.firstFrameUrl === "string"
+          ? providerRequest.firstFrameUrl
+          : null,
+      lastFrameUrl:
+        typeof providerRequest.lastFrameUrl === "string"
+          ? providerRequest.lastFrameUrl
+          : null
+    },
+    poll: {
+      videoRoundsUrl: `/api/workspaces/${input.batch.workspaceId}/shots/${input.shotId}/video-rounds`,
+      batchId: input.batch.id
+    },
+    deduped: true,
+    ignored: true
   };
 }
 
@@ -857,6 +987,7 @@ export const shotWorkflowService = {
         ]);
         return buildWorkflowShotRow(s, {
           activeImageBatchId: imageBatch?.id ?? null,
+          activeImageBatchStatus: imageBatch?.status ?? null,
           activeVideoBatchId: videoBatch?.id ?? null,
           activeVideoBatchStatus: videoBatch?.status ?? null,
           selectedImageCandidate,
@@ -875,10 +1006,26 @@ export const shotWorkflowService = {
     shotId: string;
     userDirection?: string;
     candidateCount?: number;
+    allowActiveShotImageAutoSelection?: boolean;
+    forceNewBatch?: boolean;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
     await assertShotInActiveShotSet(args.workspaceId, args.shotId);
+    await assertNoActiveShotImageAutoSelection(
+      args.workspaceId,
+      args.allowActiveShotImageAutoSelection
+    );
+    await assertNoActiveVideoBatchInActiveShotSet(args.workspaceId);
+    const reusableBatch = args.forceNewBatch
+      ? await db.db2.getActiveImageBatchForShot(args.shotId)
+      : await db.db2.getLatestImageBatchForShot(args.shotId);
+    if (reusableBatch) {
+      return await reuseActiveImageBatchResponse({
+        shotId: args.shotId,
+        batch: reusableBatch
+      });
+    }
     const hydrated = await hydratePromptContext({
       workspaceId: args.workspaceId,
       shot,
@@ -908,6 +1055,7 @@ export const shotWorkflowService = {
     const shotRequirements = compileShotPromptRequirements(hydrated.shotPromptShot);
     const shotGoal = shotGoalFor(shot, hydrated);
     const userDirection = args.userDirection?.trim() || undefined;
+    const promptMode = args.forceNewBatch ? "candidate-reroll" : "propose";
     const assembled = assembleShotImagePrompt({
       shotGoal,
       shotImage: shotRequirements.shotImage,
@@ -922,6 +1070,7 @@ export const shotWorkflowService = {
         shotGoal,
         image_ref: imageRef,
         number: count,
+        source: args.forceNewBatch ? "user-candidate-reroll" : "propose",
         assemblerVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
       };
       const contextSnapshot = imagePromptContextSnapshot({
@@ -935,12 +1084,12 @@ export const shotWorkflowService = {
         negativePrompt: assembled.negativePrompt || undefined,
         referenceAssetIds,
         sourceFingerprint,
-        promptAssembly: promptAssembly("image-prompt", "propose"),
+        promptAssembly: promptAssembly("image-prompt", promptMode),
         promptJson: {
           ...assembled.promptJson,
           context: contextSnapshot
         },
-        createdBy: "system",
+        createdBy: args.forceNewBatch ? "user" : "system",
         agentName: "DeterministicImagePromptAssembler",
         promptTemplateVersion: SHOT_IMAGE_ASSEMBLER_VERSION
       });
@@ -978,6 +1127,12 @@ export const shotWorkflowService = {
       const batch = enqueued.batch ?? (await db.db2.getImageBatch(batchId));
       const candidates =
         enqueued.candidates ?? (await db.db2.listImageCandidatesByBatch(batchId));
+      if (enqueued.ignored && batch.imagePromptArtifactId !== artifact.id) {
+        return await reuseActiveImageBatchResponse({
+          shotId: args.shotId,
+          batch
+        });
+      }
       await db.db2.updateShot(args.shotId, {
         status: "IMAGE_GENERATING",
         activeImagePromptArtifactId: artifact.id
@@ -986,11 +1141,13 @@ export const shotWorkflowService = {
         workspaceId: args.workspaceId,
         shotId: args.shotId,
         traceType: "agent_run",
-        name: "image_prompt_proposed",
+        name: args.forceNewBatch
+          ? "image_candidates_regenerated"
+          : "image_prompt_proposed",
         outputPreview: assembled.promptText.slice(0, 200),
         metadata: {
           templateVersion: SHOT_IMAGE_ASSEMBLER_VERSION,
-          promptAssembly: promptAssembly("image-prompt", "propose"),
+          promptAssembly: promptAssembly("image-prompt", promptMode),
           context: contextSnapshot,
           batchId: batch.id,
           candidates: candidates.map((candidate) => candidate.id)
@@ -1016,6 +1173,19 @@ export const shotWorkflowService = {
     }
   },
 
+  async regenerateImageCandidates(args: {
+    workspaceId: string;
+    shotId: string;
+    userDirection?: string;
+    candidateCount?: number;
+    allowActiveShotImageAutoSelection?: boolean;
+  }) {
+    return await shotWorkflowService.proposeImagePrompt({
+      ...args,
+      forceNewBatch: true
+    });
+  },
+
   async regenerateImagePrompt(args: {
     workspaceId: string;
     shotId: string;
@@ -1023,10 +1193,23 @@ export const shotWorkflowService = {
     feedbackImageCandidateId: string;
     userDirection: string;
     candidateCount?: number;
+    allowActiveShotImageAutoSelection?: boolean;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
     await assertShotInActiveShotSet(args.workspaceId, args.shotId);
+    await assertNoActiveShotImageAutoSelection(
+      args.workspaceId,
+      args.allowActiveShotImageAutoSelection
+    );
+    await assertNoActiveVideoBatchInActiveShotSet(args.workspaceId);
+    const activeBatch = await db.db2.getActiveImageBatchForShot(args.shotId);
+    if (activeBatch) {
+      return await reuseActiveImageBatchResponse({
+        shotId: args.shotId,
+        batch: activeBatch
+      });
+    }
     const baseArtifact = await db.db2.getImagePromptArtifact(args.baseArtifactId);
     if (baseArtifact.shotId !== args.shotId) {
       throw new HttpError(
@@ -1165,6 +1348,12 @@ export const shotWorkflowService = {
     const batch = enqueued.batch ?? (await db.db2.getImageBatch(batchId));
     const candidates =
       enqueued.candidates ?? (await db.db2.listImageCandidatesByBatch(batchId));
+    if (enqueued.ignored && batch.imagePromptArtifactId !== artifact.id) {
+      return await reuseActiveImageBatchResponse({
+        shotId: args.shotId,
+        batch
+      });
+    }
     await db.db2.updateShot(args.shotId, {
       status: "IMAGE_GENERATING",
       activeImagePromptArtifactId: artifact.id
@@ -1283,6 +1472,7 @@ export const shotWorkflowService = {
     shotId: string;
     userDirection?: string;
     candidateCount?: number;
+    forceNewBatch?: boolean;
   }) {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
@@ -1290,6 +1480,13 @@ export const shotWorkflowService = {
       args.workspaceId,
       args.shotId
     );
+    const reusableBatch = await db.db2.getActiveVideoBatchForShot(args.shotId);
+    if (reusableBatch) {
+      return await reuseActiveVideoBatchResponse({
+        shotId: args.shotId,
+        batch: reusableBatch
+      });
+    }
     const missingImageSelections = shots
       .filter((item) => !item.selectedImageId)
       .map((item) => item.id);
@@ -1338,6 +1535,7 @@ export const shotWorkflowService = {
         mode: "propose",
       });
 
+      const promptMode = args.forceNewBatch ? "candidate-reroll" : "propose";
       const sourceFingerprint = {
         ...hydrated.summary,
         shotGoal,
@@ -1349,6 +1547,7 @@ export const shotWorkflowService = {
         ),
         voiceover: hydrated.shotPromptShot?.voiceover ?? "",
         number: count,
+        source: args.forceNewBatch ? "user-candidate-reroll" : "propose",
         assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
       };
       const artifact = await createVideoScriptVersionAtomic({
@@ -1360,8 +1559,8 @@ export const shotWorkflowService = {
         basedOnPrevImageCandidateId: undefined,
         basedOnNextImageCandidateId: neighbors.next?.id,
         sourceFingerprint,
-        promptAssembly: promptAssembly("video-script", "propose"),
-        createdBy: "system",
+        promptAssembly: promptAssembly("video-script", promptMode),
+        createdBy: args.forceNewBatch ? "user" : "system",
         agentName: "DeterministicVideoScriptAssembler",
         promptTemplateVersion: SHOT_VIDEO_ASSEMBLER_VERSION
       });
@@ -1401,15 +1600,26 @@ export const shotWorkflowService = {
           assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
         },
       });
+      if (
+        enqueued.ignored &&
+        enqueued.batch.videoScriptArtifactId !== artifact.id
+      ) {
+        return await reuseActiveVideoBatchResponse({
+          shotId: args.shotId,
+          batch: enqueued.batch
+        });
+      }
       await traceService.record({
         workspaceId: args.workspaceId,
         shotId: args.shotId,
         traceType: "agent_run",
-        name: "video_script_proposed",
+        name: args.forceNewBatch
+          ? "video_candidates_regenerated"
+          : "video_script_proposed",
         outputPreview: assembled.providerPrompt.slice(0, 200),
         metadata: {
           templateVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
-          promptAssembly: promptAssembly("video-script", "propose"),
+          promptAssembly: promptAssembly("video-script", promptMode),
           context: sourceFingerprint,
           frames: {
             firstFrameCandidateId: selectedImage.id,
@@ -1450,6 +1660,18 @@ export const shotWorkflowService = {
     }
   },
 
+  async regenerateVideoCandidates(args: {
+    workspaceId: string;
+    shotId: string;
+    userDirection?: string;
+    candidateCount?: number;
+  }) {
+    return await shotWorkflowService.proposeVideoScript({
+      ...args,
+      forceNewBatch: true
+    });
+  },
+
   async regenerateVideoScript(args: {
     workspaceId: string;
     shotId: string;
@@ -1461,6 +1683,13 @@ export const shotWorkflowService = {
     const shot = await db.db2.getShot(args.shotId);
     assertShotInWorkspace(shot, args.workspaceId);
     const { shots } = await assertShotInActiveShotSet(args.workspaceId, args.shotId);
+    const activeBatch = await db.db2.getActiveVideoBatchForShot(args.shotId);
+    if (activeBatch) {
+      return await reuseActiveVideoBatchResponse({
+        shotId: args.shotId,
+        batch: activeBatch
+      });
+    }
     const userDirection = args.userDirection.trim();
     if (!userDirection) {
       throw new HttpError(400, "USER_DIRECTION_REQUIRED", "userDirection is required for video feedback regeneration");
@@ -1594,6 +1823,15 @@ export const shotWorkflowService = {
         assemblerVersion: SHOT_VIDEO_ASSEMBLER_VERSION,
       },
     });
+    if (
+      enqueued.ignored &&
+      enqueued.batch.videoScriptArtifactId !== artifact.id
+    ) {
+      return await reuseActiveVideoBatchResponse({
+        shotId: args.shotId,
+        batch: enqueued.batch
+      });
+    }
     await traceService.record({
       workspaceId: args.workspaceId,
       shotId: args.shotId,

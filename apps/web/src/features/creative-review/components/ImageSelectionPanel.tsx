@@ -7,6 +7,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import { CheckCircle2, Clock3, Images, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
+import { imageAutoSelectionActionNote } from "../../workbench/imageBatchTargets.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import {
   canConfirmSelection,
@@ -34,11 +35,25 @@ export function ImageSelectionPanel({
   const mustSelectNext = nextImageShot && shot?.shotId !== nextImageShot.shotId;
   const selectedWasManual =
     manualShotSelectionId !== null && manualShotSelectionId === vm.selectedShotId;
-  const canGenerate =
+  const shotHasImageBatch = Boolean(shot?.activeImageBatchId);
+  const shotHasActiveImageBatch =
+    shot?.activeImageBatchStatus === "PENDING" ||
+    shot?.activeImageBatchStatus === "RUNNING";
+  const shouldRerollImageCandidates = shotHasImageBatch && !shotHasActiveImageBatch;
+  const canRequestImageCandidates =
     Boolean(vm.selectedShotId) &&
     shot !== null &&
     !mustSelectNext &&
+    !shotHasActiveImageBatch &&
+    !vm.generation.hasActiveVideoBatchInWorkflow &&
+    !vm.generation.hasActiveShotImageAutoSelection &&
     !["IMAGE_GENERATING", "IMAGE_PROMPT_PROPOSING"].includes(shot.status);
+  const canStartAutoSelection =
+    Boolean(nextImageShot) &&
+    !vm.generation.hasActiveShotImageAutoSelection &&
+    !vm.generation.hasImageBatchInWorkflow &&
+    !vm.generation.hasActiveVideoBatchInWorkflow &&
+    vm.generation.imageAutoSelectionTargetCount > 0;
   const selectedImageRendered = Boolean(
     shot?.selectedImageId &&
     rounds.some((round) =>
@@ -102,16 +117,24 @@ export function ImageSelectionPanel({
             <button
               type="button"
               className="review-primary"
-              disabled={vm.busy || !canGenerate}
-              onClick={vm.actions.proposeImage}
+              disabled={vm.busy || !canRequestImageCandidates}
+              onClick={
+                shouldRerollImageCandidates
+                  ? vm.actions.rerollImageCandidates
+                  : vm.actions.proposeImage
+              }
             >
               <ImageIcon size={16} />
-              {vm.pending?.image ? "正在生成分镜图..." : "生成分镜图候选"}
+              {vm.pending?.image
+                ? "正在生成分镜图..."
+                : shouldRerollImageCandidates
+                  ? "重新生成分镜图候选"
+                  : "生成分镜图候选"}
             </button>
             <button
               type="button"
               className="review-secondary"
-              disabled={vm.busy || !nextImageShot}
+              disabled={vm.busy || !canStartAutoSelection}
               onClick={vm.actions.startShotImageAutoSelection}
             >
               <Images size={16} />
@@ -126,6 +149,10 @@ export function ImageSelectionPanel({
               {autoSelectionJob.status === "FAILED" && autoSelectionJob.errorMessage
                 ? ` · ${autoSelectionJob.errorMessage}`
                 : ` · 每镜 ${autoSelectionJob.candidateCount} 张`}
+            </p>
+          ) : vm.shots.length > 0 ? (
+            <p className="review-action-note">
+              {imageAutoSelectionActionNote(vm.shots)}
             </p>
           ) : null}
           {rounds.length > 0 ? (

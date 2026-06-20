@@ -98,4 +98,18 @@ describe("video batch generation targets", () => {
     assert.equal(isVideoBatchGenerationTarget(imageOnlyStaleShot), false);
     assert.equal(videoBatchActionNote([imageOnlyStaleShot]), "已有视频候选或已完成选择");
   });
+
+  it("does not include terminal video batches in bulk targets but points to reroll", () => {
+    const partialShot = shot({
+      selectedVideoId: null,
+      activeVideoBatchId: "vbb-partial",
+      activeVideoBatchStatus: "PARTIAL",
+    });
+
+    assert.equal(isVideoBatchGenerationTarget(partialShot), false);
+    assert.equal(
+      videoBatchActionNote([partialShot]),
+      "已有视频候选待选择，可重新生成当前分镜",
+    );
+  });
 });

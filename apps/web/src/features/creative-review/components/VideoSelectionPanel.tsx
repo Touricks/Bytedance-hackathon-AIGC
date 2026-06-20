@@ -27,6 +27,16 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
     ? videoBatchActionNote(vm.shots)
     : "等待全部分镜图选择完成";
   const rounds = vm.videoRounds;
+  const selectedShot = vm.selectedWorkflowShot;
+  const selectedShotHasVideoBatch = Boolean(selectedShot?.activeVideoBatchId);
+  const selectedShotHasActiveVideoBatch =
+    selectedShot?.activeVideoBatchStatus === "PENDING" ||
+    selectedShot?.activeVideoBatchStatus === "RUNNING";
+  const canRerollSelectedVideo =
+    allImagesSelected &&
+    selectedShotHasVideoBatch &&
+    !selectedShotHasActiveVideoBatch &&
+    !vm.generation.hasActiveVideoBatchInWorkflow;
 
   return (
     <section className="review-panel">
@@ -60,6 +70,17 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
           <Film size={16} />
           {vm.pending?.video ? "正在生成分镜视频..." : "批量生成分镜视频候选"}
         </button>
+        <button
+          type="button"
+          className="review-secondary"
+          disabled={vm.busy || !canRerollSelectedVideo}
+          onClick={vm.actions.rerollVideoCandidates}
+        >
+          <RefreshCw size={16} />
+          {vm.pending?.videoReroll
+            ? "正在重新生成..."
+            : "重新生成当前分镜视频"}
+        </button>
         <span className="review-action-note">
           {actionNote}
         </span>
@@ -78,7 +99,8 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
               key={round.artifact.id}
               round={round}
               batchId={round.batch?.id ?? null}
-              busy={vm.busy}
+              selectionBusy={Boolean(vm.pending?.videoSelection)}
+              generationBusy={Boolean(vm.pending?.video)}
               allowFeedback={index === 0}
               onSelect={vm.actions.selectVideoCandidate}
               onRegenerate={(candidateId, userDirection) =>
@@ -105,14 +127,16 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
 function CandidateVideos({
   round,
   batchId,
-  busy,
+  selectionBusy,
+  generationBusy,
   allowFeedback,
   onSelect,
   onRegenerate
 }: {
   round: NonNullable<WorkbenchViewModel["latestVideoRound"]>;
   batchId: string | null;
-  busy: boolean;
+  selectionBusy: boolean;
+  generationBusy: boolean;
   allowFeedback: boolean;
   onSelect: (candidateId: string, batchId: string) => void;
   onRegenerate: (candidateId: string, userDirection: string) => void;
@@ -124,6 +148,10 @@ function CandidateVideos({
     setFeedbackCandidateId(null);
     setFeedbackText("");
   }, [round.artifact.id]);
+  const succeededCount = round.batch?.succeededCount ?? 0;
+  const requestedCount = round.batch?.requestedCount ?? round.candidates.length;
+  const isGenerating =
+    round.batch?.status === "PENDING" || round.batch?.status === "RUNNING";
   return (
     <div className="review-round">
       <div className="review-round__head">
@@ -133,10 +161,21 @@ function CandidateVideos({
           {round.batch?.status ?? "等待"}
         </span>
         <span>
-          {round.batch?.succeededCount ?? 0}/
-          {round.batch?.requestedCount ?? round.candidates.length}
+          {succeededCount}/{requestedCount}
         </span>
       </div>
+      {succeededCount > 0 && isGenerating ? (
+        <div className="review-upstream-note">
+          <Clock3 size={15} />
+          <span>已有成功视频可选择，剩余候选继续生成中。</span>
+        </div>
+      ) : null}
+      {round.batch?.status === "PARTIAL" ? (
+        <div className="review-upstream-note">
+          <Clock3 size={15} />
+          <span>部分候选生成失败，可先选择成功视频，或重新生成当前分镜视频。</span>
+        </div>
+      ) : null}
       {round.upstream?.upstreamChanged ? (
         <div className="review-upstream-note">
           <Clock3 size={15} />
@@ -181,7 +220,7 @@ function CandidateVideos({
                 <button
                   type="button"
                   className="review-secondary"
-                  disabled={busy || !batchId || !presentation.canSelect}
+                  disabled={selectionBusy || !batchId || !presentation.canSelect}
                   onClick={() => batchId && onSelect(candidate.id, batchId)}
                 >
                   {presentation.selectLabel}
@@ -198,7 +237,7 @@ function CandidateVideos({
                         onSubmit={(event) => {
                           event.preventDefault();
                           const trimmed = feedbackText.trim();
-                          if (!trimmed || busy) return;
+                          if (!trimmed || generationBusy) return;
                           onRegenerate(candidate.id, trimmed);
                         }}
                       >
@@ -215,7 +254,7 @@ function CandidateVideos({
                           <button
                             type="submit"
                             className="review-secondary"
-                            disabled={busy || !feedbackText.trim()}
+                            disabled={generationBusy || !feedbackText.trim()}
                           >
                             <RefreshCw size={16} />
                             按反馈重新生成
@@ -236,7 +275,7 @@ function CandidateVideos({
                       <button
                         type="button"
                         className="review-secondary"
-                        disabled={busy}
+                        disabled={generationBusy}
                         onClick={() => {
                           setFeedbackCandidateId(candidate.id);
                           setFeedbackText("");

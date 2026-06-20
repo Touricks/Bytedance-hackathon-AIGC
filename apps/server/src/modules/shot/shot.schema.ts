@@ -5,6 +5,8 @@ export const proposeImagePromptRequest = z.object({
   candidateCount: z.number().int().positive().optional(),
 }).strict();
 
+export const regenerateImageCandidatesRequest = proposeImagePromptRequest;
+
 const shotAssetRefRoleSchema = z.enum([
   "product_identity",
   "reference_style",
@@ -58,6 +60,8 @@ export const proposeVideoScriptRequest = z.object({
   userDirection: z.string().optional(),
   candidateCount: z.number().int().positive().optional(),
 }).strict();
+
+export const regenerateVideoCandidatesRequest = proposeVideoScriptRequest;
 
 export const regenerateVideoScriptRequest = z.object({
   baseArtifactId: z.string().min(1),

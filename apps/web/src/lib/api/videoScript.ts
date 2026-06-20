@@ -72,6 +72,33 @@ export function regenerateVideoScript(
   );
 }
 
+export function regenerateVideoCandidates(
+  workspaceId: string,
+  shotId: string,
+  body: {
+    userDirection?: string;
+    candidateCount?: number;
+  },
+) {
+  return fetchJson<
+    WorkflowEnvelope<VideoScriptArtifact> & {
+      artifact: VideoScriptArtifact;
+      batch: VideoBatchDetail;
+      candidates: VideoCandidate[];
+      context?: unknown;
+      frames?: {
+        firstFrameCandidateId: string;
+        lastFrameCandidateId: string | null;
+        firstFrameUrl: string | null;
+        lastFrameUrl: string | null;
+      };
+    }
+  >(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/video-candidates/regenerate`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export function listVideoScripts(shotId: string) {
   return fetchJson<{ data: VideoScriptArtifact[] }>(
     `/api/shots/${shotId}/video-scripts`,

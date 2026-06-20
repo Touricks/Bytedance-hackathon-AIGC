@@ -2,7 +2,7 @@
 
 Status: Accepted
 Owner: Project team
-Last Updated: 2026-06-08
+Last Updated: 2026-06-20
 Applies To: Fastify HTTP API consumed by `apps/web`
 Depends On: `contracts/openapi.yaml`, `architecture/runtime_flow.md`, `architecture/data_model.md`
 Blocks: Frontend/backend contract changes
@@ -75,11 +75,13 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-prompts/regenerate` | Feedback-based image prompt regeneration and image batch. |
 | GET | `/api/shots/:shotId/image-prompts` | List image prompt artifacts. |
 | GET | `/api/workspaces/:workspaceId/shots/:shotId/image-rounds` | Image rounds, candidates, selection, upstream warning. |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/regenerate` | No-feedback image candidate reroll. Reuses an active image batch, otherwise creates a new image prompt artifact and batch. |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/image-candidates/select` | Select succeeded stable image candidate. |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/propose` | Create deterministic video script and async video batch. |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-scripts/regenerate` | Feedback-based video script regeneration and video batch. |
 | GET | `/api/shots/:shotId/video-scripts` | List video script artifacts. |
 | GET | `/api/workspaces/:workspaceId/shots/:shotId/video-rounds` | Video rounds, candidates, preview/stable status, selection, upstream warning. |
+| POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/regenerate` | No-feedback video candidate reroll. Reuses an active video batch, otherwise creates a new video script artifact and async video batch. |
 | POST | `/api/workspaces/:workspaceId/shots/:shotId/video-candidates/select` | Select succeeded stable video candidate. |
 | POST | `/api/shots/:shotId/retry` | Retry active image or video batch using caller idempotency key. |
 

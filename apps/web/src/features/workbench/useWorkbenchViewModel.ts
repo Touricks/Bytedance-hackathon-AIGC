@@ -32,6 +32,7 @@ import { getConfigLimits } from "../../lib/api/configLimits.js";
 import { listImageRounds } from "../../lib/api/imageBatch.js";
 import {
   proposeImagePrompt,
+  regenerateImageCandidates,
   regenerateImagePrompt,
 } from "../../lib/api/imagePrompt.js";
 import { selectImage } from "../../lib/api/imageSelect.js";
@@ -54,6 +55,7 @@ import { listWorkspaceTraces } from "../../lib/api/trace.js";
 import { listVideoRounds } from "../../lib/api/videoBatch.js";
 import {
   proposeVideoScript,
+  regenerateVideoCandidates,
   regenerateVideoScript,
 } from "../../lib/api/videoScript.js";
 import { selectVideo } from "../../lib/api/videoSelect.js";
@@ -64,7 +66,15 @@ import {
   workspaceStatusRefetchInterval,
 } from "./oneClickState.js";
 import { roundPollingInterval } from "./roundPolling.js";
-import { getVideoBatchGenerationTargets } from "./videoBatchTargets.js";
+import {
+  getImageAutoSelectionTargets,
+  hasActiveImageBatch,
+  hasImageBatch,
+} from "./imageBatchTargets.js";
+import {
+  getVideoBatchGenerationTargets,
+  hasActiveVideoBatch,
+} from "./videoBatchTargets.js";
 import {
   clampCandidateCount,
   readCandidateCountPreferences,
@@ -298,6 +308,21 @@ export function useWorkbenchViewModel(workspaceId: string) {
   const hasActiveShotImageAutoSelection = Boolean(
     shotImageAutoSelection && ACTIVE_AUTO_SELECTION_STATUSES.has(shotImageAutoSelection.status),
   );
+  const selectedShotHasActiveImageBatch = Boolean(
+    selectedWorkflowShot && hasActiveImageBatch(selectedWorkflowShot),
+  );
+  const selectedShotHasImageBatch = Boolean(
+    selectedWorkflowShot && hasImageBatch(selectedWorkflowShot),
+  );
+  const selectedShotHasSelectedImage = Boolean(selectedWorkflowShot?.selectedImageId);
+  const selectedShotHasActiveVideoBatch = Boolean(
+    selectedWorkflowShot && hasActiveVideoBatch(selectedWorkflowShot),
+  );
+  const selectedShotHasVideoBatch = Boolean(selectedWorkflowShot?.activeVideoBatchId);
+  const hasActiveImageBatchInWorkflow = workflowShots.some(hasActiveImageBatch);
+  const hasImageBatchInWorkflow = workflowShots.some(hasImageBatch);
+  const hasActiveVideoBatchInWorkflow = workflowShots.some(hasActiveVideoBatch);
+  const imageAutoSelectionTargets = getImageAutoSelectionTargets(workflowShots);
 
   const latestFinalJobId =
     finalVideoJobs.data?.data.find((job) => job.status === "PENDING" || job.status === "RUNNING")
@@ -526,6 +551,15 @@ export function useWorkbenchViewModel(workspaceId: string) {
     onSuccess: invalidateShot,
   });
 
+  const rerollImageCandidates = useMutation({
+    mutationFn: (input?: { candidateCount?: number }) =>
+      regenerateImageCandidates(workspaceId, selectedShotId!, {
+        userDirection: shotDirection.trim() || undefined,
+        candidateCount: input?.candidateCount ?? imageCandidateCount,
+      }),
+    onSuccess: invalidateShot,
+  });
+
   const selectImageCandidate = useMutation({
     mutationFn: (input: { candidateId: string; batchId: string }) =>
       selectImage(workspaceId, selectedShotId!, {
@@ -558,11 +592,21 @@ export function useWorkbenchViewModel(workspaceId: string) {
     onSuccess: invalidateShot,
   });
 
+  const rerollVideoCandidates = useMutation({
+    mutationFn: (input?: { candidateCount?: number }) =>
+      regenerateVideoCandidates(workspaceId, selectedShotId!, {
+        userDirection: shotDirection.trim() || undefined,
+        candidateCount: input?.candidateCount ?? videoCandidateCount,
+      }),
+    onSuccess: invalidateShot,
+  });
+
   const proposeAllVideos = useMutation({
     mutationFn: async (input?: { candidateCount?: number }) => {
       const allImagesSelected =
         workflowShots.length > 0 && workflowShots.every((shot) => Boolean(shot.selectedImageId));
       const targets = allImagesSelected ? getVideoBatchGenerationTargets(workflowShots) : [];
+      if (targets.length === 0) return 0;
       const candidateCount = input?.candidateCount ?? videoCandidateCount;
       await Promise.all(
         targets.map((shot) =>
@@ -663,9 +707,11 @@ export function useWorkbenchViewModel(workspaceId: string) {
     approveShotPromptAndApply,
     proposeImage,
     regenerateImage,
+    rerollImageCandidates,
     selectImageCandidate,
     proposeVideo,
     regenerateVideo,
+    rerollVideoCandidates,
     proposeAllVideos,
     startShotImageAutoSelection,
     selectVideoCandidate,
@@ -701,6 +747,18 @@ export function useWorkbenchViewModel(workspaceId: string) {
     finalVideo: finalVideo.data?.data ?? null,
     oneClickFinalVideo,
     shotImageAutoSelection,
+    generation: {
+      selectedShotHasActiveImageBatch,
+      selectedShotHasImageBatch,
+      selectedShotHasSelectedImage,
+      selectedShotHasActiveVideoBatch,
+      selectedShotHasVideoBatch,
+      hasActiveImageBatchInWorkflow,
+      hasImageBatchInWorkflow,
+      hasActiveVideoBatchInWorkflow,
+      imageAutoSelectionTargetCount: imageAutoSelectionTargets.length,
+      hasActiveShotImageAutoSelection,
+    },
     activeFinalJobId: displayedFinalJobId,
     candidateCounts: {
       image: imageCandidateCount,
@@ -736,19 +794,25 @@ export function useWorkbenchViewModel(workspaceId: string) {
       image:
         proposeImage.isPending ||
         regenerateImage.isPending ||
-        selectImageCandidate.isPending ||
+        rerollImageCandidates.isPending ||
         startShotImageAutoSelection.isPending ||
+        hasActiveImageBatchInWorkflow ||
         hasActiveShotImageAutoSelection ||
         retryImage.isPending,
       video:
         proposeVideo.isPending ||
         regenerateVideo.isPending ||
+        rerollVideoCandidates.isPending ||
         proposeAllVideos.isPending ||
-        selectVideoCandidate.isPending ||
+        hasActiveVideoBatchInWorkflow ||
         retryVideo.isPending,
       finalVideo: composeFinal.isPending || hasActiveFinalVideo,
       shotImageAutoSelection:
         startShotImageAutoSelection.isPending || hasActiveShotImageAutoSelection,
+      imageSelection: selectImageCandidate.isPending,
+      videoSelection: selectVideoCandidate.isPending,
+      imageReroll: rerollImageCandidates.isPending,
+      videoReroll: rerollVideoCandidates.isPending,
     },
     actions: {
       setSelectedShotId,
@@ -797,33 +861,104 @@ export function useWorkbenchViewModel(workspaceId: string) {
         approveShotPromptAndApply.mutate(data),
       setImageCandidateCount,
       setVideoCandidateCount,
-      proposeImage: () => proposeImage.mutate({ candidateCount: imageCandidateCount }),
+      proposeImage: () => {
+        if (
+          !selectedShotId ||
+          selectedShotHasImageBatch ||
+          selectedShotHasSelectedImage ||
+          hasActiveShotImageAutoSelection ||
+          hasActiveVideoBatchInWorkflow
+        ) {
+          return;
+        }
+        proposeImage.mutate({ candidateCount: imageCandidateCount });
+      },
+      rerollImageCandidates: () => {
+        if (
+          !selectedShotId ||
+          selectedShotHasActiveImageBatch ||
+          hasActiveShotImageAutoSelection ||
+          hasActiveVideoBatchInWorkflow
+        ) {
+          return;
+        }
+        rerollImageCandidates.mutate({ candidateCount: imageCandidateCount });
+      },
       regenerateImage: (input: {
         baseArtifactId: string;
         feedbackImageCandidateId: string;
         userDirection: string;
         candidateCount?: number;
-      }) =>
+      }) => {
+        if (
+          !selectedShotId ||
+          selectedShotHasActiveImageBatch ||
+          hasActiveShotImageAutoSelection ||
+          hasActiveVideoBatchInWorkflow
+        ) {
+          return;
+        }
         regenerateImage.mutate({
           ...input,
           candidateCount: input.candidateCount ?? imageCandidateCount,
-        }),
+        });
+      },
       selectImageCandidate: (candidateId: string, batchId: string) =>
         selectImageCandidate.mutate({ candidateId, batchId }),
-      startShotImageAutoSelection: () =>
-        startShotImageAutoSelection.mutate({ candidateCount: imageCandidateCount }),
-      proposeVideo: () => proposeVideo.mutate({ candidateCount: videoCandidateCount }),
+      startShotImageAutoSelection: () => {
+        if (
+          hasActiveShotImageAutoSelection ||
+          hasImageBatchInWorkflow ||
+          hasActiveVideoBatchInWorkflow ||
+          imageAutoSelectionTargets.length === 0
+        ) {
+          return;
+        }
+        startShotImageAutoSelection.mutate({ candidateCount: imageCandidateCount });
+      },
+      proposeVideo: () => {
+        if (!selectedShotId || selectedShotHasActiveVideoBatch) {
+          return;
+        }
+        proposeVideo.mutate({ candidateCount: videoCandidateCount });
+      },
       regenerateVideo: (input: {
         baseArtifactId: string;
         feedbackVideoCandidateId: string;
         userDirection: string;
         candidateCount?: number;
-      }) =>
+      }) => {
+        if (!selectedShotId || selectedShotHasActiveVideoBatch) {
+          return;
+        }
         regenerateVideo.mutate({
           ...input,
           candidateCount: input.candidateCount ?? videoCandidateCount,
-        }),
-      proposeAllVideos: () => proposeAllVideos.mutate({ candidateCount: videoCandidateCount }),
+        });
+      },
+      rerollVideoCandidates: () => {
+        const allImagesSelected =
+          workflowShots.length > 0 &&
+          workflowShots.every((shot) => Boolean(shot.selectedImageId));
+        if (
+          !selectedShotId ||
+          !allImagesSelected ||
+          !selectedShotHasVideoBatch ||
+          hasActiveVideoBatchInWorkflow
+        ) {
+          return;
+        }
+        rerollVideoCandidates.mutate({ candidateCount: videoCandidateCount });
+      },
+      proposeAllVideos: () => {
+        const allImagesSelected =
+          workflowShots.length > 0 &&
+          workflowShots.every((shot) => Boolean(shot.selectedImageId));
+        if (!allImagesSelected || getVideoBatchGenerationTargets(workflowShots).length === 0) {
+          return;
+        }
+        proposeAllVideos.mutate({ candidateCount: videoCandidateCount });
+      },
       selectVideoCandidate: (candidateId: string, batchId: string) =>
         selectVideoCandidate.mutate({ candidateId, batchId }),
       retryImage: () => retryImage.mutate(),
@@ -848,10 +983,14 @@ export function useWorkbenchViewModel(workspaceId: string) {
       configLimits.isFetching,
     busy:
       mutations.some((mutation) => mutation.isPending) ||
+      hasActiveImageBatchInWorkflow ||
+      hasActiveVideoBatchInWorkflow ||
       hasActiveOneClickFinalVideo ||
       hasActiveShotImageAutoSelection,
     hasActiveGeneration:
       Boolean(hasActiveGeneration) ||
+      hasActiveImageBatchInWorkflow ||
+      hasActiveVideoBatchInWorkflow ||
       hasActiveOneClickFinalVideo ||
       hasActiveShotImageAutoSelection,
     error:

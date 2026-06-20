@@ -768,6 +768,19 @@ paths:
         - $ref: "#/components/parameters/ShotId"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/image-candidates/regenerate:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateCountRequest"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
   /api/workspaces/{workspaceId}/shots/{shotId}/image-candidates/select:
     post:
       tags: [Shot]
@@ -805,6 +818,19 @@ paths:
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - $ref: "#/components/parameters/ShotId"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shots/{shotId}/video-candidates/regenerate:
+    post:
+      tags: [Shot]
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ShotId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateCountRequest"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
   /api/workspaces/{workspaceId}/shots/{shotId}/video-candidates/select:

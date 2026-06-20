@@ -1,6 +1,23 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
+import { HttpError } from "../../common/errors.js";
+import { db } from "../../db/client.js";
 import { shotImageAutoSelectionTestHooks } from "./shot-image-auto-selection.service.js";
+
+const db2Descriptor = Object.getOwnPropertyDescriptor(db, "db2");
+
+function patchDb2(fakeDb2: unknown) {
+  Object.defineProperty(db, "db2", {
+    configurable: true,
+    value: fakeDb2,
+  });
+}
+
+afterEach(() => {
+  if (db2Descriptor) {
+    Object.defineProperty(db, "db2", db2Descriptor);
+  }
+});
 
 describe("shot image auto-selection rules", () => {
   it("selects the first succeeded image candidate with a stable URL", () => {
@@ -36,5 +53,27 @@ describe("shot image auto-selection rules", () => {
     assert.equal(shotImageAutoSelectionTestHooks.shouldKeepWaitingForBatch("RUNNING"), true);
     assert.equal(shotImageAutoSelectionTestHooks.shouldKeepWaitingForBatch("SUCCEEDED"), false);
     assert.equal(shotImageAutoSelectionTestHooks.shouldKeepWaitingForBatch("FAILED"), false);
+  });
+
+  it("rejects starting auto-selection when ordinary image generation already exists", async () => {
+    patchDb2({
+      listImageBatchesForShotSet: async () => [
+        {
+          id: "imb-existing",
+          shotId: "shot-1",
+          status: "SUCCEEDED",
+        },
+      ],
+    });
+
+    await assert.rejects(
+      shotImageAutoSelectionTestHooks.assertNoImageBatchesForShotSet(
+        "shot-set-1",
+      ),
+      (error) =>
+        error instanceof HttpError &&
+        error.statusCode === 409 &&
+        error.code === "IMAGE_BATCH_EXISTS",
+    );
   });
 });

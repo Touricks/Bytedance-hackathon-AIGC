@@ -85,6 +85,27 @@ export function regenerateImagePrompt(
   );
 }
 
+export function regenerateImageCandidates(
+  workspaceId: string,
+  shotId: string,
+  body: {
+    userDirection?: string;
+    candidateCount?: number;
+  },
+) {
+  return fetchJson<
+    WorkflowEnvelope<ImagePromptArtifact> & {
+      artifact: ImagePromptArtifact;
+      batch: ImageBatchDetail;
+      candidates: ImageCandidate[];
+      context?: unknown;
+    }
+  >(
+    `/api/workspaces/${workspaceId}/shots/${shotId}/image-candidates/regenerate`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export function listImagePrompts(shotId: string) {
   return fetchJson<{ data: ImagePromptArtifact[] }>(
     `/api/shots/${shotId}/image-prompts`,

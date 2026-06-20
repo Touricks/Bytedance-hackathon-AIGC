@@ -40,5 +40,13 @@ export function videoBatchActionNote(shots: WorkflowShot[]) {
 
   return shots.some((shot) => shot.selectedImageId && hasActiveVideoBatch(shot))
     ? "分镜视频生成中"
+    : shots.some(
+        (shot) =>
+          shot.selectedImageId &&
+          shot.activeVideoBatchId &&
+          !hasActiveVideoBatch(shot) &&
+          !shot.selectedVideoId,
+      )
+      ? "已有视频候选待选择，可重新生成当前分镜"
     : "已有视频候选或已完成选择";
 }

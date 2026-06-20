@@ -226,6 +226,14 @@ export interface WorkspaceStorageBindingRow {
   updatedAt: string;
 }
 
+export interface ActiveShotImageAutoSelectionJobRow {
+  id: string;
+  workspaceId: string;
+  status: "PENDING" | "RUNNING" | "WAITING";
+  shotSetId: string | null;
+  createdAt: string;
+}
+
 // ─── Current adapter interface ───────────────────────────────────────────────
 
 export interface Db2Adapter {
@@ -253,6 +261,13 @@ export interface Db2Adapter {
   ): Promise<ImageGenerationBatchRow>;
   getImageBatch(id: string): Promise<ImageGenerationBatchRow>;
   getLatestImageBatchForShot(shotId: string): Promise<ImageGenerationBatchRow | null>;
+  getActiveImageBatchForShot(shotId: string): Promise<ImageGenerationBatchRow | null>;
+  listImageBatchesForShotSet(
+    shotSetId: string
+  ): Promise<ImageGenerationBatchRow[]>;
+  listActiveImageBatchesForShotSet(
+    shotSetId: string
+  ): Promise<ImageGenerationBatchRow[]>;
   getImageBatchByIdempotencyKey(key: string): Promise<ImageGenerationBatchRow | null>;
   updateImageBatch(
     id: string,
@@ -289,6 +304,10 @@ export interface Db2Adapter {
   ): Promise<VideoGenerationBatchRow>;
   getVideoBatch(id: string): Promise<VideoGenerationBatchRow>;
   getLatestVideoBatchForShot(shotId: string): Promise<VideoGenerationBatchRow | null>;
+  getActiveVideoBatchForShot(shotId: string): Promise<VideoGenerationBatchRow | null>;
+  listActiveVideoBatchesForShotSet(
+    shotSetId: string
+  ): Promise<VideoGenerationBatchRow[]>;
   getVideoBatchByIdempotencyKey(key: string): Promise<VideoGenerationBatchRow | null>;
   updateVideoBatch(
     id: string,
@@ -332,6 +351,10 @@ export interface Db2Adapter {
     id: string,
     patch: Partial<FinalVideoJobRow>
   ): Promise<FinalVideoJobRow>;
+  // Shot image auto-selection jobs
+  getActiveShotImageAutoSelectionJob(
+    workspaceId: string
+  ): Promise<ActiveShotImageAutoSelectionJobRow | null>;
   // Trace events
   insertTraceEvent(input: Omit<TraceEventRow, "createdAt">): Promise<TraceEventRow>;
   listTraceEventsByWorkspace(
@@ -1226,6 +1249,50 @@ class PostgresDb2Adapter implements Db2Adapter {
     return row ? toImageGenerationBatchRow(row) : null;
   }
 
+  async getActiveImageBatchForShot(
+    shotId: string
+  ): Promise<ImageGenerationBatchRow | null> {
+    const result = await this._pool.query(
+      `select * from image_generation_batches
+       where shot_id = $1
+         and status in ('PENDING', 'RUNNING')
+       order by created_at desc, id desc
+       limit 1`,
+      [shotId]
+    );
+    const row = result.rows[0];
+    return row ? toImageGenerationBatchRow(row) : null;
+  }
+
+  async listImageBatchesForShotSet(
+    shotSetId: string
+  ): Promise<ImageGenerationBatchRow[]> {
+    const result = await this._pool.query(
+      `select b.*
+       from image_generation_batches b
+       join storyboard_shots s on s.id = b.shot_id
+       where s.shot_set_id = $1
+       order by b.created_at desc, b.id desc`,
+      [shotSetId]
+    );
+    return result.rows.map(toImageGenerationBatchRow);
+  }
+
+  async listActiveImageBatchesForShotSet(
+    shotSetId: string
+  ): Promise<ImageGenerationBatchRow[]> {
+    const result = await this._pool.query(
+      `select b.*
+       from image_generation_batches b
+       join storyboard_shots s on s.id = b.shot_id
+       where s.shot_set_id = $1
+         and b.status in ('PENDING', 'RUNNING')
+       order by b.created_at desc, b.id desc`,
+      [shotSetId]
+    );
+    return result.rows.map(toImageGenerationBatchRow);
+  }
+
   async getImageBatchByIdempotencyKey(
     key: string
   ): Promise<ImageGenerationBatchRow | null> {
@@ -1511,6 +1578,36 @@ class PostgresDb2Adapter implements Db2Adapter {
     );
     const row = result.rows[0];
     return row ? toVideoGenerationBatchRow(row) : null;
+  }
+
+  async getActiveVideoBatchForShot(
+    shotId: string
+  ): Promise<VideoGenerationBatchRow | null> {
+    const result = await this._pool.query(
+      `select * from video_generation_batches
+       where shot_id = $1
+         and status in ('PENDING', 'RUNNING')
+       order by created_at desc, id desc
+       limit 1`,
+      [shotId]
+    );
+    const row = result.rows[0];
+    return row ? toVideoGenerationBatchRow(row) : null;
+  }
+
+  async listActiveVideoBatchesForShotSet(
+    shotSetId: string
+  ): Promise<VideoGenerationBatchRow[]> {
+    const result = await this._pool.query(
+      `select b.*
+       from video_generation_batches b
+       join storyboard_shots s on s.id = b.shot_id
+       where s.shot_set_id = $1
+         and b.status in ('PENDING', 'RUNNING')
+       order by b.created_at desc, b.id desc`,
+      [shotSetId]
+    );
+    return result.rows.map(toVideoGenerationBatchRow);
   }
 
   async getVideoBatchByIdempotencyKey(
@@ -1862,6 +1959,30 @@ class PostgresDb2Adapter implements Db2Adapter {
       [id, ...values]
     );
     return firstRow(result.rows, "FinalVideoJob", toFinalVideoJobRow);
+  }
+
+  async getActiveShotImageAutoSelectionJob(
+    workspaceId: string
+  ): Promise<ActiveShotImageAutoSelectionJobRow | null> {
+    const result = await this._pool.query(
+      `select id, workspace_id, status, shot_set_id, created_at
+       from shot_image_auto_selection_jobs
+       where workspace_id = $1
+         and status in ('PENDING', 'RUNNING', 'WAITING')
+       order by created_at desc, id desc
+       limit 1`,
+      [workspaceId]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          id: String(row.id),
+          workspaceId: String(row.workspace_id),
+          status: row.status as ActiveShotImageAutoSelectionJobRow["status"],
+          shotSetId: typeof row.shot_set_id === "string" ? row.shot_set_id : null,
+          createdAt: toIsoString(row.created_at)
+        }
+      : null;
   }
 
   // ── Trace events ───────────────────────────────────────────────────────────

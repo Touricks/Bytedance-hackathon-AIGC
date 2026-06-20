@@ -82,17 +82,17 @@ erDiagram
 | `shot_prompt_requirements` | Per-shot `shotImage`/`shotVideo` | One row per shot. |
 | `shot_asset_refs` | Editable material refs | Unique `(shot_id, asset_id, role)`. |
 | `image_prompt_artifacts` | Per-shot image prompt versions | Unique `(shot_id, version)`. |
-| `image_generation_batches` / `image_candidates` | Image generation facts | Batch/candidate status and provider request/response. |
+| `image_generation_batches` / `image_candidates` | Image generation facts | Batch/candidate status and provider request/response; service layer treats `PENDING/RUNNING` as one active image batch per shot. No-feedback reroll creates a new terminal-round successor batch. |
 | `image_select_artifacts` | Current 分镜图选择 | `shot_id` unique. |
 | `video_script_artifacts` | Per-shot video script versions | Unique `(shot_id, version)`. |
-| `video_generation_batches` / `video_candidates` | Video generation facts | Supports candidate `PERSISTING`. |
+| `video_generation_batches` / `video_candidates` | Video generation facts | Supports candidate `PERSISTING`; service layer treats `PENDING/RUNNING` as one active video batch per shot. `PARTIAL` batches may still supply selectable succeeded candidates, and no-feedback reroll creates a new terminal-round successor batch. |
 | `video_select_artifacts` | Current 分镜视频选择 | `shot_id` unique. |
 | `generation_jobs` | BullMQ business mirror | Related batch/candidate/final job id. |
 | `trace_events` | Agent/provider/job/user audit | Indexed by workspace and shot. |
 | `final_video_jobs` | Final compose jobs | Idempotency key unique; points to `shot_set_id`. |
 | `dashboard_video_artifacts` | Imported dashboard videos (decoupled registry) | Non-null four-factor `creative_factors` + LOCAL/S3 storage locator columns. `workspace_id`/`final_video_job_id` are **soft text refs** (no FK, no cascade); partial unique index on `final_video_job_id`; survives workspace deletion; S3 copies live in the dedicated `DASHBOARD_S3_BUCKET`. |
 | `one_click_final_video_jobs` | One-click orchestrator | One active job per workspace while `PENDING/RUNNING/WAITING`. |
-| `shot_image_auto_selection_jobs` | Auto image selection orchestrator | One active job per workspace while `PENDING/RUNNING/WAITING`. |
+| `shot_image_auto_selection_jobs` | Auto image selection orchestrator | One active job per workspace while `PENDING/RUNNING/WAITING`; mutually exclusive with ordinary image batches in the active shot set. |
 | `external_kol_publications` | 发布记录 | One KOL/channel placement of a final video (`job_id`, `platform`, `account_name`, `published_at`); `job_id` validated to the workspace. |
 | `external_kol_metrics` | 投放数据 | Append-only cumulative metric snapshots (`impressions/clicks/conversions/spend_cents/gmv_cents`); indexed by publication and `created_at`. |
 
