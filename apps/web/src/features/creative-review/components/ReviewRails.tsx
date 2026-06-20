@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemAvatar from "@mui/material/ListItemAvatar";
@@ -73,6 +74,7 @@ export function StepRail({
       <ol className="review-steps">
         {steps.map((step, index) => {
           const reachable = canOpenReviewStep(vm, step.id, defaultStep);
+          const processing = step.tone === "busy" && step.state === "生成中";
           return (
             <li key={step.id}>
               <button
@@ -86,8 +88,22 @@ export function StepRail({
               >
                 <span className="review-step__index">{index + 1}</span>
                 <span className="review-step__label">{step.label}</span>
-                <span className={`review-step__state review-step__state--${step.tone}`}>
-                  {step.state}
+                <span
+                  className={`review-step__state review-step__state--${
+                    processing ? "processing" : step.tone
+                  }`}
+                  aria-label={step.state}
+                  title={step.state}
+                >
+                  {processing ? (
+                    <CircularProgress
+                      aria-hidden="true"
+                      size={13}
+                      thickness={5}
+                    />
+                  ) : (
+                    step.state
+                  )}
                 </span>
               </button>
             </li>

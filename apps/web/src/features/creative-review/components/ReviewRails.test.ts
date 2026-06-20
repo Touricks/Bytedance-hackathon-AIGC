@@ -93,6 +93,34 @@ describe("ReviewRails", () => {
     assert.doesNotMatch(html, /lucide-layers/);
   });
 
+  it("renders running steps with a MUI circular progress indicator", () => {
+    const vm = {
+      ...stepRailVm(),
+      artifacts: {
+        promptRequirements: { isCurrent: true },
+        material: null,
+        brief: null,
+        storyboard: null,
+        shotPrompt: null,
+      },
+      pending: { materialIntake: true },
+    } as unknown as WorkbenchViewModel;
+
+    const html = renderToStaticMarkup(
+      React.createElement(StepRail, {
+        vm,
+        active: "material",
+        defaultStep: "material",
+        onSelect() {},
+        onShotSelect() {},
+      }),
+    );
+
+    assert.match(html, /review-step__state--processing/);
+    assert.match(html, /MuiCircularProgress-root/);
+    assert.match(html, /aria-label="生成中"/);
+  });
+
   it("renders material library images as zoomable photos while preserving delete controls", () => {
     const html = renderToStaticMarkup(
       React.createElement(RightRail, {

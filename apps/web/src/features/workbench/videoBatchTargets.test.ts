@@ -56,7 +56,10 @@ describe("video batch generation targets", () => {
       targets.map((target) => target.shotId),
       ["shot-1", "shot-2", "shot-3"],
     );
-    assert.equal(videoBatchActionNote(shots), "待生成/更新 3 个分镜");
+    assert.equal(
+      videoBatchActionNote(shots, 2),
+      "待生成/更新 6 条候选视频（覆盖 3 个分镜）",
+    );
   });
 
   it("does not duplicate generation while the active video batch is running", () => {
@@ -83,7 +86,10 @@ describe("video batch generation targets", () => {
     });
 
     assert.equal(isVideoBatchGenerationTarget(firstTimeShot), true);
-    assert.equal(videoBatchActionNote([firstTimeShot]), "待生成 1 个分镜");
+    assert.equal(
+      videoBatchActionNote([firstTimeShot], 3),
+      "待生成 3 条候选视频（覆盖 1 个分镜）",
+    );
   });
 
   it("does not treat image-only upstream drift as a stale video target", () => {

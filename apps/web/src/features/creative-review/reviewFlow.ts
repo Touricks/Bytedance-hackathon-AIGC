@@ -563,12 +563,10 @@ export function deriveReviewStepIndicators(
 
   return steps.map((step) => {
     const tone = step.tone ?? statusTone(step.state);
+    const reachable = canOpenReviewStep(vm, step.id, defaultStep);
     return {
       ...step,
-      tone:
-        tone === "danger" || canOpenReviewStep(vm, step.id, defaultStep)
-          ? tone
-          : "idle",
+      tone: reachable ? tone : "idle",
     };
   });
 }

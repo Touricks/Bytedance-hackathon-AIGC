@@ -30,12 +30,18 @@ export function getVideoBatchGenerationTargets<TShot extends WorkflowShot>(
   return shots.filter(isVideoBatchGenerationTarget);
 }
 
-export function videoBatchActionNote(shots: WorkflowShot[]) {
+function candidateTotalLabel(targetCount: number, candidateCount: number) {
+  const safeCandidateCount = Math.max(1, Math.floor(candidateCount));
+  return `${targetCount * safeCandidateCount} 条候选视频（覆盖 ${targetCount} 个分镜）`;
+}
+
+export function videoBatchActionNote(shots: WorkflowShot[], candidateCount = 1) {
   const targets = getVideoBatchGenerationTargets(shots);
   if (targets.length > 0) {
+    const totalLabel = candidateTotalLabel(targets.length, candidateCount);
     return targets.some(hasStaleVideoUpstream)
-      ? `待生成/更新 ${targets.length} 个分镜`
-      : `待生成 ${targets.length} 个分镜`;
+      ? `待生成/更新 ${totalLabel}`
+      : `待生成 ${totalLabel}`;
   }
 
   return shots.some((shot) => shot.selectedImageId && hasActiveVideoBatch(shot))

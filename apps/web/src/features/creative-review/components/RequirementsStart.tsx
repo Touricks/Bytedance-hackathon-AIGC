@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
+import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
+import Snackbar from "@mui/material/Snackbar";
 import { ChevronDown, ChevronRight, Upload, Wand2 } from "lucide-react";
 import {
   type Audience,
@@ -38,6 +40,35 @@ import {
 } from "./RequirementsStartHelpers.js";
 import { ReviewActionDock } from "./Common.js";
 
+export const MATERIAL_GUARD_MESSAGE =
+  "请先上传至少一个商品素材，再提交创作要求。";
+
+export function MaterialGuardSnackbar({
+  open,
+  onClose
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const handleClose = (_event: SyntheticEvent | Event, reason?: string) => {
+    if (reason === "clickaway") return;
+    onClose();
+  };
+
+  return (
+    <Snackbar
+      open={open}
+      autoHideDuration={3500}
+      anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      onClose={handleClose}
+    >
+      <Alert severity="warning" variant="filled" onClose={onClose}>
+        {MATERIAL_GUARD_MESSAGE}
+      </Alert>
+    </Snackbar>
+  );
+}
+
 export function RequirementsStart({
   vm,
   onActionComplete
@@ -69,6 +100,7 @@ export function RequirementsStart({
     ReferenceVideoRequirementsImportResult["creativeFactorsRecommendation"] | null
   >(null);
   const [guidanceOpen, setGuidanceOpen] = useState(true);
+  const [materialGuardOpen, setMaterialGuardOpen] = useState(false);
 
   useEffect(() => {
     setForm(initialForm);
@@ -362,7 +394,8 @@ export function RequirementsStart({
           disabled={vm.busy || uploading}
           onClick={() => {
             if (assets.length === 0) {
-              setUploadMessage("请先上传至少一个商品素材，再提交创作要求。");
+              setUploadMessage(MATERIAL_GUARD_MESSAGE);
+              setMaterialGuardOpen(true);
               return;
             }
             let data: PromptRequirementsData;
@@ -380,6 +413,10 @@ export function RequirementsStart({
           {requirementsArtifact?.isCurrent ? "更新创作要求" : "提交创作要求"}
         </button>
       </ReviewActionDock>
+      <MaterialGuardSnackbar
+        open={materialGuardOpen}
+        onClose={() => setMaterialGuardOpen(false)}
+      />
     </section>
   );
 }

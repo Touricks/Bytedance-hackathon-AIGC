@@ -14,7 +14,11 @@ import {
   requirementFormFromArtifact,
   requirementFormWithCreativeFactors
 } from "../requirementsForm.js";
-import { RequirementsStart } from "./RequirementsStart.js";
+import {
+  MATERIAL_GUARD_MESSAGE,
+  MaterialGuardSnackbar,
+  RequirementsStart
+} from "./RequirementsStart.js";
 import { FactorSelect } from "./RequirementsStartHelpers.js";
 
 const SAMPLE_FACTORS: CreativeFactors = {
@@ -107,6 +111,20 @@ describe("RequirementsStart", () => {
     assert.match(dock, /提交创作要求/);
     assert.doesNotMatch(html, /class="review-panel__actions"[\s\S]*提交创作要求/);
     assert.match(html, /请先上传至少一个商品素材/);
+  });
+
+  it("renders the missing-material guard as a MUI alert snackbar", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(MaterialGuardSnackbar, {
+        open: true,
+        onClose() {}
+      })
+    );
+
+    assert.match(html, new RegExp(MATERIAL_GUARD_MESSAGE));
+    assert.match(html, /role="alert"/);
+    assert.match(html, /MuiAlert/);
+    assert.match(html, /MuiSnackbar/);
   });
 
   it("renders four factor selectors, editable guidance fields, and read-only compiled requirements", () => {

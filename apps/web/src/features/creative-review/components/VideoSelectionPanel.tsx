@@ -24,7 +24,7 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
     ? getVideoBatchGenerationTargets(vm.shots)
     : [];
   const actionNote = allImagesSelected
-    ? videoBatchActionNote(vm.shots)
+    ? videoBatchActionNote(vm.shots, vm.candidateCounts.video)
     : "等待全部分镜图选择完成";
   const rounds = vm.videoRounds;
   const selectedShot = vm.selectedWorkflowShot;

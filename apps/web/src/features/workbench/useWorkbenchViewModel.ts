@@ -8,14 +8,12 @@ import type {
 } from "@aigc-video/shared";
 import {
   applyWorkspaceShotSet,
-  approveWorkspacePromptRequirements,
   approveWorkspaceMaterialIntake,
   approveWorkspaceBrief,
   approveWorkspaceShotPrompt,
   approveWorkspaceStoryboard,
   compileWorkspaceShotPrompt,
   getWorkspaceStatus,
-  proposeWorkspacePromptRequirements,
   proposeWorkspaceBrief,
   proposeWorkspaceStoryboard,
   proposeWorkspaceStoryboardVoiceover,
@@ -80,6 +78,7 @@ import {
   readCandidateCountPreferences,
   writeCandidateCountPreference,
 } from "./candidateCountPreferences.js";
+import { runStartCreativeReviewSequence } from "./startCreativeReviewSequence.js";
 
 const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);
 const ACTIVE_AUTO_SELECTION_STATUSES = new Set<ShotImageAutoSelectionStatus>([
@@ -379,20 +378,13 @@ export function useWorkbenchViewModel(workspaceId: string) {
   });
 
   const startCreativeReview = useMutation({
-    mutationFn: async (data: PromptRequirementsData) => {
-      const requirements = await proposeWorkspacePromptRequirements({
+    mutationFn: (data: PromptRequirementsData) =>
+      runStartCreativeReviewSequence({
         workspaceId,
         data,
-      });
-      await approveWorkspacePromptRequirements({
-        workspaceId,
-        artifactId: requirements.artifact.id,
-      });
-      return await runWorkspaceMaterialIntake({
-        workspaceId,
-        prompt: materialPrompt.trim() || undefined,
-      });
-    },
+        materialPrompt,
+        refreshWorkspace: invalidateWorkspace,
+      }),
     onSuccess: invalidateWorkspace,
   });
 

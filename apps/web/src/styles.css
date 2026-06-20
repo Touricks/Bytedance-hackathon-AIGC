@@ -1062,6 +1062,7 @@ label {
 
 .review-step__state {
   display: grid;
+  place-items: center;
   width: 7px;
   height: 7px;
   flex: none;
@@ -1073,6 +1074,19 @@ label {
   background: var(--ink-4);
   text-indent: 999px;
   white-space: nowrap;
+}
+
+.review-step__state--processing {
+  width: 13px;
+  height: 13px;
+  overflow: visible;
+  color: var(--amber);
+  background: transparent;
+  text-indent: 0;
+}
+
+.review-step__state--processing .MuiCircularProgress-root {
+  color: currentColor;
 }
 
 .review-step__state--good,
@@ -3430,6 +3444,24 @@ label {
 .review-panel:has(.review-image-grid) .review-empty-state strong,
 .review-panel:has(.review-video-grid) .review-empty-state strong {
   color: var(--ink);
+}
+
+.review-panel:has(.review-image-grid),
+.review-panel:has(.review-video-grid) {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  height: auto;
+  min-height: 0;
+}
+
+.review-panel:has(.review-image-grid) .review-current-shot,
+.review-panel:has(.review-video-grid) .review-current-shot,
+.review-panel:has(.review-image-grid) .review-round,
+.review-panel:has(.review-video-grid) .review-round {
+  align-self: start;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .review-image-prompt-form {

@@ -120,6 +120,34 @@ describe("deriveReviewStepIndicators", () => {
     assert.equal(steps.find((step) => step.id === "apply")?.tone, "good");
   });
 
+  it("keeps confirmed requirements complete while material intake is running", () => {
+    const steps = deriveReviewStepIndicators(
+      baseViewModel({
+        artifacts: {
+          promptRequirements: { isCurrent: true },
+          material: null,
+          brief: null,
+          storyboard: null,
+          shotPrompt: null,
+        },
+        pending: { materialIntake: true },
+      }),
+    );
+
+    assert.deepEqual(steps.find((step) => step.id === "requirements"), {
+      id: "requirements",
+      label: "创作要求与上传素材",
+      state: "已确认",
+      tone: "good",
+    });
+    assert.deepEqual(steps.find((step) => step.id === "material"), {
+      id: "material",
+      label: "素材解读",
+      state: "生成中",
+      tone: "busy",
+    });
+  });
+
   it("keeps final generation active while one-click final video is running", () => {
     const vm = baseViewModel({
       pending: { oneClickFinalVideo: true },
@@ -185,17 +213,17 @@ describe("deriveReviewStepIndicators", () => {
       tone: "busy",
     });
     assert.equal(steps.find((step) => step.id === "brief")?.state, "上游已变化");
-    assert.equal(steps.find((step) => step.id === "brief")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "brief")?.tone, "idle");
     assert.equal(
       steps.find((step) => step.id === "storyboard")?.state,
       "上游已变化",
     );
-    assert.equal(steps.find((step) => step.id === "storyboard")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "storyboard")?.tone, "idle");
     assert.equal(
       steps.find((step) => step.id === "shotprompt")?.state,
       "上游已变化",
     );
-    assert.equal(steps.find((step) => step.id === "shotprompt")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "shotprompt")?.tone, "idle");
   });
 
   it("waits for user approval when regenerated material intake is proposed", () => {
@@ -214,12 +242,12 @@ describe("deriveReviewStepIndicators", () => {
     assert.equal(steps.find((step) => step.id === "material")?.state, "待审核");
     assert.equal(steps.find((step) => step.id === "material")?.tone, "review");
     assert.equal(steps.find((step) => step.id === "brief")?.state, "上游已变化");
-    assert.equal(steps.find((step) => step.id === "brief")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "brief")?.tone, "idle");
     assert.equal(
       steps.find((step) => step.id === "storyboard")?.state,
       "上游已变化",
     );
-    assert.equal(steps.find((step) => step.id === "storyboard")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "storyboard")?.tone, "idle");
   });
 
   it("moves to product brief generation immediately after material intake approval starts", () => {
@@ -269,7 +297,7 @@ describe("deriveReviewStepIndicators", () => {
       steps.find((step) => step.id === "shotprompt")?.state,
       "上游已变化",
     );
-    assert.equal(steps.find((step) => step.id === "shotprompt")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "shotprompt")?.tone, "idle");
   });
 
   it("keeps shot prompt active while regenerating it over existing downstream results", () => {
@@ -303,7 +331,7 @@ describe("deriveReviewStepIndicators", () => {
       tone: "busy",
     });
     assert.equal(steps.find((step) => step.id === "apply")?.state, "上游已变化");
-    assert.equal(steps.find((step) => step.id === "apply")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "apply")?.tone, "idle");
   });
 
   it("returns to apply when the current shot prompt supersedes the active shot chain", () => {
@@ -380,7 +408,7 @@ describe("deriveReviewStepIndicators", () => {
       tone: "busy",
     });
     assert.equal(steps.find((step) => step.id === "image")?.state, "上游已变化");
-    assert.equal(steps.find((step) => step.id === "image")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "image")?.tone, "idle");
   });
 
   it("keeps image selection active while a shot image is regenerating over old selections", () => {
@@ -414,7 +442,7 @@ describe("deriveReviewStepIndicators", () => {
       tone: "busy",
     });
     assert.equal(steps.find((step) => step.id === "video")?.state, "上游已变化");
-    assert.equal(steps.find((step) => step.id === "video")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "video")?.tone, "idle");
   });
 
   it("keeps video selection active while a shot video is regenerating over old final readiness", () => {
@@ -448,7 +476,7 @@ describe("deriveReviewStepIndicators", () => {
       tone: "busy",
     });
     assert.equal(steps.find((step) => step.id === "final")?.state, "上游已变化");
-    assert.equal(steps.find((step) => step.id === "final")?.tone, "danger");
+    assert.equal(steps.find((step) => step.id === "final")?.tone, "idle");
   });
 
   it("shows final generation as active while the compose request is starting or running", () => {
