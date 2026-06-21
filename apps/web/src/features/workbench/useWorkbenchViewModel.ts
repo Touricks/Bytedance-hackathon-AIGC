@@ -47,6 +47,7 @@ import {
 import {
   getWorkflowStatus,
   listShots,
+  listWorkspaceShotSetHistory,
   listWorkspaceShotSets,
   retryShot,
 } from "../../lib/api/shots.js";
@@ -208,6 +209,12 @@ export function useWorkbenchViewModel(workspaceId: string) {
     refetchInterval: 30_000,
   });
 
+  const shotSetHistory = useQuery({
+    queryKey: ["shot-set-history", workspaceId],
+    queryFn: () => listWorkspaceShotSetHistory(workspaceId),
+    refetchInterval: 30_000,
+  });
+
   const workflow = useQuery({
     queryKey: ["workflow-status", workspaceId],
     queryFn: () => getWorkflowStatus(workspaceId),
@@ -349,6 +356,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       qc.invalidateQueries({ queryKey: ["workspace-status", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["shots", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["shot-sets", workspaceId] }),
+      qc.invalidateQueries({ queryKey: ["shot-set-history", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["workflow-status", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["final-videos", workspaceId] }),
       qc.invalidateQueries({ queryKey: ["one-click-final-videos", workspaceId] }),
@@ -737,6 +745,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
     shots: [...workflowShots].sort((a, b) => a.orderIndex - b.orderIndex),
     shotRows: shots.data?.data ?? [],
     shotSets: shotSets.data?.data ?? [],
+    shotSetHistory: shotSetHistory.data?.data ?? [],
     selectedShotId,
     selectedShot,
     selectedWorkflowShot,
@@ -985,6 +994,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       workflow.isLoading ||
       shots.isLoading ||
       shotSets.isLoading ||
+      shotSetHistory.isLoading ||
       oneClickFinalVideoJobs.isLoading ||
       shotImageAutoSelectionJobs.isLoading ||
       configLimits.isLoading,
@@ -993,6 +1003,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       workflow.isFetching ||
       shots.isFetching ||
       shotSets.isFetching ||
+      shotSetHistory.isFetching ||
       oneClickFinalVideoJobs.isFetching ||
       shotImageAutoSelectionJobs.isFetching ||
       configLimits.isFetching,
@@ -1013,6 +1024,7 @@ export function useWorkbenchViewModel(workspaceId: string) {
       errorText(workflow.error) ??
       errorText(shots.error) ??
       errorText(shotSets.error) ??
+      errorText(shotSetHistory.error) ??
       errorText(oneClickFinalVideoJobs.error) ??
       errorText(shotImageAutoSelectionJobs.error) ??
       errorText(configLimits.error) ??

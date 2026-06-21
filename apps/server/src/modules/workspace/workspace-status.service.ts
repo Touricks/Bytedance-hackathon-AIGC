@@ -26,6 +26,7 @@ import {
   resolveWorkspaceLocalPath,
   storageBindingView,
 } from "./workspace-storage-binding.service.js";
+import { workspaceRepository } from "./workspace.repository.js";
 
 async function refreshWorkspaceForCurrentJob(workspace: CreativeWorkspace) {
   if (!workspace.currentJobId || workspace.status !== "video_generating") {
@@ -425,8 +426,8 @@ async function getActiveWorkspaceShotSet(workspaceId: string) {
 }
 
 async function statusForWorkspaceId(workspaceId: string) {
-  const workspace = await refreshWorkspaceForCurrentJob(
-    await db.touchWorkspace(workspaceId),
+  const workspace = await workspaceRepository.resolveFinalVideoWorkspaceStatus(
+    await refreshWorkspaceForCurrentJob(await db.touchWorkspace(workspaceId)),
   );
   const binding = await db.getActiveWorkspaceStorage(workspace.id);
   if (!binding) {
@@ -497,7 +498,9 @@ export const workspaceStatusService = {
     const localPath = await resolveWorkspaceLocalPath(target);
     const manifest = await readManifest(localPath);
     const touched = await db.touchWorkspace(manifest.workspaceId);
-    const workspace = await refreshWorkspaceForCurrentJob(touched);
+    const workspace = await workspaceRepository.resolveFinalVideoWorkspaceStatus(
+      await refreshWorkspaceForCurrentJob(touched),
+    );
     const binding = await db.getActiveWorkspaceStorage(workspace.id);
     const current = toManifest({
       workspaceId: workspace.id,

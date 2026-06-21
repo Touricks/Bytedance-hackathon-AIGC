@@ -37,6 +37,9 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
     selectedShotHasVideoBatch &&
     !selectedShotHasActiveVideoBatch &&
     !vm.generation.hasActiveVideoBatchInWorkflow;
+  const activeShotSetChanged = Boolean(
+    vm.workspaceStatus?.activeShotSet?.upstream?.upstreamChanged
+  );
 
   return (
     <section className="review-panel">
@@ -85,6 +88,14 @@ export function VideoSelectionPanel({ vm }: { vm: WorkbenchViewModel }) {
           {actionNote}
         </span>
       </div>
+      {activeShotSetChanged ? (
+        <div className="review-upstream-note">
+          <Clock3 size={15} />
+          <span>
+            旧版本分镜视频可在应用分镜历史中查看/下载，不会参与新版本生成。
+          </span>
+        </div>
+      ) : null}
       {vm.selectedWorkflowShot ? (
         <div className="review-current-shot">
           <span>当前审核</span>

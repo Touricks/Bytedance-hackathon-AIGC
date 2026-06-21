@@ -95,6 +95,58 @@ function shotView(row: Record<string, unknown>) {
   };
 }
 
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function nullableNumber(value: unknown): number | null {
+  return value === null || typeof value === "undefined" ? null : Number(value);
+}
+
+function shotSetHistoryShotView(row: Record<string, unknown>) {
+  const imageCandidateId = nullableString(row.image_candidate_id);
+  const videoCandidateId = nullableString(row.video_candidate_id);
+  return {
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    shotSetId: String(row.shot_set_id),
+    orderIndex: Number(row.order_index),
+    title: String(row.title),
+    objective: nullableString(row.objective),
+    defaultDurationSec: nullableNumber(row.default_duration_sec),
+    status: String(row.status),
+    requirements: {
+      shotImage: row.shot_image ?? {},
+      shotVideo: row.shot_video ?? {},
+      sourceShotPromptArtifactId: String(row.shot_prompt_artifact_id),
+    },
+    selectedImage: imageCandidateId
+      ? {
+          candidateId: imageCandidateId,
+          batchId: nullableString(row.image_generation_batch_id),
+          url: nullableString(row.image_url),
+          width: nullableNumber(row.image_width),
+          height: nullableNumber(row.image_height),
+          status: nullableString(row.image_status),
+        }
+      : null,
+    selectedVideo: videoCandidateId
+      ? {
+          candidateId: videoCandidateId,
+          batchId: nullableString(row.video_generation_batch_id),
+          url: nullableString(row.video_url),
+          thumbnailUrl: nullableString(row.video_thumbnail_url),
+          durationSec: nullableNumber(row.video_duration_sec),
+          width: nullableNumber(row.video_width),
+          height: nullableNumber(row.video_height),
+          status: nullableString(row.video_status),
+        }
+      : null,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  };
+}
+
 async function getCurrentApprovedShotPrompt(
   workspaceId: string,
   artifactId?: string,
@@ -296,6 +348,76 @@ export const shotSetService = {
     return result.rows.map((row) =>
       shotSetView(row, currentShotPromptArtifactId),
     );
+  },
+
+  async listShotSetHistory(workspaceId: string) {
+    await db.getWorkspace(workspaceId);
+    const [setsResult, currentShotPromptArtifactId] = await Promise.all([
+      db.db2.pool().query(
+        `select ss.*,
+                count(s.id)::integer as shot_count
+         from shot_sets ss
+         left join storyboard_shots s on s.shot_set_id = ss.id
+         where ss.workspace_id = $1
+         group by ss.id
+         order by ss.created_at desc, ss.id desc`,
+        [workspaceId],
+      ),
+      getCurrentApprovedShotPromptId(workspaceId),
+    ]);
+    const shotSetIds = setsResult.rows.map((row) => String(row.id));
+    if (shotSetIds.length === 0) return [];
+
+    const shotsResult = await db.db2.pool().query(
+      `select s.*,
+              r.shot_image,
+              r.shot_video,
+              r.shot_prompt_artifact_id,
+              img.image_candidate_id,
+              img.image_generation_batch_id,
+              ic.image_url,
+              ic.width as image_width,
+              ic.height as image_height,
+              ic.status as image_status,
+              vid.video_candidate_id,
+              vid.video_generation_batch_id,
+              vc.video_url,
+              vc.thumbnail_url as video_thumbnail_url,
+              vc.duration_sec as video_duration_sec,
+              vc.width as video_width,
+              vc.height as video_height,
+              vc.status as video_status
+       from storyboard_shots s
+       left join shot_prompt_requirements r on r.shot_id = s.id
+       left join image_select_artifacts img on img.shot_id = s.id
+       left join image_candidates ic on ic.id = img.image_candidate_id
+       left join video_select_artifacts vid on vid.shot_id = s.id
+       left join video_candidates vc on vc.id = vid.video_candidate_id
+       where s.workspace_id = $1
+         and s.shot_set_id = any($2::text[])
+       order by s.shot_set_id, s.order_index asc, s.created_at asc`,
+      [workspaceId, shotSetIds],
+    );
+    const shotsByShotSetId = new Map<
+      string,
+      ReturnType<typeof shotSetHistoryShotView>[]
+    >();
+    for (const row of shotsResult.rows) {
+      const shotSetId = String(row.shot_set_id);
+      const shots = shotsByShotSetId.get(shotSetId) ?? [];
+      shots.push(shotSetHistoryShotView(row));
+      shotsByShotSetId.set(shotSetId, shots);
+    }
+
+    return setsResult.rows.map((row) => {
+      const shots = shotsByShotSetId.get(String(row.id)) ?? [];
+      return {
+        ...shotSetView(row, currentShotPromptArtifactId),
+        selectedImageCount: shots.filter((shot) => shot.selectedImage).length,
+        selectedVideoCount: shots.filter((shot) => shot.selectedVideo).length,
+        shots,
+      };
+    });
   },
 
   async apply(input: { workspaceId: string; shotPromptArtifactId?: string }) {

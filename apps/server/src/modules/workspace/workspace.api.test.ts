@@ -153,6 +153,194 @@ function sha256(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+async function seedShotSetHistoryFixture(workspaceId: string) {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const oldShotPromptArtifactId = `sp-history-old-${suffix}`;
+  const newShotPromptArtifactId = `sp-history-new-${suffix}`;
+  const oldShotSetId = `shot-set-history-old-${suffix}`;
+  const newShotSetId = `shot-set-history-new-${suffix}`;
+  const oldShotId = `shot-history-old-${suffix}`;
+  const newShotId = `shot-history-new-${suffix}`;
+  const imagePromptArtifactId = `imp-history-${suffix}`;
+  const imageBatchId = `imb-history-${suffix}`;
+  const imageCandidateId = `imc-history-${suffix}`;
+  const videoScriptArtifactId = `vsa-history-${suffix}`;
+  const videoBatchId = `vbb-history-${suffix}`;
+  const videoCandidateId = `vcd-history-${suffix}`;
+
+  await db.db2.pool().query(
+    `insert into shot_prompt_artifacts
+       (id, workspace_id, status, is_current, data, source_fingerprint, prompt_assembly, approved_at)
+     values
+       ($1, $3, 'approved', false, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, now() - interval '1 hour'),
+       ($2, $3, 'approved', true, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, now())`,
+    [oldShotPromptArtifactId, newShotPromptArtifactId, workspaceId],
+  );
+  await db.db2.pool().query(
+    `insert into shot_sets
+       (id, workspace_id, shot_prompt_artifact_id, status, source_fingerprint, created_at, archived_at)
+     values
+       ($1, $3, $4, 'archived', '{"shotPromptArtifactId":"old"}'::jsonb, now() - interval '1 hour', now()),
+       ($2, $3, $5, 'active', '{"shotPromptArtifactId":"new"}'::jsonb, now(), null)`,
+    [
+      oldShotSetId,
+      newShotSetId,
+      workspaceId,
+      oldShotPromptArtifactId,
+      newShotPromptArtifactId,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into storyboard_shots
+       (id, workspace_id, shot_set_id, script_id, order_index, title, objective,
+        default_duration_sec, status, selected_image_id, selected_video_id)
+     values
+       ($1, $3, $4, 'script-history-old', 0, '旧分镜', '旧版本目标', 5,
+        'VIDEO_SELECTED', $6, $7),
+       ($2, $3, $5, 'script-history-new', 0, '新分镜', '新版本目标', 5,
+        'DRAFT', null, null)`,
+    [
+      oldShotId,
+      newShotId,
+      workspaceId,
+      oldShotSetId,
+      newShotSetId,
+      imageCandidateId,
+      videoCandidateId,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into shot_prompt_requirements
+       (id, workspace_id, shot_set_id, shot_id, shot_prompt_artifact_id, shot_image, shot_video)
+     values
+       ($1, $3, $4, $6, $8, '{"subject":"old"}'::jsonb, '{"motion":"old"}'::jsonb),
+       ($2, $3, $5, $7, $9, '{"subject":"new"}'::jsonb, '{"motion":"new"}'::jsonb)`,
+    [
+      `spr-history-old-${suffix}`,
+      `spr-history-new-${suffix}`,
+      workspaceId,
+      oldShotSetId,
+      newShotSetId,
+      oldShotId,
+      newShotId,
+      oldShotPromptArtifactId,
+      newShotPromptArtifactId,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into image_prompt_artifacts
+       (id, shot_id, version, status, prompt_text, negative_prompt, reference_asset_ids,
+        prompt_json, source_fingerprint, prompt_assembly, created_by)
+     values
+       ($1, $2, 1, 'ACTIVE', 'old image prompt', null, '{}',
+        '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'test')`,
+    [imagePromptArtifactId, oldShotId],
+  );
+  await db.db2.pool().query(
+    `insert into image_generation_batches
+       (id, workspace_id, shot_id, image_prompt_artifact_id, status, requested_count,
+        succeeded_count, failed_count, provider, aspect_ratio, provider_request, idempotency_key)
+     values
+       ($1, $2, $3, $4, 'SUCCEEDED', 1, 1, 0, 'test', '9:16', '{}'::jsonb, $5)`,
+    [
+      imageBatchId,
+      workspaceId,
+      oldShotId,
+      imagePromptArtifactId,
+      `image-history-${suffix}`,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into image_candidates
+       (id, batch_id, workspace_id, shot_id, image_url, object_key, width, height,
+        seed, provider, provider_response, status)
+     values
+       ($1, $2, $3, $4, $5, null, 720, 1280, null, 'test', '{}'::jsonb, 'SUCCEEDED')`,
+    [
+      imageCandidateId,
+      imageBatchId,
+      workspaceId,
+      oldShotId,
+      `/api/workspaces/${workspaceId}/materials/history-old.png`,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into image_select_artifacts
+       (id, workspace_id, shot_set_id, shot_id, image_candidate_id, image_generation_batch_id)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [
+      `sel-img-history-${suffix}`,
+      workspaceId,
+      oldShotSetId,
+      oldShotId,
+      imageCandidateId,
+      imageBatchId,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into video_script_artifacts
+       (id, shot_id, version, status, duration_sec, script_json, provider_prompt,
+        based_on_image_candidate_id, source_fingerprint, prompt_assembly, created_by)
+     values
+       ($1, $2, 1, 'ACTIVE', 5, '{}'::jsonb, 'old video prompt',
+        $3, '{}'::jsonb, '{}'::jsonb, 'test')`,
+    [videoScriptArtifactId, oldShotId, imageCandidateId],
+  );
+  await db.db2.pool().query(
+    `insert into video_generation_batches
+       (id, workspace_id, shot_id, video_script_artifact_id, status, requested_count,
+        succeeded_count, failed_count, provider, aspect_ratio, provider_request, idempotency_key)
+     values
+       ($1, $2, $3, $4, 'SUCCEEDED', 1, 1, 0, 'test', '9:16', '{}'::jsonb, $5)`,
+    [
+      videoBatchId,
+      workspaceId,
+      oldShotId,
+      videoScriptArtifactId,
+      `video-history-${suffix}`,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into video_candidates
+       (id, batch_id, workspace_id, shot_id, video_url, object_key, thumbnail_url,
+        duration_sec, width, height, provider, provider_response, status)
+     values
+       ($1, $2, $3, $4, $5, null, $6, 5, 720, 1280, 'test', '{}'::jsonb, 'SUCCEEDED')`,
+    [
+      videoCandidateId,
+      videoBatchId,
+      workspaceId,
+      oldShotId,
+      `/api/workspaces/${workspaceId}/videos/history-old.mp4`,
+      `/api/workspaces/${workspaceId}/materials/history-old-thumb.png`,
+    ],
+  );
+  await db.db2.pool().query(
+    `insert into video_select_artifacts
+       (id, workspace_id, shot_set_id, shot_id, video_candidate_id, video_generation_batch_id)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [
+      `sel-vid-history-${suffix}`,
+      workspaceId,
+      oldShotSetId,
+      oldShotId,
+      videoCandidateId,
+      videoBatchId,
+    ],
+  );
+
+  return {
+    oldShotSetId,
+    newShotSetId,
+    oldShotId,
+    newShotId,
+    imageCandidateId,
+    imageBatchId,
+    videoCandidateId,
+    videoBatchId,
+  };
+}
+
 async function startArkProductBriefServer() {
   const requests: unknown[] = [];
   const server: Server = createServer(async (request, response) => {
@@ -334,6 +522,57 @@ describe("workspace API", () => {
     assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
   });
 
+  it("promotes listed workspace progress when a final video already succeeded", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "成片完成状态回补" },
+    });
+    assert.equal(createResponse.statusCode, 200, createResponse.body);
+    const workspaceId = createResponse.json().workspace.id as string;
+    const finalVideoJobId = `fv_progress_${Date.now()}`;
+    await db.updateWorkspace(workspaceId, { status: "shotprompt_approved" });
+    await db.db2.insertFinalVideoJob({
+      id: finalVideoJobId,
+      workspaceId,
+      shotSetId: null,
+      status: "SUCCEEDED",
+      sourceShotVideoIds: [],
+      sourceVideoScriptArtifactIds: [],
+      localPath: `final/${finalVideoJobId}/final.mp4`,
+      localUrl: `/api/workspaces/${workspaceId}/final-videos/${finalVideoJobId}/file`,
+      durationSec: 15,
+      width: 720,
+      height: 1280,
+      compiledManifest: {},
+      compiledManifestHash: "manifest-hash",
+      ffmpegLog: null,
+      errorMessage: null,
+      idempotencyKey: `${finalVideoJobId}:idem`,
+      completedAt: new Date().toISOString(),
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/workspaces",
+    });
+    assert.equal(listResponse.statusCode, 200, listResponse.body);
+    assert.equal(
+      listResponse
+        .json()
+        .workspaces.find((workspace: { id: string }) => workspace.id === workspaceId)
+        ?.status,
+      "video_ready",
+    );
+    assert.equal((await db.getWorkspace(workspaceId)).status, "video_ready");
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${workspaceId}`,
+    });
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+  });
+
   it("creates a logical workspace, binds local storage, and uploads managed material", async () => {
     const { workspaceId, directory } = await createBoundWorkspace(app);
 
@@ -358,6 +597,74 @@ describe("workspace API", () => {
       uploadResponse.json().material.url,
       new RegExp(`/api/workspaces/${workspaceId}/materials/product\\.png$`),
     );
+  });
+
+  it("exposes archived shot set products as read-only history only", async () => {
+    const { workspaceId } = await createInitializedWorkspace(app);
+    const fixture = await seedShotSetHistoryFixture(workspaceId);
+
+    const historyResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shot-sets/history`,
+    });
+    assert.equal(historyResponse.statusCode, 200, historyResponse.body);
+    const history = historyResponse.json().data as Array<{
+      id: string;
+      status: string;
+      selectedImageCount: number;
+      selectedVideoCount: number;
+      shots: Array<{
+        id: string;
+        selectedImage: { candidateId: string; url: string } | null;
+        selectedVideo: { candidateId: string; url: string } | null;
+      }>;
+    }>;
+    assert.equal(history.length, 2);
+    const archived = history.find((item) => item.id === fixture.oldShotSetId);
+    assert.ok(archived);
+    assert.equal(archived.status, "archived");
+    assert.equal(archived.selectedImageCount, 1);
+    assert.equal(archived.selectedVideoCount, 1);
+    assert.equal(archived.shots[0]?.selectedImage?.candidateId, fixture.imageCandidateId);
+    assert.match(archived.shots[0]?.selectedImage?.url ?? "", /history-old\.png/);
+    assert.equal(archived.shots[0]?.selectedVideo?.candidateId, fixture.videoCandidateId);
+    assert.match(archived.shots[0]?.selectedVideo?.url ?? "", /history-old\.mp4/);
+
+    const activeShotsResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${workspaceId}/shots`,
+    });
+    assert.equal(activeShotsResponse.statusCode, 200, activeShotsResponse.body);
+    assert.deepEqual(
+      activeShotsResponse.json().data.map((shot: { id: string }) => shot.id),
+      [fixture.newShotId],
+    );
+
+    const crossShotSelectResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${fixture.newShotId}/image-candidates/select`,
+      payload: {
+        imageCandidateId: fixture.imageCandidateId,
+        imageGenerationBatchId: fixture.imageBatchId,
+      },
+    });
+    assert.equal(crossShotSelectResponse.statusCode, 400, crossShotSelectResponse.body);
+    assert.equal(crossShotSelectResponse.json().code, "INVALID_CANDIDATE");
+
+    const archivedShotSelectResponse = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspaceId}/shots/${fixture.oldShotId}/video-candidates/select`,
+      payload: {
+        videoCandidateId: fixture.videoCandidateId,
+        videoGenerationBatchId: fixture.videoBatchId,
+      },
+    });
+    assert.equal(
+      archivedShotSelectResponse.statusCode,
+      400,
+      archivedShotSelectResponse.body,
+    );
+    assert.equal(archivedShotSelectResponse.json().code, "SHOT_NOT_IN_ACTIVE_SET");
   });
 
   it("rejects workspace image materials over the model input limit", async () => {

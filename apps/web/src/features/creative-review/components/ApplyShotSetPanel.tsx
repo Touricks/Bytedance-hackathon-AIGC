@@ -1,5 +1,18 @@
-import { Ban, CheckCircle2, Layers3, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import Collapse from "@mui/material/Collapse";
+import {
+  Archive,
+  Ban,
+  ChevronDown,
+  CheckCircle2,
+  Download,
+  Film,
+  Image as ImageIcon,
+  Layers3,
+  RefreshCw
+} from "lucide-react";
 import { validateP0StoryboardScript } from "@aigc-video/shared";
+import { toAbsoluteAssetUrl } from "../../../lib/api/client.js";
 import type { WorkbenchViewModel } from "../../workbench/useWorkbenchViewModel.js";
 import {
   formatReviewTime,
@@ -23,8 +36,20 @@ export function ApplyShotSetPanel({
   const storyboardRequiresApproval = Boolean(
     storyboardValidation && !storyboardValidation.valid
   );
-  const activeShotRows = [...vm.shotRows].sort((a, b) => a.orderIndex - b.orderIndex);
+  const shotSetHistory = vm.shotSetHistory ?? [];
   const activeChanged = Boolean(activeShotSet?.upstream?.upstreamChanged);
+  const activeShotCount = vm.shotRows.length || activeShotSet?.shotCount || 0;
+  const activeShotSetTitle = activeChanged
+    ? "待更新的分镜链路实例"
+    : "当前可用分镜链路实例";
+  const activeShotSetStatusLabel = activeChanged ? "上游已变化" : "可继续制作";
+  const activeShotSetStatusClass = activeChanged
+    ? "review-status--waiting"
+    : "review-status--good";
+  const visibleShotSetHistory = shotSetHistory.filter((item) => {
+    if (item.status === "archived") return true;
+    return Boolean(item.upstream?.upstreamChanged);
+  });
   const actionClass =
     activeShotSet && !activeChanged ? "review-secondary" : "review-primary";
   const actionLabel = pending
@@ -36,7 +61,7 @@ export function ApplyShotSetPanel({
       : "创建分镜链路实例";
   const applyDescription = activeShotSet
     ? activeChanged
-      ? "应用后会创建新的分镜链路实例，当前实例进入归档历史。"
+      ? "重新应用后会创建新的分镜链路实例，旧实例进入只读历史。"
       : null
     : "创建后会生成可执行分镜脚本，后续分镜图和分镜视频只读取当前生效实例。";
   const actionDisabledReason = vm.hasActiveGeneration
@@ -64,41 +89,33 @@ export function ApplyShotSetPanel({
         </div>
       ) : null}
       {activeShotSet ? (
-        <article className="shot-set-instance shot-set-instance--active">
+        <article
+          className={`shot-set-instance ${
+            activeChanged ? "shot-set-instance--stale" : "shot-set-instance--active"
+          }`}
+        >
           <header className="shot-set-instance__head">
             <Layers3 size={20} />
             <div>
               <strong>
-                当前分镜链路实例{" "}
+                {activeShotSetTitle}{" "}
                 <span className="mono">{shortEntityId(activeShotSet.id)}</span>
               </strong>
               <span>
                 创建于 {formatReviewTime(activeShotSet.createdAt)} ·{" "}
-                {activeShotRows.length || activeShotSet.shotCount || 0} 个分镜脚本
+                {activeShotCount} 个分镜脚本
               </span>
             </div>
-            <span className="review-status review-status--good">当前生效</span>
+            <span className={`review-status ${activeShotSetStatusClass}`}>
+              {activeShotSetStatusLabel}
+            </span>
           </header>
           {activeChanged ? (
             <div className="review-upstream-note">
               <RefreshCw size={14} />
-              生效分镜生成要求有更新，重新应用会创建新实例并归档当前实例。
+              分镜生成要求已更新，重新应用后会创建新实例，旧实例进入只读历史。
             </div>
           ) : null}
-          {activeShotRows.length > 0 ? (
-            <div className="shot-set-shot-grid" aria-label="当前分镜脚本摘要">
-              {activeShotRows.map((shot) => (
-                <article key={shot.id} className="shot-set-shot-card">
-                  <span className="mono">
-                    #{shot.orderIndex} · {formatShotDuration(shot)}
-                  </span>
-                  <strong className="u-clip">{shot.title}</strong>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="review-muted">正在同步当前分镜脚本摘要。</p>
-          )}
         </article>
       ) : (
         <div className="review-empty-state">
@@ -112,8 +129,8 @@ export function ApplyShotSetPanel({
           <strong>
             {activeShotSet
               ? activeChanged
-                ? "生效分镜生成要求有更新"
-                : "当前分镜链路实例已创建"
+                ? "分镜链路实例需要更新"
+                : "当前可用分镜链路实例已创建"
               : "等待创建分镜链路实例"}
           </strong>
           {applyDescription ? <span>{applyDescription}</span> : null}
@@ -137,6 +154,167 @@ export function ApplyShotSetPanel({
       <span className="review-action-note">
         批准分镜生成要求不会自动清空或重建已有分镜链路。
       </span>
+      {visibleShotSetHistory.length > 0 ? (
+        <section className="shot-set-history" aria-label="历史分镜实例">
+          <header className="shot-set-history__head">
+            <Archive size={18} />
+            <div>
+              <strong>历史分镜实例</strong>
+              <span>旧版本产物仅用于查看和下载，不会参与新版本生成。</span>
+            </div>
+          </header>
+          <div className="shot-set-history__list">
+            {visibleShotSetHistory.map((item, index) => (
+              <HistoryShotSetItem
+                key={item.id}
+                item={item}
+                defaultOpen={
+                  (item.status === "active" &&
+                    Boolean(item.upstream?.upstreamChanged)) ||
+                  index === 0
+                }
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </section>
+  );
+}
+
+function HistoryShotSetItem({
+  item,
+  defaultOpen
+}: {
+  item: NonNullable<WorkbenchViewModel["shotSetHistory"]>[number];
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const panelId = `shot-set-history-panel-${item.id}`;
+  const buttonId = `shot-set-history-button-${item.id}`;
+
+  useEffect(() => {
+    setOpen(defaultOpen);
+  }, [defaultOpen, item.id]);
+
+  const itemChanged = Boolean(item.upstream?.upstreamChanged);
+  const isActive = item.status === "active";
+  const title = isActive && itemChanged ? "待归档实例" : "归档实例";
+  const statusLabel = isActive && itemChanged ? "上游已变化" : "只读归档";
+
+  return (
+    <article className={`shot-set-history-item ${open ? "is-open" : ""}`}>
+      <button
+        id={buttonId}
+        type="button"
+        className="shot-set-history-item__button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ChevronDown size={16} className="shot-set-history-item__chevron" />
+        <span className="mono">{shortEntityId(item.id)}</span>
+        <strong>{title}</strong>
+        <span>
+          {item.shotCount ?? item.shots.length} 镜 · 图 {item.selectedImageCount} ·
+          视频 {item.selectedVideoCount}
+        </span>
+        <span className="review-status review-status--waiting">
+          {statusLabel}
+        </span>
+      </button>
+      <Collapse in={open} timeout="auto" unmountOnExit={false}>
+        <div
+          id={panelId}
+          className="shot-set-history-item__body"
+          role="region"
+          aria-labelledby={buttonId}
+        >
+          <div className="shot-set-history-item__meta">
+            <span>创建于 {formatReviewTime(item.createdAt)}</span>
+            {item.archivedAt ? (
+              <span>归档于 {formatReviewTime(item.archivedAt)}</span>
+            ) : null}
+          </div>
+          {item.shots.length > 0 ? (
+            <div className="shot-set-history-shots">
+              {item.shots
+                .slice()
+                .sort((a, b) => a.orderIndex - b.orderIndex)
+                .map((shot) => (
+                  <article key={shot.id} className="shot-set-history-shot">
+                    <header>
+                      <span className="mono">
+                        第 {shot.orderIndex + 1} 镜 · {formatShotDuration(shot)}
+                      </span>
+                      <strong className="u-clip">{shot.title}</strong>
+                    </header>
+                    <div className="shot-set-history-shot__media">
+                      <HistoryMedia
+                        kind="image"
+                        url={shot.selectedImage?.url ?? null}
+                        label="已选分镜图"
+                      />
+                      <HistoryMedia
+                        kind="video"
+                        url={shot.selectedVideo?.url ?? null}
+                        label="已选分镜视频"
+                      />
+                    </div>
+                  </article>
+                ))}
+            </div>
+          ) : (
+            <p className="review-muted">该实例还没有分镜产物。</p>
+          )}
+        </div>
+      </Collapse>
+    </article>
+  );
+}
+
+function HistoryMedia({
+  kind,
+  url,
+  label
+}: {
+  kind: "image" | "video";
+  url: string | null;
+  label: string;
+}) {
+  const Icon = kind === "image" ? ImageIcon : Film;
+  const absoluteUrl = url ? toAbsoluteAssetUrl(url) : null;
+  const downloadLabel = kind === "image" ? "下载图片" : "下载视频";
+
+  return (
+    <div className="shot-set-history-media">
+      <div className="shot-set-history-media__label">
+        <Icon size={14} />
+        <span>{label}</span>
+      </div>
+      {absoluteUrl ? (
+        <>
+          <div className="shot-set-history-media__preview">
+            {kind === "image" ? (
+              <img src={absoluteUrl} alt={label} loading="lazy" />
+            ) : (
+              <video src={absoluteUrl} controls preload="metadata" />
+            )}
+          </div>
+          <a
+            className="review-secondary shot-set-history-media__download"
+            href={absoluteUrl}
+            target="_blank"
+            rel="noreferrer"
+            download
+          >
+            <Download size={14} />
+            {downloadLabel}
+          </a>
+        </>
+      ) : (
+        <span className="review-muted">未选择</span>
+      )}
+    </div>
   );
 }

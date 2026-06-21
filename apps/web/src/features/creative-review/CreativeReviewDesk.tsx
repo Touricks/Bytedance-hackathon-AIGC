@@ -66,6 +66,14 @@ export function CreativeReviewDesk({ workspaceId }: { workspaceId: string }) {
           <span>创作工作区</span>
           <strong>{workspaceTitle}</strong>
         </div>
+        <div
+          className="review-topbar__workspace-id"
+          title={vm.workspaceId}
+          aria-label={`工作区 ID ${vm.workspaceId}`}
+        >
+          <span>ID</span>
+          <code>{vm.workspaceId}</code>
+        </div>
         <Tooltip title="刷新">
           <IconButton
             type="button"

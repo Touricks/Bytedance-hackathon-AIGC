@@ -26,6 +26,42 @@ export const workspaceRepository = {
     return db.updateWorkspace(workspaceId, { displayName });
   },
 
+  async resolveFinalVideoWorkspaceStatus(
+    workspace: CreativeWorkspace,
+  ): Promise<CreativeWorkspace> {
+    const result = await db.db2.pool().query<{
+      status: string;
+      local_url: string | null;
+    }>(
+      `select status, local_url
+         from final_video_jobs
+        where workspace_id = $1
+        order by
+          case
+            when status in ('PENDING', 'RUNNING') then 0
+            when status = 'SUCCEEDED' and local_url is not null then 1
+            when status in ('FAILED', 'CANCELLED') then 2
+            else 3
+          end,
+          created_at desc
+        limit 1`,
+      [workspace.id],
+    );
+    const finalVideo = result.rows[0];
+    if (!finalVideo) return workspace;
+
+    const nextStatus =
+      finalVideo.status === "PENDING" || finalVideo.status === "RUNNING"
+        ? "video_generating"
+        : finalVideo.status === "SUCCEEDED" && finalVideo.local_url
+          ? "video_ready"
+          : finalVideo.status === "FAILED" || finalVideo.status === "CANCELLED"
+            ? "failed"
+            : null;
+    if (!nextStatus || workspace.status === nextStatus) return workspace;
+    return db.updateWorkspace(workspace.id, { status: nextStatus });
+  },
+
   getActiveStorage(
     workspaceId: string,
   ): Promise<WorkspaceStorageBindingRow | null> {

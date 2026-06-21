@@ -61,6 +61,9 @@ export function ImageSelectionPanel({
     )
   );
   const autoSelectionJob = vm.shotImageAutoSelection;
+  const activeShotSetChanged = Boolean(
+    vm.workspaceStatus?.activeShotSet?.upstream?.upstreamChanged
+  );
 
   useEffect(() => {
     if (
@@ -143,6 +146,14 @@ export function ImageSelectionPanel({
                 : "批量生成并选择分镜图"}
             </button>
           </div>
+          {activeShotSetChanged ? (
+            <div className="review-upstream-note">
+              <Clock3 size={15} />
+              <span>
+                旧版本分镜图可在应用分镜历史中查看/下载，不会参与新版本生成。
+              </span>
+            </div>
+          ) : null}
           {autoSelectionJob ? (
             <p className="review-action-note">
               自动选图任务：{autoSelectionJob.status}

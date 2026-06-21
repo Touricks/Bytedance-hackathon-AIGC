@@ -63,11 +63,12 @@ The current code implements:
 
 ## 7. Open Decisions
 
-- Product-level UI for archived shot sets is intentionally not exposed in the current scope.
+- Archived shot sets are exposed as read-only history for preview/download. They
+  are not reactivated, migrated into the active instance, or used as generation
+  references.
 
 ## 8. Related Docs
 
 - `architecture/data_model.md`
 - `architecture/erd.md`
 - `architecture/runtime_flow.md`
-

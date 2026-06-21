@@ -352,6 +352,7 @@ export const generationService = {
       workspaceId: input.workspaceId,
       traceId: nanoid(),
     });
+    await db.updateWorkspace(input.workspaceId, { status: "video_generating" });
     return {
       data: {
         finalVideoJobId: fv.id,

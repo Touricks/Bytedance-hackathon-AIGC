@@ -68,6 +68,7 @@ The module set is `prompt-requirements`, `material-intake`, `product-brief`, `st
 | Method | Path | Behavior |
 |---|---|---|
 | GET/POST | `/api/workspaces/:workspaceId/shot-sets` | Read active shot set or apply an approved 分镜生成要求. |
+| GET | `/api/workspaces/:workspaceId/shot-sets/history` | Read active and archived shot-set snapshots with selected image/video preview URLs for read-only viewing and download. Historical products do not participate in new generation, candidate selection, or final compose. |
 | GET | `/api/workspaces/:workspaceId/shots` | List active shot-set shots. |
 | GET | `/api/shots/:shotId` | Shot detail with active prompts/scripts/selections. |
 | GET/PATCH | `/api/shots/:shotId/asset-refs` | List or replace editable shot material references. |

@@ -224,6 +224,7 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
       status: "SUCCEEDED",
       completedAt: new Date().toISOString(),
     });
+    await db.updateWorkspace(job.workspaceId, { status: "video_ready" });
     await traceService.record({
       workspaceId: job.workspaceId,
       traceType: "job_event",
@@ -245,6 +246,7 @@ export async function processComposeFinalVideo(data: ComposeFinalVideoJobData) {
       completedAt: new Date().toISOString(),
       errorMessage: (err as Error).message,
     });
+    await db.updateWorkspace(job.workspaceId, { status: "failed" });
     throw err;
   }
 }

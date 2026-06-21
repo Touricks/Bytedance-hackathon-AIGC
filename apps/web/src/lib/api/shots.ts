@@ -33,6 +33,31 @@ export interface ShotSetShot extends ShotRow {
   updatedAt?: string;
 }
 
+export interface ShotSetHistoryMedia {
+  candidateId: string;
+  batchId: string | null;
+  url: string | null;
+  width: number | null;
+  height: number | null;
+  status: string | null;
+}
+
+export interface ShotSetHistoryVideo extends ShotSetHistoryMedia {
+  thumbnailUrl: string | null;
+  durationSec: number | null;
+}
+
+export interface ShotSetHistoryShot extends ShotSetShot {
+  selectedImage: ShotSetHistoryMedia | null;
+  selectedVideo: ShotSetHistoryVideo | null;
+}
+
+export interface WorkspaceShotSetHistoryItem extends WorkspaceShotSet {
+  selectedImageCount: number;
+  selectedVideoCount: number;
+  shots: ShotSetHistoryShot[];
+}
+
 export interface WorkflowStatus {
   workspaceId: string;
   shots: Array<{
@@ -78,6 +103,12 @@ export function listShots(workspaceId: string) {
 export function listWorkspaceShotSets(workspaceId: string) {
   return fetchJson<{ data: WorkspaceShotSet[] }>(
     `/api/workspaces/${workspaceId}/shot-sets`,
+  );
+}
+
+export function listWorkspaceShotSetHistory(workspaceId: string) {
+  return fetchJson<{ data: WorkspaceShotSetHistoryItem[] }>(
+    `/api/workspaces/${workspaceId}/shot-sets/history`,
   );
 }
 

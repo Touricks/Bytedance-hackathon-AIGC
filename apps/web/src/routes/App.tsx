@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import TextField from "@mui/material/TextField";
 import {
   ArrowRight,
   BarChart3,
@@ -49,7 +55,7 @@ const statusStageIndex: Record<CreativeWorkspace["status"], number> = {
   storyboard_approved: 3,
   shotprompt_proposed: 4,
   shotprompt_approved: 5,
-  video_generating: 7,
+  video_generating: 8,
   video_ready: 8,
   failed: 0,
   missing: 0,
@@ -64,8 +70,8 @@ const completedStageCount: Record<CreativeWorkspace["status"], number> = {
   storyboard_approved: 4,
   shotprompt_proposed: 4,
   shotprompt_approved: 5,
-  video_generating: 7,
-  video_ready: 8,
+  video_generating: 8,
+  video_ready: 9,
   failed: 0,
   missing: 0,
 };
@@ -79,8 +85,8 @@ const statusLabel: Record<CreativeWorkspace["status"], string> = {
   storyboard_approved: "分镜已生效",
   shotprompt_proposed: "生成要求待审",
   shotprompt_approved: "可应用分镜",
-  video_generating: "视频生成中",
-  video_ready: "可生成成片",
+  video_generating: "成片生成中",
+  video_ready: "成片已生成",
   failed: "处理失败",
   missing: "需要恢复",
 };
@@ -245,10 +251,12 @@ export function App() {
   const [renamingWorkspaceId, setRenamingWorkspaceId] = useState<string | null>(
     null,
   );
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createWorkspaceName, setCreateWorkspaceName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [directory, setDirectory] = useState("");
   const [query, setQuery] = useState("");
-  const [workspaceNameDraft, setWorkspaceNameDraft] = useState("");
   const [workspaceStorageKind, setWorkspaceStorageKind] = useState<"local" | "s3">(
     "local",
   );
@@ -295,18 +303,10 @@ export function App() {
     }
   };
 
-  const applyWorkspaceNameDraft = async (workspaceId: string) => {
-    const displayName = workspaceNameDraft.trim();
-    if (!displayName) return;
-    await updateWorkspaceDisplayName({ workspaceId, displayName });
-    setWorkspaceNameDraft("");
-  };
-
   const openDirectory = async (path: string) => {
     setError(null);
     try {
       const detail = await initializeWorkspace(path);
-      await applyWorkspaceNameDraft(detail.workspace.id);
       openWorkspace(detail.workspace.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -342,19 +342,44 @@ export function App() {
     await openDirectory(trimmed);
   };
 
+  const closeCreateDialog = () => {
+    if (creatingWorkspace) return;
+    setCreateDialogOpen(false);
+  };
+
   const onCreateManaged = async () => {
-    if (isCloudWorkspaceMode) {
-      setError(null);
-      try {
-        const detail = await createWorkspace(workspaceNameDraft.trim() || undefined);
-        setWorkspaceNameDraft("");
+    const displayName = createWorkspaceName.trim();
+    setError(null);
+    setCreatingWorkspace(true);
+    try {
+      if (isCloudWorkspaceMode) {
+        const detail = await createWorkspace(displayName || undefined);
+        setCreateWorkspaceName("");
+        setCreateDialogOpen(false);
         openWorkspace(detail.workspace.id);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        return;
       }
-      return;
+      const picked = await selectWorkspaceDirectory();
+      if (picked.directory) {
+        const detail = await initializeWorkspace(picked.directory);
+        if (displayName) {
+          await updateWorkspaceDisplayName({
+            workspaceId: detail.workspace.id,
+            displayName,
+          });
+        }
+        setCreateWorkspaceName("");
+        setCreateDialogOpen(false);
+        openWorkspace(detail.workspace.id);
+        return;
+      }
+      if (picked.cancelled) return;
+      setError("当前环境不支持系统目录选择，请输入工作目录路径。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatingWorkspace(false);
     }
-    await onChooseDirectory();
   };
 
   const onDeleteWorkspace = async (workspace: CreativeWorkspace) => {
@@ -444,20 +469,10 @@ export function App() {
             </p>
           </div>
           <div className="home-hero__actions">
-            <label className="workspaces-landing__name-field">
-              <span>工作区名称</span>
-              <input
-                className="field"
-                value={workspaceNameDraft}
-                onChange={(event) => setWorkspaceNameDraft(event.target.value)}
-                placeholder="例如：浴室清洁布投放测试"
-                maxLength={80}
-              />
-            </label>
             <button
               type="button"
               className="btn btn--lg btn--primary workspaces-landing__primary"
-              onClick={onCreateManaged}
+              onClick={() => setCreateDialogOpen(true)}
               disabled={loading}
             >
               <Plus size={18} />
@@ -476,6 +491,47 @@ export function App() {
             ) : null}
           </div>
         </section>
+
+        <Dialog
+          open={createDialogOpen}
+          onClose={closeCreateDialog}
+          fullWidth
+          maxWidth="xs"
+          aria-labelledby="create-workspace-title"
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onCreateManaged();
+            }}
+          >
+            <DialogTitle id="create-workspace-title">新建工作区</DialogTitle>
+            <DialogContent>
+              <TextField
+                autoFocus
+                fullWidth
+                margin="dense"
+                label="工作区名称"
+                value={createWorkspaceName}
+                onChange={(event) => setCreateWorkspaceName(event.target.value)}
+                placeholder="例如：浴室清洁布投放测试"
+                slotProps={{ htmlInput: { maxLength: 80 } }}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closeCreateDialog} disabled={creatingWorkspace}>
+                取消
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                disabled={creatingWorkspace}
+              >
+                {creatingWorkspace ? "创建中" : "创建工作区"}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
 
         {error ? <p className="error">{error}</p> : null}
 

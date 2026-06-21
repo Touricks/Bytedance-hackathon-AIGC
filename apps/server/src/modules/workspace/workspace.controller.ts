@@ -492,6 +492,18 @@ export async function registerWorkspaceController(
     }
   });
 
+  app.get(workspaceRoute("/shot-sets/history"), async (request, reply) => {
+    try {
+      const params = request.params as { workspaceId: string };
+      return {
+        data: await shotSetService.listShotSetHistory(params.workspaceId),
+      };
+    } catch (error) {
+      const httpError = toHttpError(error);
+      return reply.status(httpError.statusCode).send(httpError);
+    }
+  });
+
   app.post(workspaceRoute("/shot-sets"), async (request, reply) => {
     try {
       const params = request.params as { workspaceId: string };

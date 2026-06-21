@@ -58,9 +58,12 @@ export const workspaceLifecycleService = {
   async listManagedWorkspaces() {
     const withStorage = await Promise.all(
       (await workspaceRepository.listWorkspaces()).map(async (workspace) => {
-        const binding = await workspaceRepository.getActiveStorage(workspace.id);
+        const [current, binding] = await Promise.all([
+          workspaceRepository.resolveFinalVideoWorkspaceStatus(workspace),
+          workspaceRepository.getActiveStorage(workspace.id),
+        ]);
         return {
-          ...workspace,
+          ...current,
           storage: storageBindingView(binding),
           _binding: binding,
         };

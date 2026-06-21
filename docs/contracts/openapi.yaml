@@ -148,6 +148,101 @@ components:
         changedSources:
           type: array
           items: { type: string }
+    ShotSetHistoryMedia:
+      type: object
+      required: [candidateId, batchId, url, width, height, status]
+      properties:
+        candidateId: { type: string }
+        batchId: { type: [string, "null"] }
+        url: { type: [string, "null"] }
+        width: { type: [integer, "null"] }
+        height: { type: [integer, "null"] }
+        status: { type: [string, "null"] }
+    ShotSetHistoryVideo:
+      allOf:
+        - $ref: "#/components/schemas/ShotSetHistoryMedia"
+        - type: object
+          required: [thumbnailUrl, durationSec]
+          properties:
+            thumbnailUrl: { type: [string, "null"] }
+            durationSec: { type: [integer, "null"] }
+    ShotSetHistoryShot:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - shotSetId
+        - orderIndex
+        - title
+        - objective
+        - defaultDurationSec
+        - status
+        - requirements
+        - selectedImage
+        - selectedVideo
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        shotSetId: { type: string }
+        orderIndex: { type: integer }
+        title: { type: string }
+        objective: { type: [string, "null"] }
+        defaultDurationSec: { type: [integer, "null"] }
+        status: { type: string }
+        requirements:
+          type: object
+          required: [shotImage, shotVideo, sourceShotPromptArtifactId]
+          properties:
+            shotImage: { type: object, additionalProperties: true }
+            shotVideo: { type: object, additionalProperties: true }
+            sourceShotPromptArtifactId: { type: string }
+        selectedImage:
+          oneOf:
+            - $ref: "#/components/schemas/ShotSetHistoryMedia"
+            - type: "null"
+        selectedVideo:
+          oneOf:
+            - $ref: "#/components/schemas/ShotSetHistoryVideo"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ShotSetHistoryItem:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - shotPromptArtifactId
+        - status
+        - sourceFingerprint
+        - upstream
+        - selectedImageCount
+        - selectedVideoCount
+        - shots
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        shotPromptArtifactId: { type: string }
+        status: { type: string }
+        sourceFingerprint: { type: object, additionalProperties: true }
+        upstream:
+          $ref: "#/components/schemas/UpstreamDrift"
+        shotCount: { type: integer }
+        selectedImageCount: { type: integer }
+        selectedVideoCount: { type: integer }
+        shots:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShotSetHistoryShot"
+        createdAt: { type: string, format: date-time }
+        archivedAt: { type: [string, "null"], format: date-time }
+    ShotSetHistoryEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShotSetHistoryItem"
     CreativeFactors:
       type: object
       required: [productCategory, dealType, audience, strategy]
@@ -700,6 +795,21 @@ paths:
                 shotPromptArtifactId: { type: string }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+  /api/workspaces/{workspaceId}/shot-sets/history:
+    get:
+      tags: [ShotSet]
+      description: >
+        Read active and archived shot-set snapshots for read-only preview and
+        download. Historical candidates and selections are not valid inputs for
+        new generation, active candidate selection, or final compose.
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200":
+          description: Shot set history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShotSetHistoryEnvelope"
   /api/workspaces/{workspaceId}/shots:
     get:
       tags: [Shot]

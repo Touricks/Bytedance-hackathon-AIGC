@@ -29,6 +29,10 @@ prompt-requirements approve
 - `propose` creates reviewable drafts and does not become downstream input.
 - `approve` creates the current approved artifact; downstream modules read current approved artifacts.
 - Shot set apply creates the active per-shot runtime instance.
+- Re-applying a shot set archives the previous instance. Archived shot-set
+  products remain read-only history for preview/download, but new generation,
+  candidate selection, and final compose continue to consume only the active
+  shot set and current approved upstream artifacts.
 - Image/video generation is asynchronous through generation jobs and batch/candidate rows.
 - Final compose requires every active shot-set shot to have a selected stable video.
 - Dashboard import copies completed final videos into a decoupled dashboard registry.

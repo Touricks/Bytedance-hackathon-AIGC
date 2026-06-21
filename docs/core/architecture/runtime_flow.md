@@ -46,6 +46,9 @@ Dashboard import copies a completed final video into the decoupled dashboard reg
 - `shotprompt approve` does not create shots.
 - `POST /api/workspaces/:workspaceId/shot-sets` creates the active 分镜链路实例.
 - Applying a new shot set archives the previous active set but preserves all historical rows.
+- Archived shot-set products are exposed only as read-only history for
+  preview/download. They are not valid generation inputs, cannot be selected into
+  the current active shot set, and are not consumed by final compose.
 - Shot-set apply also records a `workspace_module_runs` row with `module_id='shot-set'` so the review rail can show running/failure state between 分镜生成要求 and 分镜图选择.
 
 ### Per-Shot Runtime
